@@ -1,0 +1,81 @@
+php artisan make:model MovieLike -m
+php artisan make:model MyCounter -m
+
+php artisan admin:make MovieLikeController --model=App\\Models\\MovieLike
+
+php artisan db:seed --class=App\\Models\\MovieLike
+
+
+php artisan make:migration add_vj --table=movie_models
+
+
+php artisan migrate
+---
+- This week sales
+- 
+- Employes total*
+- In Stock
+
+- MovieLike
+- Fincanial period sales/loses*
+- Stock Cats best/worst
+- Stock subcat - running out, best performer. worst (list)
+- Ricent stock items
+- Recent seles (list)
+- Stock cats by percentage (pie)
+
+
+
+CREATE DATABASE movies;
+CREATE USER 'root'@'localhost' IDENTIFIED BY 'Ilovemum999.';
+GRANT ALL PRIVILEGES ON movies.* TO 'root'@'localhost';
+
+CREATE USER 'muhindo'@'localhost' IDENTIFIED BY 'Ilovemum999.';
+
+GRANT ALL PRIVILEGES ON movies.* TO 'muhindo'@'localhost';
+
+ mysql -u muhindo -p movies < var/www/html/ugflix/db.sql
+
+
+--
+
+sudo git clone https://github.com/mubahood/luganda-translated-movies
+
+sudo git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
+
+
+sudo chmod -R 755 /var/www/html/luganda-translated-movies
+
+sudo mv /var/www/html/luganda-translated-movies /var/www/html/ugflix
+
+sudo chown -R www-data:www-data /var/www/html/ugflix
+sudo chmod -R 755 /var/www/html/ugflix
+
+git config --global --add safe.directory /var/www/html/ugflix
+sudo chown -R www-data:www-data /var/www/html/ugflix
+cd /var/www/html/ugflix
+sudo -u www-data -i
+
+sudo find /var/www/html/ugflix -type d -exec chmod 755 {} \;
+sudo find /var/www/html/ugflix -type f -exec chmod 644 {} \;
+
+sudo -u www-data git -C /var/www/html/ugflix pull
+mysql -u root -p movies < var/www/html/ugflix/db.sql
+
+  # For files
+
+
+
+
+gcloud compute instances describe instance-20240922-232855 --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
+
+sudo nano /etc/apache2/sites-available/000-default.conf
+
+<Directory /var/www/html/ugflix/public>
+    AllowOverride All
+</Directory>
+
+/var/www/html/YOUR_REPO/public
+
+
+
