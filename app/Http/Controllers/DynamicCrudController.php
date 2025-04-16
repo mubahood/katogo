@@ -107,7 +107,18 @@ class DynamicCrudController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        $reservedKeys = ['model', 'sort_by', 'sort_dir', 'page', 'per_page', 'is_not_for_company', 'is_not_for_user', 'fields'];
+        $reservedKeys = [
+            'model',
+            'sort_by',
+            'sort_dir',
+            'page',
+            'per_page',
+            'is_not_for_company',
+            'is_not_for_user',
+            'fields',
+            'category_id',
+            'episode_number',
+        ];
         foreach ($request->query() as $param => $value) {
             if (in_array($param, $reservedKeys)) continue;
 
