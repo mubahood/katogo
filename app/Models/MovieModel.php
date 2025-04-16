@@ -98,6 +98,11 @@ class MovieModel extends Model
     public function getUrlAttribute($value)
     {
 
+        //check if url contains  http
+        if (str_contains($value, 'http')) {
+            return $value;
+        }
+
         $url = $this->external_url;
         //check if doest not have http
         if (strpos($url, 'http') === false) {
@@ -197,7 +202,7 @@ class MovieModel extends Model
         $this->content_type_processed_time = date('Y-m-d H:i:s');
         $this->content_is_video = 'No';
         $this->content_type =  $contentType;
- 
+
 
         if (in_array(strtolower($contentType), $video_types)) {
             $this->content_is_video = 'Yes';
@@ -207,7 +212,7 @@ class MovieModel extends Model
             $this->status = 'Inactive';
         }
         $this->content_type = $contentType;
-        $this->save(); 
+        $this->save();
         return $contentType;
     }
 }
