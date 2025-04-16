@@ -106,11 +106,7 @@ class DynamicCrudController extends Controller
             //make order by created_at desc
             // add these 
 
-            //if type is set type to Series
-            if ($request->has('type')) {  
-                //get only unique by category_id
-                // $query->groupBy('category_id');
-            }
+            $query->groupBy('category_id'); 
         }
 
         $query->orderBy('id', 'desc');
