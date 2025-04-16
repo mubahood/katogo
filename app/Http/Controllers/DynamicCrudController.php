@@ -109,7 +109,7 @@ class DynamicCrudController extends Controller
             //if type is set type to Series
             if ($request->has('type')) {  
                 //get only unique by category_id
-                $query->groupBy('category_id');
+                // $query->groupBy('category_id');
             }
         }
 
