@@ -1,10 +1,12 @@
 <?php
 
+use App\Http\Controllers\ApiController;
 use App\Models\Gen;
 use App\Models\MovieModel;
 use App\Models\Utils;
 use Dflydev\DotAccessData\Util;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 
@@ -17,12 +19,86 @@ Route::get('/home', function () {
 */
 
 
+Route::get('remove-dupes', function (Request $request) {
+
+    $max = 100000;
+    $recs =  MovieModel::where([
+        'plays_on_google' => 'dupes',
+    ])
+        ->orderBy('id', 'desc')
+        ->limit($max)
+        ->get();
+
+
+    //set unlimited time
+    ini_set('memory_limit', -1);
+
+    ini_set('max_execution_time', -1);
+    ini_set('max_input_time', -1);
+    ini_set('upload_max_filesize', -1);
+    ini_set('post_max_size', -1);
+    ini_set('max_input_vars', -1);
+
+    $i = 0;
+
+    foreach ($recs as $key => $rec) {
+        if ($i > $max) {
+            break;
+        }
+        $i++;
+        if ($i > $max) {
+            break;
+        }
+        $otherMovies = MovieModel::where([
+            'url' => $rec->url
+        ])
+            ->where('id', '!=', $rec->id)
+            ->get();
+        if ($otherMovies->count() == 0) {
+            die("<hr>");
+            echo $i . '. NOT DUPE for : ' . $rec->title . '<br>';
+            $rec->plays_on_google = 'Yes';
+            die("<hr>");
+            $rec->save();
+            continue;
+        }
+
+        $otherMovies = MovieModel::where([
+            'url' => $rec->url
+        ])
+            ->get();
+        echo "<hr>";
+        foreach ($otherMovies as $key => $dp) {
+            if($rec->id == $dp->id){
+                continue;
+            } 
+            echo $dp->delete(); 
+            echo $dp->id . '. ' . $dp->title . ' ===> ' . $dp->url . '<br>';
+            //display thumbnaildd 
+            echo '<img src="' . $dp->thumbnail_url . '" width="100" height="100" alt="">';
+            echo '<br>';
+        }
+        continue; 
+
+        die("<br>");
+
+        echo $i . 'dupes for ' . $rec->title . '<br>';
+    }
+
+    die('remove-dupes');
+
+    dd('remove-dupes');
+});
+Route::get('manifest', function (Request $request) {
+    $apiController = new ApiController();
+    $apiController->manifest($request);
+});
 Route::get('play', function (Request $request) {
     $moviemodel = MovieModel::find($request->id);
     if ($moviemodel == null) {
         return die('Movie not found');
     }
-    $newUrl = url('storage/' . $moviemodel->new_server_path); 
+    $newUrl = url('storage/' . $moviemodel->new_server_path);
     //html player for new and old links
     $html = '<video width="320" height="240" controls>
                 <source src="' . $moviemodel->url . '" type="video/mp4">
@@ -34,9 +110,23 @@ Route::get('play', function (Request $request) {
             </video>';
     echo $html;
 });
-Route::get('download-to-new-server', function () {
+Route::get('download-to-new-server-get-images', function () {
+    Utils::get_remote_movies_links_4_get_images();
+    die("get_remote_movies_links_4_get_images");
+});
+Route::get('download-to-new-server-namzentertainment', function () {
+    Utils::get_remote_movies_links_namzentertainment();
+    die('download-to-new-namzentertainment');
+});
 
-    Utils::get_remote_movies_links_3();
+Route::get('download-to-new-server', function () {
+    //8019
+
+    // return  view('test');
+
+    Utils::get_remote_movies_links_4();
+    die('download-to-new-server');
+    // Utils::get_remote_movies_links_3();
 
     dd('download-to-new-server');
     //increase the memory limit

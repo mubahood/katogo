@@ -1140,46 +1140,403 @@ class Utils
         $my_counter->save();
     }
 
-
     public static function get_url($url)
     {
         $html = null;
         try {
-            $curl = curl_init();
-            curl_setopt($curl, CURLOPT_URL, $url);
-            curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
-            curl_setopt($curl, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3');
-            curl_setopt($curl, CURLOPT_TIMEOUT, 30);
-            curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 30);
-            curl_setopt($curl, CURLOPT_HTTPHEADER, [
-                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language: en-US,en;q=0.5',
-                'Cache-Control: no-cache',
-                'Pragma: no-cache',
-            ]); //PHPSESSID=jj526rkrgeamo4bve8sq3jb51g; Path=/;
-            curl_setopt($curl, CURLOPT_COOKIE, 'PHPSESSID=jj526rkrgeamo4bve8sq3jb51g; Path=/;');
-            curl_setopt($curl, CURLOPT_COOKIEJAR, 'cookie.txt');
-            curl_setopt($curl, CURLOPT_COOKIEFILE, 'cookie.txt');
-            curl_setopt($curl, CURLOPT_HEADER, true);
-            curl_setopt($curl, CURLOPT_COOKIE, 'rememberMe=MkdEUUc1ZUw3ODExS0hTOS8yeVFiQT09OjpSzHXs%2BrgCJ%2FqR0ShJsvaROjo%3D; Path=/; Expires=Mon, 13 Apr 2026 16:41:40 GMT;');
-            curl_setopt($curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-            curl_setopt($curl, CURLOPT_ENCODING, 'gzip, deflate');
+            // Create a cookie jar with the required cookies (use domain without scheme)
+            $cookieJar = \GuzzleHttp\Cookie\CookieJar::fromArray([
+                'laravel_session' => 'eyJpdiI6ImZsdTRXdi9NZ0FHV09TUzVJMmpEbVE9PSIsInZhbHVlIjoiRDg2UVFSUTI1bklXQnNFK3VaZU1uM2NDSkVzZFFTQnpYendicjdobjhQaStWTHBvMGxXTytEMGoxS1psS3BDekRyeWtwYjFtS280L0lWV1N2bjcxTXpnd1dsOHRGTXVTMkV1MGpCR3FCK0VZRjdmRGlodExrRXlvbVRsci9Cd1giLCJtYWMiOiJkNWI0YjVjMzUxNTU0MGE5ZjI3ZjYxNTNlYWRiMjhmMTI0ODJhZTMyNDcyMGIwMGI3ODU1OTViNjNhNjAyMGEzIiwidGFnIjoiIn0%3D',
+                'XSRF-TOKEN'     => 'eyJpdiI6IkJMelllbDkrQWJrYVBtamN5ZUJ6SGc9PSIsInZhbHVlIjoiSFVlc3pHZTBjWk5Ib0l6b0FFYnpiRWFuWDc1Mm1WdkFJYmNUdFp1M0pVSWRNRVJZR3dMVE4zTjM2TEZLSHVXN05zQkVHNHl4cy9yeGZMNWxkS21Pb05SK0kzajJUTUdueThzM2ZXSnVDVnllRUFxb1lXV3A4bU1uRHNFZEVZN20iLCJtYWMiOiI0ODMyNWY1YmE3OTA4YTEzYWQ0MmFlYmE2ZTFmYzliNmMyODVhMzNlMzVlMDEzNmQzODkxYjAyOGYzODIyYzM2IiwidGFnIjoiIn0%3D'
+            ], 'ugaflix.com');
 
-            $html = curl_exec($curl);
+            // Create the Guzzle client with options similar to the original cURL setup.
+            $client = new \GuzzleHttp\Client([
+                'allow_redirects' => true,
+                'verify'          => false,
+                'timeout'         => 30,
+                'connect_timeout' => 30,
+                'headers'         => [
+                    'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+                    'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language' => 'en-US,en;q=0.5',
+                    'Cache-Control'   => 'no-cache',
+                    'Pragma'          => 'no-cache',
+                    'Accept-Encoding' => 'gzip, deflate',
+                ],
+            ]);
 
-            $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-            curl_close($curl);
+            // Make the GET request with the cookie jar
+            $response = $client->get($url, [
+                'cookies' => $cookieJar,
+            ]);
+
+            // Get the full response body as a string
+            $html = (string) $response->getBody();
         } catch (\Throwable $th) {
             throw $th;
         }
 
         return $html;
     }
-    public static function get_remote_movies_links_3()
+
+
+
+    public static function get_remote_movies_links_4()
     {
+
+        $scarpers = ScraperModel::where([
+            'type' => 'ugaflix_movie',
+            'status' => 'SUCCESS',
+        ])->orderBy('id', 'asc')
+            ->limit(100000)
+            ->get();
+
+
+
+        //get movies pages
+
+
+        //set memory limit
+        ini_set('memory_limit', '-1');
+
+        //set max input time
+        ini_set('max_input_time', 0);
+
+        //max execution time
+        ini_set('max_execution_time', 0);
+
+        //set post max size
+        ini_set('post_max_size', '10000M');
+
+
+
+        foreach ($scarpers as $scaper) {
+
+
+            $movie = MovieModel::where([
+                'title' => $scaper->title,
+            ])->first();
+
+            if ($movie == null) {
+                $movie = MovieModel::where([
+                    'external_url' => $scaper->url,
+                ])->first();
+            }
+            if ($movie == null) {
+                $movie = MovieModel::where([
+                    'url' => $scaper->url,
+                ])->first();
+            }
+            if ($movie == null) {
+                $movie = MovieModel::where([
+                    'external_url' => $scaper->url,
+                ])->first();
+            }
+            if ($movie == null) {
+                $movie = MovieModel::where([
+                    'imdb_url' => $scaper->url,
+                ])->first();
+            }
+
+            if ($movie == null) {
+                echo 'Movie not found: ' . $scaper->title . '<br>';
+                continue;
+            }
+
+            if ($scaper->datae == null || $scaper->datae == '') {
+                $movie->thumbnail_url = $movie->image_url;
+                echo 'Movie image not found: ' . $scaper->title . '<br>';
+                die('Movie image not found: ' . $scaper->title);
+            }
+
+            $movie->image_url = $scaper->datae;
+            $movie->thumbnail_url = $scaper->datae;
+            $movie->save();
+            $scaper->status = 'PROCESSED';
+            $scaper->save();
+            //display image in 100x100  
+            echo $scaper->id . ' <img src="' . $scaper->datae . '" width="80"  />' . 'DONE<br>  ';
+
+            continue;
+            dd($scaper);
+            dd($movie);
+            /* 
+  "image_url" => "https://ugaflix.com/upload/images/xBrx6O1RIhjtWmVthZIANuQz7Z2.jpg"
+    "thumbnail_url" =
+*/
+            if ($movie != null) {
+
+                if ($movie->content_is_video == 'Yes') {
+                    //echo already processed
+                    echo '<a href="' . $scaper->url . '" target="_blank">' . $scaper->title . '</a> already processed<br>';
+                    $scaper->status = 'SUCCESS';
+                    $scaper->error_message = 'Already processed';
+                    $scaper->save();
+                    continue;
+                }
+            }
+
+
+            $url = str_replace('details', 'watch', $scaper->url);
+            $html = self::get_url($url);
+
+            $html = str_get_html($html);
+            $downloadLink = null;
+            $DownloadVideoElement = $html->find('a[title="download"]', 0);
+            $DownloadVideoElement = $html->find('.class="subscribe-btn-item"', 0);
+            if ($DownloadVideoElement) {
+                $downloadLink = $DownloadVideoElement->href;
+            } else {
+            }
+            if ($downloadLink == null) {
+                $video = $html->find('video', 0);
+                if ($video != null) {
+                    $downloadLink = $video->src;
+                }
+            }
+            if ($downloadLink == null) {
+                $scaper->status = 'NOT_FOUND_VIDEO';
+                $scaper->error_message = 'Download link not found';
+                $scaper->save();
+                echo $scaper->id . ' - ' . $scaper->title . ' - ' . 'Download link not found' . ' ==NOT_FOUND== : ' . $scaper->url . '<br>';
+                continue;
+            }
+            if ($movie == null) {
+                $movie = MovieModel::where([
+                    'external_url' => $downloadLink,
+                ])->first();
+            }
+
+            if ($movie == null) {
+                $movie = MovieModel::where([
+                    'url' => $downloadLink,
+                ])->first();
+            }
+
+            if ($movie == null) {
+                $movie = new MovieModel();
+            }
+
+            $actor_video_link = $html->find('.actor-video-link', 0);
+            $isFirst = true;
+            $ginre = null;
+            $vj = null;
+            if ($actor_video_link != null) {
+                $links = $actor_video_link->find('li');
+                if ($links != null) {
+                    foreach ($links as $link) {
+                        if ($isFirst) {
+                            $isFirst = false;
+                            $ginre = $link->plaintext;
+                        }
+
+                        $plaintext = strtolower($link->plaintext);
+                        //check plaintext if not empty has word vj
+                        if (strpos($plaintext, 'vj') !== false) {
+                            $vj = trim($link->plaintext);
+                        }
+                    }
+                }
+            }
+
+            if ($vj == null) {
+                $_title = strtolower($movie->title);
+                //check if title has vj
+                if (strpos($_title, 'vj') !== false) {
+                    $slpts = explode('vj', $_title);
+                    if (count($slpts) > 1) {
+                        $vj = trim($slpts[1]);
+                    }
+                }
+            }
+
+            $firsth3 = $html->find('.page-content-area', 0);
+            $description = null;
+            if ($firsth3 != null) {
+                $description = trim($firsth3->plaintext);
+                //replace Watch Trailer  
+                $description = str_replace('Watch Trailer', '', $description);
+                //splti by Description                                                                                                                                                  
+                $splits = explode('Description', $description);
+                if (count($splits) > 1) {
+                    $description = trim($splits[1]);
+                }
+            }
+
+
+            $movie->title = $scaper->title;
+            $movie->url = $downloadLink;
+            $movie->external_url = $downloadLink;
+            $movie->type =  "Movie";
+
+            if ($description != null) {
+                $description = str_replace('Description', '', $description);
+                $movie->description = $description;
+            }
+
+            // get this meta <link rel="image_src" href="https://ugaflix.com/upload/images/xBrx6O1RIhjtWmVthZIANuQz7Z2.jpg">
+            $linkImage = $html->find('link[rel="image_src"]', 0); //href
+            if ($linkImage != null) {
+                $linkImage = $linkImage->href;
+            } else {
+                $linkImage = null;
+            }
+
+            if ($linkImage != null) {
+                $movie->image_url = $linkImage;
+            }
+            $movie->imdb_url = $scaper->url;
+            $movie->status = 'Inactive';
+            $movie->type =  'Movie';
+            $movie->video_is_downloaded_to_server =  'No';
+            $movie->content_type_processed =  'No';
+            $movie->is_premium =  'No';
+            $movie->new_server_path =  'ugaflix';
+            $movie->vj = $vj;
+            $movie->category = $ginre;
+
+
+            $isEdit = false;
+            if ($movie->id != null) {
+                $isEdit = true;
+            }
+
+            try {
+                $movie->save();
+            } catch (\Throwable $th) {
+                //throw $th;
+                echo '<br>';
+                $scaper->status = 'FAILED';
+                $scaper->error_message = $th->getMessage();
+                $scaper->save();
+                echo $scaper->id . ' - ' . $scaper->title . ' - ' . $th->getMessage() . ' ==FAILED==<br>';
+                continue;
+            }
+
+            //IF IS EDITED
+            if ($isEdit) {
+                echo '<br>';
+                echo '<a href="' . $movie->url . '" target="_blank">' . $scaper->id . ' - ' . $scaper->title . ' - ' . $movie->id . ' - ' .   ' ==EDITED==</a><br>';
+            } else {
+                echo '<br>';
+                echo '<a href="' . $movie->url . '" target="_blank">' . $scaper->id . ' - ' . $scaper->title . ' - ' . $movie->id . ' - ' .   ' ==CREATED==</a><br>';
+            }
+
+            if ($movie->content_is_video != 'Yes') {
+                $movie->verify_movie();
+            }
+            $scaper->status  = 'SUCCESS';
+            $scaper->error_message = null;
+            $scaper->save();
+        }
+
+        die('-done-');
+        dd($scarpers);
+
+        $max = 160;
+        for ($i = 1; $i <= $max; $i++) {
+            $url = 'https://ugaflix.com/movies?page=' . $i;
+            // $url = "https://movies.ug/play.php?mId=10819";
+
+            $done = MyCounter::where([
+                'type' => 'get_remote_movies_links_4',
+                'count_value' => $i,
+                'status' => 'SUCCESS',
+            ])->orderBy('id', 'desc')->first();
+
+            if ($done != null) {
+                //display details
+                echo $i . ' - ' . $url . ' - already done with #' . $done->id . '<br>';
+                continue;
+            }
+
+            try {
+                $my_html = self::get_url($url);
+            } catch (\Throwable $th) {
+                //throw $th;
+                echo $th->getMessage();
+            }
+
+            $html = str_get_html($my_html);
+            $videos = $html->find('.single-video');
+
+            foreach ($videos as $video) {
+                $link = $video->find('a', 0);
+                if ($link == null) {
+                    continue;
+                }
+                $title = $link->title;
+                if ($title == null) {
+                    echo '<br>';
+                    echo 'title not found';
+                    $params = [
+                        'status' => 'FAILED',
+                        'status_message' => 'title not found',
+                        'data' => $url,
+                    ];
+                    self::save_my_counter('get_remote_movies_links_4', $i, $params);
+                    continue;
+                }
+                $page_url = $link->href;
+                if ($page_url == null) {
+                    echo '<br>';
+                    echo 'page url not found';
+                    $params = [
+                        'status' => 'FAILED',
+                        'status_message' => 'page url not found',
+                        'data' => $url,
+                    ];
+                    self::save_my_counter('get_remote_movies_links_4', $i, $params);
+                    continue;
+                }
+                $img = $video->find('img', 1)->src;
+                if ($img == null) {
+                    $img  = $video->find('img', 0)->src;
+                }
+
+                $lastScrap = ScraperModel::where([
+                    'url' => $page_url,
+                ])->orderBy('id', 'desc')->first();
+                if ($lastScrap == null) {
+                    $lastScrap = new ScraperModel();
+                }
+                $lastScrap->type = 'ugaflix_movie';
+                $lastScrap->url = $page_url;
+                $lastScrap->title = $title;
+                $lastScrap->status = 'PENDING';
+
+                try {
+                    $lastScrap->save();
+                } catch (\Throwable $th) {
+                    //throw $th;
+                    echo '<br>';
+                    echo 'error saving scraper model';
+                    echo '<br>';
+                    echo $th->getMessage();
+                    $params = [
+                        'status' => 'FAILED',
+                        'status_message' => $th->getMessage(),
+                        'data' => $url,
+                    ];
+                    self::save_my_counter('get_remote_movies_links_4', $i, $params);
+                    continue;
+                }
+                $params = [
+                    'status' => 'SUCCESS',
+                    'status_message' => $page_url,
+                    'data' => $url,
+                ];
+
+                self::save_my_counter('get_remote_movies_links_4', $i, $params);
+
+                echo '<br>';
+                echo $i . '. - ' . $url . ' - ' . $title . '<br>';
+
+                continue;
+            }
+        }
+        die('-done-');
 
         $last_page = 1;
         $last_my_counter = MyCounter::where([
@@ -1187,10 +1544,10 @@ class Utils
             'status' => 'SUCCESS',
         ])->orderBy('id', 'desc')->first();
 
-       /*  $note_success = MyCounter::where([
+        /*  $note_success = MyCounter::where([
             'type' => 'get_remote_movies_links_3',
             'status' => 'FAILED',
-        ])->orderBy('id', 'desc')->delete(); */ 
+        ])->orderBy('id', 'desc')->delete(); */
 
         set_time_limit(0);
 
@@ -1480,96 +1837,388 @@ class Utils
             self::save_my_counter('get_remote_movies_links_3', $i, $params);
 
             continue;
+        }
 
 
-            /* 
-movie data         
-        
-    "error_message" => "Results not found"
-    "downloads_count" => "0"
-    "views_count" => "0"
-    "likes_count" => "0"
-    "dislikes_count" => "0"
-    "comments_count" => "0"
-    "comments" => null
-    "video_is_downloaded_to_server" => "yes"
-    "video_downloaded_to_server_start_time" => "2024-02-29 08:15:11"
-    "video_downloaded_to_server_end_time" => "2024-02-29 08:15:38"
-    "video_downloaded_to_server_duration" => null
-    "video_is_downloaded_to_server_status" => "success"
-    "video_is_downloaded_to_server_error_message" => null
-    "category" => null
-    "category_id" => null
-    "is_processed" => "Failed"
-    "downloaded_from_google" => "Yes"
-    "uploaded_to_from_google" => "Yes"
-    "local_video_link" => "m.schooldynamics.ug/storage/videos/1709194511_6734.mp4"
-    "plays_on_google" => "Yes"
-    "downloaded_to_new_server" => "No"
-    "new_server_path" => null
-    "server_fail_reason" => null
-  ] 
+        $end_time = time();
 
-*/
-            //        dd($video_url);
+        $diff = $end_time - $start_time;
 
+        $hours = floor($diff / 3600);
+        $minutes = floor(($diff / 60) % 60);
+        $seconds = $diff % 60;
+
+        echo "<hr>TIME TAKEN: " . $hours . " hours " . $minutes . " minutes " . $seconds . " seconds";
+
+        die("done");
+        try {
+            $html = file_get_html($url);
+        } catch (\Throwable $th) {
+            /* $new_scrap->status = 'error';
+            $new_scrap->error = 'file_get_html';
+            $new_scrap->error_message = $th->getMessage();
+            $new_scrap->save(); */
+        }
+        if ($html == null) {
+            return false;
+        }
+
+        $base_url = $url;
+        $movies_count = 0;
+        // find all link
+        try {
+            foreach ($html->find('a') as $e) {
+                //check if last does not contain .mp4 or .mkv or .avi or .flv or .wmv or .mov or .webm and continue
+                if (!str_contains($e->href, '.mp4') && !str_contains($e->href, '.mkv') && !str_contains($e->href, '.avi') && !str_contains($e->href, '.flv') && !str_contains($e->href, '.wmv') && !str_contains($e->href, '.mov') && !str_contains($e->href, '.webm')) {
+                    continue;
+                }
+                $movies_count++;
+                $url = $base_url . $e->href;
+                //check if there is no MovieModel with this url
+                $movie = MovieModel::where('external_url', $url)->first();
+                if ($movie != null) {
+                    continue;
+                }
+                $movie = new MovieModel();
+                $movie->url = null;
+                $movie->external_url = $url;
+                $movie->title = self::get_movie_title_from_url($url);
+                //check if title contains season or series or episode and make type to series else make type to movie
+                $temp_title = strtolower($movie->title);
+                if (str_contains($temp_title, 'season') || str_contains($temp_title, 'series') || str_contains($temp_title, 'episode')) {
+                    $movie->type = 'series';
+                } else {
+                    $movie->type = 'movie';
+                }
+                $movie->status = 'pending';
+                $movie->downloads_count = 0;
+                $movie->views_count = 0;
+                $movie->likes_count = 0;
+                $movie->dislikes_count = 0;
+                $movie->comments_count = 0;
+                $movie->video_is_downloaded_to_server = 'no';
+                $movie->save();
+            }
+        } catch (\Throwable $th) {
+            /* $new_scrap->status = 'error';
+            $new_scrap->error = 'find all link';
+            $new_scrap->error_message = $th->getMessage();
+            $new_scrap->save(); */
+        }
+
+        /* //size of content from url
+        $new_scrap->datae = strlen($html);
+        //to mb
+        $new_scrap->datae = $new_scrap->datae / 1000000;
+        $new_scrap->datae = round($new_scrap->datae, 2);
+        $new_scrap->title = $movies_count;
+        $new_scrap->status = 'success';
+        $new_scrap->save(); */
+        return true;
+    }
+
+    public static function get_remote_movies_links_3()
+    {
+
+        $last_page = 1;
+        $last_my_counter = MyCounter::where([
+            'type' => 'get_remote_movies_links_3',
+            'status' => 'SUCCESS',
+        ])->orderBy('id', 'desc')->first();
+
+        /*  $note_success = MyCounter::where([
+            'type' => 'get_remote_movies_links_3',
+            'status' => 'FAILED',
+        ])->orderBy('id', 'desc')->delete(); */
+
+        set_time_limit(0);
+
+        //set memory limit
+        ini_set('memory_limit', '-1');
+
+        //set max input time
+        ini_set('max_input_time', 0);
+
+        //set post max size
+        ini_set('post_max_size', '10000M');
+
+        //set upload max filesize
+        ini_set('upload_max_filesize', '10000M');
+
+        //set max execution time
+        ini_set('max_execution_time', 0);
+
+        if ($last_my_counter != null) {
+            $last_page = $last_my_counter->count_value;
+        } else {
+            $last_page = 1;
+        }
+
+        //https://movies.ug/play.php?mId=10819 
+
+
+        $base_url = 'https://movies.ug/play.php?mId=';
+
+        $html = null;
+        $i = $last_page;
+        $max = $last_page + 10000;
+        $start_time = time();
+        for (; $i < $max; $i++) {
+            $url = $base_url . $i;
+            // $url = "https://movies.ug/play.php?mId=10819";
+
+            $done = MyCounter::where([
+                'type' => 'get_remote_movies_links_3',
+                'count_value' => $i,
+                'status' => 'SUCCESS',
+            ])->orderBy('id', 'desc')->first();
+
+            if ($done != null) {
+                //display details
+                echo $i . ' - ' . $url . ' - already done with #' . $done->id . '<br>';
+                continue;
+            }
+
+
+            $my_html = null;
+            try {
+                $my_html = self::get_url($url);
+            } catch (\Throwable $th) {
+
+                $message = $th->getMessage();
+                $params = [
+                    'status' => 'FAILED',
+                    'status_message' => $message,
+                    'data' => null,
+                ];
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $message . '<br>';
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                continue;
+            }
+            if ($my_html == null) {
+                $params = [
+                    'status' => 'FAILED',
+                    'status_message' => 'html not found',
+                    'data' =>  $url,
+                ];
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - html not found<br>';
+                continue;
+            }
+
+            //now create dom object
+            $html = str_get_html($my_html);
+            //get first h2
+            $h2s = $html->find('h3', 0);
+            $error_message = '';
+            $params = [
+                'status' => 'SUCCESS',
+                'status_message' => $url,
+                'data' =>  $url,
+            ];
+            if ($h2s == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'h2 not found';
+                $params['data'] = $url;
+                $error_message = 'h2 not found';
+                $params['error_message'] = $error_message;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
             $title = trim($h2s->plaintext);
-            $genre = null;
-            $lastMovie = MovieModel::where([])->first();
-            dd($lastMovie);
-            //get first h4
-            $h4s = $html->find('h4');
 
-            foreach ($h4s as $h4) {
-                if (str_contains($h4->plaintext, 'VJ:')) {
-                    $vjs = $h4->plaintext;
-                    $splits = explode(':', $vjs);
-                    $splits = array_map('trim', $splits);
-                    $last = array_pop($splits);
-                    dd($last);
+            if ($title == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'h2 not found';
+                $params['data'] = $html;
+                $error_message = 'h2 not found';
+                $params['data'] = $url;
+                $params['error_message'] = $error_message;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+            }
+
+            // if title is empty
+            if (empty($title)) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'h2 not found';
+                $params['data'] = $html;
+                $error_message = 'h2 not found';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
+
+            $video_url = null;
+
+            //get button with text download
+            $buttons = $html->find('button');
+            foreach ($buttons as $button) {
+                if (str_contains($button->plaintext, 'Download Movie')) {
+                    try {
+                        $video_url = $button->parent()->href;
+                    } catch (\Throwable $th) {
+                    }
+                    break;
                 }
             }
-            dd($h2s->plaintext);
-            dd($h2s);
+            if ($video_url == null) {
+                //get first video tag
+                $video = $html->find('video', 0);
+                if ($video != null) {
+                    $video_url = $video->find('source', 0)->src;
+                } else {
+                }
+            }
+
+            if ($video_url == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'video url not found';
+                $params['data'] = $html;
+                $error_message = 'video url not found';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
+
+            if ($video_url == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'video url not found';
+                $params['data'] = $html;
+                $error_message = 'video url not found';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
+
+            $movie = MovieModel::where('external_url', $video_url)->first();
+            if ($movie == null) {
+                $movie = MovieModel::where('url', $video_url)->first();
+            }
+            if ($movie == null) {
+                $movie = MovieModel::where('imdb_url', $url)->first();
+            }
+
+            //get titles
+            $title = str_replace('Title: ', '', $title);
+            $title = str_replace('Title:', '', $title);
+            $title = trim($title);
+
+            if ($movie == null) {
+                $movie = MovieModel::where('title', $title)->first();
+            }
+
+            if ($movie == null) {
+                $movie = new MovieModel();
+            }
+            $movie->title = $title;
+            $movie->external_url = $video_url;
+            $movie->url = $video_url;
+            $movie->imdb_url = $url;
+            $movie->imdb_id = $i;
+            $movie->imdb_rating = 0;
+            $movie->imdb_votes = 0;
+
+            $h2s = $html->find('h2');
+            $actor = null;
+            foreach ($h2s as $h2) {
+                if (str_contains($h2->plaintext, 'Actor:')) {
+                    $actor = trim(str_replace('Actor:', '', $h2->plaintext));
+                    $movie->actor = $actor;
+                }
+            }
+
+            $h3s = $html->find('h4');
+            foreach ($h3s as $h) {
+                if (str_contains($h->plaintext, 'Genre:')) {
+                    $movie->genre = trim(str_replace('Genre:', '', $h->plaintext));
+                    continue;
+                }
+                if (str_contains($h->plaintext, 'VJ:')) {
+                    $movie->vj = trim(str_replace('VJ:', '', $h->plaintext));
+                    continue;
+                }
+                //Views
+                if (str_contains($h->plaintext, 'Views:')) {
+                    $movie->imdb_rating = trim(str_replace('Views:', '', $h->plaintext));
+                    $movie->views_count = $movie->imdb_rating;
+                    continue;
+                }
+            }
+
+            $firstP = $html->find('p', 0);
+            if ($firstP != null) {
+                $movie->description = trim($firstP->plaintext);
+            }
+            $thumbnail = $html->find('img', 0);
+            if ($thumbnail != null) {
+                $movie->thumbnail_url = $thumbnail->src;
+                if ($movie->thumbnail_url != null && strlen($movie->thumbnail_url) > 4) {
+                    $movie->thumbnail_url = 'https://movies.ug' . $thumbnail->src;
+                }
+            }
+            $movie->image_url = $movie->thumbnail_url;
+
+            //year
+            $min_year = 1900;
+            $max_year = 2025;
+            $year = null;
+            for ($x = $min_year; $x <= $max_year; $x++) {
+                if (str_contains($movie->title, $x)) {
+                    $year = (int)$x;
+                    break;
+                }
+            }
+            if ($year != null) {
+                $movie->year = $year;
+            } else {
+                $movie->year = null;
+            }
+            $movie->type = 'movie';
+            $movie->status = 'Active';
+            $movie->is_processed = 'No';
+
+            $exist = 'NOT_EXIST';
+            if ($movie->id != null) {
+                $exist = 'EXIST';
+            }
 
             try {
-                foreach ($html->find('a') as $e) {
-                    //check if last does not contain .mp4 or .mkv or .avi or .flv or .wmv or .mov or .webm and continue
-                    if (!str_contains($e->href, '.mp4') && !str_contains($e->href, '.mkv') && !str_contains($e->href, '.avi') && !str_contains($e->href, '.flv') && !str_contains($e->href, '.wmv') && !str_contains($e->href, '.mov') && !str_contains($e->href, '.webm')) {
-                        continue;
-                    }
-                    $url = $base_url . $e->href;
-                    //check if there is no MovieModel with this url
-                    $movie = MovieModel::where('external_url', $url)->first();
-                    if ($movie != null) {
-                        continue;
-                    }
-                    $movie = new MovieModel();
-                    $movie->url = null;
-                    $movie->external_url = $url;
-                    $movie->title = self::get_movie_title_from_url($url);
-                    //check if title contains season or series or episode and make type to series else make type to movie
-                    $temp_title = strtolower($movie->title);
-                    if (str_contains($temp_title, 'season') || str_contains($temp_title, 'series') || str_contains($temp_title, 'episode')) {
-                        $movie->type = 'series';
-                    } else {
-                        $movie->type = 'movie';
-                    }
-                    $movie->status = 'pending';
-                    $movie->downloads_count = 0;
-                    $movie->views_count = 0;
-                    $movie->likes_count = 0;
-                    $movie->dislikes_count = 0;
-                    $movie->comments_count = 0;
-                    $movie->video_is_downloaded_to_server = 'no';
-                    $movie->save();
-                }
+                $movie->save();
             } catch (\Throwable $th) {
-                /* $new_scrap->status = 'error';
-                $new_scrap->error = 'find all link';
-                $new_scrap->error_message = $th->getMessage();
-                $new_scrap->save(); */
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'movie not saved';
+                $params['data'] = $movie;
+                $error_message = 'movie not saved';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
             }
+
+            echo $i . '. ' . $movie->title . ' - '  . $exist . ' - ' . $movie->id . '<br>';
+            $params['status'] = 'SUCCESS';
+            $params['status_message'] = 'movie saved';
+            $params['data'] = $movie;
+            $params['data'] = $url;
+            $params['error_message'] = null;
+            self::save_my_counter('get_remote_movies_links_3', $i, $params);
+
+            continue;
         }
 
 
@@ -3580,6 +4229,12 @@ movie data
 
     public static function get_user(Request $r)
     {
+        $u = auth('api')->user();
+        if ($u != null) {
+            $u = User::find($u->id);
+            return $u;
+        }
+
         $logged_in_user_id = $r->header('logged_in_user_id');
         $u = User::find($logged_in_user_id);
         if ($u == null) {
@@ -3628,5 +4283,917 @@ movie data
         $serial = StockItem::where('stock_sub_category_id', $sub_category_id)->count() + 1;
         $sku = $year . "-" . $sub_category->id . "-" . $serial;
         return $sku;
+    }
+
+
+
+
+
+    public static function get_remote_movies_links_4_get_images()
+    {
+
+
+        //set memory limit
+        ini_set('memory_limit', '-1');
+
+        //set max input time
+        ini_set('max_input_time', 0);
+
+        //max execution time
+        ini_set('max_execution_time', 0);
+
+        //set post max size
+        ini_set('post_max_size', '10000M');
+
+
+        $max = 160;
+        for ($i = 1; $i <= $max; $i++) {
+            $url = 'https://ugaflix.com/movies?page=' . $i;
+            // $url = "https://movies.ug/play.php?mId=10819";
+
+            $done = MyCounter::where([
+                'type' => 'get_remote_movies_links_4_get_images',
+                'count_value' => $i,
+                'status' => 'SUCCESS',
+            ])->orderBy('id', 'desc')->first();
+
+            if ($done != null) {
+                //display details
+                echo $i . ' - ' . $url . ' - already done with #' . $done->id . '<br>';
+                continue;
+            }
+
+            try {
+                $my_html = self::get_url($url);
+            } catch (\Throwable $th) {
+                //throw $th;
+                echo $th->getMessage();
+            }
+
+            $html = str_get_html($my_html);
+            $videos = $html->find('.single-video');
+
+            foreach ($videos as $video) {
+                $link = $video->find('a', 0);
+                if ($link == null) {
+                    continue;
+                }
+                $title = $link->title;
+                if ($title == null) {
+                    echo '<br>';
+                    echo 'title not found';
+                    $params = [
+                        'status' => 'FAILED',
+                        'status_message' => 'title not found',
+                        'data' => $url,
+                    ];
+                    self::save_my_counter('get_remote_movies_links_4', $i, $params);
+                    continue;
+                }
+                $page_url = $link->href;
+                if ($page_url == null) {
+                    echo '<br>';
+                    echo 'page url not found';
+                    $params = [
+                        'status' => 'FAILED',
+                        'status_message' => 'page url not found',
+                        'data' => $url,
+                    ];
+                    self::save_my_counter('get_remote_movies_links_4', $i, $params);
+                    continue;
+                }
+                $img = $video->find('img', 1)->src;
+                if ($img == null) {
+                    $img  = $video->find('img', 0)->src;
+                }
+
+                $lastScrap = ScraperModel::where([
+                    'url' => $page_url,
+                    'type' => 'ugaflix_movie',
+                ])->orderBy('id', 'desc')->first();
+                if ($lastScrap == null) {
+                    echo ('<br>last scrap not found: ' . $page_url);
+                    continue;
+                }
+                if ($lastScrap->datae != null) {
+                    if (strlen($lastScrap->datae) > 4) {
+                        echo ('<br>last scrap already has data: ' . $page_url);
+                        continue;
+                    }
+                }
+                $lastScrap->type = 'ugaflix_movie';
+                $lastScrap->url = $page_url;
+                $lastScrap->title = $title;
+                $lastScrap->datae =  $img;
+                $lastScrap->save();
+                echo "PROCESSING: " . $i . ' - ' . $url . ' - ' . $title . '<br>';
+                echo '<img src="' . $img . '" style="width: 100px; height: 100px;" /><br>';
+
+                continue;
+
+                try {
+                    $lastScrap->save();
+                } catch (\Throwable $th) {
+                    //throw $th;
+                    echo '<br>';
+                    echo 'error saving scraper model';
+                    echo '<br>';
+                    echo $th->getMessage();
+                    $params = [
+                        'status' => 'FAILED',
+                        'status_message' => $th->getMessage(),
+                        'data' => $url,
+                    ];
+                    self::save_my_counter('get_remote_movies_links_4', $i, $params);
+                    continue;
+                }
+                $params = [
+                    'status' => 'SUCCESS',
+                    'status_message' => $page_url,
+                    'data' => $url,
+                ];
+
+                self::save_my_counter('get_remote_movies_links_4', $i, $params);
+
+                echo '<br>';
+                echo $i . '. - ' . $url . ' - ' . $title . '<br>';
+
+                continue;
+            }
+        }
+        die('-done-');
+
+        $last_page = 1;
+        $last_my_counter = MyCounter::where([
+            'type' => 'get_remote_movies_links_3',
+            'status' => 'SUCCESS',
+        ])->orderBy('id', 'desc')->first();
+
+        /*  $note_success = MyCounter::where([
+            'type' => 'get_remote_movies_links_3',
+            'status' => 'FAILED',
+        ])->orderBy('id', 'desc')->delete(); */
+
+        set_time_limit(0);
+
+        //set memory limit
+        ini_set('memory_limit', '-1');
+
+        //set max input time
+        ini_set('max_input_time', 0);
+
+        //set post max size
+        ini_set('post_max_size', '10000M');
+
+        //set upload max filesize
+        ini_set('upload_max_filesize', '10000M');
+
+        //set max execution time
+        ini_set('max_execution_time', 0);
+
+        if ($last_my_counter != null) {
+            $last_page = $last_my_counter->count_value;
+        } else {
+            $last_page = 1;
+        }
+
+        //https://movies.ug/play.php?mId=10819 
+
+
+        $base_url = 'https://movies.ug/play.php?mId=';
+
+        $html = null;
+        $i = $last_page;
+        $max = $last_page + 10000;
+        $start_time = time();
+        for (; $i < $max; $i++) {
+            $url = $base_url . $i;
+            // $url = "https://movies.ug/play.php?mId=10819";
+
+            $done = MyCounter::where([
+                'type' => 'get_remote_movies_links_3',
+                'count_value' => $i,
+                'status' => 'SUCCESS',
+            ])->orderBy('id', 'desc')->first();
+
+            if ($done != null) {
+                //display details
+                echo $i . ' - ' . $url . ' - already done with #' . $done->id . '<br>';
+                continue;
+            }
+
+
+            $my_html = null;
+            try {
+                $my_html = self::get_url($url);
+            } catch (\Throwable $th) {
+
+                $message = $th->getMessage();
+                $params = [
+                    'status' => 'FAILED',
+                    'status_message' => $message,
+                    'data' => null,
+                ];
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $message . '<br>';
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                continue;
+            }
+            if ($my_html == null) {
+                $params = [
+                    'status' => 'FAILED',
+                    'status_message' => 'html not found',
+                    'data' =>  $url,
+                ];
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - html not found<br>';
+                continue;
+            }
+
+            //now create dom object
+            $html = str_get_html($my_html);
+            //get first h2
+            $h2s = $html->find('h3', 0);
+            $error_message = '';
+            $params = [
+                'status' => 'SUCCESS',
+                'status_message' => $url,
+                'data' =>  $url,
+            ];
+            if ($h2s == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'h2 not found';
+                $params['data'] = $url;
+                $error_message = 'h2 not found';
+                $params['error_message'] = $error_message;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
+            $title = trim($h2s->plaintext);
+
+            if ($title == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'h2 not found';
+                $params['data'] = $html;
+                $error_message = 'h2 not found';
+                $params['data'] = $url;
+                $params['error_message'] = $error_message;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+            }
+
+            // if title is empty
+            if (empty($title)) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'h2 not found';
+                $params['data'] = $html;
+                $error_message = 'h2 not found';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
+
+            $video_url = null;
+
+            //get button with text download
+            $buttons = $html->find('button');
+            foreach ($buttons as $button) {
+                if (str_contains($button->plaintext, 'Download Movie')) {
+                    try {
+                        $video_url = $button->parent()->href;
+                    } catch (\Throwable $th) {
+                    }
+                    break;
+                }
+            }
+            if ($video_url == null) {
+                //get first video tag
+                $video = $html->find('video', 0);
+                if ($video != null) {
+                    $video_url = $video->find('source', 0)->src;
+                } else {
+                }
+            }
+
+            if ($video_url == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'video url not found';
+                $params['data'] = $html;
+                $error_message = 'video url not found';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
+
+            if ($video_url == null) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'video url not found';
+                $params['data'] = $html;
+                $error_message = 'video url not found';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+
+                //display details
+                echo $i . ' - ' . $url . ' - ' . $error_message . '<br>';
+                continue;
+            }
+
+            $movie = MovieModel::where('external_url', $video_url)->first();
+            if ($movie == null) {
+                $movie = MovieModel::where('url', $video_url)->first();
+            }
+            if ($movie == null) {
+                $movie = MovieModel::where('imdb_url', $url)->first();
+            }
+
+            //get titles
+            $title = str_replace('Title: ', '', $title);
+            $title = str_replace('Title:', '', $title);
+            $title = trim($title);
+
+            if ($movie == null) {
+                $movie = MovieModel::where('title', $title)->first();
+            }
+
+            if ($movie == null) {
+                $movie = new MovieModel();
+            }
+            $movie->title = $title;
+            $movie->external_url = $video_url;
+            $movie->url = $video_url;
+            $movie->imdb_url = $url;
+            $movie->imdb_id = $i;
+            $movie->imdb_rating = 0;
+            $movie->imdb_votes = 0;
+
+            $h2s = $html->find('h2');
+            $actor = null;
+            foreach ($h2s as $h2) {
+                if (str_contains($h2->plaintext, 'Actor:')) {
+                    $actor = trim(str_replace('Actor:', '', $h2->plaintext));
+                    $movie->actor = $actor;
+                }
+            }
+
+            $h3s = $html->find('h4');
+            foreach ($h3s as $h) {
+                if (str_contains($h->plaintext, 'Genre:')) {
+                    $movie->genre = trim(str_replace('Genre:', '', $h->plaintext));
+                    continue;
+                }
+                if (str_contains($h->plaintext, 'VJ:')) {
+                    $movie->vj = trim(str_replace('VJ:', '', $h->plaintext));
+                    continue;
+                }
+                //Views
+                if (str_contains($h->plaintext, 'Views:')) {
+                    $movie->imdb_rating = trim(str_replace('Views:', '', $h->plaintext));
+                    $movie->views_count = $movie->imdb_rating;
+                    continue;
+                }
+            }
+
+            $firstP = $html->find('p', 0);
+            if ($firstP != null) {
+                $movie->description = trim($firstP->plaintext);
+            }
+            $thumbnail = $html->find('img', 0);
+            if ($thumbnail != null) {
+                $movie->thumbnail_url = $thumbnail->src;
+                if ($movie->thumbnail_url != null && strlen($movie->thumbnail_url) > 4) {
+                    $movie->thumbnail_url = 'https://movies.ug' . $thumbnail->src;
+                }
+            }
+            $movie->image_url = $movie->thumbnail_url;
+
+            //year
+            $min_year = 1900;
+            $max_year = 2025;
+            $year = null;
+            for ($x = $min_year; $x <= $max_year; $x++) {
+                if (str_contains($movie->title, $x)) {
+                    $year = (int)$x;
+                    break;
+                }
+            }
+            if ($year != null) {
+                $movie->year = $year;
+            } else {
+                $movie->year = null;
+            }
+            $movie->type = 'movie';
+            $movie->status = 'Active';
+            $movie->is_processed = 'No';
+
+            $exist = 'NOT_EXIST';
+            if ($movie->id != null) {
+                $exist = 'EXIST';
+            }
+
+            try {
+                $movie->save();
+            } catch (\Throwable $th) {
+                $params['status'] = 'FAILED';
+                $params['status_message'] = 'movie not saved';
+                $params['data'] = $movie;
+                $error_message = 'movie not saved';
+                $params['error_message'] = $error_message;
+                $params['data'] = $url;
+                self::save_my_counter('get_remote_movies_links_3', $i, $params);
+            }
+
+            echo $i . '. ' . $movie->title . ' - '  . $exist . ' - ' . $movie->id . '<br>';
+            $params['status'] = 'SUCCESS';
+            $params['status_message'] = 'movie saved';
+            $params['data'] = $movie;
+            $params['data'] = $url;
+            $params['error_message'] = null;
+            self::save_my_counter('get_remote_movies_links_3', $i, $params);
+
+            continue;
+        }
+
+
+        $end_time = time();
+
+        $diff = $end_time - $start_time;
+
+        $hours = floor($diff / 3600);
+        $minutes = floor(($diff / 60) % 60);
+        $seconds = $diff % 60;
+
+        echo "<hr>TIME TAKEN: " . $hours . " hours " . $minutes . " minutes " . $seconds . " seconds";
+
+        die("done");
+        try {
+            $html = file_get_html($url);
+        } catch (\Throwable $th) {
+            /* $new_scrap->status = 'error';
+            $new_scrap->error = 'file_get_html';
+            $new_scrap->error_message = $th->getMessage();
+            $new_scrap->save(); */
+        }
+        if ($html == null) {
+            return false;
+        }
+
+        $base_url = $url;
+        $movies_count = 0;
+        // find all link
+        try {
+            foreach ($html->find('a') as $e) {
+                //check if last does not contain .mp4 or .mkv or .avi or .flv or .wmv or .mov or .webm and continue
+                if (!str_contains($e->href, '.mp4') && !str_contains($e->href, '.mkv') && !str_contains($e->href, '.avi') && !str_contains($e->href, '.flv') && !str_contains($e->href, '.wmv') && !str_contains($e->href, '.mov') && !str_contains($e->href, '.webm')) {
+                    continue;
+                }
+                $movies_count++;
+                $url = $base_url . $e->href;
+                //check if there is no MovieModel with this url
+                $movie = MovieModel::where('external_url', $url)->first();
+                if ($movie != null) {
+                    continue;
+                }
+                $movie = new MovieModel();
+                $movie->url = null;
+                $movie->external_url = $url;
+                $movie->title = self::get_movie_title_from_url($url);
+                //check if title contains season or series or episode and make type to series else make type to movie
+                $temp_title = strtolower($movie->title);
+                if (str_contains($temp_title, 'season') || str_contains($temp_title, 'series') || str_contains($temp_title, 'episode')) {
+                    $movie->type = 'series';
+                } else {
+                    $movie->type = 'movie';
+                }
+                $movie->status = 'pending';
+                $movie->downloads_count = 0;
+                $movie->views_count = 0;
+                $movie->likes_count = 0;
+                $movie->dislikes_count = 0;
+                $movie->comments_count = 0;
+                $movie->video_is_downloaded_to_server = 'no';
+                $movie->save();
+            }
+        } catch (\Throwable $th) {
+            /* $new_scrap->status = 'error';
+            $new_scrap->error = 'find all link';
+            $new_scrap->error_message = $th->getMessage();
+            $new_scrap->save(); */
+        }
+
+        /* //size of content from url
+        $new_scrap->datae = strlen($html);
+        //to mb
+        $new_scrap->datae = $new_scrap->datae / 1000000;
+        $new_scrap->datae = round($new_scrap->datae, 2);
+        $new_scrap->title = $movies_count;
+        $new_scrap->status = 'success';
+        $new_scrap->save(); */
+        return true;
+    }
+
+
+
+
+    public static function get_remote_movies_links_namzentertainment()
+    {
+
+        set_time_limit(0);
+
+        //set memory limit
+        ini_set('memory_limit', '-1');
+
+        //set max input time
+        ini_set('max_input_time', 0);
+
+        //set post max size
+        ini_set('post_max_size', '10000M');
+
+        //set upload max filesize
+        ini_set('upload_max_filesize', '10000M');
+
+        //set max execution time
+        ini_set('max_execution_time', 0);
+
+        $max = 8019;
+        $min = 47;
+        for ($i = $min; $i <= $max; $i++) {
+            $url = 'https://namzentertainment.com/Serie.php?id=' . $i;
+            // $url = "https://movies.ug/play.php?mId=10819";
+
+            $done = MyCounter::where([
+                'type' => 'get_remote_movies_links_namzentertainment',
+                'count_value' => $i,
+                'status' => 'SUCCESS',
+            ])->orderBy('id', 'desc')->first();
+
+            if ($done != null) {
+                //display details
+                echo $i . ' - ' . $url . ' - already done with #' . $done->id . '<br>';
+                continue;
+            }
+            $myCounter = new MyCounter();
+            $myCounter->type = 'get_remote_movies_links_namzentertainment';
+            $myCounter->count_value = $i;
+            $myCounter->status = 'PENDING';
+            $myCounter->data = $url;
+
+            try {
+                $my_html = self::get_url_2($url);
+            } catch (\Throwable $th) {
+                //throw $th;
+                echo $th->getMessage();
+            }
+            $html = str_get_html($my_html);
+            //.details__title
+            $titleObj = $html->find('.details__title', 0);
+            if ($titleObj == null) {
+                $myCounter->status = 'FAILED';
+                $myCounter->status_message = 'No title found';
+                $myCounter->save();
+                echo $i . '. ' . $url . ' - No title found<br>';
+                continue;
+            }
+            $title  = trim($titleObj->plaintext);
+            $videoObj = $html->find('source', 0);
+
+            if ($videoObj == null) {
+                $myCounter->status = 'FAILED';
+                $myCounter->status_message = 'No video found';
+                echo $i . '. ' . $url . ' - No video found<br>';
+                die();
+                $myCounter->save();
+                continue;
+            }
+            $video_url = $videoObj->getAttribute('src');
+            if ($video_url == null) {
+                $myCounter->status = 'FAILED';
+                $myCounter->status_message = 'No video url found';
+                echo $i . '. ' . $url . ' - No video url found<br>';
+
+                $myCounter->save();
+                continue;
+            }
+
+            $episodes = [];
+            $mCustomScrollbar = $html->find('.accordion__list', 0);
+            if ($mCustomScrollbar != null) {
+                $links = $mCustomScrollbar->find('tr');
+                if ($links != null) {
+                    $count = 0;
+                    foreach ($links as $key => $value) {
+                        $tds = $value->find('td');
+                        if ($tds == null) {
+                            continue;
+                        }
+                        $td = $value->find('td', 0);
+                        if ($td == null) {
+                            continue;
+                        }
+                        $data_target = $value->getAttribute('data-target');
+                        $ep_name = trim($td->plaintext);
+                        $ep_url = $data_target;
+                        $ep['title'] = $ep_name;
+                        $ep['url'] = $ep_url;
+                        $splits = explode(' ', $ep_name);
+                        $count++;
+                        $num = $count;
+                        foreach ($splits as $key => $value) {
+                            $_num = trim($value);
+                            if (is_numeric($_num)) {
+                                $num = $value;
+                            }
+                        }
+                        $ep['number'] = $num;
+                        $episodes[] = $ep;
+                    }
+                }
+            }
+
+
+
+
+
+
+
+            $movie = MovieModel::where([
+                'url' => $video_url,
+            ])->first();
+
+            $movie = MovieModel::where([
+                'title' => $title,
+            ])->first();
+
+            if ($movie == null) {
+                $movie = MovieModel::where([
+                    'external_url' => $video_url,
+                ])->first();
+            }
+            $isEdit = true;
+
+            if ($movie == null) {
+                $movie = new MovieModel();
+                $isEdit = false;
+            }else {
+                echo "<hr>";
+                echo $i . '. ' .  $title . ' - ' . count($episodes) . ' episodes<br>';
+                echo $movie->id . ' - ' . $movie->title . ' - ' . $movie->external_url . '<br>';
+                continue;
+            }
+
+            $movie->title = $title;
+            $movie->external_url = $video_url;
+            $movie->url = $video_url;
+
+            //first img in .card__cover
+            $imgObj = $html->find('.card__cover img', 0);
+            if ($imgObj != null) {
+                $img_url = $imgObj->getAttribute('src');
+                if ($img_url != null) {
+                    //if not contain http
+                    $img_url = trim($img_url);
+                    if (strpos($img_url, 'http') === false) {
+                        $img_url = 'https://namzentertainment.com/' . $img_url;
+                    }
+                    $movie->thumbnail_url = $img_url;
+                }
+            }
+
+            $card__content = $html->find('.card__content', 0);
+            if ($card__content != null) {
+                $list = $card__content->find('li');
+                foreach ($list as $key => $value) {
+                    $text = trim($value->plaintext);
+                    $text_temp = strtolower($text);
+                    if ($text == null || $text == '') {
+                        continue;
+                    }
+                    //chec if contains vj
+                    if (strpos($text_temp, 'vj') !== false) {
+                        $movie->vj = $text;
+                    }
+                    if (strpos($text_temp, 'genre') !== false) {
+                        //replace Genre:
+                        $movie->genre = str_replace('Genre:', '', $text);
+                        $movie->genre = trim($movie->genre);
+                        $movie->genre = str_replace('Genres:', '', $movie->genre);
+                        $movie->genre = str_replace('Genre', '', $movie->genre);
+                        $movie->genre = str_replace('Genres', '', $movie->genre);
+                        $movie->genre = str_replace(':', '', $movie->genre);
+                        $splits = explode(' ', $movie->genre);
+                        $last = $movie->genre;
+                        if (isset($splits[0])) {
+                            $last = $splits[0];
+                        } else {
+                            $last = $movie->genre;
+                        }
+                        $movie->genre = $last;
+                    }
+                }
+            }
+
+            $movie->type = 'Movie';
+
+            //content for .card__description card__description--details
+            $card__description = $html->find('.card__description--details', 0);
+            if ($card__description != null) {
+                $movie->description = trim($card__description->plaintext);
+            }
+
+
+            //check if episodes is not empty
+            if ($episodes != null && count($episodes) > 0) {
+
+                $serie = SeriesMovie::where([
+                    'title' => $title,
+                ])->first();
+
+                if ($serie == null) {
+                    $serie = SeriesMovie::where([
+                        'external_url' =>  $url,
+                    ])->first();
+                }
+                if ($serie == null) {
+                    $serie = new SeriesMovie();
+                }
+                $serie->title = $title;
+                $serie->external_url = $url;
+                $serie->Category = $movie->genre;
+                $serie->description = $movie->description;
+                $serie->thumbnail = $movie->thumbnail_url;
+                $serie->total_episodes = count($episodes);
+                $serie->total_seasons = 1;
+                $serie->total_views = 0;
+                $serie->total_rating = 0;
+                $serie->is_active = 'No';
+                $serie->is_premium = 'No';
+
+                $isEdit = true;
+                if ($serie->id == null) {
+                    $isEdit = false;
+                }
+                $serie->save();
+                $serie = SeriesMovie::find($serie->id);
+
+                echo "<hr>";
+                echo $i . '. ' .  $title . ' - ' . count($episodes) . ' episodes<br>';
+
+                foreach ($episodes as $key => $value) {
+                    $ep_url = $value['url'];
+                    $ep_title = $value['title'];
+
+                    $ep = MovieModel::where([
+                        'external_url' => $ep_url
+                    ])->first();
+
+                    if ($ep == null) {
+                        $ep = MovieModel::where([
+                            'url' => $ep_url
+                        ])->first();
+                    }
+                    $isEdit = false;
+                    if ($ep != null) {
+                        $isEdit = true;
+                    } else {
+                        $isEdit = false;
+                    }
+
+                    if ($ep == null) {
+                        $ep = new MovieModel();
+                    }
+
+                    $ep->title = $serie->title . ' - ' . $ep_title;
+                    $ep->external_url = $ep_url;
+                    $ep->url = $ep_url;
+                    $ep->category_id = $serie->id;
+                    $ep->category_id = $serie->id;
+                    $ep->category = $serie->title;
+                    $ep->description = $movie->description;
+                    $ep->thumbnail_url = $serie->thumbnail;
+                    $ep->content_type = 'video/mp4';
+                    $ep->content_is_video = 'Yes';
+                    $ep->content_type_processed = 'No';
+                    $ep->content_type_processed_time = null;
+                    $ep->type = 'Series';
+                    $ep->is_premium = 'No';
+                    if (isset($value['number'])) {
+                        $ep->episode_number = $value['number'];
+                        $ep->country = $value['number'];
+                    }
+
+
+                    if ($isEdit) {
+                        echo ' - edit - ';
+                    } else {
+                        echo ' - new - ';
+                    }
+                    //save
+                    try {
+                        $ep->save();
+                        echo $ep->id . ' - saved - ===> ' . $ep->title . "<br>";
+                    } catch (\Throwable $th) {
+                        echo ' - error - ';
+                        echo '<br>';
+                        echo '<pre>';
+                        print_r($th);
+                        echo '</pre>';
+                    }
+                }
+
+
+                echo "<hr>";
+                continue;
+            }
+
+            $isEdit = true;
+            if ($movie->id == null) {
+                $isEdit = false;
+                echo ' - new movie - ';
+            } else {
+                echo ' - edit movie - ';
+                $isEdit = true;
+            }
+            $movie->imdb_id = $i;
+            $movie->imdb_url = $url;
+
+            try {
+                $movie->save();
+                echo $i . '. ' .  $title . ' - saved - ===> ' . $movie->id . "<br>";
+            } catch (\Throwable $th) {
+                echo ' - error - ';
+                echo '<br>';
+                echo '<pre>';
+                print_r($th);
+                echo '</pre>';
+            }
+
+            echo "<hr> MOVIE!";
+        }
+
+
+        die('-done-');
+
+        $last_page = 1;
+        $last_my_counter = MyCounter::where([
+            'type' => 'get_remote_movies_links_3',
+            'status' => 'SUCCESS',
+        ])->orderBy('id', 'desc')->first();
+
+        /*  $note_success = MyCounter::where([
+            'type' => 'get_remote_movies_links_3',
+            'status' => 'FAILED',
+        ])->orderBy('id', 'desc')->delete(); */
+    }
+
+
+    public static function get_url_2($url)
+    {
+        $html = null;
+        try {
+            // Create a cookie jar with the required cookies (use domain without scheme)
+            $cookieJar = \GuzzleHttp\Cookie\CookieJar::fromArray([
+                'P' => '0783204665',
+                'PHPSESSID' => '06aridtdfikhd3gq91fnoni16t',
+                'u' => 'mubahood360@gmail.com',
+            ], 'namzentertainment.com');
+
+            // Create the Guzzle client with options similar to the original cURL setup.
+            $client = new \GuzzleHttp\Client([
+                'allow_redirects' => true,
+                'verify'          => false,
+                'timeout'         => 30,
+                'connect_timeout' => 30,
+                'headers'         => [
+                    'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+                    'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language' => 'en-US,en;q=0.5',
+                    'Cache-Control'   => 'no-cache',
+                    'Pragma'          => 'no-cache',
+                    'Accept-Encoding' => 'gzip, deflate',
+                ],
+            ]);
+
+            // Make the GET request with the cookie jar
+            $response = $client->get($url, [
+                'cookies' => $cookieJar,
+            ]);
+
+            // Get the full response body as a string
+            $html = (string) $response->getBody();
+        } catch (\Throwable $th) {
+            throw $th;
+        }
+
+        return $html;
     }
 }

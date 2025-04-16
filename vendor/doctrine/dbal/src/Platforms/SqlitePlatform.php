@@ -14,6 +14,8 @@ use Doctrine\DBAL\Schema\SchemaException;
 use Doctrine\DBAL\Schema\SqliteSchemaManager;
 use Doctrine\DBAL\Schema\Table;
 use Doctrine\DBAL\Schema\TableDiff;
+use Doctrine\DBAL\SQL\Builder\DefaultSelectSQLBuilder;
+use Doctrine\DBAL\SQL\Builder\SelectSQLBuilder;
 use Doctrine\DBAL\TransactionIsolationLevel;
 use Doctrine\DBAL\Types;
 use Doctrine\DBAL\Types\IntegerType;
@@ -157,13 +159,13 @@ class SqlitePlatform extends AbstractPlatform
 
         switch ($unit) {
             case DateIntervalUnit::WEEK:
-                $interval *= 7;
-                $unit      = DateIntervalUnit::DAY;
+                $interval = $this->multiplyInterval((string) $interval, 7);
+                $unit     = DateIntervalUnit::DAY;
                 break;
 
             case DateIntervalUnit::QUARTER:
-                $interval *= 3;
-                $unit      = DateIntervalUnit::MONTH;
+                $interval = $this->multiplyInterval((string) $interval, 3);
+                $unit     = DateIntervalUnit::MONTH;
                 break;
         }
 
@@ -194,6 +196,12 @@ class SqlitePlatform extends AbstractPlatform
     public function getCurrentDatabaseExpression(): string
     {
         return "'main'";
+    }
+
+    /** @link https://www2.sqlite.org/cvstrac/wiki?p=UnsupportedSql */
+    public function createSelectSQLBuilder(): SelectSQLBuilder
+    {
+        return new DefaultSelectSQLBuilder($this, null, null);
     }
 
     /**
@@ -737,6 +745,8 @@ class SqlitePlatform extends AbstractPlatform
 
     /**
      * {@inheritDoc}
+     *
+     * @deprecated This API is not portable.
      */
     public function getForUpdateSQL()
     {
@@ -940,11 +950,6 @@ class SqlitePlatform extends AbstractPlatform
         $name    = $index->getQuotedName($this);
         $columns = $index->getColumns();
 
-        if (strpos($table, '.') !== false) {
-            [$schema, $table] = explode('.', $table);
-            $name             = $schema . '.' . $name;
-        }
-
         if (count($columns) === 0) {
             throw new InvalidArgumentException(sprintf(
                 'Incomplete or invalid index definition %s on table %s',
@@ -955,6 +960,11 @@ class SqlitePlatform extends AbstractPlatform
 
         if ($index->isPrimary()) {
             return $this->getCreatePrimaryKeySQL($index, $table);
+        }
+
+        if (strpos($table, '.') !== false) {
+            [$schema, $table] = explode('.', $table, 2);
+            $name             = $schema . '.' . $name;
         }
 
         $query  = 'CREATE ' . $this->getCreateIndexSQLFlags($index) . 'INDEX ' . $name . ' ON ' . $table;
@@ -1015,7 +1025,7 @@ class SqlitePlatform extends AbstractPlatform
      * {@inheritDoc}
      *
      * @param int|null $createFlags
-     * @psalm-param int-mask-of<AbstractPlatform::CREATE_*>|null $createFlags
+     * @phpstan-param int-mask-of<AbstractPlatform::CREATE_*>|null $createFlags
      */
     public function getCreateTableSQL(Table $table, $createFlags = null)
     {
@@ -1140,7 +1150,12 @@ class SqlitePlatform extends AbstractPlatform
         $sql      = [];
         $tableSql = [];
         if (! $this->onSchemaAlterTable($diff, $tableSql)) {
-            $dataTable = new Table('__temp__' . $table->getName());
+            $tableName = $table->getName();
+            if (strpos($tableName, '.') !== false) {
+                [, $tableName] = explode('.', $tableName, 2);
+            }
+
+            $dataTable = new Table('__temp__' . $tableName);
 
             $newTable = new Table(
                 $table->getQuotedName($this),

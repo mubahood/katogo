@@ -6,7 +6,7 @@ php artisan admin:make MovieLikeController --model=App\\Models\\MovieLike
 php artisan db:seed --class=App\\Models\\MovieLike
 
 
-php artisan make:migration add_vj --table=movie_models
+php artisan make:migration add_sourse_to_SeriesMovie --table=series_movies
 
 
 php artisan migrate

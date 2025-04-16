@@ -1,11 +1,15 @@
 <?php
 
 use App\Http\Controllers\ApiController;
+use App\Http\Controllers\DynamicCrudController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use function Laravel\Prompts\search;
+use App\Http\Middleware\JwtMiddleware;
+
+
 
 
 Route::post('auth/password-reset', [ApiController::class, 'password_reset']);
@@ -16,7 +20,13 @@ Route::post('api/{model}', [ApiController::class, 'my_update']);
 Route::get('movies', [ApiController::class, 'get_movies']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
-Route::get('manifest', [ApiController::class, 'manifest']);
+Route::middleware([JwtMiddleware::class])->group(function () {
+    Route::get('manifest', [ApiController::class, 'manifest']);
+    Route::get('movies', [DynamicCrudController::class, 'movies']);
+    Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
+    Route::post('/dynamic-save', [DynamicCrudController::class, 'save']);
+    Route::post('/dynamic-delete', [DynamicCrudController::class, 'delete']);
+});
 
 Route::post('save-view-progress', [ApiController::class, 'save_view_progress']);
 

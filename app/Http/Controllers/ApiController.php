@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class ApiController extends BaseController
 {
@@ -33,23 +34,158 @@ class ApiController extends BaseController
 
     public function manifest(Request $r)
     {
-        $u = Utils::get_user($r);
-        if ($u == null) {
-            Utils::error("Unauthonticated.");
+        $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium'];
+        $topMovie = MovieModel::where([
+            'id' => 11350
+        ])->orderBy('id', 'desc')
+            ->limit(1)
+            ->get($take_only);
+        $unique_genres = [];
+        $sql = "SELECT DISTINCT genre FROM movie_models";
+        $genres = DB::select($sql);
+        foreach ($genres as $key => $genre) {
+            $slilts = explode(",", $genre->genre);
+            foreach ($slilts as $key => $slit) {
+                $slit = trim($slit);
+                if (!in_array($slit, $unique_genres)) {
+                    $unique_genres[] = $slit;
+                }
+            }
         }
-        $roles = DB::table('admin_role_users')->where('user_id', $u->id)->get();
-        $company = Company::find($u->company_id);
-        $data = [
-            'name' => 'Invetor-Track',
-            'short_name' => 'IT',
-            'description' => 'Inventory Management System',
-            'version' => '1.0.0',
-            'author' => 'M. Muhido',
-            'user' => $u,
-            'roles' => $roles,
-            'company' => $company,
+
+        $temp_genres = $unique_genres;
+        $unique_genres = [];
+        //slits using /
+        foreach ($temp_genres as $key => $genre) {
+            $slilts = explode("/", $genre);
+            foreach ($slilts as $key => $slit) {
+                $slit = trim($slit);
+                if (strlen($slit) < 2) {
+                    continue;
+                }
+                if (!in_array($slit, $unique_genres)) {
+                    $unique_genres[] = $slit;
+                }
+            }
+        }
+
+        $unique_vj = [];
+        $sql = "SELECT DISTINCT vj FROM movie_models";
+        $vjs = DB::select($sql);
+        foreach ($vjs as $key => $vj) {
+            $slilts = explode(",", $vj->vj);
+            foreach ($slilts as $key => $slit) {
+                $slit = trim($slit);
+                //remove vj from vj
+                $slit = str_replace("vj", "", $slit);
+                $slit = str_replace("VJ", "", $slit);
+                $slit = str_replace("Vj", "", $slit);
+                $slit = str_replace("Vj", "", $slit);
+                $slit = str_replace("vj", "", $slit);
+                $slit = str_replace(" ", "", $slit);
+                $slit = str_replace("-", "", $slit);
+                if (!in_array($slit, $unique_vj)) {
+                    $unique_vj[] = $slit;
+                }
+            }
+        }
+
+
+        $lists = [];
+
+        //top movies
+        $movies = MovieModel::where([
+            'is_premium' => 'No',
+            'status' => 'Active',
+            'type' => 'Movie',
+        ])->orderBy('id', 'desc')
+            ->limit(100)
+            ->get($take_only);
+
+        //top take 10
+        $my_list['title'] = "Top Movies";
+        $my_list['movies'] = $movies->take(10);
+        $lists[] = $my_list;
+
+        if (count($movies) > 10) {
+            $my_list['title'] = "For You";
+            $my_list['movies'] = $movies->skip(10)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //trending movies
+        if (count($movies) > 20) {
+            $my_list['title'] = "Trending Movies";
+            $my_list['movies'] = $movies->skip(20)->take(10);
+            $lists[] = $my_list;
+        }
+        //continue watching
+        if (count($movies) > 30) {
+            $my_list['title'] = "Continue Watching";
+            $my_list['movies'] = $movies->skip(30)->take(10);
+            $lists[] = $my_list;
+        }
+        //latest movies
+        if (count($movies) > 40) {
+            $my_list['title'] = "Latest Movies";
+            $my_list['movies'] = $movies->skip(40)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //my watch list
+        if (count($movies) > 50) {
+            $my_list['title'] = "My Watch List";
+            $my_list['movies'] = $movies->skip(50)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //drama movies
+        if (count($movies) > 60) {
+            $my_list['title'] = "Drama Movies";
+            $my_list['movies'] = $movies->skip(60)->take(10);
+            $lists[] = $my_list;
+        }
+        //action movies
+        if (count($movies) > 70) {
+            $my_list['title'] = "Action Movies";
+            $my_list['movies'] = $movies->skip(70)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //comedy movies
+        if (count($movies) > 80) {
+            $my_list['title'] = "Comedy Movies";
+            $my_list['movies'] = $movies->skip(80)->take(10);
+            $lists[] = $my_list;
+        }
+        //horror movies
+        if (count($movies) > 90) {
+            $my_list['title'] = "Horror Movies";
+            $my_list['movies'] = $movies->skip(90)->take(10);
+            $lists[] = $my_list;
+        }
+        //romantic movies
+        if (count($movies) > 100) {
+            $my_list['title'] = "Romantic Movies";
+            $my_list['movies'] = $movies->skip(100)->take(10);
+            $lists[] = $my_list;
+        }
+        //action movies
+        if (count($movies) > 110) {
+            $my_list['title'] = "Action Movies";
+            $my_list['movies'] = $movies->skip(110)->take(10);
+            $lists[] = $my_list;
+        }
+
+        $manifest = [
+            'top_movie' => $topMovie,
+            'vj' => $unique_vj,
+            'genres' => $unique_genres,
+            'lists' => $lists,
         ];
-        Utils::success($data, "Success.");
+
+        Utils::success($manifest, "Listed successfully.");
+        dd($manifest);
     }
 
     public function my_list(Request $r, $model)
@@ -228,6 +364,21 @@ class ApiController extends BaseController
         if (!password_verify($r->password, $user->password)) {
             Utils::error("Invalid password.");
         }
+
+
+
+        $token = auth('api')->setTTL(60 * 24 * 365 * 5)->attempt([
+            'id' => $user->id,
+            'password' => trim($r->password),
+        ]);
+
+
+        if ($token == null) {
+            return $this->error('Wrong credentials.');
+        }
+        $user->token = $token;
+        $user->remember_token = $token;
+
 
         $company = Company::find($user->company_id);
         if ($company == null) {
