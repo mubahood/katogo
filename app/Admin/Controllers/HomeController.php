@@ -21,94 +21,8 @@ class HomeController extends Controller
     public function index(Content $content)
     {
 
-
-        die('This is a test');
-        //set timeout to 0
-        set_time_limit(0);
-
-        //set memory limit to 512M
-        ini_set('memory_limit', '512M');
-
-        //set max execution time to 0
-        ini_set('max_execution_time', 0);
-
-        //set max input time to 0
-        ini_set('max_input_time', 0);
-        //set max input vars to 0
-        ini_set('max_input_vars', 0);
-        //set max file size to 0
-        ini_set('upload_max_filesize', '0');
-        ini_set('post_max_size', '0');
-        //set max execution time to 0
-        ini_set('max_execution_time', 0);
-        //set max input time to 0
-        ini_set('max_input_time', 0);
-
-        $start_time = microtime(true);
-
-        $max = 2000;
-        $movies = MovieModel::where([
-            'content_type_processed' => 'No',
-        ])->orderBy('id', 'desc')
-            ->limit($max)
-            ->get();
-
-        foreach ($movies as $key => $movie) {
-            $movie->verify_movie();
-
-            echo "<br>";
-            echo $movie->id . ". " . $movie->title . " - " . $movie->content_type . " <b>" . $movie->content_is_video . "</b>";
-            if ($movie->content_is_video != 'Yes') {
-                echo " - <b>Not Video</b>";
-                echo "<br>";
-            }
-
-            //display play with video 
-            echo "<br>";
-            // echo "<video width=\"320\" height=\"240\" controls autoplay=\"false\">";
-            echo "<source src=\"" . $movie->url . "\" type=\"video/mp4\">";
-            echo "Your browser does not support the video tag.";
-            echo "</video>";
-            echo "<br>";
-            echo "<a href=" . url($movie->url) . " target=\'_blank\'>" . url($movie->url) . "</a><hr>";
-        }
-
-        echo "<br>";
-        $end_time = microtime(true);
-        $execution_time = ($end_time - $start_time);
-        $diff = $execution_time / 60;
-        //hrs, mins, secs
-        $hours = floor($diff / 60);
-        $minutes = $diff % 60;
-        $seconds = $execution_time % 60;
-
-        echo "<br>";
-        echo "Execution time: " . $hours . " hours " . $minutes . " minutes " . $seconds . " seconds";
-        echo "<br>";
-        echo "<br>";
-
-        die();
-
-
-        /* 
-                  $table->string('content_type')->nullable();
-            $table->string('content_is_video')->nullable()->default('No');
-            $table->string('content_type_processed')->nullable()->default('No');
-            $table->dateTime('content_type_processed_time')->nullable();
-
-        foreach (School::all() as $key => $value) {
-            $value->name = html_entity_decode($value->name, ENT_QUOTES, 'UTF-8');
-            $value->save();
-        } */
-
         $u = Admin::user();
-        $company = Company::find($u->company_id);
 
-        $movies = MovieModel::where([])->get();
-        /* foreach ($movies as $key => $value) {
-             dd($value);
-        } 
-        die(); */
 
         $no_downloading = MovieModel::where([
             'video_is_downloaded_to_server_status' => 'downloading',
@@ -124,7 +38,7 @@ class HomeController extends Controller
         }
 
         return $content
-            ->title($company->name . " - Dashboard")
+            ->title('Movies ' . " - Dashboard")
             ->description('Now Downloading ' . $now_text)
             ->row(function (Row $row) {
                 $row->column(3, function (Column $column) {
