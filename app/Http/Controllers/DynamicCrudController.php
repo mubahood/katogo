@@ -105,9 +105,16 @@ class DynamicCrudController extends Controller
             // $query->where('status', 'Active'); 
             //make order by created_at desc
             // add these 
-            $query->orderBy('id', 'desc');
+
+            //if type is set type to Series
+            if ($request->has('type')) {
+                $query->where('type', $request->get('type'));
+                //get only unique by category_id
+                $query->groupBy('category_id');
+            }
         }
 
+        $query->orderBy('id', 'desc');
         $reservedKeys = [
             'model',
             'sort_by',
@@ -117,7 +124,7 @@ class DynamicCrudController extends Controller
             'is_not_for_company',
             'is_not_for_user',
             'fields',
-            
+
         ];
         foreach ($request->query() as $param => $value) {
             if (in_array($param, $reservedKeys)) continue;
