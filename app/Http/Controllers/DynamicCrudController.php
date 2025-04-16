@@ -102,9 +102,10 @@ class DynamicCrudController extends Controller
 
         //check if model is MovieModel , set status =active
         if ($modelName == 'MovieModel') {
-            $query->where('status', 'Active');
+            // $query->where('status', 'Active'); 
             //make order by created_at desc
-            $query->orderBy('created_at', 'desc');
+            // add these 
+            $query->orderBy('id', 'desc');
         }
 
         $reservedKeys = [
@@ -116,8 +117,7 @@ class DynamicCrudController extends Controller
             'is_not_for_company',
             'is_not_for_user',
             'fields',
-            'category_id',
-            'episode_number',
+            
         ];
         foreach ($request->query() as $param => $value) {
             if (in_array($param, $reservedKeys)) continue;

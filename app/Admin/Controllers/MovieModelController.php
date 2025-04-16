@@ -36,6 +36,38 @@ class MovieModelController extends AdminController
             ->width(100)
             ->lightbox(['width' => 50, 'height' => 100])
             ->sortable();
+
+        $grid->column('type', __('Type'))->sortable()
+            ->filter([
+                'Movie' => 'Movie',
+                'Series' => 'Series',
+            ])
+            ->label([
+                'Movie' => 'success',
+                'Series' => 'danger',
+            ]);
+        $grid->column('category', __('Category'))
+            ->display(function ($category) {
+                return $this->category_id;
+            })->sortable();
+        $grid->column('category_id', __('Category id'))->display(function ($category_id) {
+            $category = SeriesMovie::find($category_id);
+            if ($category) {
+                return $category->title;
+            }
+            return 'N/A';
+        })->sortable();
+
+        /*            $ep->episode_number = $value['number'];
+                        $ep->country = $value['number']; */
+
+        $grid->column('episode_number', __('episode_number'))->sortable();
+        $grid->column('country', __('Position'))->sortable()
+            ->display(function ($country) {
+                return $this->country;
+            })->sortable();
+        $grid->column('vj', __('VJ'))->sortable(); 
+
         $grid->quickSearch('title', 'url', 'external_url', 'local_video_link');
         $grid->model()->orderBy('updated_at', 'desc');
         $grid->disableBatchActions();
@@ -53,12 +85,12 @@ class MovieModelController extends AdminController
             ->width(300);
 
         $grid->column('external_url', __('Url'))->sortable()->copyable();
-        
-        $grid->column('url', __('url'))
-        
-        ->video(['videoWidth' => 720, 'videoHeight' => 480])->sortable();
 
-            
+        $grid->column('url', __('url'))
+
+            ->video(['videoWidth' => 720, 'videoHeight' => 480])->sortable();
+
+
 
 
         $grid->column('description', __('Description'))->hide();
@@ -88,7 +120,7 @@ class MovieModelController extends AdminController
         $grid->column('imdb_rating', __('Imdb rating'));
         $grid->column('imdb_votes', __('Imdb votes'));
         $grid->column('imdb_id', __('Imdb id')); */
-        $grid->column('type', __('Type'))->sortable();
+
         $grid->column('error', __('Error'))->hide();
         $grid->column('error_message', __('Error message'))->hide();
         $grid->column('downloads_count', __('Downloads count'))->hide();
@@ -137,8 +169,7 @@ class MovieModelController extends AdminController
                 'success' => 'success',
             ])->sortable()->hide();
         $grid->column('video_is_downloaded_to_server_error_message', __('Video is downloaded to server error message'))->hide();
-        $grid->column('category', __('Category'))->hide();
-        $grid->column('category_id', __('Category id'))->hide();
+
 
         //status
         $grid->column('status_1', __('Status'))
