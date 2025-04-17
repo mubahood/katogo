@@ -21,6 +21,11 @@ Route::get('/home', function () {
 
 
 Route::get('process-series', function (Request $request) {
+    //https://movies.ug/videos/Leighton%20Meester-The%20Weekend%20Away%20(2022).mp4
+
+    //get movies that start with 
+});
+Route::get('process-series', function (Request $request) {
     $series = SeriesMovie::where([])
         ->orderBy('id', 'asc')
         ->limit(10000)
