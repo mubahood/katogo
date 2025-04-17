@@ -113,8 +113,7 @@ class MovieModelController extends AdminController
         $this->content_type =  $contentType;
 */
  
-        $grid->column('imdb_url', __('Image url'))->sortable() 
-            ->removable();
+        $grid->column('imdb_url', __('Image url'))->sortable() ;
 
 
         $grid->column('description', __('Description'))->hide();
