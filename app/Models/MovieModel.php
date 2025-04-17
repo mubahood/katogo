@@ -23,15 +23,19 @@ class MovieModel extends Model
             //check if type is series
             if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
-                $model->category = $series->title;
-                if ($model->thumbnail_url == null || $model->thumbnail_url == '') {
-                    $model->thumbnail_url = $series->thumbnail;
-                }
-                //episode_number
-                if ($model->episode_number == 1) {
-                    $model->is_first_episode = 'Yes';
+                if ($series != null) {
+                    $model->category = $series->title;
+                    if ($model->thumbnail_url == null || $model->thumbnail_url == '') {
+                        $model->thumbnail_url = $series->thumbnail;
+                    }
+                    //episode_number
+                    if ($model->episode_number == 1) {
+                        $model->is_first_episode = 'Yes';
+                    } else {
+                        $model->is_first_episode = 'No';
+                    }
                 } else {
-                    $model->is_first_episode = 'No';
+                    $model->type = 'Movie';
                 }
             }
         });
