@@ -42,6 +42,14 @@ Route::get('process-movies', function (Request $request) {
     $x = 0;
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
+        echo "<hr>";
+
+        //check if  is content_is_video and display colour button
+        if ($movie->content_is_video == 'Yes') {
+            echo "<span style='color:green'>IS_VIDEO</span>";
+        } else {
+            echo "<span style='color:red'>NOT_VIDEO</span>";
+        }
         //        $this->content_type_processed_time = Carbon::now();
         $last_time = $movie->content_type_processed_time;
         $last_time = Carbon::parse($last_time);
@@ -66,8 +74,15 @@ Route::get('process-movies', function (Request $request) {
         if (!str_contains($url, 'http')) {
             $url = 'https://movies.ug/' . $url;
         }
+
+        //check content_is_video and display colour button
+        if ($m->content_is_video == 'Yes') {
+            echo "<span style='color:green'>IS_VIDEO</span>";
+        } else {
+            echo "<span style='color:red'>NOT_VIDEO</span>";
+        }
+
         echo "<a target='_blank' href='" . $url . "'>" . $url . "</a><br>";
-        
     }
     dd('process-movies');
 });
