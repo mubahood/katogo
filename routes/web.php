@@ -33,7 +33,8 @@ Route::get('process-movies', function (Request $request) {
     ini_set('max_input_vars', -1);
     //get movies that does not have http in url
 
-    $movies = MovieModel::whereIn('content_is_video', '!=', 'Yes')
+    $movies = MovieModel::where('content_is_video', '!=', 'Yes')
+        ->orWhereNull('content_is_video')
         ->orderBy('id', 'asc')
         ->limit(200000)
         ->get();
