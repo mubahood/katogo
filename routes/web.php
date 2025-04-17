@@ -32,13 +32,13 @@ Route::get('process-movies', function (Request $request) {
     ini_set('post_max_size', -1);
     ini_set('max_input_vars', -1);
     //get movies that does not have http in url
-  
+
     $movies = MovieModel::whereIn('content_is_video', '!=', 'Yes')
         ->orderBy('id', 'asc')
-        ->limit(200000) 
+        ->limit(200000)
         ->get();
     $x = 0;
-    echo "<h1>Movies (" . count($movies) . ")</h1>";
+    echo "<h1>Movies (" . $movies->count() . ")</h1>";
 
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
