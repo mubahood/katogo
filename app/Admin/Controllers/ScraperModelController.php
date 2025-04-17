@@ -25,6 +25,7 @@ class ScraperModelController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new ScraperModel());
+        $grid->quickSearch('title')->placeholder('Search by title');
 
         $grid->disableBatchActions();
         $grid->model()->orderBy('id', 'desc');
@@ -35,14 +36,11 @@ class ScraperModelController extends AdminController
             })->sortable();
         $grid->column('type', __('Type'))->sortable();
         $grid->column('url', __('Url'))->hide();
-        $grid->column('title', __('Movies Found'))
-            ->display(function ($title) {
-                return number_format($title);
-            })->sortable();
+        $grid->column('title', __('Movies Found'))->sortable();
         $grid->column('datae', __('Datae'))->hide();
         $grid->column('status', __('Status'))->sortable();
         $grid->column('error', __('Error'))->sortable();
-        $grid->column('error_message', __('Error message'))->hide();
+        $grid->column('error_message', __('Error message'));
 
         return $grid;
     }

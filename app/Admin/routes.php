@@ -34,6 +34,9 @@ Route::group([
     $router->resource('gens', GenController::class);
     $router->resource('movie-views', MovieViewController::class);
     $router->resource('movie-likes', MovieLikeController::class); 
+    
+    $router->resource('my-counters', MyCounterController::class);
+
 
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound
     //https://omulimisa.org/api/v1/e-learning/events

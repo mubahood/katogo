@@ -1,7 +1,7 @@
 php artisan make:model MovieLike -m
 php artisan make:model MyCounter -m
 
-php artisan admin:make MovieLikeController --model=App\\Models\\MovieLike
+php artisan admin:make MyCounterController --model=App\Models\MyCounter
 
 php artisan db:seed --class=App\\Models\\MovieLike
 
