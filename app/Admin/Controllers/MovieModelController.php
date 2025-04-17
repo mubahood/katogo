@@ -95,7 +95,8 @@ class MovieModelController extends AdminController
             ->editable('text')
             ->width(300);
 
-        $grid->column('external_url', __('external_url'))->sortable()->copyable()->width(200);
+        $grid->column('external_url', __('external_url'))->sortable()->copyable()->width(200)
+        ->filter('like');
 
 
         $grid->column('my_url', __('My url'))
@@ -113,7 +114,7 @@ class MovieModelController extends AdminController
         $this->content_type =  $contentType;
 */
  
-        $grid->column('imdb_url', __('Image url'))->sortable() ;
+        $grid->column('imdb_url', __('imdb url'))->sortable() ;
 
 
         $grid->column('description', __('Description'))->hide();
