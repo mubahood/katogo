@@ -19,7 +19,6 @@ class MovieModel extends Model
         parent::boot();
 
         static::creating(function ($model) {
-            $model->created_at = date('Y-m-d H:i:s');
             //check if type is series
             if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
@@ -43,22 +42,22 @@ class MovieModel extends Model
         static::updating(function ($model) {
             if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
-                $model->category = $series->title;
-                $model->category = $series->title;
-                if ($model->thumbnail_url == null || $model->thumbnail_url == '') {
-                    $model->thumbnail_url = $series->thumbnail;
+                if ($series != null) {
+                    $model->category = $series->title;
+                    if ($model->thumbnail_url == null || $model->thumbnail_url == '') {
+                        $model->thumbnail_url = $series->thumbnail;
+                    }
+                    //episode_number
+                    if ($model->episode_number == 1) {
+                        $model->is_first_episode = 'Yes';
+                    } else {
+                        $model->is_first_episode = 'No';
+                    }
+                } else {
+                    $model->type = 'Movie';
                 }
             }
-
-            $video_downloaded_to_server_duration = 0;
-            if ($model->video_downloaded_to_server_start_time && $model->video_downloaded_to_server_end_time) {
-                try {
-                    $video_downloaded_to_server_duration = strtotime($model->video_downloaded_to_server_end_time) - strtotime($model->video_downloaded_to_server_start_time);
-                } catch (\Exception $e) {
-                    $video_downloaded_to_server_duration = -1;
-                }
-            }
-        });
+        }); 
     }
 
     //getter for local_video_link
