@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
+use GuzzleHttp\Client;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -126,100 +128,84 @@ class MovieModel extends Model
         return $value;
     }
 
-    public function verify_movie()
+    private const VIDEO_MIME_TYPES = [
+        'video/mp4',
+        'video/x-msvideo',
+        'video/mpeg',
+        'video/quicktime',
+        'video/x-flv',
+        'video/x-matroska',
+        'video/webm',
+        'video/3gpp',
+        'video/3gpp2',
+        'video/x-ms-wmv',
+        'video/ogg',
+        'application/vnd.apple.mpegurl',
+        'application/x-mpegurl',
+        'application/octet-stream',
+        // …and any others you need
+    ];
+
+    /**
+     * Determine whether the URL points to a movie by checking its Content-Type header.
+     *
+     * @return self
+     */
+    public function verify_movie(): self
     {
-        $url = $this->url;
-        $url = 'https://mobifliks.info/downloadmp4.php?file=luganda/Suky%20by%20Vj%20Emmy%20-%20Mobifliks.com.mp4';
-        //check if contains http
-        if (strpos($url, 'http') === false) {
-            $url = 'https://movies.ug/' . $url;
+        $baseUrl = 'https://movies.ug/';
+        $url     = $this->url;
+        $addedBase = false;
+
+        // Normalize URL
+        if (stripos($url, 'http') !== 0) {
+            $url = $baseUrl . ltrim($url, '/');
+            $addedBase = true;
         }
 
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HEADER, true);
-        curl_setopt($ch, CURLOPT_NOBODY, true);
-        curl_exec($ch);
+        // Prepare defaults
+        $this->content_type_processed      = 'Yes';
+        $this->content_type_processed_time = Carbon::now();
+        $this->content_is_video            = 'No';
+        $this->status                      = 'Inactive';
+        $this->external_url                = $url;
 
-        $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
-        curl_close($ch);
+        $client = new Client([
+            'timeout'         => 30,
+            'allow_redirects' => true,
+        ]);
 
-        $video_types = [
-            "video/mp4",
-            "video/x-msvideo",
-            "video/mpeg",
-            "video/quicktime",
-            "video/x-flv",
-            "video/x-matroska",
-            "video/webm",
-            "video/3gpp",
-            "video/3gpp2",
-            "video/x-ms-wmv",
-            "video/ogg",
-            "application/vnd.apple.mpegurl",
-            "application/x-mpegurl",
-            'application/octet-stream',
-            'application/x-mpeg',
-            'application/x-mpegurl',
-            'application/x-mpeg-4',
-            'application/x-mpeg-4p',
-            'application/x-mpeg-4v',
-            'application/x-mpeg-4v2',
-            'application/x-mpeg-4v3',
-            'application/x-mpeg-4v4',
-            'application/x-mpeg-4v5',
-            'application/x-mpeg-4v6',
-            'application/x-mpeg-4v7',
-            'application/x-mpeg-4v8',
-            'application/x-mpeg-4v9',
+        try {
+            // Use HEAD to just fetch headers
+            $response = $client->head($url);
+            $rawType  = $response->getHeaderLine('Content-Type');
+            // Strip charset if present
+            [$contentType] = explode(';', $rawType);
 
-            'video/mp2t',
-            'video/x-ms-asf',
-            'video/x-msvideo',
-            'video/x-m4v',
-            'video/x-mpeg',
-            'video/x-mpeg2',
-            'video/x-mpeg3',
-            'video/x-mpeg4',
-            'video/x-ms-dvr',
-            'video/x-ms-vob',
-            'video/x-ms-wvx',
-            'video/x-ms-wm',
-            'video/x-ms-wmx',
-            'video/x-ms-wmv',
-            'video/x-ms-wvx',
-            'video/x-ms-wvx-dvr',
-            'video/x-ms-wvx-live',
-            'video/x-ms-wvx-on-demand',
-            'video/x-ms-wvx-streaming',
-            'video/x-ms-wvx-download',
-            'video/x-ms-wvx-stream',
-            'video/x-ms-wvx-play',
-            'video/x-ms-wvx-record',
-            'video/x-ms-wvx-broadcast',
-            'video/x-ms-wvx-live-stream',
-            'video/x-ms-wvx-on-demand-stream',
-            'video/x-ms-wvx-download-stream',
-            'video/x-ms-wvx-play-stream',
-            'video/x-ms-wvx-record-stream',
-        ];
+            $this->content_type = $contentType;
 
-        $this->content_type_processed = 'Yes';
-        $this->content_type_processed_time = date('Y-m-d H:i:s');
-        $this->content_is_video = 'No';
-        $this->content_type =  $contentType;
-
-
-        if (in_array(strtolower($contentType), $video_types)) {
-            $this->content_is_video = 'Yes';
-            $this->status = 'Active';
-        } else {
+            if (in_array(strtolower($contentType), self::VIDEO_MIME_TYPES, true)) {
+                $this->content_is_video = 'Yes';
+                $this->status           = 'Active';
+            }
+        } catch (\Exception $e) {
+            // Handle exceptions (e.g., network issues, invalid URLs)
+            $this->content_type = 'Unknown';
             $this->content_is_video = 'No';
             $this->status = 'Inactive';
         }
-        $this->content_type = $contentType;
+
+        // If we prefixed the base URL but it's not a video, revert the stored URL
+        if ($addedBase && $this->content_is_video === 'No') {
+            $this->url = str_replace($baseUrl, '', $url);
+        } else {
+            $this->url = $url;
+        }
+
         $this->save();
-        return $contentType;
+
+        // Reload and return fresh model
+        return self::find($this->id);
     }
 
     //getter for thumbnail_url

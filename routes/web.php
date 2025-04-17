@@ -5,6 +5,7 @@ use App\Models\Gen;
 use App\Models\MovieModel;
 use App\Models\SeriesMovie;
 use App\Models\Utils;
+use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,10 +21,55 @@ Route::get('/home', function () {
 */
 
 
-Route::get('process-series', function (Request $request) {
+Route::get('process-movies', function (Request $request) {
     //https://movies.ug/videos/Leighton%20Meester-The%20Weekend%20Away%20(2022).mp4
 
-    //get movies that start with 
+    //set unlimited time
+    ini_set('memory_limit', -1);
+    ini_set('max_execution_time', -1);
+    ini_set('max_input_time', -1);
+    ini_set('upload_max_filesize', -1);
+    ini_set('post_max_size', -1);
+    ini_set('max_input_vars', -1);
+    //get movies that does not have http in url
+    $sql = "SELECT id FROM `movie_models` WHERE `url` NOT LIKE '%http%'";
+    $ids = DB::select($sql);
+    $ids = collect($ids)->pluck('id')->toArray();
+    $movies = MovieModel::whereIn('id', $ids)
+        ->orderBy('id', 'asc')
+        ->limit(100000)
+        ->get();
+    $x = 0;
+    foreach ($movies as $key => $movie) {
+        $url = $movie->url;
+        //        $this->content_type_processed_time = Carbon::now();
+        $last_time = $movie->content_type_processed_time;
+        $last_time = Carbon::parse($last_time);
+        $now = Carbon::now();
+        $diff = $last_time->diffInMinutes($now);
+        //if less than 5 minutes, continue
+        if ($diff < 25) {
+            echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . ' |||SKIP|||<br>';
+            continue;
+        }
+        //chek
+        if ($movie->content_is_video == 'Yes' && str_contains($url, 'http')) {
+            echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . ' |||IS_ALREADY_VIDEO|||<br>';
+            continue;
+        }
+        echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . '>>>>>CHECKING<<======<br>';
+
+        $m = $movie->verify_movie();
+        //ECHO URL
+        $url = $m->url;
+        //if has not http
+        if (!str_contains($url, 'http')) {
+            $url = 'https://movies.ug/' . $url;
+        }
+        echo "<a target='_blank' href='" . $url . "'>" . $url . "</a><br>";
+        
+    }
+    dd('process-movies');
 });
 Route::get('process-series', function (Request $request) {
     $series = SeriesMovie::where([])
