@@ -32,15 +32,13 @@ Route::get('process-movies', function (Request $request) {
     ini_set('post_max_size', -1);
     ini_set('max_input_vars', -1);
     //get movies that does not have http in url
-    $sql = "SELECT id FROM `movie_models` WHERE `url` NOT LIKE '%http%'";
-    $ids = DB::select($sql);
-    $ids = collect($ids)->pluck('id')->toArray();
-    $movies = MovieModel::whereIn('id', $ids)
+  
+    $movies = MovieModel::whereIn('content_is_video', '!=', 'Yes')
         ->orderBy('id', 'asc')
-        ->limit(200000)
+        ->limit(200000) 
         ->get();
     $x = 0;
-    echo "<h1>Movies</h1>";
+    echo "<h1>Movies (" . count($movies) . ")</h1>";
 
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
@@ -69,7 +67,7 @@ Route::get('process-movies', function (Request $request) {
             //delete movie
             $movie->delete();
             echo "<br>deleted movie";
-        } 
+        }
         //        $this->content_type_processed_time = Carbon::now();
         $last_time = $movie->content_type_processed_time;
         $last_time = Carbon::parse($last_time);
