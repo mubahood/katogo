@@ -40,16 +40,30 @@ Route::get('process-movies', function (Request $request) {
         ->limit(100000)
         ->get();
     $x = 0;
+    echo "<h1>Movies</h1>";
+    
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
-        echo "<hr>";
+        echo "<hr> $x. ";
 
+        echo "<hr><video width='100' height='120' controls>
+                <source src='" . $url . "' type='video/mp4'>
+                Your browser does not support the video tag. 
+            </video>";
+        echo "<br>";
+
+        //echo irl
+        echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . '<br>';
+        //if has not http
         //check if  is content_is_video and display colour button
         if ($movie->content_is_video == 'Yes') {
-            echo "<span style='color:green'>IS_VIDEO</span>";
+            echo "<br><span style='color:green'>IS_VIDEO</span>";
+            $x++;
+   
         } else {
             echo "<span style='color:red'>NOT_VIDEO</span>";
         }
+        continue; 
         //        $this->content_type_processed_time = Carbon::now();
         $last_time = $movie->content_type_processed_time;
         $last_time = Carbon::parse($last_time);
