@@ -31,6 +31,19 @@ class MovieModelController extends AdminController
                 'status' => 'Inactive',
             ]); */
         $grid = new Grid(new MovieModel());
+        //add filters including filter by category
+        $grid->filter(function ($filter) {
+            $filter->disableIdFilter();
+            $filter->like('title', __('Title'));
+            $filter->equal('type', __('Type'))
+                ->select([
+                    'Movie' => 'Movie',
+                    'Series' => 'Series',
+                ]);
+            $filter->equal('category_id', __('Category'))
+                ->select(SeriesMovie::all()->pluck('title', 'id'));
+            $filter->between('created_at', __('Created at'))->datetime();
+        });
 
         $grid->column('thumbnail_url', __('Thumbnail'))
             ->width(100)
@@ -58,15 +71,13 @@ class MovieModelController extends AdminController
             return 'N/A';
         })->sortable();
 
-        /*            $ep->episode_number = $value['number'];
-                        $ep->country = $value['number']; */
 
-        $grid->column('episode_number', __('episode_number'))->sortable();
+
+        $grid->column('episode_number', __('EP No.'))->sortable()
+            ->editable();
         $grid->column('country', __('Position'))->sortable()
-            ->display(function ($country) {
-                return $this->country;
-            })->sortable();
-        $grid->column('vj', __('VJ'))->sortable(); 
+            ->sortable();
+        $grid->column('vj', __('VJ'))->sortable();
 
         $grid->quickSearch('title', 'url', 'external_url', 'local_video_link');
         $grid->model()->orderBy('updated_at', 'desc');
@@ -371,7 +382,7 @@ https://storage.googleapis.com/mubahood-movies/m.schooldynamics.ug/storage/video
                     $form->radio('category_id', __('Select Series'))->rules('required')
                         ->options(SeriesMovie::all()->pluck('title', 'id'))
                         ->default($serrie_id);
-                    $form->decimal('country', 'Position')->rules('required')
+                    $form->decimal('episode_number', 'Episode Position')->rules('required')
                         ->default($number_of_episodes);
                 })->when('Movie', function (Form $form) {
                     $form->radio('category', __('Category'))

@@ -3,6 +3,7 @@
 use App\Http\Controllers\ApiController;
 use App\Models\Gen;
 use App\Models\MovieModel;
+use App\Models\SeriesMovie;
 use App\Models\Utils;
 use Dflydev\DotAccessData\Util;
 use Illuminate\Http\Request;
@@ -19,6 +20,117 @@ Route::get('/home', function () {
 */
 
 
+Route::get('process-series', function (Request $request) {
+    $series = SeriesMovie::where([])
+        ->orderBy('id', 'asc')
+        ->limit(10000)
+        ->get();
+
+    //set unlimited time
+    ini_set('memory_limit', -1);
+
+    ini_set('max_execution_time', -1);
+    ini_set('max_input_time', -1);
+    ini_set('upload_max_filesize', -1);
+    ini_set('post_max_size', -1);
+    ini_set('max_input_vars', -1);
+
+
+    foreach ($series as $key => $ser) {
+        $other_with_external_url = SeriesMovie::where([
+            'external_url' => $ser->external_url,
+        ])
+            ->where('id', '!=', $ser->id)
+            ->get();
+
+        if ($other_with_external_url->count()  > 0) {
+            foreach ($other_with_external_url as $key => $other) {
+                $eps = MovieModel::where([
+                    'category_id' => $other->id,
+                ])
+                    ->update([
+                        'category_id' => $ser->id,
+                    ]);
+                $other->delete();
+            }
+        }
+        $other_with_external_bu_title = SeriesMovie::where([
+            'title' => $ser->title,
+        ])
+            ->where('id', '!=', $ser->id)
+            ->get();
+        if ($other_with_external_bu_title->count()  > 0) {
+            foreach ($other_with_external_bu_title as $key => $other) {
+                $eps = MovieModel::where([
+                    'category_id' => $other->id,
+                ])
+                    ->update([
+                        'category_id' => $ser->id,
+                    ]);
+                $other->delete();
+            }
+        }
+
+
+        foreach (
+            MovieModel::where([
+                'category_id' => $ser->id,
+            ])
+                ->get() as $key => $episode
+        ) {
+            $episode_number = (int) $episode->episode_number;
+            if ($episode_number == 0) {
+                $country = (int) $episode->country;
+                if ($country > 0) {
+                    $episode->episode_number = $country;
+                    $episode->save();
+                }
+            }
+        }
+
+        $episodes = MovieModel::where([
+            'category_id' => $ser->id,
+        ])
+            ->orderBy('episode_number', 'asc')
+            ->get();
+        $first_episode_found = false;
+        $ser->is_active = 'No';
+        $ser->save();
+        foreach ($episodes as $key => $episode) {
+            if ($episode->episode_number != 1) {
+                continue;
+            }
+            $episode->is_first_episode = 'Yes';
+            $episode->save();
+            echo $episode->id . '. - first episode found for ==>  ' . $episode->title . '<br>';
+            $ser->is_active = 'Yes';
+            $ser->save();
+            $first_episode_found = true;
+            break;
+        }
+        if ($first_episode_found == false) {
+            echo  $ser->id . '. |||||No first episode||||| found for ==>  ' . $ser->title . '<br>';
+        }
+    }
+    /* 
+ 
+   "id" => 1
+    "created_at" => "2024-03-12 14:06:31"
+    "updated_at" => "2024-03-12 15:36:38"
+    "title" => "Feng Ku The Master of Kung Fu"
+    "Category" => "Action"
+    "description" => "<p>Huang Fei-Hung, famous Chinese boxer, teaches his martial arts at Pao Chih Lin Institute, in Canton. Gordon is a European businessman, dealing in import and  ▶"
+    "thumbnail" => "images/MV5BYzZhZjE5NDgtNDk2OS00ZGNkLWFjYjktNmY1ZmZhY2VjZjBlXkEyXkFqcGdeQXVyOTMzMDk1NTY@._V1_ (1).jpg"
+    "total_seasons" => 3
+    "total_episodes" => 10
+    "total_views" => 249
+    "total_rating" => 4
+    "is_active" => "No"
+    "external_url" => null
+    "is_premium" => "No"*/
+
+    dd($series);
+});
 Route::get('remove-dupes', function (Request $request) {
 
     $max = 100000;
@@ -69,16 +181,16 @@ Route::get('remove-dupes', function (Request $request) {
             ->get();
         echo "<hr>";
         foreach ($otherMovies as $key => $dp) {
-            if($rec->id == $dp->id){
+            if ($rec->id == $dp->id) {
                 continue;
-            } 
-            echo $dp->delete(); 
+            }
+            echo $dp->delete();
             echo $dp->id . '. ' . $dp->title . ' ===> ' . $dp->url . '<br>';
             //display thumbnaildd 
             echo '<img src="' . $dp->thumbnail_url . '" width="100" height="100" alt="">';
             echo '<br>';
         }
-        continue; 
+        continue;
 
         die("<br>");
 

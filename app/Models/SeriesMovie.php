@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class SeriesMovie extends Model
 {
@@ -16,19 +17,37 @@ class SeriesMovie extends Model
 
         static::creating(function ($model) {
             if ($model->is_active == 'Yes') {
-                //update sql
-                $sql = 'UPDATE series_movies SET is_active = "No" ';
-                \DB::statement($sql);
-            } 
+                MovieModel::where('category_id', $model->id)->update([
+                    'status' => 'Active',
+                    'thumbnail_url' => $model->thumbnail
+                ]);
+            }
         });
 
         static::updating(function ($model) {
 
             if ($model->is_active == 'Yes') {
-                //update sql
-                $sql = 'UPDATE series_movies SET is_active = "No" ';
-                \DB::statement($sql);
+                MovieModel::where('category_id', $model->id)->update([
+                    'status' => 'Active',
+                    'thumbnail_url' => $model->thumbnail
+                ]);
             }
         });
+    }
+
+    //has many relationship with movie model
+    public function episodes()
+    {
+        return $this->hasMany(MovieModel::class, 'category_id', 'id');
+    }
+
+
+    public function getThumbnailAttribute($value)
+    {
+        //if contains http, return value
+        if (strpos($value, 'http') !== false) {
+            return $value;
+        }
+        return 'https://katogo.schooldynamics.ug/storage/' . $value;
     }
 }

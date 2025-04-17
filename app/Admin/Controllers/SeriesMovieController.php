@@ -27,16 +27,43 @@ class SeriesMovieController extends AdminController
     {
         $grid = new Grid(new SeriesMovie());
         $grid->disableBatchActions();
+        $grid->quickSearch('title')->placeholder('Search by title');
+        //add some filters
+        $grid->filter(function ($filter) {
+            // Remove the default id filter
+            $filter->disableIdFilter();
+            // Add a custom filter for title
+            $filter->like('title', 'Title');
+            // Add a custom filter for category
+            $filter->equal('Category', 'Category')->select(Utils::$CATEGORIES);
+        });
 
         $grid->column('thumbnail', __('Thumbnail'))->image('', 50, 50)->sortable();
         $grid->column('id', __('Id'))->sortable()->hide();
         $grid->column('title', __('Title'))->sortable();
         $grid->column('Category', __('Category'))->sortable();
         $grid->column('description', __('Description'))->hide();
-        $grid->column('total_seasons', __('Total seasons'));
-        $grid->column('total_episodes', __('Total episodes'));
-        $grid->column('total_views', __('Total views')); 
-        $grid->column('is_active', __('Total rating'))->editable('select', ['Yes' => 'Yes', 'No' => 'No']);
+        $grid->column('total_seasons', __('Total seasons'))->hide();
+        $grid->column('total_episodes', __('Total episodes'))->sortable()
+            ->display(function ($total_episodes) {
+                $real_total_episodes = $this->episodes()->count();
+                if($real_total_episodes != $total_episodes) {
+                    $this->total_episodes = $real_total_episodes;
+                    $this->save();
+                } 
+                //url to filter http://localhost/katogo/movies?title=&type=&category_id=4&created_at%5Bstart%5D=&created_at%5Bend%5D=
+                $url = url('movies?category_id=' . $this->id);
+                //open new tab
+                return '<a href="' . $url . '" target="_blank">' . $total_episodes . '</a>';
+            });
+        $grid->column('total_views', __('Total views'));
+        $grid->column('is_active', __('Is ACTIVE'))
+            ->sortable()
+            ->filter([
+                'Yes' => 'Yes',
+                'No' => 'No',
+            ])
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No']);
 
         return $grid;
     }
@@ -61,7 +88,7 @@ class SeriesMovieController extends AdminController
         $show->field('total_seasons', __('Total seasons'));
         $show->field('total_episodes', __('Total episodes'));
         $show->field('total_views', __('Total views'));
-        $show->field('total_rating', __('Total rating')); 
+        $show->field('total_rating', __('Total rating'));
 
         return $show;
     }

@@ -111,7 +111,7 @@ class DynamicCrudController extends Controller
                 $query->where('type', $request->get('type'));
                 //get only unique by category_id
                 $query->groupBy('category_id');
-            } */ 
+            } */
         }
 
         $query->orderBy('id', 'desc');
@@ -277,5 +277,175 @@ class DynamicCrudController extends Controller
             ]
         ];
         return $this->success($response, "Movies retrieved successfully.");
+    }
+
+
+
+
+    public function flutterwave_payment_verification(Request $request)
+    {
+        $fw = FlutterWaveLog::find($request->id);
+        if ($fw == null) {
+            return Utils::response([
+                'status' => 0,
+                'message' => "Payment record not found."
+            ]);
+        }
+        $fw->is_order_paid();
+        $fw = FlutterWaveLog::find($request->id);
+        if ($fw->status == 'Paid') {
+            return Utils::response([
+                'status' => 1,
+                'message' => "Payment successful.",
+                'data' => $fw
+            ]);
+        } else {
+            return Utils::response([
+                'status' => 0,
+                'message' => "Payment not successful.",
+                'data' => $fw
+            ]);
+        }
+    }
+    public function consultation_flutterwave_payment(Request $request)
+    {
+        $u = auth('api')->user();
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+        $administrator_id = $u->id;
+
+        $u = Administrator::find($administrator_id);
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+        //check for consultation_id
+        if (
+            $request->consultation_id == null ||
+            strlen($request->consultation_id) < 1
+        ) {
+            return $this->error('Consultation ID is missing.');
+        }
+        $consultation = Consultation::find($request->consultation_id);
+        if ($consultation == null) {
+            return $this->error('Consultation not found.');
+        }
+
+        //validate amount_paid
+        if (
+            $request->amount_paid == null ||
+            strlen($request->amount_paid) < 1
+        ) {
+            return $this->error('Amount payable is missing.');
+        }
+
+        // amount_paid should be less than or equal to amount_paid
+        if (
+            $request->amount_paid > $consultation->total_due
+        ) {
+            return $this->error('Amount payable is greater than amount paid.');
+        }
+
+        $phone_number = Utils::prepare_phone_number($request->payment_phone_number);
+
+        //check if phone number is valid
+        if (!Utils::phone_number_is_valid($phone_number)) {
+            return $this->error('Invalid phone number.');
+        }
+
+        //amount_payable should be more th 500
+        if (
+            $request->amount_paid < 500
+        ) {
+            return $this->error('Amount payable should be more than 500.');
+        }
+
+        //validate payment_method
+        if (
+            $request->payment_method == null ||
+            strlen($request->payment_method) < 1
+        ) {
+            return $this->error('Payment method is missing.');
+        }
+        $amount = (int)($request->amount_paid);
+        FlutterWaveLog::where([
+            'status' => 'Pending',
+            'consultation_id' => $consultation->id,
+        ])->delete();
+
+
+        $fw = new FlutterWaveLog();
+        $fw->consultation_id = $consultation->id;
+        $fw->flutterwave_payment_amount = $amount;
+        $fw->status = 'Pending';
+        $fw->flutterwave_payment_type = 'Consultation';
+        $fw->flutterwave_payment_customer_phone_number = $phone_number;
+        $fw->flutterwave_payment_status = 'Pending';
+        $phone_number_type = substr($phone_number, 0, 6);
+
+
+        if (
+            $phone_number_type == '+25670' ||
+            $phone_number_type == '+25675' ||
+            $phone_number_type == '+25674'
+        ) {
+            $phone_number_type = 'AIRTEL';
+        } else if (
+            $phone_number_type == '+25677' ||
+            $phone_number_type == '+25678' ||
+            $phone_number_type == '+25676'
+        ) {
+            $phone_number_type = 'MTN';
+        }
+
+        if (
+            $phone_number_type != 'MTN' &&
+            $phone_number_type != 'AIRTEL'
+        ) {
+            return Utils::response([
+                'status' => 0,
+                'message' => "Phone number must be MTN or AIRTEL. ($phone_number_type)"
+            ]);
+        }
+
+        $phone_number = str_replace([
+            '+256'
+        ], "0", $phone_number);
+
+
+
+        try {
+            $fw->uuid = Utils::generate_uuid();
+            $payment_link = $fw->generate_payment_link(
+                $phone_number,
+                $phone_number_type,
+                $amount,
+                $fw->uuid
+            );
+            if (strlen($payment_link) < 5) {
+                return Utils::response([
+                    'status' => 0,
+                    'message' => "Failed to generate payment link."
+                ]);
+            }
+            $fw->flutterwave_payment_link = $payment_link;
+            $fw->save();
+            return Utils::response([
+                'status' => 1,
+                'message' => "Payment link generated successfully.",
+                'data' => $fw
+            ]);
+        } catch (\Throwable $th) {
+            return Utils::response([
+                'status' => 0,
+                'message' => "Failed because " . $th->getMessage()
+            ]);
+        }
+
+
+
+
+
+        return $this->success($paymentRecord, $message = "Payment successful.", 1);
     }
 }

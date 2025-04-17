@@ -25,6 +25,12 @@ class MovieModel extends Model
                 if ($model->thumbnail_url == null || $model->thumbnail_url == '') {
                     $model->thumbnail_url = $series->thumbnail;
                 }
+                //episode_number
+                if ($model->episode_number == 1) {
+                    $model->is_first_episode = 'Yes';
+                } else {
+                    $model->is_first_episode = 'No';
+                }
             }
         });
 
@@ -102,7 +108,7 @@ class MovieModel extends Model
         if (str_contains($value, 'http')) {
             return $value;
         }
-
+        return $value;
         $url = $this->external_url;
         //check if doest not have http
         if (strpos($url, 'http') === false) {
@@ -214,5 +220,15 @@ class MovieModel extends Model
         $this->content_type = $contentType;
         $this->save();
         return $contentType;
+    }
+
+    //getter for thumbnail_url
+    public function getThumbnailUrlAttribute($value)
+    {
+        //if contains http, return value
+        if (strpos($value, 'http') !== false) {
+            return $value;
+        }
+        return 'https://katogo.schooldynamics.ug/storage/' . $value;
     }
 }
