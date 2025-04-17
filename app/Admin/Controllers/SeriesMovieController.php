@@ -64,6 +64,10 @@ class SeriesMovieController extends AdminController
                 'No' => 'No',
             ])
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No']);
+        //sour
+        $grid->column('external_url', __('External URL'))
+            ->filter('like')
+            ->sortable(); 
 
         return $grid;
     }
