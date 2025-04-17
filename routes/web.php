@@ -46,11 +46,7 @@ Route::get('process-movies', function (Request $request) {
         $url = $movie->url;
         echo "<hr> $x. ";
 
-        echo "<hr><video width='100' height='120' controls>
-                <source src='" . $url . "' type='video/mp4'>
-                Your browser does not support the video tag. 
-            </video>";
-        echo "<br>";
+      
 
         //echo irl
         echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . '<br>';
@@ -66,7 +62,7 @@ Route::get('process-movies', function (Request $request) {
                 $movie->external_url = $url;
                 $movie->save();
                 echo "<br>updated movie url to " . $url;
-                die('<video width="100" height="120" controls>
+                echo('<video width="100" height="120" controls>
                 <source src="' . $url . '" type="video/mp4">
                 Your browser does not support the video tag.
             </video>');
