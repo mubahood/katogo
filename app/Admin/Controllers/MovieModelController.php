@@ -95,17 +95,13 @@ class MovieModelController extends AdminController
             ->editable('text')
             ->width(300);
 
-        $grid->column('external_url', __('external_url'))->sortable()->copyable();
+        $grid->column('external_url', __('external_url'))->sortable()->copyable()->width(200);
 
 
         $grid->column('my_url', __('My url'))
             ->display(function ($url) {
-                if ($url == null || $url == '') {
-                    return 'N/A';
-                }
-                $url = url('play?id=' . $this->id);
-                return '<a href="' . $url . '" target="_blank">' . 'PLAY ' . $url . '</a>';
-            });
+                return $this->url;  
+            })->width(200);
 
         $grid->column('url', __('url'))
 
