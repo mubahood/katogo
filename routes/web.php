@@ -59,9 +59,16 @@ Route::get('process-movies', function (Request $request) {
         if ($movie->content_is_video == 'Yes') {
             echo "<br><span style='color:green'>IS_VIDEO</span>";
             $x++;
+            //check if url is contains http
+            if (!str_contains($url, 'http')) {
+                $url = 'https://movies.ug/' . $url;
+            }
    
         } else {
             echo "<span style='color:red'>NOT_VIDEO</span>";
+            //delete movie
+            $movie->delete();
+            echo "<br>deleted movie"; 
         }
         continue; 
         //        $this->content_type_processed_time = Carbon::now();
