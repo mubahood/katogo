@@ -37,7 +37,7 @@ Route::get('process-movies', function (Request $request) {
     $ids = collect($ids)->pluck('id')->toArray();
     $movies = MovieModel::whereIn('id', $ids)
         ->orderBy('id', 'asc')
-        ->limit(100000)
+        ->limit(200000)
         ->get();
     $x = 0;
     echo "<h1>Movies</h1>";
@@ -46,7 +46,7 @@ Route::get('process-movies', function (Request $request) {
         $url = $movie->url;
         echo "<hr> $x. ";
 
-      
+
 
         //echo irl
         echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . '<br>';
@@ -62,11 +62,12 @@ Route::get('process-movies', function (Request $request) {
                 $movie->external_url = $url;
                 $movie->save();
                 echo "<br>updated movie url to " . $url;
-                echo('<video width="100" height="120" controls>
+                echo ('<video width="100" height="120" controls>
                 <source src="' . $url . '" type="video/mp4">
                 Your browser does not support the video tag.
             </video>');
             }
+            continue;
         } else {
             echo "<span style='color:red'>NOT_VIDEO</span>";
             //delete movie
@@ -92,6 +93,10 @@ Route::get('process-movies', function (Request $request) {
         echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . '>>>>>CHECKING<<======<br>';
 
         $m = $movie->verify_movie();
+        if ($m  == null) {
+            echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . '>>>>>NOT_VIDEO DELETED<<======<br>';
+            continue;
+        }
         //ECHO URL
         $url = $m->url;
         //if has not http

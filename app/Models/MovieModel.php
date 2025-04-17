@@ -57,7 +57,8 @@ class MovieModel extends Model
                     $model->type = 'Movie';
                 }
             }
-        }); 
+            return $model;
+        });
     }
 
     //getter for local_video_link
@@ -186,12 +187,15 @@ class MovieModel extends Model
             [$contentType] = explode(';', $rawType);
 
             $this->content_type = $contentType;
+            $this->url = $url;
+            $this->external_url = $url;
 
             if (in_array(strtolower($contentType), self::VIDEO_MIME_TYPES, true)) {
                 $this->content_is_video = 'Yes';
                 $this->status           = 'Active';
             }
         } catch (\Exception $e) {
+            //delete the url 
             // Handle exceptions (e.g., network issues, invalid URLs)
             $this->content_type = 'Unknown';
             $this->content_is_video = 'No';
@@ -199,13 +203,11 @@ class MovieModel extends Model
         }
 
         // If we prefixed the base URL but it's not a video, revert the stored URL
-        if ($addedBase && $this->content_is_video === 'No') {
-            $this->url = str_replace($baseUrl, '', $url);
-        } else {
-            $this->url = $url;
+        if ($this->content_is_video != 'Yes') {
+            $this->delete();
+            return $this;
         }
-
-        $this->save();
+  
 
         // Reload and return fresh model
         return self::find($this->id);
