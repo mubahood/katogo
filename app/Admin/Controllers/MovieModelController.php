@@ -95,7 +95,17 @@ class MovieModelController extends AdminController
             ->editable('text')
             ->width(300);
 
-        $grid->column('external_url', __('Url'))->sortable()->copyable();
+        $grid->column('external_url', __('external_url'))->sortable()->copyable();
+
+        
+        $grid->column('my_url', __('My url'))
+            ->display(function ($url) {
+                if ($url == null || $url == '') {
+                    return 'N/A';
+                }
+                $url = url('play?id=' . $this->id);
+                return '<a href="' . $url . '" target="_blank">' . 'PLAY ' . $url . '</a>';
+            }); 
 
         $grid->column('url', __('url'))
 
@@ -219,12 +229,8 @@ class MovieModelController extends AdminController
                 return '<a href="' . $url . '" target="_blank">' . 'PLAY ' . $new_server_path . '</a>';
             })
             ->hide();
-        return $grid;
 
-        $grid->column('external_url', __('Source Link'))->sortable()
-            ->display(function ($external_url) {
-                return '<a href="' . $external_url . '" target="_blank">' . 'VIEW' . '</a>';
-            });
+   return $grid; 
 
         $grid->column('plays_on_google', __('Plays on google'))->sortable()
             ->filter([
