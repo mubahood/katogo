@@ -97,7 +97,7 @@ class MovieModelController extends AdminController
 
         $grid->column('external_url', __('external_url'))->sortable()->copyable();
 
-        
+
         $grid->column('my_url', __('My url'))
             ->display(function ($url) {
                 if ($url == null || $url == '') {
@@ -105,18 +105,23 @@ class MovieModelController extends AdminController
                 }
                 $url = url('play?id=' . $this->id);
                 return '<a href="' . $url . '" target="_blank">' . 'PLAY ' . $url . '</a>';
-            }); 
+            });
 
         $grid->column('url', __('url'))
 
             ->video(['videoWidth' => 720, 'videoHeight' => 480])->sortable();
-
+        /* 
+        $this->content_type_processed = 'Yes';
+        $this->content_type_processed_time = date('Y-m-d H:i:s');
+        $this->content_is_video = 'No';
+        $this->content_type =  $contentType;
+*/
 
 
 
         $grid->column('description', __('Description'))->hide();
         $grid->column('year', __('Year'))->sortable()->hide();
-        $grid->column('downloaded_from_google', __('from google'))
+        $grid->column('content_type_processed', __('content processed'))
             ->sortable()
             ->filter([
                 'Yes' => 'Yes',
@@ -125,9 +130,19 @@ class MovieModelController extends AdminController
             ->label([
                 'Yes' => 'success',
                 'No' => 'danger',
-            ])
-            ->hide();
+            ])->sortable();
 
+        $grid->column('content_is_video', __('Content is video'))
+            ->filter([
+                'Yes' => 'Yes',
+                'No' => 'No',
+            ])->sortable()
+            ->label([
+                'Yes' => 'success',
+                'No' => 'danger',
+            ])->sortable()->hide();
+        //content_type
+        $grid->column('content_type', __('Content type'));
         /*         
         $grid->column('rating', __('Rating'));
         $grid->column('duration', __('Duration'));
@@ -230,7 +245,7 @@ class MovieModelController extends AdminController
             })
             ->hide();
 
-   return $grid; 
+        return $grid;
 
         $grid->column('plays_on_google', __('Plays on google'))->sortable()
             ->filter([
