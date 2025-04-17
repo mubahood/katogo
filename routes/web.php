@@ -41,7 +41,7 @@ Route::get('process-movies', function (Request $request) {
         ->get();
     $x = 0;
     echo "<h1>Movies</h1>";
-    
+
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
         echo "<hr> $x. ";
@@ -62,15 +62,22 @@ Route::get('process-movies', function (Request $request) {
             //check if url is contains http
             if (!str_contains($url, 'http')) {
                 $url = 'https://movies.ug/' . $url;
+                $movie->url = $url;
+                $movie->external_url = $url;
+                $movie->save();
+                echo "<br>updated movie url to " . $url;
+                die('<video width="100" height="120" controls>
+                <source src="' . $url . '" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>');
             }
-   
         } else {
             echo "<span style='color:red'>NOT_VIDEO</span>";
             //delete movie
             $movie->delete();
-            echo "<br>deleted movie"; 
+            echo "<br>deleted movie";
         }
-        continue; 
+        continue;
         //        $this->content_type_processed_time = Carbon::now();
         $last_time = $movie->content_type_processed_time;
         $last_time = Carbon::parse($last_time);
