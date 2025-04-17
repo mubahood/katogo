@@ -61,11 +61,7 @@ Route::get('process-movies', function (Request $request) {
                 $movie->url = $url;
                 $movie->external_url = $url;
                 $movie->save();
-                echo "<br>updated movie url to " . $url;
-                echo ('<video width="100" height="120" controls>
-                <source src="' . $url . '" type="video/mp4">
-                Your browser does not support the video tag.
-            </video>');
+                echo "<br>updated url to " . $url;
             }
             continue;
         } else {
@@ -73,15 +69,14 @@ Route::get('process-movies', function (Request $request) {
             //delete movie
             $movie->delete();
             echo "<br>deleted movie";
-        }
-        continue;
+        } 
         //        $this->content_type_processed_time = Carbon::now();
         $last_time = $movie->content_type_processed_time;
         $last_time = Carbon::parse($last_time);
         $now = Carbon::now();
         $diff = $last_time->diffInMinutes($now);
         //if less than 5 minutes, continue
-        if ($diff < 25) {
+        if ($diff < 100) {
             echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . ' |||SKIP|||<br>';
             continue;
         }
