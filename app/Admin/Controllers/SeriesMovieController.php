@@ -32,12 +32,7 @@ class SeriesMovieController extends AdminController
             $batch->add(new \App\Admin\Actions\Post\SeriesMovieStatusChange());
         });
 
-        //set all not active
-        SeriesMovie::where([])
-            ->update([
-                'is_active' => 'No',
-            ]);
-            die(); 
+
         $grid->quickSearch('title')->placeholder('Search by title');
         //add some filters
         $grid->filter(function ($filter) {
