@@ -90,6 +90,8 @@ class SeriesMovieController extends AdminController
                 return '<a href="' . $ur . '" target="_blank">Fix</a>';
             });
 
+        //increase  $grid per page options to 500 and 1k
+        $grid->perPages([10, 20, 50, 100, 200, 500, 1000]); 
 
         return $grid;
     }
