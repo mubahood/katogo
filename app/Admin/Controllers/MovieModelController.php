@@ -32,6 +32,10 @@ class MovieModelController extends AdminController
             ]); */
         $grid = new Grid(new MovieModel());
         //add filters including filter by category
+        //add MovieStatusChange batch
+        $grid->batchActions(function ($batch) {
+            $batch->add(new \App\Admin\Actions\Post\MovieStatusChange());
+        });
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
             $filter->like('title', __('Title'));
@@ -80,8 +84,7 @@ class MovieModelController extends AdminController
         $grid->column('vj', __('VJ'))->sortable();
 
         $grid->quickSearch('title', 'url', 'external_url', 'local_video_link');
-        $grid->model()->orderBy('updated_at', 'desc');
-        $grid->disableBatchActions();
+        $grid->model()->orderBy('updated_at', 'desc'); 
         $grid->column('id', __('Id'))->sortable();
         $grid->column('created_at', __('Created'))
             ->display(function ($created_at) {
@@ -96,12 +99,12 @@ class MovieModelController extends AdminController
             ->width(300);
 
         $grid->column('external_url', __('external_url'))->sortable()->copyable()->width(200)
-        ->filter('like');
+            ->filter('like');
 
 
         $grid->column('my_url', __('My url'))
             ->display(function ($url) {
-                return $this->url;  
+                return $this->url;
             })->width(200);
 
         $grid->column('url', __('url'))
@@ -113,8 +116,8 @@ class MovieModelController extends AdminController
         $this->content_is_video = 'No';
         $this->content_type =  $contentType;
 */
- 
-        $grid->column('imdb_url', __('imdb url'))->sortable() ;
+
+        $grid->column('imdb_url', __('imdb url'))->sortable();
 
 
         $grid->column('description', __('Description'))->hide();

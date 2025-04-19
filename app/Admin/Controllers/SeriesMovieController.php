@@ -26,7 +26,13 @@ class SeriesMovieController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new SeriesMovie());
-        $grid->disableBatchActions();
+
+        //add batch action of SeriesMovieStatusChange
+        $grid->batchActions(function ($batch) {
+            $batch->add(new \App\Admin\Actions\Post\SeriesMovieStatusChange());
+        });
+
+
         $grid->quickSearch('title')->placeholder('Search by title');
         //add some filters
         $grid->filter(function ($filter) {
@@ -47,10 +53,10 @@ class SeriesMovieController extends AdminController
         $grid->column('total_episodes', __('Total episodes'))->sortable()
             ->display(function ($total_episodes) {
                 $real_total_episodes = $this->episodes()->count();
-                if($real_total_episodes != $total_episodes) {
+                if ($real_total_episodes != $total_episodes) {
                     $this->total_episodes = $real_total_episodes;
                     $this->save();
-                } 
+                }
                 //url to filter http://localhost/katogo/movies?title=&type=&category_id=4&created_at%5Bstart%5D=&created_at%5Bend%5D=
                 $url = url('movies?category_id=' . $this->id);
                 //open new tab
@@ -67,7 +73,7 @@ class SeriesMovieController extends AdminController
         //sour
         $grid->column('external_url', __('External URL'))
             ->filter('like')
-            ->sortable(); 
+            ->sortable();
 
         return $grid;
     }

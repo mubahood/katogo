@@ -21,6 +21,10 @@ class SeriesMovie extends Model
                     'status' => 'Active',
                     'thumbnail_url' => $model->thumbnail
                 ]);
+            } else {
+                MovieModel::where('category_id', $model->id)->update([
+                    'status' => 'Inactive',
+                ]);
             }
         });
 
@@ -29,6 +33,10 @@ class SeriesMovie extends Model
                 MovieModel::where('category_id', $model->id)->update([
                     'status' => 'Active',
                     'thumbnail_url' => $model->thumbnail
+                ]);
+            } else {
+                MovieModel::where('category_id', $model->id)->update([
+                    'status' => 'Inactive',
                 ]);
             }
         });
