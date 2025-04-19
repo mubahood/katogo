@@ -23,18 +23,21 @@ Route::get('/home', function () {
 
 Route::get('fix-serries-movies', function (Request $request) {
     //where url like namzentertainment
-    $series = SeriesMovie::where('external_url', 'like', '%namzentertainment%')
-        ->where(['is_active' => 'No'])
-        ->orderBy('id', 'asc')
-        ->limit(1000000)
-        ->get();
 
-    if (!isset($_GET['id'])) {
+
+    if (isset($_GET['id'])) {
         $id = $request->get('id');
+
+        $series = SeriesMovie::where('id', $id)
+            ->get();
+    } else {
+        $series = SeriesMovie::where('external_url', 'like', '%namzentertainment%')
+            ->where(['is_active' => 'No'])
+            ->orderBy('id', 'asc')
+            ->limit(1000000)
+            ->get();
     }
 
-    $series = SeriesMovie::where('id', $id)
-        ->get();
     //set limited time
     ini_set('memory_limit', -1);
     ini_set('max_execution_time', -1);
