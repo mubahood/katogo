@@ -73,7 +73,22 @@ class SeriesMovieController extends AdminController
         //sour
         $grid->column('external_url', __('External URL'))
             ->filter('like')
-            ->sortable();
+            ->sortable()
+            ->display(function ($external_url) {
+                if (strlen($external_url) <= 45) {
+                    return $external_url;
+                }
+                //openn new tab
+                return '<a href="' . $external_url . '" target="_blank">' . $external_url . '</a>';
+            });
+        //fix-serries-movies
+        $grid->column('fix', __('Created at'))
+            ->display(function ($created_at) {
+                $ur = url('fix-serries-movies?id=' . $this->id);
+                //open new tab
+                return '<a href="' . $ur . '" target="_blank">Fix</a>';
+            });
+
 
         return $grid;
     }
