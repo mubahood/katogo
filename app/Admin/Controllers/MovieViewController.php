@@ -73,7 +73,7 @@ class MovieViewController extends AdminController
         $grid->column('status', __('Status'))->hide();
         $grid->column('user_reg_date', __('User reg date'))
             ->display(function ($user_id) {
-                $u = \App\Models\User::find($user_id);
+                $u = \App\Models\User::find($this->user_id);
                 if ($u) {
                     $reg_date = Carbon::parse($u->created_at);
                     $now = Carbon::now();
@@ -82,7 +82,7 @@ class MovieViewController extends AdminController
                 }
                 return 'Deleted';
             });
-            
+
         return $grid;
     }
 
