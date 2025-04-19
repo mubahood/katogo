@@ -4,6 +4,7 @@ namespace App\Admin\Controllers;
 
 use App\Models\MovieView;
 use App\Models\Utils;
+use Carbon\Carbon;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
@@ -70,7 +71,18 @@ class MovieViewController extends AdminController
         $grid->column('country', __('Country'))->hide();
         $grid->column('city', __('City'))->hide();
         $grid->column('status', __('Status'))->hide();
-
+        $grid->column('user_reg_date', __('User reg date'))
+            ->display(function ($user_id) {
+                $u = \App\Models\User::find($user_id);
+                if ($u) {
+                    $reg_date = Carbon::parse($u->created_at);
+                    $now = Carbon::now();
+                    $diff = $reg_date->diffInDays($now);
+                    return date('d-m-Y H:i:s', strtotime($u->created_at)) . ' (' . $diff . ' days ago)';
+                }
+                return 'Deleted';
+            });
+            
         return $grid;
     }
 
