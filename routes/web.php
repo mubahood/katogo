@@ -252,6 +252,7 @@ Route::get('process-movies', function (Request $request) {
         ->get();
     $x = 0;
     echo "<h1>Movies (" . $movies->count() . ")</h1>";
+    die('process-movies'); 
 
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
