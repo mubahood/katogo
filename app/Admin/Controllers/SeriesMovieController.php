@@ -68,8 +68,9 @@ class SeriesMovieController extends AdminController
             ->filter([
                 'Yes' => 'Yes',
                 'No' => 'No',
+                'Failed' => 'Failed',
             ])
-            ->editable('select', ['Yes' => 'Yes', 'No' => 'No']);
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No', 'Failed' => 'Failed']);
         //sour
         $grid->column('external_url', __('External URL'))
             ->filter('like')
@@ -139,7 +140,7 @@ class SeriesMovieController extends AdminController
         $form->decimal('total_views', __('Total views'));
         $form->decimal('total_rating', __('Total rating'));
         $form->radio('is_active', __('Are you UPLOADING movies?'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->options(['Yes' => 'Yes', 'No' => 'No', 'Failed' => 'Failed'])
             ->default('No');
 
         return $form;
