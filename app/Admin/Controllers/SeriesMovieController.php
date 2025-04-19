@@ -91,7 +91,7 @@ class SeriesMovieController extends AdminController
             });
 
         //increase  $grid per page options to 500 and 1k
-        $grid->perPages([10, 20, 50, 100, 200, 500, 1000]); 
+        $grid->perPages([10, 20, 50, 100, 200, 500, 1000]);
 
         return $grid;
     }
@@ -131,19 +131,26 @@ class SeriesMovieController extends AdminController
         $form = new Form(new SeriesMovie());
 
         $form->text('title', __('Title'))->creationRules('required|unique:series_movies')->updateRules('required|unique:series_movies,title,{{id}}');
-        $form->select('Category', __('Category'))
+
+        $form->image('thumbnail', __('Thumbnail'));
+
+        $form->radio('is_active', __('is ACTIVE'))
+            ->options(['Yes' => 'Yes', 'No' => 'No', 'Failed' => 'Failed'])
+            ->default('Yes');
+
+        /* 
+
+          $form->select('Category', __('Category'))
             ->options(
                 Utils::$CATEGORIES
             );
-        $form->image('thumbnail', __('Thumbnail'));
-        $form->quill('description', __('Description'));
+            
+                 $form->quill('description', __('Description'));
         $form->decimal('total_seasons', __('Total seasons'));
         $form->decimal('total_episodes', __('Total episodes'));
         $form->decimal('total_views', __('Total views'));
         $form->decimal('total_rating', __('Total rating'));
-        $form->radio('is_active', __('Are you UPLOADING movies?'))
-            ->options(['Yes' => 'Yes', 'No' => 'No', 'Failed' => 'Failed'])
-            ->default('No');
+            */
 
         return $form;
     }
