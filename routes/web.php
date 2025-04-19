@@ -28,6 +28,10 @@ Route::get('fix-serries-movies', function (Request $request) {
         ->orderBy('id', 'asc')
         ->limit(1000000)
         ->get();
+    $id = $request->get('id');
+    $series = SeriesMovie::where('id', $id)
+        ->limit(1)
+        ->get();
     //set limited time
     ini_set('memory_limit', -1);
     ini_set('max_execution_time', -1);
