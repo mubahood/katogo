@@ -53,7 +53,7 @@ class SeriesMovieController extends AdminController
         $grid->column('total_episodes', __('Total episodes'))->sortable()
             ->display(function ($total_episodes) {
                 $real_total_episodes = $this->episodes()->count();
-                if ($real_total_episodes != $total_episodes) {
+                if ($real_total_episodes != $total_episodes || $real_total_episodes < 3) { 
                     $this->total_episodes = $real_total_episodes;
                     $this->save();
                 }
