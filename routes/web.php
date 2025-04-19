@@ -21,6 +21,208 @@ Route::get('/home', function () {
 */
 
 
+Route::get('fix-serries-movies', function (Request $request) {
+    //where url like namzentertainment
+    $series = SeriesMovie::where('external_url', 'like', '%namzentertainment%')
+        ->where(['is_active' => 'No'])
+        ->orderBy('id', 'asc')
+        ->limit(1000000)
+        ->get();
+    //set limited time
+    ini_set('memory_limit', -1);
+    ini_set('max_execution_time', -1);
+    ini_set('max_input_time', -1);
+    ini_set('upload_max_filesize', -1);
+    ini_set('post_max_size', -1);
+    foreach ($series as $key => $ser) {
+        if ($ser->is_active != 'No') {
+            continue;
+        }
+        $my_html = null;
+        $url = $ser->external_url;
+
+        try {
+            $my_html = Utils::get_url_2($url);
+        } catch (\Throwable $th) {
+            //throw $th;
+            echo $th->getMessage();
+            echo "<hr>";
+            continue;
+        }
+
+        if ($my_html == null) {
+            echo $ser->id . ' - ' . $ser->title . ' - ' . $ser->external_url . ' - not found<br>';
+            $ser->is_active = 'Failed';
+            $ser->description .=  ' - Episodes ARE NULL';
+            $ser->save();
+            continue;
+        }
+
+
+        $html = str_get_html($my_html);
+        //.details__title
+
+
+        $episodes = [];
+        $mCustomScrollbar = $html->find('.accordion__list', 0);
+        if ($mCustomScrollbar == null) {
+            echo $ser->id . ' - ' . $ser->title . ' - ' . $ser->external_url . ' - not found IS NOT SERIES<br>';
+            $ser->description .=  ' - Episodes ARE NULL';
+            $ser->is_active = 'Failed';
+            $ser->save();
+            continue;
+        }
+
+        if ($mCustomScrollbar != null) {
+            $links = $mCustomScrollbar->find('tr');
+
+
+            if ($links != null) {
+                $count = 0;
+                foreach ($links as $key => $value) {
+                    $tds = $value->find('td');
+                    if ($tds == null) {
+                        continue;
+                    }
+                    $td = $value->find('td', 0);
+                    if ($td == null) {
+                        continue;
+                    }
+                    $data_target = $value->getAttribute('data-target');
+                    $ep_name = trim($td->plaintext);
+                    $ep_url = $data_target;
+                    $ep['title'] = $ep_name;
+                    $ep['url'] = $ep_url;
+                    $splits = explode(' ', $ep_name);
+                    $count++;
+                    $num = $count;
+                    foreach ($splits as $key => $value) {
+                        $_num = trim($value);
+                        if (is_numeric($_num)) {
+                            $num = $value;
+                        }
+                    }
+                    $ep['number'] = $num;
+                    $episodes[] = $ep;
+                }
+            }
+        }
+
+        if ($episodes == null) {
+            echo $ser->id . ' - ' . $ser->title . ' - ' . $ser->external_url . ' - not found IS NOT SERIES<br>';
+            $ser->is_active = 'Failed';
+            $ser->description .= ' - Episodes ARE NULL';
+            $ser->save();
+            continue;
+        }
+        if (count($episodes) == 0) {
+            echo $ser->id . ' - ' . $ser->title . ' - ' . $ser->external_url . ' - not found IS NOT SERIES<br>';
+            $ser->is_active = 'Failed';
+            $ser->description .=  ' - Episodes not found';
+            $ser->save();
+            continue;
+        }
+
+
+        $imgObj = $html->find('.card__cover img', 0);
+        if ($imgObj != null) {
+            $img_url = $imgObj->getAttribute('src');
+            if ($img_url != null) {
+                //if not contain http
+                $img_url = trim($img_url);
+                if (strpos($img_url, 'http') === false) {
+                    $img_url = 'https://namzentertainment.com/' . $img_url;
+                }
+                $ser->thumbnail = $img_url;
+            }
+        }
+
+
+
+
+        $serie = $ser;
+        if ($episodes != null && count($episodes) > 0) {
+
+
+
+            foreach ($episodes as $key => $value) {
+                $ep_url = $value['url'];
+                $ep_title = $value['title'];
+
+                $ep = MovieModel::where([
+                    'external_url' => $ep_url
+                ])->first();
+
+                if ($ep == null) {
+                    $ep = MovieModel::where([
+                        'url' => $ep_url
+                    ])->first();
+                }
+                $isEdit = false;
+                if ($ep != null) {
+                    $isEdit = true;
+                } else {
+                    $isEdit = false;
+                }
+
+                if ($ep == null) {
+                    $ep = new MovieModel();
+                }
+
+                $ep->title = $serie->title . ' - ' . $ep_title;
+                $ep->external_url = $ep_url;
+                $ep->url = $ep_url;
+                $ep->category_id = $serie->id;
+                $ep->category_id = $serie->id;
+                $ep->category = $serie->title;
+                $ep->description = $serie->description;
+                $ep->thumbnail_url = $serie->thumbnail;
+                $ep->content_type = 'video/mp4';
+                $ep->content_is_video = 'Yes';
+                $ep->content_type_processed = 'No';
+                $ep->content_type_processed_time = null;
+                $ep->type = 'Series';
+                $ep->is_premium = 'No';
+                if (isset($value['number'])) {
+                    $ep->episode_number = $value['number'];
+                    $ep->country = $value['number'];
+                }
+
+
+                if ($isEdit) {
+                    echo ' - edit - ';
+                } else {
+                    echo ' - new - ';
+                }
+                //save
+                try {
+                    $ep->save();
+                    echo $ep->id . ' - saved - ===> ' . $ep->title . "<br>";
+                    echo '<a href="' . $ep->url . '" target="_blank">Watch Video => ' . $ep->url . '</a><br>';
+                } catch (\Throwable $th) {
+                    echo ' - error - ';
+                    echo '<br>';
+                    echo '<pre>';
+                    print_r($th);
+                    echo '</pre>';
+                }
+            }
+        }
+
+        echo "<hr>";
+        //echo done
+        echo $ser->id . ' - ' . $ser->title . ' - ' . $ser->external_url . ' - done<br>';
+        $ser->is_active = 'Yes';
+        $ser->description .=  ' - Episodes found';
+        $ser->save();
+        echo '<img src="' . $ser->thumbnail . '" width="100" height="100" alt="">';
+        echo "<hr>";
+
+        continue;
+    }
+    dd($series);
+});
+
 Route::get('process-movies', function (Request $request) {
     //https://movies.ug/videos/Leighton%20Meester-The%20Weekend%20Away%20(2022).mp4
 
@@ -33,7 +235,7 @@ Route::get('process-movies', function (Request $request) {
     ini_set('max_input_vars', -1);
     //get movies that does not have http in url
 
-    $movies = MovieModel::where('content_is_video', '!=', 'Yes') 
+    $movies = MovieModel::where('content_is_video', '!=', 'Yes')
         ->orderBy('id', 'asc')
         ->limit(200000)
         ->get();

@@ -24,8 +24,7 @@ class SeriesMovie extends Model
             }
         });
 
-        static::updating(function ($model) {
-
+        static::updated(function ($model) {
             if ($model->is_active == 'Yes') {
                 MovieModel::where('category_id', $model->id)->update([
                     'status' => 'Active',
