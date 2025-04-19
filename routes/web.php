@@ -32,12 +32,7 @@ Route::get('fix-serries-movies', function (Request $request) {
             ->get();
     } else {
 
-        //set all not active
-        SeriesMovie::where([])
-            ->update([
-                'is_active' => 'No',
-            ]);
-            die();
+
 
         $series = SeriesMovie::where('external_url', 'like', '%namzentertainment%')
             ->where(['is_active' => 'No'])
