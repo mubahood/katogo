@@ -248,10 +248,14 @@ class DynamicCrudController extends Controller
         if ($request->filled('type')) {
             $query->where('type', $request->get('type'));
         }
+        if ($request->filled('is_first_episode')) {
+            $query->where('is_first_episode', $request->get('is_first_episode'));
+        }
+
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
         $query->orderBy($sortBy, $sortDir);
-        $perPage = $request->get('per_page', 20);
+        $perPage = $request->get('per_page', 21);
         $movies = $query->paginate($perPage);
         $movieIds = $movies->pluck('id')->toArray();
         $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))

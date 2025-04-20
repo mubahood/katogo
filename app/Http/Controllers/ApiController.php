@@ -8,6 +8,7 @@ use App\Models\MovieView;
 use App\Models\StockSubCategory;
 use App\Models\User;
 use App\Models\Utils;
+use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Validation\ValidatesRequests;
@@ -34,78 +35,67 @@ class ApiController extends BaseController
 
     public function manifest(Request $r)
     {
-        $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium'];
-        $topMovie = MovieModel::where([
-            'id' => 11350
-        ])->orderBy('id', 'desc')
-            ->limit(1)
-            ->get($take_only);
-        $unique_genres = [];
-        $sql = "SELECT DISTINCT genre FROM movie_models";
-        $genres = DB::select($sql);
-        foreach ($genres as $key => $genre) {
-            $slilts = explode(",", $genre->genre);
-            foreach ($slilts as $key => $slit) {
-                $slit = trim($slit);
-                if (!in_array($slit, $unique_genres)) {
-                    $unique_genres[] = $slit;
-                }
-            }
-        }
+        $APP_VERSION = 10;
+        $UPDATE_NOTES = "We have added new features and fixed bugs. Please update to the latest version and enjoy the new features.";
+        $WHATSAPP_CONTAT_NUMBER = "+256783204665";
+        $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
+        $date = Carbon::parse('2020-01-01 00:00:00');
+        $records_where_last_listing_date_is_null = MovieModel::where([
+            'last_listing_date' => null,
+        ])->update([
+            'last_listing_date' => $date,
+        ]);
 
-        $temp_genres = $unique_genres;
-        $unique_genres = [];
-        //slits using /
-        foreach ($temp_genres as $key => $genre) {
-            $slilts = explode("/", $genre);
-            foreach ($slilts as $key => $slit) {
-                $slit = trim($slit);
-                if (strlen($slit) < 2) {
-                    continue;
-                }
-                if (!in_array($slit, $unique_genres)) {
-                    $unique_genres[] = $slit;
-                }
-            }
-        }
+        // 12 hours ago
+        $min_time = Carbon::now()->subHours(12);
+        //maxk time now
+        $max_time = Carbon::now();
 
-        $unique_vj = [];
-        $sql = "SELECT DISTINCT vj FROM movie_models";
-        $vjs = DB::select($sql);
-        foreach ($vjs as $key => $vj) {
-            $slilts = explode(",", $vj->vj);
-            foreach ($slilts as $key => $slit) {
-                $slit = trim($slit);
-                //remove vj from vj
-                $slit = str_replace("vj", "", $slit);
-                $slit = str_replace("VJ", "", $slit);
-                $slit = str_replace("Vj", "", $slit);
-                $slit = str_replace("Vj", "", $slit);
-                $slit = str_replace("vj", "", $slit);
-                $slit = str_replace(" ", "", $slit);
-                $slit = str_replace("-", "", $slit);
-                if (!in_array($slit, $unique_vj)) {
-                    $unique_vj[] = $slit;
-                }
-            }
-        }
-
-
-        $lists = [];
-
-        //top movies
-        $movies = MovieModel::where([
-            'is_premium' => 'No',
+        //movies with last_listing_date is between 12 hours ago and now
+        $oldest_listed_movies = MovieModel::where([
             'status' => 'Active',
             'type' => 'Movie',
-        ])->orderBy('id', 'desc')
-            ->limit(100)
+        ])
+            ->whereBetween('last_listing_date', [$min_time, $max_time])
+            ->orderBy('last_listing_date', 'desc')
+            ->limit(200)
             ->get($take_only);
 
-        //top take 10
-        $my_list['title'] = "Top Movies";
-        $my_list['movies'] = $movies->take(10);
-        $lists[] = $my_list;
+        //if less than 200, get the rest of the movies
+        if (count($oldest_listed_movies) < 200) {
+            $oldest_listed_movies = MovieModel::where([
+                'status' => 'Active',
+                'type' => 'Movie',
+            ])
+                ->orderBy('last_listing_date', 'desc')
+                ->limit(200)
+                ->get($take_only);
+            //set last_listing_date to now
+            foreach ($oldest_listed_movies as $key => $movie) {
+                $movie->last_listing_date = Carbon::now();
+                $movie->save();
+            }
+        }
+
+        $now = Carbon::now();
+        $today = $now->format('d');
+        $topMovie = null;
+
+        if (isset($oldest_listed_movies[$today])) {
+            $topMovie = $oldest_listed_movies[$today];
+        } else {
+            $topMovie = $oldest_listed_movies[0];
+        }
+
+        $lists = [];
+        $movies = $oldest_listed_movies;
+
+        //top movies
+        if (count($movies) > 10) {
+            $my_list['title'] = "";
+            $my_list['movies'] = $movies->take(10);
+            $lists[] = $my_list;
+        }
 
         if (count($movies) > 10) {
             $my_list['title'] = "For You";
@@ -177,15 +167,140 @@ class ApiController extends BaseController
             $lists[] = $my_list;
         }
 
+        //documentary movies
+        if (count($movies) > 120) {
+            $my_list['title'] = "Documentary Movies";
+            $my_list['movies'] = $movies->skip(120)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //kids movies
+        if (count($movies) > 130) {
+            $my_list['title'] = "Kids Movies";
+            $my_list['movies'] = $movies->skip(130)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //oldest movies
+        if (count($movies) > 140) {
+            $my_list['title'] = "Oldest Movies";
+            $my_list['movies'] = $movies->skip(140)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //latest movies
+        if (count($movies) > 150) {
+            $my_list['title'] = "Latest Movies";
+            $my_list['movies'] = $movies->skip(150)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //latest movies
+        if (count($movies) > 160) {
+            $my_list['title'] = "Latest Movies";
+            $my_list['movies'] = $movies->skip(160)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //latest movies
+        if (count($movies) > 170) {
+            $my_list['title'] = "Latest Movies";
+            $my_list['movies'] = $movies->skip(170)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //Recommended movies
+        if (count($movies) > 180) {
+            $my_list['title'] = "Recommended Movies";
+            $my_list['movies'] = $movies->skip(180)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //indian movies
+        if (count($movies) > 190) {
+            $my_list['title'] = "Indian Movies";
+            $my_list['movies'] = $movies->skip(190)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //korean movies
+        if (count($movies) > 200) {
+            $my_list['title'] = "Korean Movies";
+            $my_list['movies'] = $movies->skip(200)->take(10);
+            $lists[] = $my_list;
+        }
+
+        //latest movies
+        if (count($movies) > 210) {
+            $my_list['title'] = "Latest Movies";
+            $my_list['movies'] = $movies->skip(210)->take(10);
+            $lists[] = $my_list;
+        }
+
+
+        $unique_genres = [];
+        $sql = "SELECT DISTINCT genre FROM movie_models";
+        $genres = DB::select($sql);
+        foreach ($genres as $key => $genre) {
+            $slilts = explode(",", $genre->genre);
+            foreach ($slilts as $key => $slit) {
+                $slit = trim($slit);
+                if (!in_array($slit, $unique_genres)) {
+                    $unique_genres[] = $slit;
+                }
+            }
+        }
+
+        $temp_genres = $unique_genres;
+        $unique_genres = [];
+        //slits using /
+        foreach ($temp_genres as $key => $genre) {
+            $slilts = explode("/", $genre);
+            foreach ($slilts as $key => $slit) {
+                $slit = trim($slit);
+                if (strlen($slit) < 2) {
+                    continue;
+                }
+                if (!in_array($slit, $unique_genres)) {
+                    $unique_genres[] = $slit;
+                }
+            }
+        }
+
+        $unique_vj = [];
+        $sql = "SELECT DISTINCT vj FROM movie_models";
+        $vjs = DB::select($sql);
+        foreach ($vjs as $key => $vj) {
+            $slilts = explode(",", $vj->vj);
+            foreach ($slilts as $key => $slit) {
+                $slit = trim($slit);
+                //remove vj from vj
+                $slit = str_replace("vj", "", $slit);
+                $slit = str_replace("VJ", "", $slit);
+                $slit = str_replace("Vj", "", $slit);
+                $slit = str_replace("Vj", "", $slit);
+                $slit = str_replace("vj", "", $slit);
+                $slit = str_replace(" ", "", $slit);
+                $slit = str_replace("-", "", $slit);
+                if (!in_array($slit, $unique_vj)) {
+                    $unique_vj[] = $slit;
+                }
+            }
+        }
+
+
+
         $manifest = [
-            'top_movie' => $topMovie,
+            'top_movie' => [$topMovie],
             'vj' => $unique_vj,
             'genres' => $unique_genres,
+            'APP_VERSION' => $APP_VERSION,
             'lists' => $lists,
+            'UPDATE_NOTES' => $UPDATE_NOTES,
+            'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER,
         ];
 
         Utils::success($manifest, "Listed successfully.");
-        dd($manifest);
     }
 
     public function my_list(Request $r, $model)

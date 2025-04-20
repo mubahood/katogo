@@ -9,6 +9,7 @@
         "encore/laravel-admin": "^1.8",
         "guzzlehttp/guzzle": "^7.9",
         "jxlwqq/quill": "^1.0",
+        "laravel-admin-ext/chartjs": "^1.0",
         "laravel-admin-ext/grid-lightbox": "^1.0",
         "laravel-admin-ext/media-player": "^1.1",
         "laravel/framework": "^10.10",

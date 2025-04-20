@@ -85,6 +85,7 @@ return array(
     'Fruitcake\\Cors\\' => array($vendorDir . '/fruitcake/php-cors/src'),
     'Faker\\' => array($vendorDir . '/fakerphp/faker/src/Faker'),
     'Encore\\Grid\\Lightbox\\' => array($vendorDir . '/laravel-admin-ext/grid-lightbox/src'),
+    'Encore\\Chartjs\\' => array($vendorDir . '/laravel-admin-ext/chartjs/src'),
     'Encore\\Admin\\MediaPlayer\\' => array($vendorDir . '/laravel-admin-ext/media-player/src'),
     'Encore\\Admin\\' => array($vendorDir . '/encore/laravel-admin/src'),
     'Egulias\\EmailValidator\\' => array($vendorDir . '/egulias/email-validator/src'),

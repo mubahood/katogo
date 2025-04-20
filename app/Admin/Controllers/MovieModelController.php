@@ -33,7 +33,7 @@ class MovieModelController extends AdminController
         $grid = new Grid(new MovieModel());
         //add filters including filter by category
         //add MovieStatusChange batch\
-        $grid->perPages([10, 20, 50, 100, 200, 500, 1000]);  
+        $grid->perPages([10, 20, 50, 100, 200, 500, 1000]);
         $grid->batchActions(function ($batch) {
             $batch->add(new \App\Admin\Actions\Post\MovieStatusChange());
         });
@@ -64,10 +64,7 @@ class MovieModelController extends AdminController
                 'Movie' => 'success',
                 'Series' => 'danger',
             ]);
-        $grid->column('category', __('Category'))
-            ->display(function ($category) {
-                return $this->category_id;
-            })->sortable();
+        $grid->column('category', __('Category'))->sortable();
         $grid->column('category_id', __('Category id'))->display(function ($category_id) {
             $category = SeriesMovie::find($category_id);
             if ($category) {
@@ -76,16 +73,30 @@ class MovieModelController extends AdminController
             return 'N/A';
         })->sortable();
 
+        //is_first_episode
+        $grid->column('is_first_episode', __('Is first episode'))
+            ->display(function ($is_first_episode) {
+                if ($is_first_episode == 'Yes') {
+                    return '<span class="label label-success">Yes</span>';
+                } else {
+                    return '<span class="label label-danger">No</span>';
+                }
+            })->sortable()
+            ->filter([
+                'Yes' => 'Yes',
+                'No' => 'No',
+            ]);
+
 
 
         $grid->column('episode_number', __('EP No.'))->sortable()
             ->editable();
         $grid->column('country', __('Position'))->sortable()
-            ->sortable();
-        $grid->column('vj', __('VJ'))->sortable();
+            ->hide();
+        $grid->column('vj', __('VJ'))->sortable()->hide();
 
         $grid->quickSearch('title', 'url', 'external_url', 'local_video_link');
-        $grid->model()->orderBy('updated_at', 'desc'); 
+        $grid->model()->orderBy('updated_at', 'desc');
         $grid->column('id', __('Id'))->sortable();
         $grid->column('created_at', __('Created'))
             ->display(function ($created_at) {
@@ -100,13 +111,15 @@ class MovieModelController extends AdminController
             ->width(300);
 
         $grid->column('external_url', __('external_url'))->sortable()->copyable()->width(200)
-            ->filter('like');
+            ->filter('like')
+            ->hide();
 
 
         $grid->column('my_url', __('My url'))
             ->display(function ($url) {
                 return $this->url;
-            })->width(200);
+            })->width(200)
+            ->hide();
 
         $grid->column('url', __('url'))
 
@@ -118,7 +131,8 @@ class MovieModelController extends AdminController
         $this->content_type =  $contentType;
 */
 
-        $grid->column('imdb_url', __('imdb url'))->sortable();
+        $grid->column('imdb_url', __('imdb url'))->sortable()
+            ->hide();
 
 
         $grid->column('description', __('Description'))->hide();
@@ -144,7 +158,7 @@ class MovieModelController extends AdminController
                 'No' => 'danger',
             ])->sortable()->hide();
         //content_type
-        $grid->column('content_type', __('Content type'));
+        $grid->column('content_type', __('Content type'))->hide();
         /*         
         $grid->column('rating', __('Rating'));
         $grid->column('duration', __('Duration'));

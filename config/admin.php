@@ -409,6 +409,11 @@ return [
         'quill' => [
             // If the value is set to false, this extension will be disabled
             'enable' => true,
+            'chartjs' => [
+
+                // Set to `false` if you want to disable this extension
+                'enable' => true,
+            ],
             'config' => [
                 'modules' => [
                     'syntax' => true,

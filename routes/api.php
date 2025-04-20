@@ -17,7 +17,7 @@ Route::post('auth/register', [ApiController::class, 'register']);
 Route::post('auth/request-password-reset-code', [ApiController::class, 'request_password_reset_code']);
 Route::post('auth/login', [ApiController::class, 'login']);
 Route::post('api/{model}', [ApiController::class, 'my_update']);
-Route::get('movies', [ApiController::class, 'get_movies']);
+// Route::get('movies', [ApiController::class, 'get_movies']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {
