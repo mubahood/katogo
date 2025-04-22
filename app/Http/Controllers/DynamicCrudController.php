@@ -105,6 +105,10 @@ class DynamicCrudController extends Controller
             if (!$request->filled('is_first_episode') && !$request->filled('type')) {
                 $query->where('type', 'Movie');
             }
+            if ($request->filled('is_first_episode')) {
+                $query->where('is_first_episode', $request->get('is_first_episode'));
+                $query->where('type', 'Series');
+            }
             // $query->where('status', 'Active'); 
             //make order by created_at desc
             // add these 
