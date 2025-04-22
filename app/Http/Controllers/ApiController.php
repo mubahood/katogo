@@ -40,11 +40,7 @@ class ApiController extends BaseController
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";
         $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
         $date = Carbon::parse('2020-01-01 00:00:00');
-        $records_where_last_listing_date_is_null = MovieModel::where([
-            'last_listing_date' => null,
-        ])->update([
-            'last_listing_date' => $date,
-        ]);
+
 
         // 12 hours ago
         $min_time = Carbon::now()->subHours(12);
@@ -73,6 +69,8 @@ class ApiController extends BaseController
                 ->orderBy('last_listing_date', 'desc')
                 ->limit(200)
                 ->get($take_only);
+            //shuffle $oldest_listed_movies
+            $oldest_listed_movies = $oldest_listed_movies->shuffle();
             //set last_listing_date to now
             foreach ($oldest_listed_movies as $key => $movie) {
                 $movie->last_listing_date = Carbon::now();
