@@ -250,11 +250,11 @@ class DynamicCrudController extends Controller
         }
         if ($request->filled('is_first_episode')) {
             $query->where('is_first_episode', $request->get('is_first_episode'));
-        }else{
+        } else {
             if (!$request->filled('type')) {
-                $query->where('type', 'Movie'); 
             }
         }
+        $query->where('type', 'Movie');
 
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
