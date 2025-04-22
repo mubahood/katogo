@@ -56,8 +56,9 @@ class ApiController extends BaseController
             'status' => 'Active',
             'type' => 'Movie',
         ])
-            ->whereBetween('last_listing_date', [$min_time, $max_time])
             ->where('url', 'not like', '%movies.ug%')
+            ->whereBetween('last_listing_date', [$min_time, $max_time])
+
             ->orderBy('last_listing_date', 'desc')
             ->limit(200)
             ->get($take_only);
@@ -68,6 +69,7 @@ class ApiController extends BaseController
                 'status' => 'Active',
                 'type' => 'Movie',
             ])
+                ->where('url', 'not like', '%movies.ug%')
                 ->orderBy('last_listing_date', 'desc')
                 ->limit(200)
                 ->get($take_only);
