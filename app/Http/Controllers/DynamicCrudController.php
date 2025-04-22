@@ -159,7 +159,7 @@ class DynamicCrudController extends Controller
             $query->orderBy($sortBy, $sortDir);
         }
 
-        $perPage = (int) $request->get('per_page', 20);
+        $perPage = (int) $request->get('per_page', 21);
         $results = $query->paginate($perPage);
 
         $fields = $request->query('fields');
