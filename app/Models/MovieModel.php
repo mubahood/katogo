@@ -110,12 +110,12 @@ class MovieModel extends Model
     public function getUrlAttribute($value)
     {
 
+        $url = $value;
         //check if url contains  http
-        if (str_contains($value, 'http')) {
-            return $value;
+        if (str_contains($value, 'googleapis')) {
+            $url = $this->external_url;
         }
-        return $value;
-        $url = $this->external_url;
+
         //check if doest not have http
         if (strpos($url, 'http') === false) {
             return 'https://movies.ug/' . $value;
@@ -207,7 +207,7 @@ class MovieModel extends Model
             $this->delete();
             return $this;
         }
-  
+
 
         // Reload and return fresh model
         return self::find($this->id);
