@@ -102,7 +102,11 @@ class DynamicCrudController extends Controller
 
         //check if model is MovieModel , set status =active
         if ($modelName == 'MovieModel') {
-            if (!$request->filled('is_first_episode') && !$request->filled('type')) {
+            if (
+                !$request->filled('is_first_episode')
+                && !$request->filled('type')
+                && !$request->filled('category_id')
+            ) {
                 $query->where('type', 'Movie');
             }
             if ($request->filled('is_first_episode')) {
