@@ -587,6 +587,16 @@ class ApiController extends BaseController
         if ($movie == null) {
             Utils::error("Movie not found.");
         }
+ 
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        }
+
 
         $view = MovieView::where([
             'movie_model_id' => $movie->id,

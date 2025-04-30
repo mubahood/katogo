@@ -6,6 +6,7 @@ use App\Models\MovieLike;
 use App\Models\MovieModel;
 use App\Models\MovieView;
 use App\Models\User;
+use App\Models\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -24,6 +25,16 @@ class DynamicCrudController extends Controller
 
     public function users_list(Request $request)
     {
+
+        $u = Utils::get_user($request);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        }
 
         // 1) Check if user is authenticated
         $current = auth('api')->user();
