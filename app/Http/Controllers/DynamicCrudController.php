@@ -83,7 +83,7 @@ class DynamicCrudController extends Controller
         }
 
         // 8) Sorting
-        $sortBy  = $request->input('sort_by', 'online_status');
+        $sortBy  = $request->input('sort_by', 'last_online_at');
         $sortDir = $request->input('sort_dir', 'desc');
         $q->orderBy($sortBy, $sortDir);
 
