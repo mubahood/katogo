@@ -39,42 +39,29 @@ Route::get('process-views', function (Request $request) {
 });
 Route::get('send-notifications', function (Request $request) {
 
-    $trending=  TrendingNotification::getTendingMovie();
-/* 
-            $table->foreignIdFor(MovieModel::class, 'movie_model_id')->nullable();
-            $table->text('title')->nullable();
-            $table->string('type')->nullable();
-            $table->text('image_url')->nullable();
-            $table->text('description')->nullable();
-            $table->integer('views_count')->nullable();
-            $table->integer('views_time')->nullable();
-            $table->text('url')->nullable();
-            $table->dateTime('trending_time')->nullable();
-*/
-    dd($trending);
-
- 
-    //day_time
-    die();
-    
-
-    /* 
-        trending_notifications
-
-        $table->string('is_trending')->default('No')->nullable();
-        $table->dateTime('trending_time')->nullable();
-        $table->integer('trending_id')->nullable();
-
-
-    views_time_count
-    */
-
-    die('send-notifications');
     try {
-        Utils::sendNotification();
+        $trending =  TrendingNotification::getTendingMovie();
     } catch (\Throwable $th) {
-        die("Failed to send messgae because: ".$th->getMessage());
+        //throw $th;
+        echo $th->getMessage();
+        die();
     }
+    if ($trending == null) {
+        echo 'No trending movie found';
+        die();
+    } 
+    $movie = $trending;
+    if ($movie == null) {
+        echo 'No movie found';
+        die();
+    }
+    echo 'Movie found<br>';
+    echo $movie->id . ' - ' . $movie->title . '<br>';
+    echo $movie->url . '<br>';
+    echo '<img src="' . $movie->thumbnail_url . '" width="100" height="100" alt=""><br>';
+    echo 'Sending notification...<br>';
+    die();
+  
 });
 Route::get('fix-serries-movies', function (Request $request) {
     //where url like namzentertainment

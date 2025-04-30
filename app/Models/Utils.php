@@ -19,64 +19,60 @@ class Utils
 
     
     public static function sendNotificationToAll($params) {
-        $title = null;
+        $title = env('APP_NAME');
         $body = null;
-        $url = null;
+        $url = 'https://katogo.schooldynamics.ug/logo.png';
         $img = null;
         $type = null;
         $movie_id = null;
-        
-         dd($params);
-         /* 
-           "title" => "Blood Star (2024) Vj Emmy"
-  "body" => "Don't miss the trending movie of today's afternoon! - Blood Star (2024) Vj Emmy"
-  "image" => "https://movies.ug/posters/Jason Flemyng-My Fault: London (2025) vj junior.jpg"
-  "url" => "https://mobifliks.info/downloadmp4.php?file=luganda/Blood%20Star%20by%20Vj%20Emmy%20-%20Mobifliks.com.mp4"
-  "type" => "movie"
-  "movie_id" => 7936
-  "is_trending" => "Yes"
-  "data" => array:5 [▼
-    "movie_id" => 7936
-    "is_trending" => "Yes"
-    "type" => "movie"
-    "url" => "https://mobifliks.info/downloadmp4.php?file=luganda/Blood%20Star%20by%20Vj%20Emmy%20-%20Mobifliks.com.mp4"
-    "image_url" => "https://movies.ug/posters/Jason Flemyng-My Fault: London (2025) vj junior.jpg"
-  ]
-         */
+        $data = [];
+        $buttons = [];
+        $schedule = null;
+        if(isset($params['title'])) {
+            $title = $params['title'];
+        }
+        if(isset($params['body'])) {
+            $body = $params['body'];
+        }
+        if($body == null){
+            throw new Exception("Body is required.", 1);
+        }
+        if(isset($params['url'])){
+            $url = $params['url'];
+        }
+        if(isset($params['image'])){
+            $img = $params['image'];
+        }
+        if(isset($params['data'])){
+            $data = $params['data'];
+        }
+        if(isset($params['buttons'])){
+            $buttons = $buttons['data'];
+        }
+        if(isset($params['schedule'])){
+            $schedule = $buttons['schedule'];
+        }
+
+        $url = null;
         try {
             OneSignalFacade::addParams(
                 [
                     'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
-                    'large_icon' => 'https://u-lits.com/logo-1.png',
+                    'large_icon' => $img,
+                    'big_picture' => $img,
+                    'chrome_big_picture' => $img,
+                    'chrome_web_image' => $img,
                     'small_icon' => 'logo',
                 ]
             )->sendNotificationToAll(
-                "Some Message", 
+                $body,
                 $url = $url,
                 $data = $data, 
                 $buttons = $buttons, 
                 $schedule =  $schedule, 
-                
+                $headings = $title,
             );
-
-          /*   \OneSignal::addParams(
-                [
-                    'android_channel_id' => 'f3469729-c2b4-4fce-89da-78550d5a2dd1',
-                    'large_icon' => 'https://u-lits.com/logo-1.png',
-                    'small_icon' => 'logo_1',
-                ]
-            )
-                ->sendNotificationToExternalUser(
-                    $msg,
-                    "$receiver",
-                    $url = $url,
-                    $data = $data,
-                    $buttons = $buttons,
-                    $schedule = $schedule,
-                     $headings = $headings
-                );*/
         } catch (\Throwable $th) {
-            dd($th->getMessage());
             throw $th;
         }
         

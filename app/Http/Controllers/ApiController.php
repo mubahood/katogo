@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\MovieModel;
 use App\Models\MovieView;
 use App\Models\StockSubCategory;
+use App\Models\TrendingNotification;
 use App\Models\User;
 use App\Models\Utils;
 use Carbon\Carbon;
@@ -269,6 +270,18 @@ class ApiController extends BaseController
         } else {
             $topMovie = $oldest_listed_movies[0];
         }
+
+
+
+        try {
+            $trending =  TrendingNotification::getTendingMovie();
+            if($trending != null){
+                $topMovie = $trending;
+            } 
+        } catch (\Throwable $th) {
+
+        }
+
 
         $lists = [];
         $movies = $oldest_listed_movies;

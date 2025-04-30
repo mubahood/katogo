@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 
 class TrendingNotification extends Model
 {
@@ -85,37 +86,34 @@ class TrendingNotification extends Model
         }
 
         if($trending->is_sent != 'Yes'){
-            Utils::sendNotificationToAll([
-                'title' => $trending->title,
-                'body' => 'Don\'t miss the trending movie of today\'s ' . $day_time. '! - ' . $trending->title,
-                'image' => $trending->image_url,
-                'url' => $trending->url,
-                'type' => $trending->type,
-                'movie_id' => $trending->movie_model_id,
-                'is_trending' => 'Yes',
-                'data' => [
+            try {
+                Utils::sendNotificationToAll([
+                    'title' => 'UGFLIX ' . ucfirst($day_time) . ' Trening Movie - '.$trending->title,
+                    'body' => 'Watch the trending movie this ' . ucfirst($day_time) . ': "' . $trending->title . '"! Don\'t miss out on the excitement!',
+                    'image' => $trending->image_url,
+                    'url' => $trending->url,
+                    'type' => $trending->type,
                     'movie_id' => $trending->movie_model_id,
                     'is_trending' => 'Yes',
-                    'type' => $trending->type,
-                    'url' => $trending->url,
-                    'image_url' => $trending->image_url,
-                ],
-            ]);
+                    'data' => [
+                        'movie_id' => $trending->movie_model_id,
+                        'is_trending' => 'Yes',
+                        'type' => $trending->type,
+                        'url' => $trending->url,
+                        'image_url' => $trending->image_url,
+                    ],
+                ]);
+                $trending->is_sent = 'Yes';
+                $trending->sent_time = Carbon::now();
+                $trending->save();
+            } catch (\Throwable $th) {
+                //throw $th;
+                // Log the error message
+                Log::error('Error sending notification: ' . $th->getMessage());
+            }
         }
-        die("done");
-        /* 
-           "is_sent" => "No"
-    "sent_time" => null
-        */
-
-        dd($trending);
-/* 
-            $table->string('is_trending')->default('No')->nullable();
-            $table->dateTime('trending_time')->nullable();
-            $table->integer('trending_id')->nullable();
-*/
-
-        dd('getTendingMovie');
+        
+        return $trending->movie;
     }
 
     //belongs to movie
