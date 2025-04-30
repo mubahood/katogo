@@ -294,7 +294,7 @@ Route::get('process-movies', function (Request $request) {
     $movies = MovieModel::where('content_type_processed', 'No')
         ->where('type','Movie')
         ->orderBy('id', 'asc')
-        ->limit(2000)
+        ->limit(10000)
         ->get();
     $x = 0;
     echo "<h1>Movies (" . $movies->count() . ")</h1>";
