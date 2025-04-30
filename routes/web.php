@@ -389,7 +389,7 @@ Route::get('process-movies', function (Request $request) {
 Route::get('process-series', function (Request $request) {
     $series = SeriesMovie::where([])
         ->orderBy('id', 'asc')
-        ->limit(10000)
+        ->limit(500)
         ->get();
 
     //set unlimited time
