@@ -42,10 +42,10 @@ class MovieModelController extends AdminController
         }else if(in_array('movies-inactive', $url_segs)) {
             $grid->model()->where('status', 'Inactive');
         }else if(in_array('movies-processed', $url_segs)) {
-            $grid->model()->where('is_processed', 'Yes');
+            $grid->model()->where('content_type_processed', 'Yes');
         }
         else if(in_array('movies-not-processed', $url_segs)) {
-            $grid->model()->where('is_processed', 'No');
+            $grid->model()->where('content_type_processed', 'No');
         }
         else if(in_array('movies-content-is-video', $url_segs)) {
             $grid->model()->where('content_is_video', 'Yes');

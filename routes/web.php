@@ -288,13 +288,13 @@ Route::get('process-movies', function (Request $request) {
     ini_set('max_input_vars', -1);
     //get movies that does not have http in url
 
-    MovieModel::where('type','Movie')
-        ->update(['content_type_processed'=>'No']);
+/*     MovieModel::where('type','Movie')
+        ->update(['content_type_processed'=>'No']); */
 
     $movies = MovieModel::where('content_type_processed', 'No')
         ->where('type','Movie')
         ->orderBy('id', 'asc')
-        ->limit(5)
+        ->limit(2000)
         ->get();
     $x = 0;
     echo "<h1>Movies (" . $movies->count() . ")</h1>";
@@ -338,7 +338,6 @@ Route::get('process-movies', function (Request $request) {
         }
 
         echo "<hr>";
-        die();
         continue;
         //        $this->content_type_processed_time = Carbon::now();
         $last_time = $movie->content_type_processed_time;
