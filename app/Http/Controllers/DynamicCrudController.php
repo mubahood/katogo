@@ -87,18 +87,12 @@ class DynamicCrudController extends Controller
         $sortDir = $request->input('sort_dir', 'desc');
         $q->orderBy($sortBy, $sortDir);
 
-        // 9) Dynamic field selection
-        $select = ['id','username','name','email','avatar','sex','dob','created_at','updated_at'];
+
         if ($request->filled('fields')) {
-            $requested = explode(',', $request->input('fields'));
-            // only allow whitelisted columns
-            $select = array_values(array_intersect($select, $requested));
-            // always include id
-            if (! in_array('id', $select)) {
-                array_unshift($select, 'id');
-            }
+            $requested = explode(',', $request->input('fields')); 
+           
         }
-        $q->select($select);
+        // $q->select($select);
 
         // 10) Pagination
         $perPage = $request->input('per_page', 20);
