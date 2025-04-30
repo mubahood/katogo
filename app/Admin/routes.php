@@ -18,6 +18,7 @@ Route::group([
     $router->resource('movies-series', MovieModelController::class);
     $router->resource('movies-movies', MovieModelController::class);
     $router->resource('movies-inactive', MovieModelController::class);
+    $router->resource('movies-content-is-video', MovieModelController::class);
     $router->resource('movies-processed', MovieModelController::class);
     $router->resource('movies-not-processed', MovieModelController::class);
  

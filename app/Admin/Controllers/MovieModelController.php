@@ -43,8 +43,12 @@ class MovieModelController extends AdminController
             $grid->model()->where('status', 'Inactive');
         }else if(in_array('movies-processed', $url_segs)) {
             $grid->model()->where('is_processed', 'Yes');
-        }else if(in_array('movies-not-processed', $url_segs)) {
+        }
+        else if(in_array('movies-not-processed', $url_segs)) {
             $grid->model()->where('is_processed', 'No');
+        }
+        else if(in_array('movies-content-is-video', $url_segs)) {
+            $grid->model()->where('content_is_video', 'Yes');
         }
 
 
@@ -112,7 +116,7 @@ class MovieModelController extends AdminController
                 return $category->title;
             }
             return 'N/A';
-        })->sortable();
+        })->sortable()->hide();
 
         //is_first_episode
         $grid->column('is_first_episode', __('Is first episode'))
@@ -137,7 +141,7 @@ class MovieModelController extends AdminController
         $grid->column('vj', __('VJ'))->sortable()->hide();
 
         $grid->quickSearch('title', 'url', 'external_url', 'local_video_link');
-        $grid->column('id', __('Id'))->sortable();
+        $grid->column('id', __('Id'))->sortable()->hide();
         $grid->column('created_at', __('Created'))
             ->display(function ($created_at) {
                 return date('Y-m-d H:i:s', strtotime($created_at));
@@ -266,6 +270,7 @@ class MovieModelController extends AdminController
         //status
         $grid->column('status_1', __('Status'))
             ->display(function ($status) {
+                $status = $this->status;
                 if ($status == 'Active') {
                     return '<span class="label label-success">Active</span>';
                 } else {

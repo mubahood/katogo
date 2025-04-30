@@ -288,41 +288,58 @@ Route::get('process-movies', function (Request $request) {
     ini_set('max_input_vars', -1);
     //get movies that does not have http in url
 
-    $movies = MovieModel::where('content_is_video', '!=', 'Yes')
+    MovieModel::where('type','Movie')
+        ->update(['content_type_processed'=>'No']);
+
+    $movies = MovieModel::where('content_type_processed', 'No')
+        ->where('type','Movie')
         ->orderBy('id', 'asc')
-        ->limit(200000)
+        ->limit(5)
         ->get();
     $x = 0;
     echo "<h1>Movies (" . $movies->count() . ")</h1>";
 
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
+        $segs = explode('/', $url);
+        if(in_array('movies.ug', $segs)){
+            $movie->status = 'Inactive';
+            $movie->content_type_processed = 'Yes';
+            echo "<br>Movie not found : => ".$movie->id. " - ".$movie->title;
+            $movie->save();
+            continue;
+        }
+        if(!in_array('https:', $segs)){
+            $movie->status = 'Inactive';
+            $movie->content_type_processed = 'Yes';
+            $movie->save();
+            echo "<br>Movie not found : => ".$movie->id. " - ".$movie->title;
+            continue;
+        } 
         echo "<hr> $x. ";
 
-
+        $movie->verify_movie();
+        $movie = MovieModel::find($movie->id);
 
         //echo irl
-        echo $movie->id . ' - ' . $movie->title . " : " . $movie->url . '<br>';
+        echo $movie->id . ' - ' . $movie->title . " : <a target='_blank' href='" . $movie->url . "'>" . $movie->url . "</a><br>";
         //if has not http
         //check if  is content_is_video and display colour button
         if ($movie->content_is_video == 'Yes') {
-            echo "<br><span style='color:green'>IS_VIDEO</span>";
-            $x++;
-            //check if url is contains http
-            if (!str_contains($url, 'http')) {
-                $url = 'https://movies.ug/' . $url;
-                $movie->url = $url;
-                $movie->external_url = $url;
-                $movie->save();
-                echo "<br>updated url to " . $url;
-            }
-            continue;
+            echo "<br><span style='color:green'>IS_VIDEO</span><br>";
+            $x++; 
         } else {
-            echo "<span style='color:red'>NOT_VIDEO</span>";
+            echo "<span style='color:red'>NOT_VIDEO</span><br>";
             //delete movie
-            $movie->delete();
+            // $movie->delete();
+            $movie->satus = 'Inactive';
+            $movie->save();
             echo "<br>deleted movie";
         }
+
+        echo "<hr>";
+        die();
+        continue;
         //        $this->content_type_processed_time = Carbon::now();
         $last_time = $movie->content_type_processed_time;
         $last_time = Carbon::parse($last_time);

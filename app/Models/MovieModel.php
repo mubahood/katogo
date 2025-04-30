@@ -208,7 +208,7 @@ class MovieModel extends Model
             return $this;
         }
 
-
+        $this->save(); 
         // Reload and return fresh model
         return self::find($this->id);
     }
