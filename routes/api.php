@@ -21,6 +21,8 @@ Route::post('api/{model}', [ApiController::class, 'my_update']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {
+    
+
     Route::get('me', [ApiController::class, 'me']);
     Route::get('manifest', [ApiController::class, 'manifest']);
     Route::get('movies', [DynamicCrudController::class, 'movies']);

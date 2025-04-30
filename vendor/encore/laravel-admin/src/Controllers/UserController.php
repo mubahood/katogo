@@ -2,6 +2,7 @@
 
 namespace Encore\Admin\Controllers;
 
+use App\Models\Utils;
 use Carbon\Carbon;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
@@ -29,8 +30,19 @@ class UserController extends AdminController
 
         $grid = new Grid(new $userModel());
         $grid->model()->orderBy('id', 'desc');
+        $grid->column('id', 'ID')->sortable()->width(50)->hide();
 
-        $grid->column('id', 'ID')->sortable();
+        //last_online_at
+        $grid->column('last_online_at', 'Last Online')->display(function ($last_online_at) {
+            if ($last_online_at) {
+                $reg_date = Carbon::parse($last_online_at);
+                return date('d-m-Y H:i:s', strtotime($reg_date));
+            }
+            return 'N/A';
+        })->sortable(); 
+        $grid->column('online_status', 'Stutus');
+
+
         $grid->quickSearch('username', 'name')->placeholder('Search by username or name');
         $grid->column('username', trans('admin.username'));
         $grid->column('name', trans('admin.name'));

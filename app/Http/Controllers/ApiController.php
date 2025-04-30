@@ -88,16 +88,8 @@ class ApiController extends BaseController
 
     public function chat_heads(Request $r)
     {
-        $u = null;
-     
 
-        if ($u == null) {
-            $u = auth('api')->user();
-            if ($u == null) {
-                $administrator_id = Utils::get_user_id($r);
-                $u = Administrator::find($administrator_id);
-            }
-        }
+        $u = auth('api')->user();
         if ($u == null) {
             return $this->error('User not found.');
         }
@@ -114,7 +106,26 @@ class ApiController extends BaseController
 
     public function chat_messages(Request $r)
     {
+        
         $u = auth('api')->user();
+
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        }
+
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        }
         if ($u == null) {
             $administrator_id = Utils::get_user_id($r);
             $u = Administrator::find($administrator_id);
@@ -218,6 +229,17 @@ class ApiController extends BaseController
 
     public function manifest(Request $r)
     {
+        $u = Utils::get_user($r);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        }
+
+        
         $APP_VERSION = 10;
         $UPDATE_NOTES = "We have added new features and fixed bugs. Please update to the latest version and enjoy the new features.";
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";

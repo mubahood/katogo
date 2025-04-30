@@ -119,4 +119,26 @@ class User extends Administrator implements JWTSubject
         $num = rand(0, 12);
         return 'avatar-' . $num . '.jpg';
     }
+
+    //getter for online_status
+    public function getOnlineStatusAttribute($value)
+    {
+        $last_online_at = $this->last_online_at;
+        if($last_online_at == null || strlen($last_online_at) < 3){
+            return 'Offline';
+        }
+        $last_online_at = null;
+        try {
+            $last_online_at = \Carbon\Carbon::parse($this->last_online_at);
+        } catch (\Exception $e) {
+            return 'Offline';
+        }
+        $now = \Carbon\Carbon::now();
+        //mins ago
+        $diff = $last_online_at->diffInMinutes($now);
+        if ($diff < 5) {
+            return 'Online';
+        }
+        return Utils::time_ago($last_online_at) . ' ago';
+    }
 }

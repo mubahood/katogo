@@ -17,6 +17,58 @@ include_once('simple_html_dom.php');
 class Utils
 {
 
+    //time_ago static function
+    public static function time_ago($datetime, $full = false)
+    {
+        if($datetime == null){
+            return null;
+        }
+        if($datetime == '0000-00-00 00:00:00' || $datetime == '0000-00-00') {
+            return null;
+        }
+        $ago = null;
+        try {
+            $ago = Carbon::createFromFormat('Y-m-d H:i:s', $datetime);
+        } catch (\Throwable $th) {
+            try {
+                $ago = Carbon::createFromFormat('Y-m-d', $datetime);
+            } catch (\Throwable $th) {
+                return null;
+            }
+        }
+        $now = Carbon::now();
+         $diff = $now->diff($ago);
+
+        $diff->w = floor($diff->d / 7);
+        $diff->d -= $diff->w * 7;
+
+        $string = [
+            'y' => 'year',
+            'm' => 'month',
+            'w' => 'week',
+            'd' => 'day',
+            'h' => 'hour',
+            'i' => 'minute',
+            's' => 'second',
+        ];
+        foreach ($string as $k => &$v) {
+            if ($diff->$k) {
+                if ($k == 'y') {
+                    $v = $diff->$k . " " . ($diff->$k > 1 ? $v . "s" : $v);
+                } else {
+                    $v = $diff->$k . " " . ($diff->$k > 1 ? $v . "s" : $v);
+                }
+            } else {
+                unset($string[$k]);
+            }
+        }
+
+        if (!$full) {
+            return array_shift($string);
+        }
+
+        return count($string) > 1 ? implode(', ', array_slice($string, 0, -1)) . ' and ' . array_pop($string) : array_pop($string);
+    }
     
     public static function sendNotificationToAll($params) {
         $title = env('APP_NAME');

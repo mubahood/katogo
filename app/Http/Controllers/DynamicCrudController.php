@@ -24,17 +24,14 @@ class DynamicCrudController extends Controller
 
     public function users_list(Request $request)
     {
-        // 1) Authenticate
+
+        // 1) Check if user is authenticated
         $current = auth('api')->user();
         if ($current == null) {
             return $this->error('User not authenticated.', 401);
         }
-
-
-
-  
-
-        // 3) Build base query
+ 
+        // 1) Check if user is authenticated
         $q = User::query();
 
         // 4) Incremental sync
@@ -75,7 +72,7 @@ class DynamicCrudController extends Controller
         }
 
         // 8) Sorting
-        $sortBy  = $request->input('sort_by', 'updated_at');
+        $sortBy  = $request->input('sort_by', 'online_status');
         $sortDir = $request->input('sort_dir', 'desc');
         $q->orderBy($sortBy, $sortDir);
 
@@ -158,6 +155,15 @@ class DynamicCrudController extends Controller
     {
         $u = auth('api')->user();
         $u = Administrator::find(1);
+ 
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        }
 
         $modelName = $request->get('model');
         if (!$modelName) return $this->error("Missing 'model' parameter.");
