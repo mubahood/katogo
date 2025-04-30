@@ -271,8 +271,6 @@ class ApiController extends BaseController
             $topMovie = $oldest_listed_movies[0];
         }
 
-
-
         try {
             $trending =  TrendingNotification::getTendingMovie();
             if($trending != null){
