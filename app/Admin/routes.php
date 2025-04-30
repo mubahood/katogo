@@ -14,6 +14,14 @@ Route::group([
     $router->get('/', 'HomeController@index')->name('home');
 
     $router->resource('scraper-models', ScraperModelController::class);
+    $router->resource('movies-active', MovieModelController::class);
+    $router->resource('movies-series', MovieModelController::class);
+    $router->resource('movies-movies', MovieModelController::class);
+    $router->resource('movies-inactive', MovieModelController::class);
+    $router->resource('movies-processed', MovieModelController::class);
+    $router->resource('movies-not-processed', MovieModelController::class);
+ 
+    
     $router->resource('movies', MovieModelController::class);
     $router->resource('series-movies', SeriesMovieController::class);
 

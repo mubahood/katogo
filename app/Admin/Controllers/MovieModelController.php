@@ -31,6 +31,26 @@ class MovieModelController extends AdminController
                 'status' => 'Inactive',
             ]); */
         $grid = new Grid(new MovieModel());
+
+        $url_segs = explode('/', request()->url());
+        if(in_array('movies-active', $url_segs)) {
+            $grid->model()->where('status', 'Active');
+        }else if(in_array('movies-series', $url_segs)) {
+                $grid->model()->where('type', 'Series');
+            }else if(in_array('movies-movies', $url_segs)) {
+            $grid->model()->where('type', 'Movie');
+        }else if(in_array('movies-inactive', $url_segs)) {
+            $grid->model()->where('status', 'Inactive');
+        }else if(in_array('movies-processed', $url_segs)) {
+            $grid->model()->where('is_processed', 'Yes');
+        }else if(in_array('movies-not-processed', $url_segs)) {
+            $grid->model()->where('is_processed', 'No');
+        }
+
+
+        $grid->model()->orderBy('updated_at', 'desc');
+
+
         //add filters including filter by category
         //add MovieStatusChange batch\
         $grid->perPages([10, 20, 50, 100, 200, 500, 1000]);
@@ -117,7 +137,6 @@ class MovieModelController extends AdminController
         $grid->column('vj', __('VJ'))->sortable()->hide();
 
         $grid->quickSearch('title', 'url', 'external_url', 'local_video_link');
-        $grid->model()->orderBy('updated_at', 'desc');
         $grid->column('id', __('Id'))->sortable();
         $grid->column('created_at', __('Created'))
             ->display(function ($created_at) {
