@@ -27,74 +27,7 @@ class MovieModelController extends AdminController
      */
     protected function grid()
     {
-        $u = Admin::user();
-        dd($u);
-        /* 
-           "id" => 1
-    "username" => "admin@gmail.com"
-    "password" => "$2y$12$wq0b2bT4iw/k9szJtX/JQep8tjq0ogS0n/rr.HYLBjsO96h5w76ne"
-    "name" => "Muhindo Mubaraka"
-    "avatar" => "images/8Tech 27-02-2023-1.jpg"
-    "remember_token" => "8pz88nikPMx0N6RW9HSfGeCJLxbKk0yojuxrRZMj2r2ED46hn46X3jglVmWC"
-    "created_at" => "2023-12-27 18:57:01"
-    "updated_at" => "2025-04-21 14:34:36"
-    "company_id" => 1
-    "first_name" => "Muhindo"
-    "last_name" => "Mubaraka"
-    "phone_number" => "+256783204665"
-    "phone_number_2" => "+256783204665"
-    "address" => "Non do ducimus vero"
-    "sex" => "Male"
-    "dob" => "2024-01-06"
-    "status" => "Active"
-    "email" => "admin@gmail.com"
-    "secret_code" => null
-    "profile_photos" => null
-    "bio" => null
-    "tagline" => null
-    "phone_country_name" => null
-    "phone_country_code" => null
-    "phone_country_international" => null
-    "sexual_orientation" => null
-    "height_cm" => null
-    "body_type" => null
-    "country" => null
-    "state" => null
-    "city" => null
-    "latitude" => null
-    "longitude" => null
-    "last_online_at" => null
-    "online_status" => null
-    "looking_for" => null
-    "interested_in" => null
-    "age_range_min" => null
-    "age_range_max" => null
-    "max_distance_km" => null
-    "smoking_habit" => null
-    "drinking_habit" => null
-    "pet_preference" => null
-    "religion" => null
-    "political_views" => null
-    "languages_spoken" => null
-    "education_level" => null
-    "occupation" => null
-    "email_verified" => null
-    "phone_verified" => null
-    "verification_code" => null
-    "failed_login_attempts" => null
-    "last_password_change" => null
-    "subscription_tier" => null
-    "subscription_expires" => null
-    "credits_balance" => null
-    "profile_views" => null
-    "likes_received" => null
-    "matches_count" => null
-    "completed_profile_pct" => null
-    
-        MovieModel::where([])
-            ->update([
-                'status' => 'Inactive',
-            ]); */
+        
         $grid = new Grid(new MovieModel());
 
         $url_segs = explode('/', request()->url());
