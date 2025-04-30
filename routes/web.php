@@ -321,11 +321,15 @@ Route::get('process-movies', function (Request $request) {
         $movie->verify_movie();
         $movie = MovieModel::find($movie->id);
 
+
+        if($movie  == null){
+            continue;
+        }
         //echo irl
         echo $movie->id . ' - ' . $movie->title . " : <a target='_blank' href='" . $movie->url . "'>" . $movie->url . "</a><br>";
         //if has not http
         //check if  is content_is_video and display colour button
-        if ($movie->content_is_video == 'Yes') {
+        if ($movie->content_is_video == 'Yes') { 
             echo "<br><span style='color:green'>IS_VIDEO</span><br>";
             $x++; 
         } else {
