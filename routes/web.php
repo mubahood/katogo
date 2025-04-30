@@ -319,6 +319,9 @@ Route::get('process-movies', function (Request $request) {
         echo "<hr> $x. ";
 
         $movie->verify_movie();
+        if($movie  == null){
+            continue;
+        } 
         $movie = MovieModel::find($movie->id);
 
 
