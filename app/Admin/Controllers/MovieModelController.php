@@ -40,11 +40,7 @@ class MovieModelController extends AdminController
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
             $filter->like('title', __('Title'));
-            $filter->equal('type', __('Type'))
-                ->select([
-                    'Movie' => 'Movie',
-                    'Series' => 'Series',
-                ]);
+         
             $filter->equal('category_id', __('Category'))
                 ->select(SeriesMovie::all()->pluck('title', 'id'));
             $filter->between('created_at', __('Created at'))->datetime();

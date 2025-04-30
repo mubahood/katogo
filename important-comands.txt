@@ -1,12 +1,12 @@
 php artisan make:model MovieDownload -m
-php artisan make:model MyCounter -m
+php artisan make:model TrendingNotification -m
 
 php artisan admin:make MyCounterController --model=App\Models\MyCounter
 
 php artisan db:seed --class=App\\Models\\MovieLike
 
 
-php artisan make:migration add_views_count_to_movie_models --table=movie_models
+php artisan make:migration add_is_sent_trending_notifications --table=trending_notifications
 
 
 php artisan migrate
