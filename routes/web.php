@@ -3,6 +3,7 @@
 use App\Http\Controllers\ApiController;
 use App\Models\Gen;
 use App\Models\MovieModel;
+use App\Models\MovieView;
 use App\Models\SeriesMovie;
 use App\Models\Utils;
 use Carbon\Carbon;
@@ -21,6 +22,35 @@ Route::get('/home', function () {
 */
 
 
+Route::get('process-views', function (Request $request) {
+    $views = MovieView::all();
+    foreach ($views as $key => $v) {
+        if($v->movie == null){
+            echo "<br>Movie not found : => ".$v->movie_model_id;
+            continue;
+        }
+        $v->update_views();
+        echo $v->movie->views_time_count." Secs<br>";
+        continue;
+    }
+    
+    die();
+});
+Route::get('send-notifications', function (Request $request) {
+
+    
+
+    /* 
+    views_time_count
+    */
+
+    die('send-notifications');
+    try {
+        Utils::sendNotification();
+    } catch (\Throwable $th) {
+        die("Failed to send messgae because: ".$th->getMessage());
+    }
+});
 Route::get('fix-serries-movies', function (Request $request) {
     //where url like namzentertainment
 

@@ -5,16 +5,102 @@ namespace App\Http\Controllers;
 use App\Models\MovieLike;
 use App\Models\MovieModel;
 use App\Models\MovieView;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use App\Traits\ApiResponser;
+use Carbon\Carbon;
+use Dotenv\Validator;
 use Encore\Admin\Auth\Database\Administrator;
 use Illuminate\Support\Facades\DB;
 
 class DynamicCrudController extends Controller
 {
     use ApiResponser;
+
+
+    
+
+    public function users_list(Request $request)
+    {
+        // 1) Authenticate
+        $current = auth('api')->user();
+        if ($current == null) {
+            return $this->error('User not authenticated.', 401);
+        }
+
+
+
+  
+
+        // 3) Build base query
+        $q = User::query();
+
+        // 4) Incremental sync
+        if ($request->filled('last_update_date')) {
+            $since = Carbon::parse($request->input('last_update_date'));
+            $q->where('updated_at', '>=', $since);
+        }
+
+        // 5) Full‐text search
+        if ($request->filled('search')) {
+            $term = $request->input('search');
+            $q->where(function($qb) use ($term) {
+                $qb->where('name',     'like', "%{$term}%")
+                   ->orWhere('city',   'like', "%{$term}%")
+                   ->orWhere('country',   'like', "%{$term}%")
+                   ->orWhere('username','like', "%{$term}%");
+            });
+        }
+
+        // 6) Exact filters (whitelist)
+        foreach (['status','sex','country','city'] as $field) {
+            if ($request->filled($field)) {
+                $q->where($field, $request->input($field));
+            }
+        }
+
+        // 7) Age range filter (via dob)
+        if ($request->filled('age_min') || $request->filled('age_max')) {
+            $today = Carbon::today();
+            if ($request->filled('age_min')) {
+                $maxDob = $today->copy()->subYears($request->input('age_min'));
+                $q->where('dob', '<=', $maxDob);
+            }
+            if ($request->filled('age_max')) {
+                $minDob = $today->copy()->subYears($request->input('age_max') + 1)->addDay();
+                $q->where('dob', '>=', $minDob);
+            }
+        }
+
+        // 8) Sorting
+        $sortBy  = $request->input('sort_by', 'updated_at');
+        $sortDir = $request->input('sort_dir', 'desc');
+        $q->orderBy($sortBy, $sortDir);
+
+        // 9) Dynamic field selection
+        $select = ['id','username','name','email','avatar','sex','dob','created_at','updated_at'];
+        if ($request->filled('fields')) {
+            $requested = explode(',', $request->input('fields'));
+            // only allow whitelisted columns
+            $select = array_values(array_intersect($select, $requested));
+            // always include id
+            if (! in_array('id', $select)) {
+                array_unshift($select, 'id');
+            }
+        }
+        $q->select($select);
+
+        // 10) Pagination
+        $perPage = $request->input('per_page', 20);
+        $page    = $request->input('page', 1);
+        $paginator = $q->paginate($perPage, ['*'], 'page', $page);
+
+        // 11) Return structured response
+        return $this->success($paginator, 'Users retrieved successfully.');
+    }
+    
 
     public function save(Request $request)
     {

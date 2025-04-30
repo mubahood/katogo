@@ -292,4 +292,21 @@ class MovieModel extends Model
         'max_progress',
         'watch_status',
     ];
+
+
+    public function update_views(){
+        $views = DB::table('movie_views')->where([
+            'movie_model_id' => $this->id,
+        ])->count();
+        $views_time_count = DB::table('movie_views')->where([
+            'movie_model_id' => $this->id,
+        ])->sum('progress');
+        
+        try {
+            $sql = "UPDATE movie_models SET views_count = $views, views_time_count = $views_time_count WHERE id = {$this->id}";
+            DB::update($sql);
+        } catch (\Throwable $th) {
+            //throw $th;
+        }  
+    }
 }

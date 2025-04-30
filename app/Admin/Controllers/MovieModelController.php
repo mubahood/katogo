@@ -54,6 +54,31 @@ class MovieModelController extends AdminController
             ->width(100)
             ->lightbox(['width' => 50, 'height' => 100])
             ->sortable();
+        $grid->column('views_time_count', 'View Time')
+        ->display(function ($views_time_count) {
+            if($views_time_count == null || $views_time_count == '') {
+                return '0 hours';
+            }
+            if ($views_time_count < 60) {
+                return $views_time_count . ' Seconds';
+            }
+            if ($views_time_count < 3600) {
+                return number_format($views_time_count / 60, 2) . ' minutes';
+            }
+            if ($views_time_count < 86400) {
+                return number_format($views_time_count / 3600, 2) . ' hours';
+            }
+            return number_format($views_time_count / 86400, 2) . ' days';
+        })->sortable();
+
+        //views_count
+        $grid->column('views_count', __('Views count'))
+            ->display(function ($views_count) {
+                if ($views_count == null || $views_count == '') {
+                    return '0';
+                }
+                return $views_count;
+            })->sortable(); 
 
         $grid->column('type', __('Type'))->sortable()
             ->filter([

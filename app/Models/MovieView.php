@@ -22,4 +22,35 @@ class MovieView extends Model
         'progress',
         'max_progress',
     ]; 
+
+
+    //boot
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::updated(function ($model) {
+            $model->update_views();
+        });
+        static::created(function ($model) {
+            $model->update_views();
+        });
+    }
+
+    //udpated movie views
+    public function update_views(){
+        if($this->movie == null){
+            return;
+        }
+        try {
+            $this->movie->update_views();
+        } catch (\Throwable $th) {
+            //throw $th;
+        }
+    }
+
+    //belongs to movie
+    public function movie(){
+        return $this->belongsTo(MovieModel::class, 'movie_model_id');
+    }
 }

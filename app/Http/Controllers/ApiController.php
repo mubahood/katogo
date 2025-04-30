@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChatHead;
+use App\Models\ChatMessage;
 use App\Models\Company;
 use App\Models\MovieModel;
 use App\Models\MovieView;
@@ -10,6 +12,7 @@ use App\Models\User;
 use App\Models\Utils;
 use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
+use Encore\Admin\Auth\Database\Administrator;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Http\Request;
@@ -17,9 +20,188 @@ use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Traits\ApiResponser; 
 
 class ApiController extends BaseController
 {
+
+    use ApiResponser; 
+
+
+    public function chat_start(Request $r)
+    {
+
+        $sender = User::find($r->sender_id);
+        if ($sender == null) {
+            return $this->error('Sender not found.');
+        }
+        $receiver = User::find($r->receiver_id);
+        if ($receiver == null) {
+            return $this->error('Receiver not found.');
+        }
+
+        $product_owner = $sender;
+        $customer = $receiver;
+
+      
+
+        $chat_head = ChatHead::where([
+            'product_owner_id' => $product_owner->id,
+            'customer_id' => $customer->id
+        ])->first();
+        if ($chat_head == null) {
+            $chat_head = ChatHead::where([
+                'customer_id' => $product_owner->id,
+                'product_owner_id' => $customer->id
+            ])->first();
+        }
+
+        if ($chat_head == null) {
+            $chat_head = new ChatHead();
+            $chat_head->product_id = null;
+            $chat_head->product_owner_id = $product_owner->id;
+            $chat_head->customer_id = $customer->id;
+            $chat_head->product_owner_name = $product_owner->name;
+            $chat_head->product_owner_photo = $product_owner->photo;
+            $chat_head->customer_name = $customer->name;
+            $chat_head->customer_photo = $customer->photo;
+            $chat_head->last_message_body = '';
+            $chat_head->last_message_time = Carbon::now();
+            $chat_head->last_message_status = 'sent';
+            $chat_head->save();
+            $chat_head = ChatHead::find($chat_head->id);
+        }
+
+        return $this->success($chat_head, 'Success');
+    }
+
+ 
+
+    public function me(Request $r){
+        $u = Utils::get_user($r);
+        if ($u == null) {
+            Utils::error("Not authonticated.");
+        }
+        return $this->success($u, "Success"); 
+    }
+
+    public function chat_heads(Request $r)
+    {
+        $u = null;
+     
+
+        if ($u == null) {
+            $u = auth('api')->user();
+            if ($u == null) {
+                $administrator_id = Utils::get_user_id($r);
+                $u = Administrator::find($administrator_id);
+            }
+        }
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+        $chat_heads = ChatHead::where([
+            'product_owner_id' => $u->id
+        ])->orWhere([
+            'customer_id' => $u->id
+        ])->get();
+        $chat_heads->append('customer_unread_messages_count');
+        $chat_heads->append('product_owner_unread_messages_count');
+        return $this->success($chat_heads, 'Success');
+    }
+
+
+    public function chat_messages(Request $r)
+    {
+        $u = auth('api')->user();
+        if ($u == null) {
+            $administrator_id = Utils::get_user_id($r);
+            $u = Administrator::find($administrator_id);
+        }
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+
+        if (isset($r->chat_head_id) && $r->chat_head_id != null) {
+            $messages = ChatMessage::where([
+                'chat_head_id' => $r->chat_head_id
+            ])->get();
+            return $this->success($messages, 'Success');
+        }
+        $messages = ChatMessage::where([
+            'sender_id' => $u->id
+        ])->orWhere([
+            'receiver_id' => $u->id
+        ])->get();
+        return $this->success($messages, 'Success');
+    }
+
+    
+    public function chat_mark_as_read(Request $r)
+    {
+        $receiver = Administrator::find($r->receiver_id);
+        if ($receiver == null) {
+            return $this->error('Receiver not found.');
+        }
+        $chat_head = ChatHead::find($r->chat_head_id);
+        if ($chat_head == null) {
+            return $this->error('Chat head not found.');
+        }
+        $messages = ChatMessage::where([
+            'chat_head_id' => $chat_head->id,
+            'receiver_id' => $receiver->id,
+            'status' => 'sent'
+        ])->get();
+        foreach ($messages as $key => $message) {
+            $message->status = 'read';
+            $message->save();
+        }
+        return $this->success($messages, 'Success');
+    }
+
+    public function chat_send(Request $r)
+    {
+
+        $sender = auth('api')->user();
+
+        $user_id = $r->user;
+        if ($sender == null) {
+            $sender = Administrator::find($user_id);
+        } 
+
+        if ($sender == null) {
+            return $this->error('User not found.');
+        }
+        $receiver = User::find($r->receiver_id);
+        if ($receiver == null) {
+            return $this->error('Receiver not found.');
+        }
+     
+
+        $chat_head = ChatHead::find($r->chat_head_id);
+
+        if ($chat_head == null) {
+            return $this->error('Chat head not found.');
+        }
+        
+        $chat_message = new ChatMessage();
+        $chat_message->chat_head_id = $chat_head->id;
+        $chat_message->sender_id = $sender->id;
+        $chat_message->receiver_id = $receiver->id;
+        $chat_message->sender_name = $sender->name;
+        $chat_message->sender_photo = $sender->photo;
+        $chat_message->receiver_name = $receiver->name;
+        $chat_message->receiver_photo = $receiver->photo;
+        $chat_message->body = $r->body;
+        $chat_message->type = 'text';
+        $chat_message->status = 'sent';
+        $chat_message->save();
+        $chat_head->last_message_body = $r->body;
+        $chat_head->last_message_time = Carbon::now();
+        $chat_head->last_message_status = 'sent';
+        $chat_head->save();
+        return $this->success($chat_message, 'Success');
+    }
 
 
     public function file_uploading(Request $r)

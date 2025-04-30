@@ -111,4 +111,12 @@ class User extends Administrator implements JWTSubject
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
     ];
+
+
+    // getter for avatar
+    public function getAvatarAttribute($value)
+    {
+        $num = rand(0, 12);
+        return 'avatar-' . $num . '.jpg';
+    }
 }

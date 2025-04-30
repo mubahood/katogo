@@ -21,13 +21,24 @@ Route::post('api/{model}', [ApiController::class, 'my_update']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {
+    Route::get('me', [ApiController::class, 'me']);
     Route::get('manifest', [ApiController::class, 'manifest']);
     Route::get('movies', [DynamicCrudController::class, 'movies']);
+    Route::get('users-list', [DynamicCrudController::class, 'users_list']);
     Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
     Route::post('/dynamic-save', [DynamicCrudController::class, 'save']);
     Route::post('/dynamic-delete', [DynamicCrudController::class, 'delete']);
     Route::POST("consultation-card-payment", [DynamicCrudController::class, 'consultation_card_payment']);
+
+    Route::POST('chat-send', [ApiController::class, 'chat_send']);
+    Route::get('chat-heads', [ApiController::class, 'chat_heads']);
+    Route::get('chat-messages', [ApiController::class, 'chat_messages']);
+    Route::POST('chat-mark-as-read', [ApiController::class, 'chat_mark_as_read']);
+    Route::POST('chat-start', [ApiController::class, 'chat_start']);
+    
 });
+
+
 
 Route::post('save-view-progress', [ApiController::class, 'save_view_progress']);
 

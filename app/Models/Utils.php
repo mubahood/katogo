@@ -16,6 +16,75 @@ include_once('simple_html_dom.php');
 class Utils
 {
 
+    
+    public static function sendNotification() {
+
+        $msg = 'Hello world';
+        $receiver = 'f3469729-c2b4-4fce-89da-78550d5a2dd1';
+        $url = 'https://u-lits.com';
+        $data = [
+            'key' => 'value',
+            'key2' => 'value2'
+        ];
+        $buttons = [
+            [
+                'id' => 'button1',
+                'text' => 'Button 1',
+                'url' => 'https://u-lits.com'
+            ],
+            [
+                'id' => 'button2',
+                'text' => 'Button 2',
+                'url' => 'https://u-lits.com'
+            ]
+        ];
+        $schedule = null;
+        
+     
+        try {
+            \OneSignal::addParams(
+                [
+                    'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
+                    'large_icon' => 'https://u-lits.com/logo-1.png',
+                    'small_icon' => 'logo',
+                ]
+            )->sendNotificationToAll(
+                "Some Message", 
+                $url = $url,
+                $data = $data, 
+                $buttons = $buttons, 
+                $schedule =  $schedule, 
+                
+            );
+
+          /*   \OneSignal::addParams(
+                [
+                    'android_channel_id' => 'f3469729-c2b4-4fce-89da-78550d5a2dd1',
+                    'large_icon' => 'https://u-lits.com/logo-1.png',
+                    'small_icon' => 'logo_1',
+                ]
+            )
+                ->sendNotificationToExternalUser(
+                    $msg,
+                    "$receiver",
+                    $url = $url,
+                    $data = $data,
+                    $buttons = $buttons,
+                    $schedule = $schedule,
+                     $headings = $headings
+                );*/
+        } catch (\Throwable $th) {
+            dd($th->getMessage());
+            throw $th;
+        }
+        die('Success');
+
+
+        return;
+    }
+    
+
+
 
     public static function escapeString($string)
     {
