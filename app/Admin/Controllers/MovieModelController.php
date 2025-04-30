@@ -130,7 +130,7 @@ class MovieModelController extends AdminController
             ->filter([
                 'Yes' => 'Yes',
                 'No' => 'No',
-            ]);
+            ])->hide();
 
 
 
@@ -226,15 +226,7 @@ class MovieModelController extends AdminController
         $grid->column('comments_count', __('Comments count'))->hide();
         $grid->column('comments', __('Comments'))->hide();
         //is_processed
-        $grid->column('is_processed', __('Is Processed'))
-            ->filter([
-                'Yes' => 'Yes',
-                'No' => 'No',
-            ])->sortable()
-            ->label([
-                'Yes' => 'success',
-                'No' => 'danger',
-            ]);
+        
 
         $grid->column('video_is_downloaded_to_server', __('Downloaded'))->sortable()
             ->filter([
