@@ -47,6 +47,7 @@ class TrendingNotification extends Model
         if($trending->movie == null){
             $movie = MovieModel::where('is_trending','!=', 'Yes')
             ->where('type', 'Movie')
+            ->were('status', 'Active')
             ->where('views_time_count', '>=', $min_secs)
             ->orderBy('views_time_count', 'desc')
             ->first();
@@ -57,12 +58,14 @@ class TrendingNotification extends Model
                 $movie = MovieModel::where('is_trending','!=', 'Yes')
                 ->where('views_time_count', '>=', $min_secs)
                 ->where('type', 'Movie')
+                ->were('status', 'Active')
                 ->orderBy('views_time_count', 'desc')
                 ->first();
                 if($movie == null){
                     //GET ANY LATEST MOVIE
                     $movie = MovieModel::where('is_trending','!=', 'Yes')
                             ->where('type', 'Movie')
+                            ->were('status', 'Active')
                             ->orderBy('created_at', 'desc')
                             ->first();
                 }
