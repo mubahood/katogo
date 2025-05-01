@@ -301,13 +301,14 @@ Route::get('process-movies', function (Request $request) {
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
         $segs = explode('/', $url);
-        if(!in_array('movies.ug', $segs)){
+        if(in_array('movies.ug', $segs)){
             $movie->status = 'Inactive';
             $movie->content_type_processed = 'Yes';
             echo "<br>Movie not found : => ".$movie->id. " - ".$movie->title;
             $movie->save();
             continue;
         }
+        continue; 
         if(!in_array('https:', $segs)){
             $movie->status = 'Inactive';
             $movie->content_type_processed = 'Yes';
