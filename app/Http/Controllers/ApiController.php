@@ -240,7 +240,7 @@ class ApiController extends BaseController
         }
 
         
-        $APP_VERSION = 10;
+        $APP_VERSION = 11;
         $UPDATE_NOTES = "We have added new features and fixed bugs. Please update to the latest version and enjoy the new features.";
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";
         $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
