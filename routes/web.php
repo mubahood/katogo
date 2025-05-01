@@ -292,8 +292,7 @@ Route::get('process-movies', function (Request $request) {
         ->update(['content_type_processed'=>'No']); */
 
     $movies = MovieModel::where('url', 'like', '%movies.ug%')
-        ->where('status', 'Inactive')
-        ->orderBy('id', 'asc')
+         ->orderBy('id', 'asc')
         ->limit(10000)
         ->get();
     $x = 0;
@@ -303,10 +302,10 @@ Route::get('process-movies', function (Request $request) {
         $url = $movie->url;
         $segs = explode('/', $url);
         if(!in_array('movies.ug', $segs)){
-            /* $movie->status = 'Inactive';
+            $movie->status = 'Inactive';
             $movie->content_type_processed = 'Yes';
             echo "<br>Movie not found : => ".$movie->id. " - ".$movie->title;
-            $movie->save(); */
+            $movie->save();
             continue;
         }
         if(!in_array('https:', $segs)){
