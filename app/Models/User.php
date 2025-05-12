@@ -58,6 +58,32 @@ class User extends Administrator implements JWTSubject
             if ($model->password == null || strlen($model->password) < 3) {
                 $model->password = bcrypt('admin');
             }
+
+            if ($model->phone_number == null && strlen($model->phone_number) > 6) {
+                $phone_number = $model->phone_number;
+                $existing_user = User::where('phone_number', $phone_number)->first();
+                if ($existing_user != null) {
+                    throw new \Exception('Phone number already exists');
+                }
+            }
+
+            if ($model->email == null && strlen($model->email) > 6) {
+                $email = $model->email;
+                $existing_user = User::where('email', $email)->first();
+                if ($existing_user != null) {
+                    throw new \Exception('Email already exists');
+                }
+            }
+
+            //do the same for username
+            if ($model->username == null && strlen($model->username) > 6) {
+                $username = $model->username;
+                $existing_user = User::where('username', $username)->first();
+                if ($existing_user != null) {
+                    throw new \Exception('Username already exists');
+                }
+            }
+
             return $model;
         });
 
@@ -75,6 +101,30 @@ class User extends Administrator implements JWTSubject
             if ($name != null && strlen($name) > 0) {
                 $model->name = $name;
             }
+
+            if ($model->phone_number == null && strlen($model->phone_number) > 6) {
+                $phone_number = $model->phone_number;
+                $existing_user = User::where('phone_number', $phone_number)->where('id', '!=', $model->id)->first();
+                if ($existing_user != null) {
+                    throw new \Exception('Phone number already exists');
+                }
+            }
+            if ($model->email == null && strlen($model->email) > 6) {
+                $email = $model->email;
+                $existing_user = User::where('email', $email)->where('id', '!=', $model->id)->first();
+                if ($existing_user != null) {
+                    throw new \Exception('Email already exists');
+                }
+            }
+            //do the same for username
+            if ($model->username == null && strlen($model->username) > 6) {
+                $username = $model->username;
+                $existing_user = User::where('username', $username)->where('id', '!=', $model->id)->first();
+                if ($existing_user != null) {
+                    throw new \Exception('Username already exists');
+                }
+            }
+
             $model->username = $model->email;
             return $model;
         });
