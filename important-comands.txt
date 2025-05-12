@@ -6,7 +6,7 @@ php artisan admin:make MyCounterController --model=App\Models\MyCounter
 php artisan db:seed --class=App\\Models\\MovieLike
 
 
-php artisan make:migration add_is_sent_movie_downloads --table=movie_downloads
+php artisan make:migration change_languages_spoken_to_text --table=admin_users
 
 
 php artisan migrate
