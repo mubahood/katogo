@@ -26,6 +26,7 @@ class DynamicCrudController extends Controller
     public function users_list(Request $request)
     {
 
+        
         $u = Utils::get_user($request);
         if ($u != null) {
             $u = User::find($u->id);
@@ -37,9 +38,9 @@ class DynamicCrudController extends Controller
         }
 
         // 1) Check if user is authenticated
-        $current = auth('api')->user();
+        $current = $u; 
         if ($current == null) {
-            return $this->error('User not authenticated.', 401);
+            return $this->error('User not logged in.', 401);
         }
  
         // 1) Check if user is authenticated
