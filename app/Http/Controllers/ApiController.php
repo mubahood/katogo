@@ -21,12 +21,12 @@ use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tymon\JWTAuth\Facades\JWTAuth;
-use App\Traits\ApiResponser; 
+use App\Traits\ApiResponser;
 
 class ApiController extends BaseController
 {
 
-    use ApiResponser; 
+    use ApiResponser;
 
 
     public function chat_start(Request $r)
@@ -44,7 +44,7 @@ class ApiController extends BaseController
         $product_owner = $sender;
         $customer = $receiver;
 
-      
+
 
         $chat_head = ChatHead::where([
             'product_owner_id' => $product_owner->id,
@@ -76,14 +76,15 @@ class ApiController extends BaseController
         return $this->success($chat_head, 'Success');
     }
 
- 
 
-    public function me(Request $r){
+
+    public function me(Request $r)
+    {
         $u = Utils::get_user($r);
         if ($u == null) {
             Utils::error("Not authonticated.");
         }
-        return $this->success($u, "Success"); 
+        return $this->success($u, "Success");
     }
 
     public function chat_heads(Request $r)
@@ -106,7 +107,7 @@ class ApiController extends BaseController
 
     public function chat_messages(Request $r)
     {
-        
+
         $u = auth('api')->user();
 
         if ($u != null) {
@@ -114,7 +115,6 @@ class ApiController extends BaseController
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
         }
 
@@ -123,7 +123,6 @@ class ApiController extends BaseController
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
         }
         if ($u == null) {
@@ -148,7 +147,7 @@ class ApiController extends BaseController
         return $this->success($messages, 'Success');
     }
 
-    
+
     public function chat_mark_as_read(Request $r)
     {
         $receiver = Administrator::find($r->receiver_id);
@@ -179,7 +178,7 @@ class ApiController extends BaseController
         $user_id = $r->user;
         if ($sender == null) {
             $sender = Administrator::find($user_id);
-        } 
+        }
 
         if ($sender == null) {
             return $this->error('User not found.');
@@ -188,14 +187,14 @@ class ApiController extends BaseController
         if ($receiver == null) {
             return $this->error('Receiver not found.');
         }
-     
+
 
         $chat_head = ChatHead::find($r->chat_head_id);
 
         if ($chat_head == null) {
             return $this->error('Chat head not found.');
         }
-        
+
         $chat_message = new ChatMessage();
         $chat_message->chat_head_id = $chat_head->id;
         $chat_message->sender_id = $sender->id;
@@ -235,11 +234,10 @@ class ApiController extends BaseController
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
         }
 
-        
+
         $APP_VERSION = 11;
         $UPDATE_NOTES = "We have added new features and fixed bugs. Please update to the latest version and enjoy the new features.";
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";
@@ -295,11 +293,10 @@ class ApiController extends BaseController
 
         try {
             $trending =  TrendingNotification::getTendingMovie();
-            if($trending != null){
+            if ($trending != null) {
                 $topMovie = $trending;
-            } 
+            }
         } catch (\Throwable $th) {
-
         }
 
 
@@ -587,13 +584,12 @@ class ApiController extends BaseController
         if ($movie == null) {
             Utils::error("Movie not found.");
         }
- 
+
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
         }
 
@@ -630,7 +626,7 @@ class ApiController extends BaseController
 
         $table_name = $object->getTable();
         $columns = Schema::getColumnListing($table_name);
-        $except = ['id', 'created_at', 'updated_at'];
+        $except = ['id', 'created_at', 'updated_at', 'password', 'remember_token', 'company_id', 'status', 'deleted_at'];
         $data = $r->all();
 
         foreach ($data as $key => $value) {
