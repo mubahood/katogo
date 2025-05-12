@@ -198,4 +198,27 @@ class User extends Administrator implements JWTSubject
         }
         return Utils::time_ago($last_online_at) . ' ago';
     }
+
+    //setter for languages_spoken if is array to json
+    public function setLanguagesSpokenAttribute($value)
+    {
+        if (is_array($value)) {
+            $this->attributes['languages_spoken'] = json_encode($value);
+        } else {
+            $this->attributes['languages_spoken'] = $value;
+        }
+    } 
+
+    //getter for languages_spoken if is json to array
+    public function getLanguagesSpokenAttribute($value)
+    {
+        if ($value == null || strlen($value) < 3) {
+            return [];
+        }
+        $value = json_decode($value, true);
+        if ($value == null) {
+            return [];
+        }
+        return $value;
+    } 
 }
