@@ -116,16 +116,21 @@ class User extends Administrator implements JWTSubject
     // getter for avatar
     public function getAvatarAttribute($value)
     {
-        return url('logo.png');
-        $num = rand(0, 12);
-        return 'avatar-' . $num . '.jpg';
+        if ($value == null || strlen($value) < 3) {
+            return url('logo.png');
+        }
+        $path = public_path('storage/' . $value);
+        if (!file_exists($path)) {
+            return url('logo.png');
+        }
+        return $value;
     }
 
     //getter for online_status
     public function getOnlineStatusAttribute($value)
     {
         $last_online_at = $this->last_online_at;
-        if($last_online_at == null || strlen($last_online_at) < 3){
+        if ($last_online_at == null || strlen($last_online_at) < 3) {
             $this->last_online_at = $this->updated_at;
             $this->save();
         }
@@ -134,7 +139,7 @@ class User extends Administrator implements JWTSubject
             $last_online_at = \Carbon\Carbon::parse($this->last_online_at);
         } catch (\Exception $e) {
             return 'Offline';
-        } 
+        }
         $now = \Carbon\Carbon::now();
         //mins ago
         $diff = $last_online_at->diffInMinutes($now);
