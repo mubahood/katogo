@@ -107,7 +107,15 @@ class DynamicCrudController extends Controller
 
     public function save(Request $request)
     {
-        $u = auth('api')->user();
+        $u = Utils::get_user($request);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        } 
         if (!$u) return $this->error("User not authenticated.");
 
         $modelName = $request->get('model');
@@ -159,8 +167,17 @@ class DynamicCrudController extends Controller
 
     public function index(Request $request)
     {
-        $u = auth('api')->user();
-        $u = Administrator::find(1);
+        $u = Utils::get_user($request);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        } 
+        $u = Administrator::find($u->id);
+        if ($u == null) return $this->error("User not authenticated."); 
  
         if ($u != null) {
             $u = User::find($u->id);
@@ -297,7 +314,15 @@ class DynamicCrudController extends Controller
 
     public function delete(Request $request)
     {
-        $u = auth('api')->user();
+        $u = Utils::get_user($request);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        } 
         if (!$u) return $this->error("User not authenticated.");
 
         $modelName = $request->get('model');
@@ -422,7 +447,15 @@ class DynamicCrudController extends Controller
     }
     public function consultation_flutterwave_payment(Request $request)
     {
-        $u = auth('api')->user();
+        $u = Utils::get_user($request);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        } 
         if ($u == null) {
             return $this->error('User not found.');
         }

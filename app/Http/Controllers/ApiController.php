@@ -90,7 +90,19 @@ class ApiController extends BaseController
     public function chat_heads(Request $r)
     {
 
-        $u = auth('api')->user();
+        $u = Utils::get_user($r);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        } 
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+         
         if ($u == null) {
             return $this->error('User not found.');
         }
@@ -108,7 +120,15 @@ class ApiController extends BaseController
     public function chat_messages(Request $r)
     {
 
-        $u = auth('api')->user();
+        $u = Utils::get_user($r);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        }  
 
         if ($u != null) {
             $u = User::find($u->id);
@@ -173,7 +193,19 @@ class ApiController extends BaseController
     public function chat_send(Request $r)
     {
 
-        $sender = auth('api')->user();
+        $u = Utils::get_user($r);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+              
+            }
+        } 
+        $sender = $u;
+        if ($sender == null) {
+            return $this->error('Sender not found.');
+        }
 
         $user_id = $r->user;
         if ($sender == null) {
