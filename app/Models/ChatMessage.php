@@ -36,7 +36,7 @@ class ChatMessage extends Model
             if ($this->sender == null) {
                 return;
             }
-            Utils::sendNotificationToAll([
+            Utils::sendNotificationToUser($user,[
                 'title' => 'You have a new message',
                 'body' => 'You have a new message from ' . $this->sender->name,
             ]);

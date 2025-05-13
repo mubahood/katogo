@@ -132,6 +132,7 @@ class ApiController extends BaseController
                 $head->customer_photo = '';
             }
 
+
             $heads[] = $head;
         }
 

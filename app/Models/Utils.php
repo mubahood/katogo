@@ -20,10 +20,10 @@ class Utils
     //time_ago static function
     public static function time_ago($datetime, $full = false)
     {
-        if($datetime == null){
+        if ($datetime == null) {
             return null;
         }
-        if($datetime == '0000-00-00 00:00:00' || $datetime == '0000-00-00') {
+        if ($datetime == '0000-00-00 00:00:00' || $datetime == '0000-00-00') {
             return null;
         }
         $ago = null;
@@ -37,7 +37,7 @@ class Utils
             }
         }
         $now = Carbon::now();
-         $diff = $now->diff($ago);
+        $diff = $now->diff($ago);
 
         $diff->w = floor($diff->d / 7);
         $diff->d -= $diff->w * 7;
@@ -69,8 +69,9 @@ class Utils
 
         return count($string) > 1 ? implode(', ', array_slice($string, 0, -1)) . ' and ' . array_pop($string) : array_pop($string);
     }
-    
-    public static function sendNotificationToAll($params) {
+
+    public static function sendNotificationToAll($params)
+    {
         $title = env('APP_NAME');
         $body = null;
         $url = 'https://katogo.schooldynamics.ug/logo.png';
@@ -80,28 +81,28 @@ class Utils
         $data = [];
         $buttons = [];
         $schedule = null;
-        if(isset($params['title'])) {
+        if (isset($params['title'])) {
             $title = $params['title'];
         }
-        if(isset($params['body'])) {
+        if (isset($params['body'])) {
             $body = $params['body'];
         }
-        if($body == null){
+        if ($body == null) {
             throw new Exception("Body is required.", 1);
         }
-        if(isset($params['url'])){
+        if (isset($params['url'])) {
             $url = $params['url'];
         }
-        if(isset($params['image'])){
+        if (isset($params['image'])) {
             $img = $params['image'];
         }
-        if(isset($params['data'])){
+        if (isset($params['data'])) {
             $data = $params['data'];
         }
-        if(isset($params['buttons'])){
+        if (isset($params['buttons'])) {
             $buttons = $buttons['data'];
         }
-        if(isset($params['schedule'])){
+        if (isset($params['schedule'])) {
             $schedule = $buttons['schedule'];
         }
 
@@ -119,82 +120,73 @@ class Utils
             )->sendNotificationToAll(
                 $body,
                 $url = $url,
-                $data = $data, 
-                $buttons = $buttons, 
-                $schedule =  $schedule, 
+                $data = $data,
+                $buttons = $buttons,
+                $schedule =  $schedule,
                 $headings = $title,
             );
         } catch (\Throwable $th) {
             throw $th;
         }
-        
     }
-    public static function sendNotification() {
 
-        $msg = 'Hello world';
-        $receiver = 'f3469729-c2b4-4fce-89da-78550d5a2dd1';
-        $url = 'https://u-lits.com';
-        $data = [
-            'key' => 'value',
-            'key2' => 'value2'
-        ];
-        $buttons = [
-            [
-                'id' => 'button1',
-                'text' => 'Button 1',
-                'url' => 'https://u-lits.com'
-            ],
-            [
-                'id' => 'button2',
-                'text' => 'Button 2',
-                'url' => 'https://u-lits.com'
-            ]
-        ];
-        $schedule = null;
-        
-     
+
+    //send notification to user
+    public static function sendNotificationToUser($user, $params)
+    {
+        $title = env('APP_NAME');
+        $body = null;
+        $url = 'https://katogo.schooldynamics.ug/logo.png';
+        $img = null;
+        $type = null;
+        $movie_id = null;
+        $data = [];
+        if (isset($params['title'])) {
+            $title = $params['title'];
+        }
+        if (isset($params['body'])) {
+            $body = $params['body'];
+        }
+        if ($body == null) {
+            throw new Exception("Body is required.", 1);
+        }
+        if (isset($params['url'])) {
+            $url = $params['url'];
+        }
+        if (isset($params['image'])) {
+            $img = $params['image'];
+        }
+        if (isset($params['data'])) {
+            $data = $params['data'];
+        }
+        $title = null;
+        if (isset($params['title'])) {
+            $title = $params['title'];
+        }
+
         try {
-            \OneSignal::addParams(
+            OneSignalFacade::addParams(
                 [
                     'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
-                    'large_icon' => 'https://u-lits.com/logo-1.png',
+                    'large_icon' => $img,
+                    'big_picture' => $img,
+                    'chrome_big_picture' => $img,
+                    'chrome_web_image' => $img,
                     'small_icon' => 'logo',
                 ]
-            )->sendNotificationToAll(
-                "Some Message", 
-                $url = $url,
-                $data = $data, 
-                $buttons = $buttons, 
-                $schedule =  $schedule, 
-                
+            )->sendNotificationToUser(
+                'my-id-' . $user->id,
+                $body,
+                null,
+                null,
+                null,
+                null,
+                $headings = $title,
             );
-
-          /*   \OneSignal::addParams(
-                [
-                    'android_channel_id' => 'f3469729-c2b4-4fce-89da-78550d5a2dd1',
-                    'large_icon' => 'https://u-lits.com/logo-1.png',
-                    'small_icon' => 'logo_1',
-                ]
-            )
-                ->sendNotificationToExternalUser(
-                    $msg,
-                    "$receiver",
-                    $url = $url,
-                    $data = $data,
-                    $buttons = $buttons,
-                    $schedule = $schedule,
-                     $headings = $headings
-                );*/
         } catch (\Throwable $th) {
-            dd($th->getMessage());
             throw $th;
         }
-        die('Success');
-
-
-        return;
     }
-    
 
 
 
@@ -5125,7 +5117,7 @@ class Utils
             if ($movie == null) {
                 $movie = new MovieModel();
                 $isEdit = false;
-            }else {
+            } else {
                 echo "<hr>";
                 echo $i . '. ' .  $title . ' - ' . count($episodes) . ' episodes<br>';
                 echo $movie->id . ' - ' . $movie->title . ' - ' . $movie->external_url . '<br>';
