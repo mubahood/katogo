@@ -96,13 +96,12 @@ class ApiController extends BaseController
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
-        } 
+        }
         if ($u == null) {
             return $this->error('User not found.');
         }
-         
+
         if ($u == null) {
             return $this->error('User not found.');
         }
@@ -149,9 +148,8 @@ class ApiController extends BaseController
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
-        }  
+        }
 
         if ($u != null) {
             $u = User::find($u->id);
@@ -222,9 +220,8 @@ class ApiController extends BaseController
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
-        } 
+        }
         $sender = $u;
         if ($sender == null) {
             return $this->error('Sender not found.');
@@ -768,6 +765,21 @@ class ApiController extends BaseController
             'id' => $user->id,
             'password' => trim($r->password),
         ]);
+
+
+        if ($token == null) {
+            $user->password = password_hash(trim($r->password), PASSWORD_DEFAULT);
+            try {
+                $user->save();
+            } catch (\Exception $e) {
+                Utils::error($e->getMessage());
+            }
+            $user = User::find($user->id);
+            $token = auth('api')->setTTL(60 * 24 * 365 * 5)->attempt([
+                'id' => $user->id,
+                'password' => trim($r->password),
+            ]);
+        }
 
 
         if ($token == null) {
