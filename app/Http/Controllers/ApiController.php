@@ -113,7 +113,29 @@ class ApiController extends BaseController
         ])->get();
         $chat_heads->append('customer_unread_messages_count');
         $chat_heads->append('product_owner_unread_messages_count');
-        return $this->success($chat_heads, 'Success');
+
+        $heads = [];
+        $me = $u;
+        foreach ($chat_heads as $key => $head) {
+            $them = null;
+            if ($head->product_owner_id == $me->id) {
+                $them = User::find($head->customer_id);
+            } else {
+                $them = User::find($head->product_owner_id);
+            }
+            //customer_text
+            if ($them != null) {
+                $head->customer_text = $them->name;
+                $head->customer_photo = $them->photo;
+            } else {
+                $head->customer_text = '';
+                $head->customer_photo = '';
+            }
+
+            $heads[] = $head;
+        }
+
+        return $this->success($heads, 'Success');
     }
 
 
