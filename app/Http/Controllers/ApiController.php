@@ -293,7 +293,7 @@ class ApiController extends BaseController
         }
 
 
-        $APP_VERSION = 11;
+        $APP_VERSION = 12;
         $UPDATE_NOTES = "We have added new features and fixed bugs. Please update to the latest version and enjoy the new features.";
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";
         $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
@@ -335,6 +335,11 @@ class ApiController extends BaseController
                 $movie->save();
             }
         }
+
+        //shuffle $oldest_listed_movies
+        $oldest_listed_movies = $oldest_listed_movies->shuffle();
+        //shuffle $oldest_listed_movies
+        $oldest_listed_movies = $oldest_listed_movies->shuffle();
 
         $now = Carbon::now();
         $today = $now->format('d');
