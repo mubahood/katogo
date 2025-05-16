@@ -17,6 +17,135 @@ include_once('simple_html_dom.php');
 class Utils
 {
 
+
+
+    public static function upload_images_2($files, $is_single_file = false)
+    {
+
+        ini_set('memory_limit', '-1');
+        if ($files == null || empty($files)) {
+            return $is_single_file ? "" : [];
+        }
+        $uploaded_images = array();
+        foreach ($files as $file) {
+
+            if (
+                isset($file['name']) &&
+                isset($file['type']) &&
+                isset($file['tmp_name']) &&
+                isset($file['error']) &&
+                isset($file['size'])
+            ) {
+                $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+                $file_name = time() . "-" . rand(100000, 1000000) . "." . $ext;
+                $destination = Utils::docs_root() . '/storage/images/' . $file_name;
+
+                $res = move_uploaded_file($file['tmp_name'], $destination);
+                if (!$res) {
+                    continue;
+                }
+                //$uploaded_images[] = $destination;
+                $uploaded_images[] = $file_name;
+            }
+        }
+
+        $single_file = "";
+        if (isset($uploaded_images[0])) {
+            $single_file = $uploaded_images[0];
+        }
+
+
+        return $is_single_file ? $single_file : $uploaded_images;
+    }
+
+
+    public static function create_thumbail($params = array())
+    {
+
+        ini_set('memory_limit', '-1');
+
+        if (
+            !isset($params['source']) ||
+            !isset($params['target'])
+        ) {
+            return [];
+        }
+
+
+
+        if (!file_exists($params['source'])) {
+            $img = url('assets/images/logo.png');
+            return $img;
+        }
+
+
+        $image = new Zebra_Image();
+
+        $image->auto_handle_exif_orientation = true;
+        $image->source_path = "" . $params['source'];
+        $image->target_path = "" . $params['target'];
+
+        $size = filesize($image->source_path) / (1024 * 1024);
+        if ($size < 1) {
+            copy($params['source'], $params['target']);
+            return;
+        }
+
+        if (isset($params['quality'])) {
+            $image->jpeg_quality = $params['quality'];
+        }
+
+        $image->preserve_aspect_ratio = true;
+        $image->enlarge_smaller_images = true;
+        $image->preserve_time = true;
+        $image->handle_exif_orientation_tag = true;
+
+        $img_size = getimagesize($image->source_path); // returns an array that is filled with info
+
+        $image->jpeg_quality = Utils::get_jpeg_quality(filesize($image->source_path));
+        $image->preserve_aspect_ratio = true;
+        $image->enlarge_smaller_images = true;
+        if (!$image->resize(0, 0, ZEBRA_IMAGE_CROP_CENTER)) {
+            return $image->source_path;
+        } else {
+            return $image->target_path;
+        }
+    }
+
+
+
+    public static function docs_root()
+    {
+        return public_path();
+        $r = $_SERVER['DOCUMENT_ROOT'] . "";
+
+        if (str_contains($r, 'htdocs')) {
+            $folder = env('APP_FOLDER');
+            return  $folder . "/public";
+        }
+
+        if (!str_contains($r, 'home/')) {
+            $r = str_replace('/public', "", $r);
+            $r = str_replace('\public', "", $r);
+        }
+
+        if (!(str_contains($r, 'public'))) {
+            $r = $r . "/public";
+        }
+
+
+        /* 
+         "/home/ulitscom_html/public/storage/images/956000011639246-(m).JPG
+        
+        public_html/public/storage/images
+        */
+        return $r;
+    }
+
+
+
+
+
     //time_ago static function
     public static function time_ago($datetime, $full = false)
     {

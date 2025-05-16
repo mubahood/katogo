@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\ChatHead;
 use App\Models\ChatMessage;
 use App\Models\Company;
+use App\Models\Image;
 use App\Models\MovieModel;
 use App\Models\MovieView;
+use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\StockSubCategory;
 use App\Models\TrendingNotification;
 use App\Models\User;
@@ -27,6 +30,264 @@ class ApiController extends BaseController
 {
 
     use ApiResponser;
+
+    public function products_delete(Request $r)
+    {
+        $pro = Product::find($r->id);
+        if ($pro == null) {
+            return $this->error('Product not found.');
+        }
+        try {
+            $pro->delete();
+            return $this->success(null, $message = "Sussesfully deleted!", 200);
+        } catch (\Throwable $th) {
+            return $this->error('Failed to delete product.');
+        }
+    }
+
+    public function products_1(Request $request)
+    {
+        //latest 1000 products without pagination
+        $products = Product::where([])->limit(1000)->get();
+        return $this->success($products, 'Success');
+    }
+
+
+
+    public function product_create(Request $r)
+    {
+
+        $u = Utils::get_user($r);
+        if ($u == null) {
+            Utils::error("Not authonticated.");
+        }
+        $u = User::find($u->id);
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+
+        //local_id is required
+        if (
+            !isset($r->local_id) ||
+            $r->local_id == null ||
+            strlen($r->local_id) < 6
+        ) {
+            return $this->error('Local ID is missing.');
+        }
+
+
+        $isEdit = false;
+        if (
+            isset($r->is_edit) && $r->is_edit == 'Yes' && $r->id != null
+            && $r->id > 0
+        ) {
+            $pro = Product::find($r->id);
+            if ($pro == null) {
+                $pro = new Product();
+                $isEdit = false;
+            } else {
+                $isEdit = true;
+            }
+        } else {
+            $pro = new Product();
+        }
+
+        if (!$isEdit) {
+            $pro->feature_photo = 'no_image.jpg';
+            $pro->user = $u->id;
+            $pro->supplier = $u->id;
+            $pro->in_stock = 1;
+            $pro->rates = 1;
+        }
+
+
+        if ($r->p_type == 'Yes') {
+            if ($r->keywords ==  null) {
+                return $this->error('Prices are missing.');
+            }
+            $my_prices = null;
+            try {
+                $my_prices = json_decode($r->keywords);
+            } catch (\Throwable $th) {
+                $my_prices = null;
+            }
+            //if not array
+            if ($my_prices == null || !is_array($my_prices)) {
+                return $this->error('Prices not found.');
+            }
+            //$my_prices if empty
+            if (count($my_prices) < 1) {
+                return $this->error('Prices not found.');
+            }
+            $prices = [];
+            $min_price = 0;
+            $max_price = 0;
+
+
+            foreach ($my_prices as $key => $value) {
+                if ($value->price == null || strlen($value->price) < 1) {
+                    return $this->error('Price is missing.');
+                }
+                if ($value->min_qty == null || strlen($value->min_qty) < 1) {
+                    return $this->error('Minimum quantity is missing.');
+                }
+                if ($value->max_qty == null || strlen($value->max_qty) < 1) {
+                    return $this->error('Maximum quantity is missing.');
+                }
+                $my_min = (int)($value->min_qty);
+                $my_max = (int)($value->max_qty);
+                $price = (int)($value->price);
+                if ($min_price < $my_min) {
+                    $min_price = $my_min;
+                }
+                if ($max_price < $my_max) {
+                    $max_price = $my_max;
+                }
+                $prices[] = $value;
+            }
+
+            $pro->price_1 = $min_price;
+            $pro->price_2 = $max_price;
+            $pro->keywords = $r->keywords;
+        } else if ($r->p_type == 'No') {
+            if ($r->price_1 == null || strlen($r->price_1) < 1) {
+                return $this->error('Price is missing.');
+            }
+            if ($r->price_2 == null || strlen($r->price_2) < 1) {
+                return $this->error('Price is missing.');
+            }
+            $pro->price_1 = $r->price_1;
+            $pro->price_2 = $r->price_2;
+        } else {
+            return $this->error('Product type is missing.');
+        }
+
+
+        $pro->name = $r->name;
+        $pro->description = $r->description;
+        $pro->local_id = $r->local_id;
+        $pro->summary = $r->data;
+        $pro->metric = 1;
+        $pro->status = 0;
+        $pro->currency = 1;
+        $pro->url = $u->url;
+
+
+        $pro->has_sizes = $r->has_sizes;
+        $pro->has_colors = $r->has_colors;
+        $pro->colors = $r->colors;
+        $pro->sizes = $r->sizes;
+        $pro->p_type = $r->p_type;
+
+        $cat = ProductCategory::find($r->category);
+        if ($cat == null) {
+            return $this->error('Category not found.');
+        }
+        $pro->category = $cat->id;
+
+        $pro->date_added = Carbon::now();
+        $pro->date_updated = Carbon::now();
+        $imgs = Image::where([
+            'parent_local_id' => $pro->local_id
+        ])->get();
+        if ($imgs->count() > 0) {
+            $pro->feature_photo = $imgs[0]->src;
+        }
+        if ($pro->save()) {
+            foreach ($imgs as $key => $img) {
+                $img->product_id = $pro->id;
+                $img->save();
+            }
+            $newPro = Product::find($pro->id);
+            if ($isEdit) {
+                return $this->success($newPro, $message = "Updated successfully!", 200);
+            }
+            return $this->success($newPro, $message = "Submitted successfully!", 200);
+        } else {
+            return $this->error('Failed to upload product.');
+        }
+    }
+
+
+
+
+    public function upload_media(Request $request)
+    {
+        $u = Utils::get_user($request);
+        if ($u == null) {
+            Utils::error("Not authonticated.");
+        }
+        $administrator_id = $u->id;
+
+        $u = Administrator::find($administrator_id);
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+
+        if (
+            !isset($request->parent_local_id) ||
+            $request->parent_local_id == null
+        ) {
+            return $this->error('Local parent ID is missing.');
+        }
+
+        //  strlen($request->parent_local_id) < 6
+        if (
+            strlen($request->parent_local_id) < 6
+        ) {
+            return $this->error('Local parent ID is too short.');
+        }
+
+
+        if (
+            empty($_FILES)
+        ) {
+            return $this->error('No files found.');
+        }
+
+
+
+        $images = Utils::upload_images_2($_FILES, false);
+        $_images = [];
+
+
+        if (empty($images)) {
+            return $this->error('Failed to upload files.');
+        }
+
+        $msg = "";
+        foreach ($images as $src) {
+
+            $img = new Image();
+            $img->administrator_id =  $administrator_id;
+            $img->src =  $src;
+            $img->thumbnail =  null;
+            $img->parent_endpoint =  $request->parent_endpoint;
+            $img->parent_local_id =  $request->parent_local_id;
+            $img->type =  $request->type;
+            $img->parent_id =  (int)($request->parent_id);
+            $pro = Product::where(['local_id' => $img->parent_local_id])->first();
+            $img->product_id =  null;
+            if ($pro != null) {
+                $img->product_id =  $pro->id;
+            }
+            $img->size = 0;
+            $img->note = '';
+            if (
+                isset($request->note)
+            ) {
+                $img->note =  $request->note;
+            }
+            $img->save();
+            $_images[] = $img;
+        }
+
+        return $this->success(
+            null,
+            count($_images) . " Files uploaded successfully."
+        );
+    }
+
 
 
     public function chat_start(Request $r)

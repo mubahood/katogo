@@ -19,9 +19,12 @@ Route::post('auth/login', [ApiController::class, 'login']);
 Route::post('api/{model}', [ApiController::class, 'my_update']);
 // Route::get('movies', [ApiController::class, 'get_movies']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
+Route::get('products-1', [ApiController::class, 'products_1']); 
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {
-    
+    Route::post("post-media-upload", [ApiController::class, 'upload_media']);
+    Route::post("product-create", [ApiController::class, "product_create"]);
+    Route::post('products-delete', [ApiController::class, 'products_delete']);
 
     Route::get('me', [ApiController::class, 'me']);
     Route::get('manifest', [ApiController::class, 'manifest']);
