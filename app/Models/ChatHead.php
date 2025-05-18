@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class ChatHead extends Model
 {
@@ -22,6 +23,20 @@ class ChatHead extends Model
             ->where('receiver_id', $this->product_owner_id)
             ->where('status', 'sent')
             ->count();
+    }
+
+    //boot on delete
+    public static function boot()
+    {
+        parent::boot();
+        self::deleting(function ($m) {
+            try {
+                $sql = "DELETE FROM chat_messages WHERE chat_head_id = " . $m->id;
+                DB::delete($sql); 
+            } catch (\Throwable $th) {
+                //throw $th;
+            }
+        });
     }
 
     protected $appends = ['customer_unread_messages_count', 'product_owner_unread_messages_count'];

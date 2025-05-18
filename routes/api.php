@@ -40,6 +40,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('chat-messages', [ApiController::class, 'chat_messages']);
     Route::POST('chat-mark-as-read', [ApiController::class, 'chat_mark_as_read']);
     Route::POST('chat-start', [ApiController::class, 'chat_start']);
+    Route::POST('chat-delete', [ApiController::class, 'chat_delete']);
     
 });
 

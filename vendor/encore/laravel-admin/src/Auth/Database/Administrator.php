@@ -47,8 +47,9 @@ class Administrator extends Model implements AuthenticatableContract
      */
     public function getAvatarAttribute($avatar)
     {
+        return $avatar; 
         $num = rand(0, 12);
-        return 'avatar-' . $num . '.jpg'; 
+        return 'avatar-' . $num . '.jpg';
         if (url()->isValidUrl($avatar)) {
             return $avatar;
         }

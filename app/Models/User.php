@@ -166,6 +166,7 @@ class User extends Administrator implements JWTSubject
     // getter for avatar
     public function getAvatarAttribute($value)
     {
+        return $value;
         if ($value == null || strlen($value) < 3) {
             return url('logo.png');
         }

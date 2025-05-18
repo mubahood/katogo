@@ -31,12 +31,12 @@ class Product extends Model
         });
         //updated
         self::updated(function ($m) {
-            $m->sync(Utils::get_stripe());
+            return $m;
         });
 
         self::deleting(function ($m) {
             try {
-                $imgs = Image::where('parent_id', $m->id)->orwhere('product_id', $m->id)->get();
+                $imgs = Image::where('parent_local_id', $m->local_id)->get();
                 foreach ($imgs as $img) {
                     $img->delete();
                 }
@@ -74,8 +74,8 @@ class Product extends Model
     public function update_stripe_price($new_price)
     {
 
+        return;
         $new_price = null;
-        $stripe = Utils::get_stripe();
         set_time_limit(-1);
         try {
             $new_price = $stripe->prices->create([
@@ -121,7 +121,7 @@ class Product extends Model
     }
     public function getRatesAttribute()
     {
-        $imgs = Image::where('parent_id', $this->id)->orwhere('product_id', $this->id)->get();
+        $imgs = Image::where('parent_local_id', $this->local_id)->get();
         return json_encode($imgs);
     }
 
@@ -210,7 +210,7 @@ class Product extends Model
     //has many Image
     public function images()
     {
-        return $this->hasMany(Image::class, 'product_id', 'id');
+        return $this->hasMany(Image::class, 'parent_local_id', 'local_id');
     }
 
 

@@ -93,7 +93,7 @@ class ApiController extends BaseController
         }
 
         if (!$isEdit) {
-            $pro->feature_photo = 'no_image.jpg';
+            $pro->feature_photo = 'no_image.png';
             $pro->user = $u->id;
             $pro->supplier = $u->id;
             $pro->in_stock = 1;
@@ -290,6 +290,22 @@ class ApiController extends BaseController
 
 
 
+    public function chat_delete(Request $r)
+    {
+
+        $chat_head = ChatHead::find($r->chat_head_id);
+        if ($chat_head == null) {
+            return $this->error('Chat head not found.');
+        }
+
+        try {
+            $chat_head->delete();
+            return $this->success(null, 'Chat head deleted successfully.');
+        } catch (\Throwable $th) {
+            return $this->error('Failed to delete chat head.');
+        }
+    }
+
     public function chat_start(Request $r)
     {
 
@@ -305,31 +321,71 @@ class ApiController extends BaseController
         $product_owner = $sender;
         $customer = $receiver;
 
-
-
-        $chat_head = ChatHead::where([
-            'product_owner_id' => $product_owner->id,
-            'customer_id' => $customer->id
-        ])->first();
-        if ($chat_head == null) {
-            $chat_head = ChatHead::where([
-                'customer_id' => $product_owner->id,
-                'product_owner_id' => $customer->id
-            ])->first();
+        $pro = null;
+        if ($r->product_id != null) {
+            $pro = Product::find($r->product_id);
         }
+
+
+
+        if ($pro != null) {
+            $chat_head = ChatHead::where([
+                'product_owner_id' => $product_owner->id,
+                'customer_id' => $customer->id,
+                'product_id' => $pro->id
+            ])->first();
+            if ($chat_head == null) {
+                $chat_head = ChatHead::where([
+                    'customer_id' => $product_owner->id,
+                    'product_owner_id' => $customer->id,
+                    'product_id' => $pro->id
+                ])->first();
+            }
+        } else {
+            $chat_head = ChatHead::where([
+                'product_owner_id' => $product_owner->id,
+                'customer_id' => $customer->id
+            ])->first();
+            if ($chat_head == null) {
+                $chat_head = ChatHead::where([
+                    'customer_id' => $product_owner->id,
+                    'product_owner_id' => $customer->id
+                ])->first();
+            }
+        }
+
+
+
+
 
         if ($chat_head == null) {
             $chat_head = new ChatHead();
             $chat_head->product_id = null;
+            $chat_head->customer_photo = $customer->avatar;
             $chat_head->product_owner_id = $product_owner->id;
             $chat_head->customer_id = $customer->id;
             $chat_head->product_owner_name = $product_owner->name;
             $chat_head->product_owner_photo = $product_owner->photo;
             $chat_head->customer_name = $customer->name;
-            $chat_head->customer_photo = $customer->photo;
             $chat_head->last_message_body = '';
             $chat_head->last_message_time = Carbon::now();
             $chat_head->last_message_status = 'sent';
+            $chat_head->type = 'dating';
+
+            if ($pro != null) {
+                $chat_head->product_id = $pro->id;
+                $chat_head->customer_photo = $pro->feature_photo;
+                $chat_head->product_owner_photo = $pro->feature_photo;
+                $chat_head->product_owner_name = $pro->name;
+                $chat_head->type = 'product';
+            }
+
+            /* 
+            $table->string('type')->default('dating')->nullable();
+            $table->integer('sender_unread_count')->default(0)->nullable();
+            $table->integer('receiver_unread_count')->default(0)->nullable();
+            */
+
             $chat_head->save();
             $chat_head = ChatHead::find($chat_head->id);
         }
@@ -371,25 +427,76 @@ class ApiController extends BaseController
         ])->orWhere([
             'customer_id' => $u->id
         ])->get();
-        $chat_heads->append('customer_unread_messages_count');
-        $chat_heads->append('product_owner_unread_messages_count');
 
+
+        /*         $chat_heads->append('customer_unread_messages_count');
+        $chat_heads->append('product_owner_unread_messages_count');
+ */
         $heads = [];
         $me = $u;
+        $done_head_ids = [];
         foreach ($chat_heads as $key => $head) {
-            $them = null;
-            if ($head->product_owner_id == $me->id) {
-                $them = User::find($head->customer_id);
-            } else {
-                $them = User::find($head->product_owner_id);
+            if (in_array($head->id, $done_head_ids)) {
+                continue;
             }
-            //customer_text
-            if ($them != null) {
-                $head->customer_text = $them->name;
-                $head->customer_photo = $them->photo;
+
+            $lastMesg = ChatMessage::where([
+                'chat_head_id' => $head->id
+            ])->orderBy('created_at', 'desc')->first();
+            //if not found, continue
+            if ($lastMesg == null) {
+                continue;
+            }
+
+
+            $their_id = null;
+            if ($me->id == $lastMesg->sender_id) {
+                $their_id = $lastMesg->receiver_id;
             } else {
-                $head->customer_text = '';
-                $head->customer_photo = '';
+                $their_id = $lastMesg->sender_id;
+            }
+
+            $done_head_ids[] = $head->id;
+            $them = User::find($their_id);
+            if ($them == null) {
+                continue;
+            }
+
+            $customer_unread_messages_count = ChatMessage::where('chat_head_id', $head->id)
+                ->where('receiver_id', $u->id)
+                ->where('status', 'sent')
+                ->count();
+            $product_owner_unread_messages_count = ChatMessage::where('chat_head_id', $head->id)
+                ->where('receiver_id', $u->id)
+                ->where('status', 'sent')
+                ->count();
+            $head->customer_unread_messages_count = $customer_unread_messages_count;
+            $head->product_owner_unread_messages_count = $product_owner_unread_messages_count;
+            //customer_text
+            if ($head->type != 'product') {
+                if ($them != null) {
+                    $head->customer_text = $them->name;
+                    if ($them->avatar != null && strlen($them->avatar) > 4) {
+                    }
+                    $head->customer_name = $them->name;
+                    $head->customer_text = $them->name;
+                    $head->customer_photo = $them->avatar;
+                }
+            }
+
+            $head->customer_text = $them->name;
+            $head->customer_name = $them->name;
+            $head->customer_text = $them->name;
+            $head->customer_photo = $them->avatar;
+            $head->last_message_body = $lastMesg->body;
+            $head->product_text = $them->name;
+            $head->last_message_time = $lastMesg->created_at;
+            $head->last_message_status = $lastMesg->status;
+
+            //customer_last_seen
+            if ($them != null) {
+                $head->customer_last_seen = $them->online_status;
+                $head->customer_last_seen = 'online';
             }
 
 
@@ -463,13 +570,12 @@ class ApiController extends BaseController
         $messages = ChatMessage::where([
             'chat_head_id' => $chat_head->id,
             'receiver_id' => $receiver->id,
-            'status' => 'sent'
         ])->get();
         foreach ($messages as $key => $message) {
             $message->status = 'read';
             $message->save();
         }
-        return $this->success($messages, 'Success');
+        return $this->success(null, 'Success');
     }
 
     public function chat_send(Request $r)
