@@ -21,8 +21,8 @@ Route::group([
     $router->resource('movies-content-is-video', MovieModelController::class);
     $router->resource('movies-processed', MovieModelController::class);
     $router->resource('movies-not-processed', MovieModelController::class);
- 
-    
+
+
     $router->resource('movies', MovieModelController::class);
     $router->resource('series-movies', SeriesMovieController::class);
 
@@ -42,9 +42,11 @@ Route::group([
     $router->resource('learning-materials', LearningMaterialPostController::class);
     $router->resource('gens', GenController::class);
     $router->resource('movie-views', MovieViewController::class);
-    $router->resource('movie-likes', MovieLikeController::class); 
-    
+    $router->resource('movie-likes', MovieLikeController::class);
+
     $router->resource('my-counters', MyCounterController::class);
+    $router->resource('movie-downloads', MovieDownloadController::class);
+
 
 
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound

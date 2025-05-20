@@ -2,6 +2,7 @@ php artisan make:model MovieDownload -m
 php artisan make:model TrendingNotification -m
 
 php artisan admin:make MyCounterController --model=App\Models\MyCounter
+php artisan admin:make MovieDownloadController --model=App\\Models\\MovieDownload
 
 php artisan db:seed --class=App\\Models\\MovieLike
 

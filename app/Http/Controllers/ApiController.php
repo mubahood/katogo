@@ -948,7 +948,7 @@ class ApiController extends BaseController
         } */
         $model = "App\Models\\" . $model;
         $data = $model::where([])->limit(1000000)->get();
-        Utils::success($data, "Listed successfully.");
+        Utils::success($data, "Listed successfully. ".$model);
     }
 
     public function get_movies(Request $r)
