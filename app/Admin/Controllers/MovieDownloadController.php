@@ -3,6 +3,7 @@
 namespace App\Admin\Controllers;
 
 use App\Models\MovieDownload;
+use App\Models\Utils;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
@@ -25,35 +26,79 @@ class MovieDownloadController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new MovieDownload());
+        $grid->model()->orderBy('created_at', 'desc');
+        $grid->quickSearch('title', 'url', 'image_url', 'local_image_url', 'thumbnail_url', 'description', 'genre', 'vj', 'content_type', 'content_is_video', 'is_premium', 'episode_number', 'is_first_episode');
 
-        $grid->column('id', __('Id'));
-        $grid->column('created_at', __('Created at'));
-        $grid->column('updated_at', __('Updated at'));
-        $grid->column('local_id', __('Local id'));
-        $grid->column('user_id', __('User id'));
-        $grid->column('movie_model_id', __('Movie model id'));
-        $grid->column('status', __('Status'));
-        $grid->column('error_message', __('Error message'));
-        $grid->column('local_video_link', __('Local video link'));
-        $grid->column('download_started_at', __('Download started at'));
-        $grid->column('download_completed_at', __('Download completed at'));
-        $grid->column('download_duration', __('Download duration'));
-        $grid->column('file_size', __('File size'));
-        $grid->column('download_progress', __('Download progress'));
-        $grid->column('watch_progress', __('Watch progress'));
-        $grid->column('title', __('Title'));
-        $grid->column('url', __('Url'));
-        $grid->column('image_url', __('Image url'));
-        $grid->column('local_image_url', __('Local image url'));
-        $grid->column('thumbnail_url', __('Thumbnail url'));
-        $grid->column('description', __('Description'));
-        $grid->column('genre', __('Genre'));
-        $grid->column('vj', __('Vj'));
-        $grid->column('content_type', __('Content type'));
-        $grid->column('content_is_video', __('Content is video'));
-        $grid->column('is_premium', __('Is premium'));
-        $grid->column('episode_number', __('Episode number'));
-        $grid->column('is_first_episode', __('Is first episode'));
+        $grid->column('created_at', __('Created at'))->sortable()
+            ->display(function ($created_at) {
+                return date('Y-m-d H:i:s', strtotime($created_at)); 
+            });
+
+        $grid->column('title', __('Title'))->sortable()
+            ->display(function ($title) {
+                return "<a href='" . $this->url . "' target='_blank'>" . $title . "</a>";
+            });
+        $grid->column('url', __('Url'))
+            ->display(function ($url) {
+                return "<a href='" . $url . "' target='_blank'>PLAY</a>";
+            }); 
+        $grid->column('user_id', __('User'))
+            ->display(function ($user_id) {
+                if ($this->user != null) {
+                    return $this->user->name;
+                }
+                return "<span style='color: red; font-weight: bold;'>NOT FOUND</span>";
+            });
+        $grid->column('movie_model_id', __('Movie Model id'))->hide()->sortable();
+        $grid->column('status', __('Status'))->hide();
+        $grid->column('error_message', __('Error message'))->hide();
+        $grid->column('local_video_link', __('Local video link'))->hide();
+        $grid->column('download_started_at', __('Download started at'))
+            ->display(function ($download_started_at) {
+                if ($this->download_started_at != null) {
+                    return date('Y-m-d H:i:s', strtotime($download_started_at));
+                }
+                return "<span style='color: red; font-weight: bold;'>NOT STARTED</span>";
+            })->sortable();
+        $grid->column('download_completed_at', __('Download completed at'))
+            ->display(function ($download_completed_at) {
+                if ($this->download_completed_at != null) {
+                    //in minutes
+                    $diff = strtotime($this->download_completed_at) - strtotime($this->download_started_at);
+                    $minutes = round($diff / 60, 2);
+                    return date('Y-m-d H:i:s', strtotime($download_completed_at)) . " ($minutes minutes)";
+                }
+                return "<span style='color: red; font-weight: bold;'>NOT COMPLETED</span>";
+            })->sortable();
+        $grid->column('download_duration', __('Download duration'))
+            ->display(function ($download_duration) {
+                if ($this->download_completed_at != null && $this->download_started_at != null) {
+                    $diff = strtotime($this->download_completed_at) - strtotime($this->download_started_at);
+                    $minutes = round($diff / 60, 2);
+                    $hours = floor($minutes / 60);
+                    if ($hours > 0) {
+                        $minutes = $minutes - ($hours * 60);
+                        return number_format($hours) . " hours " . number_format($minutes) . " minutes";
+                    } 
+                    return number_format($minutes) . " minutes";
+                }
+                return "<span style='color: red; font-weight: bold;'>NOT COMPLETED</span>";
+            })->sortable();
+        $grid->column('file_size', __('File size'))->hide();
+        $grid->column('download_progress', __('Download progress'))->hide();
+        $grid->column('watch_progress', __('Watch progress'))->hide();
+
+        $grid->column('image_url', __('Image url'))->hide();
+        $grid->column('local_image_url', __('Local image url'))->hide();
+        $grid->column('thumbnail_url', __('Thumbnail url'))->hide();
+        $grid->column('description', __('Description'))->hide();
+        $grid->column('genre', __('Genre'))->hide();
+        $grid->column('vj', __('Vj'))->hide();
+        $grid->column('content_type', __('Content type'))->hide();
+        $grid->column('content_is_video', __('Content is video'))->hide();
+        $grid->column('is_premium', __('Is premium'))->hide();
+        $grid->column('episode_number', __('Episode number'))->hide();
+        $grid->column('is_first_episode', __('Is first episode'))->hide();
 
         return $grid;
     }
