@@ -46,6 +46,7 @@ Route::group([
 
     $router->resource('my-counters', MyCounterController::class);
     $router->resource('movie-downloads', MovieDownloadController::class);
+    $router->resource('product-categories', ProductCategoryController::class);
 
 
 
