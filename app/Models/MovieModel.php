@@ -110,6 +110,18 @@ class MovieModel extends Model
     public function getUrlAttribute($value)
     {
 
+        if (str_contains($value, 'https:')) {
+            return $value;
+        }
+        if (str_contains($value, 'http:')) {
+            return $value;
+        }
+
+        //check if it contains http, return the value
+        if (strpos($value, 'http') !== false) {
+            return $value;
+        }
+
         $url = $value;
         //check if url contains  http
         if (str_contains($value, 'googleapis')) {
@@ -208,7 +220,7 @@ class MovieModel extends Model
             return $this;
         }
 
-        $this->save(); 
+        $this->save();
         // Reload and return fresh model
         return self::find($this->id);
     }
@@ -294,19 +306,20 @@ class MovieModel extends Model
     ];
 
 
-    public function update_views(){
+    public function update_views()
+    {
         $views = DB::table('movie_views')->where([
             'movie_model_id' => $this->id,
         ])->count();
         $views_time_count = DB::table('movie_views')->where([
             'movie_model_id' => $this->id,
         ])->sum('progress');
-        
+
         try {
             $sql = "UPDATE movie_models SET views_count = $views, views_time_count = $views_time_count WHERE id = {$this->id}";
             DB::update($sql);
         } catch (\Throwable $th) {
             //throw $th;
-        }  
+        }
     }
 }
