@@ -21,28 +21,27 @@ class DynamicCrudController extends Controller
     use ApiResponser;
 
 
-    
+
 
     public function users_list(Request $request)
     {
 
-        
+
         $u = Utils::get_user($request);
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
         }
 
         // 1) Check if user is authenticated
-        $current = $u; 
+        $current = $u;
         if ($current == null) {
             return $this->error('User not logged in.', 401);
         }
- 
+
         // 1) Check if user is authenticated
         $q = User::query();
 
@@ -55,16 +54,16 @@ class DynamicCrudController extends Controller
         // 5) Full‐text search
         if ($request->filled('search')) {
             $term = $request->input('search');
-            $q->where(function($qb) use ($term) {
+            $q->where(function ($qb) use ($term) {
                 $qb->where('name',     'like', "%{$term}%")
-                   ->orWhere('city',   'like', "%{$term}%")
-                   ->orWhere('country',   'like', "%{$term}%")
-                   ->orWhere('username','like', "%{$term}%");
+                    ->orWhere('city',   'like', "%{$term}%")
+                    ->orWhere('country',   'like', "%{$term}%")
+                    ->orWhere('username', 'like', "%{$term}%");
             });
         }
 
         // 6) Exact filters (whitelist)
-        foreach (['status','sex','country','city'] as $field) {
+        foreach (['status', 'sex', 'country', 'city'] as $field) {
             if ($request->filled($field)) {
                 $q->where($field, $request->input($field));
             }
@@ -90,8 +89,7 @@ class DynamicCrudController extends Controller
 
 
         if ($request->filled('fields')) {
-            $requested = explode(',', $request->input('fields')); 
-           
+            $requested = explode(',', $request->input('fields'));
         }
         // $q->select($select);
 
@@ -103,7 +101,7 @@ class DynamicCrudController extends Controller
         // 11) Return structured response
         return $this->success($paginator, 'Users retrieved successfully.');
     }
-    
+
 
     public function save(Request $request)
     {
@@ -113,9 +111,8 @@ class DynamicCrudController extends Controller
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
-        } 
+        }
         if (!$u) return $this->error("User not authenticated.");
 
         $modelName = $request->get('model');
@@ -168,23 +165,28 @@ class DynamicCrudController extends Controller
     public function index(Request $request)
     {
         $u = Utils::get_user($request);
+
+        if ($u == null) {
+            $u = auth('api')->user();
+        }
+
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
-        } 
+        }
+        if ($u == null) return $this->error("User not authenticated.");
+
         $u = Administrator::find($u->id);
-        if ($u == null) return $this->error("User not authenticated."); 
- 
+        if ($u == null) return $this->error("User not authenticated.");
+
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
         }
 
@@ -320,9 +322,8 @@ class DynamicCrudController extends Controller
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
-        } 
+        }
         if (!$u) return $this->error("User not authenticated.");
 
         $modelName = $request->get('model');
@@ -453,9 +454,8 @@ class DynamicCrudController extends Controller
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-              
             }
-        } 
+        }
         if ($u == null) {
             return $this->error('User not found.');
         }
