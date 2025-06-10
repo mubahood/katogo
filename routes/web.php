@@ -10,9 +10,11 @@ use App\Models\Utils;
 use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
 use Illuminate\Http\Request;
+use Illuminate\Process\Exceptions\ProcessFailedException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
-
+use Symfony\Component\Process\Process;
+ 
 
 /* Route::get('/', function () {
     return die('welcome');
@@ -23,18 +25,77 @@ Route::get('/home', function () {
 */
 
 
+Route::get('check-ffmpeg', function (Request $request) {
+    // Path to the FFmpeg binary.
+    // On cPanel, it might be in a common system path, or sometimes hosts provide a specific path.
+    // If 'ffmpeg' isn't found, you might need to try common paths like '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg',
+    // or check with your hosting provider for the exact path.
+    $ffmpegBinary = 'ffmpeg'; // Start by trying the common system path alias
+
+    // Use Symfony Process component (already included in Laravel) for safer execution.
+    // This avoids direct shell_exec/exec which can be risky and harder to debug.
+    $process = new Process([$ffmpegBinary, '-version']);
+    $process->setTimeout(10); // Set a timeout to prevent hanging
+
+    try {
+        $process->run();
+
+        // Executes the command and returns the exit code, throws an exception on error
+        if (!$process->isSuccessful()) {
+            // FFmpeg command failed, likely because it's not found or not executable.
+            // Capture error output for debugging.
+            $errorMessage = "FFmpeg command failed or not found: " . $process->getErrorOutput();
+            return response()->json([
+                'status' => 'error',
+                'message' => $errorMessage,
+                'is_ffmpeg_installed' => false
+            ], 200); // Use 200 as it's a successful response to the check, even if FFmpeg isn't there.
+        }
+
+        // If successful, FFmpeg is installed. Get the version output.
+        $output = $process->getOutput();
+        $versionLine = '';
+        if (preg_match('/ffmpeg version (\S+)/', $output, $matches)) {
+            $versionLine = 'FFmpeg version: ' . $matches[1];
+        } else {
+            $versionLine = 'FFmpeg found, but version could not be parsed. Full output: ' . substr($output, 0, 200) . '...';
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'FFmpeg is installed and executable.',
+            'is_ffmpeg_installed' => true,
+            'version_info' => $versionLine,
+            'full_output_snippet' => substr($output, 0, 500) . '...' // Include a snippet for more context
+        ]);
+    } catch (ProcessFailedException $exception) {
+        // This catches exceptions if the process itself couldn't be run (e.g., command not found).
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Failed to run FFmpeg command. It might not be installed or the path is incorrect. Error: ' . $exception->getMessage(),
+            'is_ffmpeg_installed' => false
+        ], 200); // Still 200 for a successful response to the check request.
+    } catch (\Exception $e) {
+        // Catch any other unexpected exceptions
+        return response()->json([
+            'status' => 'error',
+            'message' => 'An unexpected error occurred: ' . $e->getMessage(),
+            'is_ffmpeg_installed' => false
+        ], 500);
+    }
+});
 Route::get('process-views', function (Request $request) {
     $views = MovieView::all();
     foreach ($views as $key => $v) {
-        if($v->movie == null){
-            echo "<br>Movie not found : => ".$v->movie_model_id;
+        if ($v->movie == null) {
+            echo "<br>Movie not found : => " . $v->movie_model_id;
             continue;
         }
         $v->update_views();
-        echo $v->movie->views_time_count." Secs<br>";
+        echo $v->movie->views_time_count . " Secs<br>";
         continue;
     }
-    
+
     die();
 });
 Route::get('send-notifications', function (Request $request) {
@@ -49,7 +110,7 @@ Route::get('send-notifications', function (Request $request) {
     if ($trending == null) {
         echo 'No trending movie found';
         die();
-    } 
+    }
     $movie = $trending;
     if ($movie == null) {
         echo 'No movie found';
@@ -61,7 +122,6 @@ Route::get('send-notifications', function (Request $request) {
     echo '<img src="' . $movie->thumbnail_url . '" width="100" height="100" alt=""><br>';
     echo 'Sending notification...<br>';
     die();
-  
 });
 Route::get('fix-serries-movies', function (Request $request) {
     //where url like namzentertainment
@@ -288,11 +348,11 @@ Route::get('process-movies', function (Request $request) {
     ini_set('max_input_vars', -1);
     //get movies that does not have http in url
 
-/*     MovieModel::where('type','Movie')
+    /*     MovieModel::where('type','Movie')
         ->update(['content_type_processed'=>'No']); */
 
     $movies = MovieModel::where('url', 'like', '%movies.ug%')
-         ->orderBy('id', 'asc')
+        ->orderBy('id', 'asc')
         ->limit(10000)
         ->get();
     $x = 0;
@@ -301,40 +361,40 @@ Route::get('process-movies', function (Request $request) {
     foreach ($movies as $key => $movie) {
         $url = $movie->url;
         $segs = explode('/', $url);
-        if(in_array('movies.ug', $segs)){
+        if (in_array('movies.ug', $segs)) {
             $movie->status = 'Inactive';
             $movie->content_type_processed = 'Yes';
-            echo "<br>Movie not found : => ".$movie->id. " - ".$movie->title;
+            echo "<br>Movie not found : => " . $movie->id . " - " . $movie->title;
             $movie->save();
             continue;
         }
-        continue; 
-        if(!in_array('https:', $segs)){
+        continue;
+        if (!in_array('https:', $segs)) {
             $movie->status = 'Inactive';
             $movie->content_type_processed = 'Yes';
             $movie->save();
-            echo "<br>Movie not found : => ".$movie->id. " - ".$movie->title;
+            echo "<br>Movie not found : => " . $movie->id . " - " . $movie->title;
             continue;
-        } 
+        }
         echo "<hr> $x. ";
 
         $movie->verify_movie();
-        if($movie  == null){
+        if ($movie  == null) {
             continue;
-        } 
+        }
         $movie = MovieModel::find($movie->id);
 
 
-        if($movie  == null){
+        if ($movie  == null) {
             continue;
         }
         //echo irl
         echo $movie->id . ' - ' . $movie->title . " : <a target='_blank' href='" . $movie->url . "'>" . $movie->url . "</a><br>";
         //if has not http
         //check if  is content_is_video and display colour button
-        if ($movie->content_is_video == 'Yes') { 
+        if ($movie->content_is_video == 'Yes') {
             echo "<br><span style='color:green'>IS_VIDEO</span><br>";
-            $x++; 
+            $x++;
         } else {
             echo "<span style='color:red'>NOT_VIDEO</span><br>";
             //delete movie
