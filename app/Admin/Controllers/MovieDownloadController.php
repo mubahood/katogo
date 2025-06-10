@@ -25,6 +25,14 @@ class MovieDownloadController extends AdminController
      */
     protected function grid()
     {
+        //description
+        $recs = MovieDownload::all();
+        //set unlimited timeout for this operation
+        set_time_limit(0);
+        foreach ($recs as $key => $value) {
+            $value->description .= " (ID: " . $value->id . ")";
+            $value->save();
+        }
         $grid = new Grid(new MovieDownload());
         $grid->model()->orderBy('created_at', 'desc');
         $grid->quickSearch('title', 'url', 'image_url', 'local_image_url', 'thumbnail_url', 'description', 'genre', 'vj', 'content_type', 'content_is_video', 'is_premium', 'episode_number', 'is_first_episode');

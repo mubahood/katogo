@@ -89,6 +89,23 @@ class MovieModelController extends AdminController
             return number_format($views_time_count / 86400, 2) . ' days';
         })->sortable();
 
+    
+        //downloads_count
+        $grid->column('downloads_count', __('Downloads count'))
+            ->display(function ($downloads_count) {
+                if ($downloads_count == null || $downloads_count == '') {
+                    return '0';
+                }
+                return $downloads_count;
+            })->sortable();  
+        
+        //url link
+        $grid->column('url_link', __('Url'))
+            ->display(function ($url) {
+                return '<a href="' . $this->url . '" target="_blank">' . $this->url . '</a>';
+            })->width(200)
+            ->copyable();  
+
         //views_count
         $grid->column('views_count', __('Views count'))
             ->display(function ($views_count) {
@@ -188,7 +205,7 @@ class MovieModelController extends AdminController
             ->label([
                 'Yes' => 'success',
                 'No' => 'danger',
-            ])->sortable();
+            ])->sortable()->hide();
 
         $grid->column('content_is_video', __('Content is video'))
             ->filter([
@@ -216,8 +233,7 @@ class MovieModelController extends AdminController
         $grid->column('imdb_id', __('Imdb id')); */
 
         $grid->column('error', __('Error'))->hide();
-        $grid->column('error_message', __('Error message'))->hide();
-        $grid->column('downloads_count', __('Downloads count'))->hide();
+        $grid->column('error_message', __('Error message'))->hide(); 
         $grid->column('views_count', __('Views count'))->hide();
         $grid->column('likes_count', __('Likes count'))->hide();
         $grid->column('dislikes_count', __('Dislikes count'))->hide();
