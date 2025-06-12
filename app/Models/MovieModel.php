@@ -236,25 +236,12 @@ class MovieModel extends Model
     }
 
 
-    // Getter for watched_movie, watch_progress, max_progress, and watch_status
-    public function getWatchedMovieAttribute()
-    {
-        $u = auth()->user();
-        if ($u === null) {
-            return 'No';
-        }
 
-        $view = DB::table('movie_views')->where([
-            'movie_model_id' => $this->id,
-            'user_id' => $u->id,
-        ])->first();
-
-        return $view !== null ? 'Yes' : 'No';
-    }
 
     public function getWatchProgressAttribute()
     {
-        $u = auth()->user();
+        $r = request();
+        $u = Utils::get_user($r);
         if ($u === null) {
             return 0;
         }
@@ -269,7 +256,8 @@ class MovieModel extends Model
 
     public function getMaxProgressAttribute()
     {
-        $u = auth()->user();
+        $r = request();
+        $u = Utils::get_user($r);
         if ($u === null) {
             return 0;
         }
@@ -282,27 +270,10 @@ class MovieModel extends Model
         return $view !== null ? $view->max_progress : 0;
     }
 
-    public function getWatchStatusAttribute()
-    {
-        $u = auth()->user();
-        if ($u === null) {
-            return '';
-        }
-
-        $view = DB::table('movie_views')->where([
-            'movie_model_id' => $this->id,
-            'user_id' => $u->id,
-        ])->first();
-
-        return $view !== null ? $view->status : '';
-    }
-
 
     protected $appends = [
-        'watched_movie',
         'watch_progress',
         'max_progress',
-        'watch_status',
     ];
 
 

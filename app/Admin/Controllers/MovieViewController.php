@@ -26,6 +26,8 @@ class MovieViewController extends AdminController
      */
     protected function grid()
     {
+        // $lastView = MovieView::orderBy('updated_at', 'desc')->first();
+        // dd($lastView);
         $grid = new Grid(new MovieView());
         $grid->disableBatchActions();
         $grid->model()->orderBy('updated_at', 'desc');
@@ -42,8 +44,25 @@ class MovieViewController extends AdminController
         $grid->column('progress', __('Progress'))
             ->display(function ($progress) {
                 //convert from seconds to minutes
-                return Utils::secondsToMinutes($progress);
+                if ($progress == null || $progress == 0) {
+                    return '0:00';
+                }
+
+                $pecentage = ($progress / $this->max_progress) * 100;
+                if ($pecentage > 100) {
+                    $pecentage = 100;
+                }
+                $progress = Utils::secondsToMinutes($progress);
+                return "<span class='badge bg-success' style='font-size: 14px; padding: 5px;'>" . $progress . " (" . round($pecentage, 2) . "%)</span>";
             })->sortable();
+        //max_progress
+        $grid->column('max_progress', __('Max progress'))
+            ->display(function ($max_progress) {
+                //convert from seconds to minutes
+                return Utils::secondsToMinutes($max_progress);
+            })->sortable();
+
+
         $grid->column('movie_model_id', __('Movie'))
             ->display(function ($movie_model_id) {
                 $m = \App\Models\MovieModel::find($movie_model_id);

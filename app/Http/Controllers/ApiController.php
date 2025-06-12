@@ -726,13 +726,87 @@ class ApiController extends BaseController
 
         $lists = [];
         $movies = $oldest_listed_movies;
-
+        $my_view_ids = MovieView::where('user_id', $u->id)
+            ->pluck('movie_model_id');
         //top movies
         if (count($movies) > 10) {
-            $my_list['title'] = "";
-            $my_list['movies'] = $movies->take(10);
+
+            //top movies 
+            //movies with most views_time_count but not in my_view_ids
+            $top_movies = MovieModel::whereNotIn('id', $my_view_ids)
+                ->where('status', 'Active')
+                ->where('type', 'Movie')
+                ->orderBy('views_time_count', 'desc')
+                ->limit(20)
+                ->get($take_only);
+
+            //shuffle $top_movies
+            // $top_movies = $top_movies->shuffle(); 
+
+            $my_list['title'] = "Featured Movies";
+            $my_list['movies'] = $top_movies;
             $lists[] = $my_list;
         }
+
+        //watched_movies continue watching
+
+        $watched_movies = MovieView::where('user_id', $u->id)
+            ->orderBy('updated_at', 'desc')
+            ->limit(50)
+            ->get();
+        if ($watched_movies->count() > 0) {
+            $my_list['title'] = "Continue Watching";
+            $my_list['movies'] = $watched_movies->take(50)->map(function ($view) {
+                return MovieModel::find($view->movie_model_id);
+            })->filter(function ($movie) {
+                return $movie != null;
+            });
+            $lists[] = $my_list;
+        } else {
+            $my_list['title'] = "Continue Watching";
+            $my_list['movies'] = [];
+            $lists[] = $my_list;
+        }
+
+
+        //trending movies
+        if (count($movies) > 20) {
+
+            $note_include_ids = [];
+            //get trending movies that are not in my_view_ids
+            foreach ($my_view_ids as $id) {
+                $note_include_ids[] = $id;
+            }
+
+            //add already added movies add to note_include_ids
+            foreach ($lists as $key => $list) {
+                if (!isset($list['movies']) || count($list['movies']) < 1) {
+                    continue;
+                }
+                foreach ($list['movies'] as $key2 => $movie) {
+                    $note_include_ids[] = $movie->id;
+                }
+            }
+
+
+            //trending movies
+            $trending_movies = MovieModel::whereNotIn('id', $note_include_ids)
+                ->where('status', 'Active')
+                ->where('type', 'Movie')
+                ->orderBy('downloads_count', 'desc')
+                ->limit(30)
+                ->get($take_only);
+
+            //shuffle $trending_movies
+            $trending_movies = $trending_movies->shuffle();
+
+            $my_list['title'] = "Trending Movies";
+            $my_list['movies'] = $trending_movies;
+            $lists[] = $my_list;
+        }
+
+
+        //for you movies
 
         if (count($movies) > 10) {
             $my_list['title'] = "For You";
@@ -740,36 +814,25 @@ class ApiController extends BaseController
             $lists[] = $my_list;
         }
 
-        //trending movies
-        if (count($movies) > 20) {
-            $my_list['title'] = "Trending Movies";
-            $my_list['movies'] = $movies->skip(20)->take(10);
-            $lists[] = $my_list;
-        }
+
         //continue watching
         if (count($movies) > 30) {
             $my_list['title'] = "Continue Watching";
-            $my_list['movies'] = $movies->skip(30)->take(10);
+            $my_list['movies'] = $movies->skip(20)->take(10);
             $lists[] = $my_list;
         }
         //latest movies
         if (count($movies) > 40) {
             $my_list['title'] = "Latest Movies";
-            $my_list['movies'] = $movies->skip(40)->take(10);
+            $my_list['movies'] = $movies->skip(30)->take(10);
             $lists[] = $my_list;
         }
 
-        //my watch list
-        if (count($movies) > 50) {
-            $my_list['title'] = "My Watch List";
-            $my_list['movies'] = $movies->skip(50)->take(10);
-            $lists[] = $my_list;
-        }
 
         //drama movies
         if (count($movies) > 60) {
             $my_list['title'] = "Drama Movies";
-            $my_list['movies'] = $movies->skip(60)->take(10);
+            $my_list['movies'] = $movies->skip(40)->take(10);
             $lists[] = $my_list;
         }
         //action movies
@@ -785,8 +848,8 @@ class ApiController extends BaseController
             $my_list['movies'] = $movies->skip(80)->take(10);
             $lists[] = $my_list;
         }
-        //horror movies
-        if (count($movies) > 90) {
+        /* //horror movies
+        if (count($movies) > 90) { 
             $my_list['title'] = "Horror Movies";
             $my_list['movies'] = $movies->skip(90)->take(10);
             $lists[] = $my_list;
@@ -865,7 +928,7 @@ class ApiController extends BaseController
             $my_list['title'] = "Korean Movies";
             $my_list['movies'] = $movies->skip(200)->take(10);
             $lists[] = $my_list;
-        }
+        } */
 
         //latest movies
         if (count($movies) > 210) {
@@ -948,7 +1011,7 @@ class ApiController extends BaseController
         } */
         $model = "App\Models\\" . $model;
         $data = $model::where([])->limit(1000000)->get();
-        Utils::success($data, "Listed successfully. ".$model);
+        Utils::success($data, "Listed successfully. " . $model);
     }
 
     public function get_movies(Request $r)

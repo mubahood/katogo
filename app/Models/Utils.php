@@ -483,12 +483,17 @@ class Utils
     //coenvet secondsToMinutes 
     public static function secondsToMinutes($seconds)
     {
-        if ($seconds == 0) {
+        if (!is_numeric($seconds) || $seconds < 0) {
             return '0:00';
         }
         $minutes = floor($seconds / 60);
-        $seconds = $seconds % 60;
-        return $minutes . ':' . $seconds;
+        $remainingSeconds = $seconds % 60;
+        $hours = floor($minutes / 60);
+        $minutes = $minutes % 60;
+        if ($hours > 0) {
+            return sprintf('%d:%02d:%02d', $hours, $minutes, $remainingSeconds);
+        }
+        return sprintf('%d:%02d', $minutes, $remainingSeconds);
     }
 
     public static $JV = [
