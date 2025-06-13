@@ -658,7 +658,13 @@ class ApiController extends BaseController
 
 
         $APP_VERSION = 14;
-        $UPDATE_NOTES = "We have added new features and fixed bugs. Please update to the latest version and enjoy the new features.";
+        $UPDATE_NOTES = "- We fixed the error that caused downloads to disappear.
+- Your downloaded movies will now appear in your device's gallery.
+- You can now resume watching movies from where you left off.
+- The movie suggestions algorithm has been improved for better - recommendations.
+- The app's user interface has been updated for a cleaner design.
+- We improved the overall speed and responsiveness of the app.
+- Several errors within the video player have been fixed.";
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";
         $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
         $date = Carbon::parse('2020-01-01 00:00:00');
