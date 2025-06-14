@@ -657,7 +657,7 @@ class ApiController extends BaseController
         }
 
 
-        $APP_VERSION = 14;
+        $APP_VERSION = 15;
         $UPDATE_NOTES = "- We fixed the error that caused downloads to disappear.
 - Your downloaded movies will now appear in your device's gallery.
 - You can now resume watching movies from where you left off.
