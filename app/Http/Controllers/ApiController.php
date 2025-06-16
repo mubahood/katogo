@@ -575,7 +575,7 @@ class ApiController extends BaseController
             $message->status = 'read';
             $message->save();
         }
-        return $this->success(null, 'Success');
+        return $this->success(null, 'Makerd as read for chat head: ' . $chat_head->id . ' and receiver: ' . $receiver->id);
     }
 
     public function chat_send(Request $r)
