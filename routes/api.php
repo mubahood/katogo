@@ -22,6 +22,9 @@ Route::get('api/{model}', [ApiController::class, 'my_list']);
 Route::get('products-1', [ApiController::class, 'products_1']); 
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {
+    Route::post('disable-account', [ApiController::class, 'disable_account']);
+
+
     Route::post("post-media-upload", [ApiController::class, 'upload_media']);
     Route::post("product-create", [ApiController::class, "product_create"]);
     Route::post('products-delete', [ApiController::class, 'products_delete']);

@@ -211,6 +211,30 @@ class ApiController extends BaseController
 
 
 
+    public function disable_account(Request $request)
+    {
+        $u = Utils::get_user($request);
+        if ($u == null) {
+            Utils::error("Not authonticated.");
+        }
+        $administrator_id = $u->id;
+
+        $u = Administrator::find($administrator_id);
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+
+        $u->status = 'Disabled';
+        $u->save();
+        $u = Administrator::find($administrator_id);
+
+
+        return $this->success($u, 'Account disabled successfully.');
+    }
+
+
+
+
     public function upload_media(Request $request)
     {
         $u = Utils::get_user($request);
