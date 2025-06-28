@@ -1215,6 +1215,23 @@ class ApiController extends BaseController
             Utils::error("Account not found.");
         }
 
+
+        if ($user == null) {
+            $user = User::where('username', $r->email)->first();
+        }
+
+        if ($user == null) {
+            $user = User::where('phone_number', $r->email)->first();
+        }
+        if ($user == null) {
+            Utils::error("Account not found.");
+        }
+        if ($user->status == 'Disabled') {
+            Utils::error("Account is disabled.");
+        }
+
+        //Disabled
+
         if (!password_verify($r->password, $user->password)) {
             Utils::error("Invalid password.");
         }
