@@ -389,7 +389,7 @@ class DynamicCrudController extends Controller
 
         $platform_type = 'all';
         if (isset($request->platform_type) && $request->platform_type != null) {
-            if ($request->platform_type == 'ios') {
+            if ($request->platform_type != 'android') {
                 $platform_type = 'ios';
             }
         }

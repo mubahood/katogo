@@ -701,7 +701,7 @@ class ApiController extends BaseController
 
         $platform_type = 'all';
         if (isset($r->platform_type) && $r->platform_type != null) {
-            if ($r->platform_type == 'ios') {
+            if ($r->platform_type != 'android') {
                 $platform_type = 'ios';
             }
         }
