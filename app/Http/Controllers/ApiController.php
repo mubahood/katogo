@@ -777,7 +777,7 @@ class ApiController extends BaseController
                 ->orderBy('downloads_count', 'desc')
                 ->limit(10)
                 ->get($take_only);
-        } 
+        }
 
         $lists = [];
         $movies = $oldest_listed_movies;
@@ -868,6 +868,25 @@ class ApiController extends BaseController
 
             //shuffle $trending_movies
             $trending_movies = $trending_movies->shuffle();
+
+            //check if platform_type is not all
+            if ($platform_type != 'all') {
+                //get only those of ios
+                $trending_movies = $trending_movies->filter(function ($movie) use ($platform_type) {
+                    return $movie->platform_type == $platform_type;
+                });
+            }
+
+            //if trending movies is empty, return empty list
+            if ($trending_movies->count() < 1) {
+                //get top 10 of that platform
+                $trending_movies = MovieModel::where('status', 'Active')
+                    ->where('type', 'Movie')
+                    ->where('platform_type', $platform_type)
+                    ->orderBy('downloads_count', 'desc')
+                    ->limit(10)
+                    ->get($take_only);
+            }
 
             $my_list['title'] = "Trending Movies";
             $my_list['movies'] = $trending_movies;
