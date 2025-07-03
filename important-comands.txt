@@ -7,7 +7,7 @@ php artisan admin:make MovieDownloadController --model=App\\Models\\MovieDownloa
 php artisan db:seed --class=App\\Models\\MovieLike
 
 
-`php artisan make:migration change_table_name_for_district --table=district`
+php artisan make:migration add_platform_type_to_movie_models --table=movie_models
 
 
 php artisan migrate

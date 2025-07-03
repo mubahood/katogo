@@ -27,30 +27,29 @@ class MovieModelController extends AdminController
      */
     protected function grid()
     {
-        
+
         $grid = new Grid(new MovieModel());
 
         $url_segs = explode('/', request()->url());
-        if(in_array('movies-active', $url_segs)) {
+        if (in_array('movies-active', $url_segs)) {
             $grid->model()->where('status', 'Active');
-        }else if(in_array('movies-series', $url_segs)) {
-                $grid->model()->where('type', 'Series');
-            }else if(in_array('movies-movies', $url_segs)) {
+        } else if (in_array('movies-series', $url_segs)) {
+            $grid->model()->where('type', 'Series');
+        } else if (in_array('movies-movies', $url_segs)) {
             $grid->model()->where('type', 'Movie');
-        }else if(in_array('movies-inactive', $url_segs)) {
+        } else if (in_array('movies-inactive', $url_segs)) {
             $grid->model()->where('status', 'Inactive');
-        }else if(in_array('movies-processed', $url_segs)) {
+        } else if (in_array('movies-processed', $url_segs)) {
             $grid->model()->where('content_type_processed', 'Yes');
-        }
-        else if(in_array('movies-not-processed', $url_segs)) {
+        } else if (in_array('movies-not-processed', $url_segs)) {
             $grid->model()->where('content_type_processed', 'No');
-        }
-        else if(in_array('movies-content-is-video', $url_segs)) {
+        } else if (in_array('movies-content-is-video', $url_segs)) {
             $grid->model()->where('content_is_video', 'Yes');
         }
 
 
         $grid->model()->orderBy('updated_at', 'desc');
+
 
 
         //add filters including filter by category
@@ -62,7 +61,7 @@ class MovieModelController extends AdminController
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
             $filter->like('title', __('Title'));
-         
+
             $filter->equal('category_id', __('Category'))
                 ->select(SeriesMovie::all()->pluck('title', 'id'));
             $filter->between('created_at', __('Created at'))->datetime();
@@ -73,23 +72,23 @@ class MovieModelController extends AdminController
             ->lightbox(['width' => 50, 'height' => 100])
             ->sortable();
         $grid->column('views_time_count', 'View Time')
-        ->display(function ($views_time_count) {
-            if($views_time_count == null || $views_time_count == '') {
-                return '0 hours';
-            }
-            if ($views_time_count < 60) {
-                return $views_time_count . ' Seconds';
-            }
-            if ($views_time_count < 3600) {
-                return number_format($views_time_count / 60, 2) . ' minutes';
-            }
-            if ($views_time_count < 86400) {
-                return number_format($views_time_count / 3600, 2) . ' hours';
-            }
-            return number_format($views_time_count / 86400, 2) . ' days';
-        })->sortable();
+            ->display(function ($views_time_count) {
+                if ($views_time_count == null || $views_time_count == '') {
+                    return '0 hours';
+                }
+                if ($views_time_count < 60) {
+                    return $views_time_count . ' Seconds';
+                }
+                if ($views_time_count < 3600) {
+                    return number_format($views_time_count / 60, 2) . ' minutes';
+                }
+                if ($views_time_count < 86400) {
+                    return number_format($views_time_count / 3600, 2) . ' hours';
+                }
+                return number_format($views_time_count / 86400, 2) . ' days';
+            })->sortable();
 
-    
+
         //downloads_count
         $grid->column('downloads_count', __('Downloads count'))
             ->display(function ($downloads_count) {
@@ -97,14 +96,28 @@ class MovieModelController extends AdminController
                     return '0';
                 }
                 return $downloads_count;
-            })->sortable();  
-        
+            })->sortable();
+
+        //platform_type grid 
+        $grid->column('platform_type', __('Platform type'))
+            ->display(function ($platform_type) {
+                if ($platform_type == null || $platform_type == '') {
+                    return 'All';
+                }
+                return $platform_type;
+            })->sortable()
+            ->filter([
+                'all' => 'All',
+                'android' => 'Android',
+                'ios' => 'iOS',
+            ])->sortable();
+
         //url link
         $grid->column('url_link', __('Url'))
             ->display(function ($url) {
                 return '<a href="' . $this->url . '" target="_blank">' . $this->url . '</a>';
             })->width(200)
-            ->copyable();  
+            ->copyable();
 
         //views_count
         $grid->column('views_count', __('Views count'))
@@ -113,7 +126,7 @@ class MovieModelController extends AdminController
                     return '0';
                 }
                 return $views_count;
-            })->sortable(); 
+            })->sortable();
 
         $grid->column('type', __('Type'))->sortable()
             ->filter([
@@ -233,14 +246,14 @@ class MovieModelController extends AdminController
         $grid->column('imdb_id', __('Imdb id')); */
 
         $grid->column('error', __('Error'))->hide();
-        $grid->column('error_message', __('Error message'))->hide(); 
+        $grid->column('error_message', __('Error message'))->hide();
         $grid->column('views_count', __('Views count'))->hide();
         $grid->column('likes_count', __('Likes count'))->hide();
         $grid->column('dislikes_count', __('Dislikes count'))->hide();
         $grid->column('comments_count', __('Comments count'))->hide();
         $grid->column('comments', __('Comments'))->hide();
         //is_processed
-        
+
 
         $grid->column('video_is_downloaded_to_server', __('Downloaded'))->sortable()
             ->filter([
@@ -413,6 +426,15 @@ https://storage.googleapis.com/mubahood-movies/m.schooldynamics.ug/storage/video
                 $form->text('url', __('Movie url'));
             })->rules('required');
 
+        //platform_type
+        $form->radio('platform_type', __('Platform type'))
+            ->options([
+                'all' => 'All',
+                'android' => 'Android',
+                'ios' => 'iOS',
+            ])
+            ->default('all')
+            ->rules('required');
 
 
         if ($form->isCreating()) {

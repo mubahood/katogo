@@ -387,12 +387,27 @@ class DynamicCrudController extends Controller
             $query->where('is_first_episode', $request->get('is_first_episode'));
         }
 
+        $platform_type = 'all';
+        if (isset($request->platform_type) && $request->platform_type != null) {
+            if ($request->platform_type == 'ios') {
+                $platform_type = 'ios';
+            }
+        }
+        //add platform_type to query
+        if ($platform_type != 'all') {
+            $query->where('platform_type', $platform_type);
+        }
+
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
         $query->orderBy($sortBy, $sortDir);
         $perPage = $request->get('per_page', 21);
         $movies = $query->paginate($perPage);
         $movieIds = $movies->pluck('id')->toArray();
+
+
+
+
         $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))
             ->whereIn('movie_model_id', $movieIds)
             ->groupBy('movie_model_id')

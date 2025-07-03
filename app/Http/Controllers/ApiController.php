@@ -699,10 +699,18 @@ class ApiController extends BaseController
         //maxk time now
         $max_time = Carbon::now();
 
+        $platform_type = 'all';
+        if (isset($r->platform_type) && $r->platform_type != null) {
+            if ($r->platform_type == 'ios') {
+                $platform_type = 'ios';
+            }
+        }
+
         //movies with last_listing_date is between 12 hours ago and now
         $oldest_listed_movies = MovieModel::where([
             'status' => 'Active',
             'type' => 'Movie',
+            'platform_type' => $platform_type
         ])
             ->where('url', 'not like', '%movies.ug%')
             ->whereBetween('last_listing_date', [$min_time, $max_time])
@@ -716,6 +724,7 @@ class ApiController extends BaseController
             $oldest_listed_movies = MovieModel::where([
                 'status' => 'Active',
                 'type' => 'Movie',
+                'platform_type' => $platform_type
             ])
                 ->where('url', 'not like', '%movies.ug%')
                 ->orderBy('last_listing_date', 'desc')
@@ -765,6 +774,7 @@ class ApiController extends BaseController
             //movies with most views_time_count but not in my_view_ids
             $top_movies = MovieModel::whereNotIn('id', $my_view_ids)
                 ->where('status', 'Active')
+                ->where('platform_type', $platform_type)
                 ->where('type', 'Movie')
                 ->orderBy('views_time_count', 'desc')
                 ->limit(20)
@@ -823,6 +833,7 @@ class ApiController extends BaseController
             $trending_movies = MovieModel::whereNotIn('id', $note_include_ids)
                 ->where('status', 'Active')
                 ->where('type', 'Movie')
+                ->where('platform_type', $platform_type)
                 ->orderBy('downloads_count', 'desc')
                 ->limit(30)
                 ->get($take_only);
