@@ -718,6 +718,12 @@ class ApiController extends BaseController
             ->orderBy('last_listing_date', 'desc')
             ->limit(200)
             ->get($take_only);
+        // platform_type is not all, get only those of ios
+        if ($platform_type != 'all') {
+            $oldest_listed_movies = $oldest_listed_movies->filter(function ($movie) use ($platform_type) {
+                return $movie->platform_type == $platform_type;
+            });
+        }
 
         //if less than 200, get the rest of the movies
         if (count($oldest_listed_movies) < 200) {
@@ -737,6 +743,13 @@ class ApiController extends BaseController
                 $movie->last_listing_date = Carbon::now();
                 $movie->save();
             }
+        }
+
+        //if platform_type is not all, get only those of ios
+        if ($platform_type != 'all') {
+            $oldest_listed_movies = $oldest_listed_movies->filter(function ($movie) use ($platform_type) {
+                return $movie->platform_type == $platform_type;
+            });
         }
 
         //shuffle $oldest_listed_movies
