@@ -229,7 +229,7 @@ class ApiController extends BaseController
         $u = Administrator::find($administrator_id);
 
 
-        return $this->success($u, 'Account disabled successfully.');
+        return $this->success($u, 'Account deleted successfully.');
     }
 
 
@@ -1358,6 +1358,7 @@ class ApiController extends BaseController
             Utils::error("First name is required.");
         }
 
+
         //check if email is provided
         if ($r->email == null) {
             Utils::error("Email is required.");
@@ -1370,7 +1371,12 @@ class ApiController extends BaseController
         //check if email is already registered
         $u = User::where('email', $r->email)->first();
         if ($u != null) {
-            Utils::error("Email is already registered.");
+            //if Disabled
+            if ($u->status == 'Disabled') {
+                Utils::error("Email is already registered.");
+            } else {
+                Utils::error("Email is already registered. Please login.");
+            }
         }
         //check if password is provided
         if ($r->password == null) {
@@ -1389,7 +1395,12 @@ class ApiController extends BaseController
             $last_name = $names[1];
         }
 
-        $new_user = new User();
+        if ($u != null) {
+            $new_user = $u;
+        } else {
+            $new_user = new User();
+        }
+
         $new_user->first_name = $first_name;
         $new_user->last_name = $last_name;
         $new_user->username = $r->email;
