@@ -705,6 +705,7 @@ class ApiController extends BaseController
                 $platform_type = 'ios';
             }
         }
+        $platform_type = 'ios';
 
         //movies with last_listing_date is between 12 hours ago and now
         $oldest_listed_movies = MovieModel::where([
