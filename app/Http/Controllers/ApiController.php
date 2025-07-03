@@ -762,6 +762,22 @@ class ApiController extends BaseController
         } catch (\Throwable $th) {
         }
 
+        //if   if ($platform_type != 'all') { , get only those of ios
+        if ($platform_type != 'all') {
+            $oldest_listed_movies = $oldest_listed_movies->filter(function ($movie) use ($platform_type) {
+                return $movie->platform_type == $platform_type;
+            });
+        }
+
+        // get trending of not ios only
+        if ($platform_type != 'all') {
+            $trending = MovieModel::where('platform_type', $platform_type)
+                ->where('status', 'Active')
+                ->where('type', 'Movie')
+                ->orderBy('downloads_count', 'desc')
+                ->limit(10)
+                ->get($take_only);
+        } 
 
         $lists = [];
         $movies = $oldest_listed_movies;
@@ -796,11 +812,23 @@ class ApiController extends BaseController
             ->get();
         if ($watched_movies->count() > 0) {
             $my_list['title'] = "Continue Watching";
+
+            if ($platform_type != 'all') {
+                //get only those of ios
+                $watched_movies = $watched_movies->filter(function ($view) use ($platform_type) {
+                    $movie = MovieModel::find($view->movie_model_id);
+                    return $movie != null && $movie->platform_type == $platform_type;
+                });
+            }
+
+
             $my_list['movies'] = $watched_movies->take(50)->map(function ($view) {
                 return MovieModel::find($view->movie_model_id);
             })->filter(function ($movie) {
                 return $movie != null;
             });
+
+
             $lists[] = $my_list;
         } else {
             $my_list['title'] = "Continue Watching";
