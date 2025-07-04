@@ -702,10 +702,10 @@ class ApiController extends BaseController
         $platform_type = 'all';
         if (isset($r->platform_type) && $r->platform_type != null) {
             if ($r->platform_type != 'android') {
-                $platform_type = 'ios';
+                $platform_type = 'all';
             }
         }
-        $platform_type = 'ios';
+        $platform_type = 'all';
 
         //movies with last_listing_date is between 12 hours ago and now
         $oldest_listed_movies = MovieModel::where([
