@@ -387,17 +387,7 @@ class DynamicCrudController extends Controller
             $query->where('is_first_episode', $request->get('is_first_episode'));
         }
 
-        $platform_type = 'all';
-        if (isset($request->platform_type) && $request->platform_type != null) {
-            if ($request->platform_type != 'android') {
-                $platform_type = 'all';
-            }
-        }
-        //add platform_type to query
-        if ($platform_type != 'all') {
-            $query->where('platform_type', $platform_type);
-        }
-
+       
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
         $query->orderBy($sortBy, $sortDir);
