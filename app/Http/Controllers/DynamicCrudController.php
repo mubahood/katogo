@@ -257,40 +257,24 @@ class DynamicCrudController extends Controller
         foreach ($request->query() as $param => $value) {
             // if (in_array($param, $reservedKeys)) continue;
 
-            // Skip reserved keys to avoid conflicts
-            if (in_array($param, $reservedKeys)) {
-                continue;
-            }
-
-            // Handle _like, _gt, _lt, _gte, _lte suffixes for dynamic filtering
             if (preg_match('/^(.*)_like$/', $param, $matches)) {
                 $field = $matches[1];
-                if (in_array($field, $validColumns)) {
-                    $query->where($field, 'LIKE', "%{$value}%");
-                }
-            } elseif (preg_match('/^(.*)_gt$/', $param, $matches)) {
+                if (in_array($field, $validColumns)) $query->where($field, 'LIKE', "%{$value}%");
+            } /* elseif (preg_match('/^(.*)_gt$/', $param, $matches)) {
                 $field = $matches[1];
-                if (in_array($field, $validColumns)) {
-                    $query->where($field, '>', $value);
-                }
+                if (in_array($field, $validColumns)) $query->where($field, '>', $value);
             } elseif (preg_match('/^(.*)_lt$/', $param, $matches)) {
                 $field = $matches[1];
-                if (in_array($field, $validColumns)) {
-                    $query->where($field, '<', $value);
-                }
+                if (in_array($field, $validColumns)) $query->where($field, '<', $value);
             } elseif (preg_match('/^(.*)_gte$/', $param, $matches)) {
                 $field = $matches[1];
-                if (in_array($field, $validColumns)) {
-                    $query->where($field, '>=', $value);
-                }
+                if (in_array($field, $validColumns)) $query->where($field, '>=', $value);
             } elseif (preg_match('/^(.*)_lte$/', $param, $matches)) {
                 $field = $matches[1];
-                if (in_array($field, $validColumns)) {
-                    $query->where($field, '<=', $value);
-                }
+                if (in_array($field, $validColumns)) $query->where($field, '<=', $value);
             } elseif (in_array($param, $validColumns)) {
                 $query->where($param, '=', $value);
-            }
+            } */
         }
 
         $sortBy = $request->get('sort_by');
