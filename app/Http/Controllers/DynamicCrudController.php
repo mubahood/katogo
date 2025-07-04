@@ -203,19 +203,19 @@ class DynamicCrudController extends Controller
         $validColumns = Schema::getColumnListing($table);
         $query = $modelClass::query();
 
-        // $isNotForCompany = $request->query('is_not_for_company');
-        // if ($isNotForCompany !== 'yes' && !$u->isRole('super-admin') && in_array('enterprise_id', $validColumns)) {
-        //     $query->where('enterprise_id', $u->enterprise_id);
-        // }
+        $isNotForCompany = $request->query('is_not_for_company');
+        if ($isNotForCompany !== 'yes' && !$u->isRole('super-admin') && in_array('enterprise_id', $validColumns)) {
+            $query->where('enterprise_id', $u->enterprise_id);
+        }
 
-        // $isNotForUser = $request->query('is_not_for_user');
-        // if ($isNotForUser !== 'yes' && !$u->isRole('super-admin')) {
-        //     if (in_array('administrator_id', $validColumns)) {
-        //         $query->where('administrator_id', $u->id);
-        //     } elseif (in_array('user_id', $validColumns)) {
-        //         $query->where('user_id', $u->id);
-        //     }
-        // }
+        $isNotForUser = $request->query('is_not_for_user');
+        if ($isNotForUser !== 'yes' && !$u->isRole('super-admin')) {
+            if (in_array('administrator_id', $validColumns)) {
+                $query->where('administrator_id', $u->id);
+            } elseif (in_array('user_id', $validColumns)) {
+                $query->where('user_id', $u->id);
+            }
+        }
 
         // check if model is MovieModel , set status =active
         if ($modelName == 'MovieModel') {
