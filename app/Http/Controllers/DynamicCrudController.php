@@ -218,29 +218,29 @@ class DynamicCrudController extends Controller
         }
 
         //check if model is MovieModel , set status =active
-        if ($modelName == 'MovieModel') {
-            if (
-                !$request->filled('is_first_episode')
-                && !$request->filled('type')
-                && !$request->filled('category_id')
-            ) {
-                $query->where('type', 'Movie');
-            }
-            if ($request->filled('is_first_episode')) {
-                // $query->where('is_first_episode', $request->get('is_first_episode'));
-                // $query->where('type', 'Series');
-            }
-            // $query->where('status', 'Active'); 
-            //make order by created_at desc
-            // add these 
+        // if ($modelName == 'MovieModel') {
+        //     if (
+        //         !$request->filled('is_first_episode')
+        //         && !$request->filled('type')
+        //         && !$request->filled('category_id')
+        //     ) {
+        //         // $query->where('type', 'Movie');
+        //     }
+        //     if ($request->filled('is_first_episode')) {
+        //         // $query->where('is_first_episode', $request->get('is_first_episode'));
+        //         // $query->where('type', 'Series');
+        //     }
+        //     // $query->where('status', 'Active'); 
+        //     //make order by created_at desc
+        //     // add these 
 
-            /* //if type is set type to Series
-            if ($request->has('type')) {
-                $query->where('type', $request->get('type'));
-                //get only unique by category_id
-                $query->groupBy('category_id');
-            } */
-        }
+        //     /* //if type is set type to Series
+        //     if ($request->has('type')) {
+        //         $query->where('type', $request->get('type'));
+        //         //get only unique by category_id
+        //         $query->groupBy('category_id');
+        //     } */
+        // }
 
         $query->orderBy('id', 'desc');
         $reservedKeys = [
