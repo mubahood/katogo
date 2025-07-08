@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\ApiController;
+use App\Http\Controllers\LandingController;
+use App\Http\Controllers\MainController;
 use App\Models\Gen;
 use App\Models\MovieModel;
 use App\Models\MovieView;
@@ -14,14 +16,37 @@ use Illuminate\Process\Exceptions\ProcessFailedException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Process\Process;
- 
 
-/* Route::get('/', function () {
-    return die('welcome');
-});
-Route::get('/home', function () {
-    return die('welcome home');
-});
+/*
+|--------------------------------------------------------------------------
+| Landing Site Routes
+|--------------------------------------------------------------------------
+*/
+
+// Landing page (homepage)
+Route::get('/', [LandingController::class, 'index'])->name('landing.index');
+
+// Static pages
+Route::get('/about', [LandingController::class, 'about'])->name('landing.about');
+Route::get('/features', [LandingController::class, 'features'])->name('landing.features');
+
+// Support pages
+Route::get('/support', [LandingController::class, 'support'])->name('landing.support');
+Route::get('/faq', [LandingController::class, 'faq'])->name('landing.faq');
+
+// Contact pages
+Route::get('/contact', [LandingController::class, 'contact'])->name('landing.contact');
+Route::post('/contact', [LandingController::class, 'contactSubmit'])->name('landing.contact.submit');
+
+// Legal pages
+Route::get('/privacy-policy', [LandingController::class, 'privacyPolicy'])->name('landing.privacy-policy');
+Route::get('/terms-of-service', [LandingController::class, 'termsOfService'])->name('landing.terms-of-service');
+Route::get('/eula', [LandingController::class, 'eula'])->name('landing.eula');
+
+/*
+|--------------------------------------------------------------------------
+| API and Admin Routes (existing)
+|--------------------------------------------------------------------------
 */
 
 

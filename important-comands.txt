@@ -1,13 +1,13 @@
-php artisan make:model MovieDownload -m
+php artisan make:model ContentModerationLog -m
 php artisan make:model TrendingNotification -m
 
 php artisan admin:make MyCounterController --model=App\Models\MyCounter
-php artisan admin:make MovieDownloadController --model=App\\Models\\MovieDownload
+php artisan admin:make ContentModerationLogController --model=App\\Models\\ContentModerationLog
 
 php artisan db:seed --class=App\\Models\\MovieLike
 
 
-php artisan make:migration add_platform_type_to_movie_models --table=movie_models
+php artisan make:migration make_some_fields_nullable_for_content_reports --table=content_reports
 
 
 php artisan migrate

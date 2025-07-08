@@ -128,6 +128,28 @@ class User extends Administrator implements JWTSubject
             $model->username = $model->email;
             return $model;
         });
+
+        // Handle manual cascade deletes for moderation-related data
+        static::deleting(function ($user) {
+            // Delete content reports where user is reporter or reported user
+            \App\Models\ContentReport::where('reporter_id', $user->id)->delete();
+            \App\Models\ContentReport::where('reported_user_id', $user->id)->delete();
+            
+            // Delete user blocks where user is blocker or blocked
+            \App\Models\UserBlock::where('blocker_id', $user->id)->delete();
+            \App\Models\UserBlock::where('blocked_user_id', $user->id)->delete();
+            
+            // Delete moderation logs for this user
+            \App\Models\ContentModerationLog::where('user_id', $user->id)->delete();
+            
+            // Set moderator_id to null for logs where this user was the moderator
+            \App\Models\ContentModerationLog::where('moderator_id', $user->id)
+                ->update(['moderator_id' => null]);
+                
+            // Set moderator_id to null for reports where this user was the moderator
+            \App\Models\ContentReport::where('moderator_id', $user->id)
+                ->update(['moderator_id' => null]);
+        });
     }
 
 
@@ -201,4 +223,72 @@ class User extends Administrator implements JWTSubject
     }
 
     //setter for languages_spoken if is array to json
+
+    /**
+     * Moderation-related relationships
+     */
+    
+    // Content reports made by this user
+    public function contentReports()
+    {
+        return $this->hasMany(\App\Models\ContentReport::class, 'reporter_id');
+    }
+    
+    // Content reports about this user
+    public function reportsAgainst()
+    {
+        return $this->hasMany(\App\Models\ContentReport::class, 'reported_user_id');
+    }
+    
+    // Reports moderated by this user (if admin/moderator)
+    public function moderatedReports()
+    {
+        return $this->hasMany(\App\Models\ContentReport::class, 'moderator_id');
+    }
+    
+    // Users blocked by this user
+    public function blockedUsers()
+    {
+        return $this->hasMany(\App\Models\UserBlock::class, 'blocker_id');
+    }
+    
+    // Users who blocked this user
+    public function blockedBy()
+    {
+        return $this->hasMany(\App\Models\UserBlock::class, 'blocked_user_id');
+    }
+    
+    // Moderation logs for this user
+    public function moderationLogs()
+    {
+        return $this->hasMany(\App\Models\ContentModerationLog::class, 'user_id');
+    }
+    
+    // Moderation actions taken by this user (if admin/moderator)
+    public function moderationActions()
+    {
+        return $this->hasMany(\App\Models\ContentModerationLog::class, 'moderator_id');
+    }
+    
+    /**
+     * Check if user is blocked by another user
+     */
+    public function isBlockedBy($userId)
+    {
+        return \App\Models\UserBlock::where('blocker_id', $userId)
+            ->where('blocked_user_id', $this->id)
+            ->active()
+            ->exists();
+    }
+    
+    /**
+     * Check if user has blocked another user  
+     */
+    public function hasBlocked($userId)
+    {
+        return \App\Models\UserBlock::where('blocker_id', $this->id)
+            ->where('blocked_user_id', $userId)
+            ->active()
+            ->exists();
+    }
 }

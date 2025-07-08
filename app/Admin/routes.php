@@ -48,6 +48,32 @@ Route::group([
     $router->resource('movie-downloads', MovieDownloadController::class);
     $router->resource('product-categories', ProductCategoryController::class);
 
+    $router->resource('content-moderation-logs', ContentModerationLogController::class);
+
+    // Content Moderation Admin Routes
+    $router->get('moderation', 'ModerationAdminController@index')->name('moderation.index');
+    $router->get('moderation/reports', 'ModerationAdminController@reports')->name('moderation.reports');
+    $router->get('moderation/reports/{id}', 'ModerationAdminController@showReport')->name('moderation.reports.show');
+    $router->post('moderation/reports/{id}/action', 'ModerationAdminController@actionReport')->name('moderation.reports.action');
+    $router->post('moderation/reports/bulk-action', 'ModerationAdminController@bulkAction')->name('moderation.reports.bulk');
+    $router->get('moderation/blocks', 'ModerationAdminController@blocks')->name('moderation.blocks');
+    $router->get('moderation/logs', 'ModerationAdminController@logs')->name('moderation.logs');
+    $router->get('moderation/statistics', 'ModerationAdminController@statistics')->name('moderation.statistics');
+    $router->get('moderation/statistics/export', 'ModerationAdminController@exportStatistics')->name('moderation.statistics.export');
+
+
+    // AJAX endpoints for moderation
+    $router->get('moderation/reports/{id}', 'ModerationAdminController@getReport')->name('moderation.reports.show');
+    $router->get('moderation/blocks/{id}', 'ModerationAdminController@getBlock')->name('moderation.blocks.show');
+    $router->get('moderation/logs/{id}', 'ModerationAdminController@getLog')->name('moderation.logs.show');
+
+
+    // Action endpoints
+    $router->put('moderation/reports/{id}/status', 'ModerationAdminController@updateReportStatus')->name('moderation.reports.status');
+    $router->put('moderation/blocks/{id}/unblock', 'ModerationAdminController@unblockUser')->name('moderation.blocks.unblock');
+    $router->delete('moderation/blocks/{id}', 'ModerationAdminController@deleteBlock')->name('moderation.blocks.delete');
+
+
 
 
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound

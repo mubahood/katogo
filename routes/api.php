@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ApiController;
 use App\Http\Controllers\DynamicCrudController;
+use App\Http\Controllers\ModerationController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -16,6 +17,10 @@ Route::post('auth/password-reset', [ApiController::class, 'password_reset']);
 Route::post('auth/register', [ApiController::class, 'register']);
 Route::post('auth/request-password-reset-code', [ApiController::class, 'request_password_reset_code']);
 Route::post('auth/login', [ApiController::class, 'login']);
+
+// Content filtering endpoint (used by app's automated systems)
+Route::post('moderation/filter-content', [ModerationController::class, 'filterContent']);
+
 Route::post('api/{model}', [ApiController::class, 'my_update']);
 // Route::get('movies', [ApiController::class, 'get_movies']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
@@ -44,6 +49,21 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::POST('chat-mark-as-read', [ApiController::class, 'chat_mark_as_read']);
     Route::POST('chat-start', [ApiController::class, 'chat_start']);
     Route::POST('chat-delete', [ApiController::class, 'chat_delete']);
+
+    // Content Moderation & Safety Routes
+    Route::post('moderation/report-content', [ModerationController::class, 'reportContent']);
+    Route::post('moderation/report', [ModerationController::class, 'reportContent']); // Alias for backward compatibility
+    Route::post('moderation/block-user', [ModerationController::class, 'blockUser']);
+    Route::post('moderation/unblock-user', [ModerationController::class, 'unblockUser']);
+    Route::get('moderation/blocked-users', [ModerationController::class, 'getBlockedUsers']);
+    Route::get('moderation/my-reports', [ModerationController::class, 'getUserReports']);
+    Route::get('moderation/user-reports', [ModerationController::class, 'getUserReports']); // Alias
+    Route::post('moderation/legal-consent', [ModerationController::class, 'updateLegalConsent']);
+    Route::post('moderation/update-legal-consent', [ModerationController::class, 'updateLegalConsent']); // Alias
+    Route::get('moderation/legal-consent-status', [ModerationController::class, 'getLegalConsentStatus']);
+    
+    // Admin-only moderation routes
+    Route::get('moderation/dashboard', [ModerationController::class, 'getModerationDashboard']);
     
 });
 
@@ -122,4 +142,10 @@ Route::get('/stock-sub-categories', function (Request $request) {
     return response()->json([
         'data' => $data,
     ]);
+});
+
+// Moderation routes
+Route::middleware([JwtMiddleware::class])->group(function () {
+    Route::post('moderation/stock-item', [ModerationController::class, 'moderateStockItem']);
+    Route::post('moderation/stock-sub-category', [ModerationController::class, 'moderateStockSubCategory']);
 });
