@@ -19,6 +19,8 @@
             --primary-color: #e50914;
             --primary-dark: #b2070f;
             --secondary-color: #ffd700;
+            --accent-yellow: #ffeb3b;
+            --bright-yellow: #fff200;
             --dark-bg: #0d1117;
             --darker-bg: #010409;
             --light-text: #f0f6fc;
@@ -26,6 +28,7 @@
             --border-color: #21262d;
             --card-bg: #161b22;
             --gradient-primary: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+            --gradient-yellow: linear-gradient(135deg, var(--bright-yellow) 0%, var(--secondary-color) 100%);
         }
 
         * {
@@ -146,10 +149,11 @@
             font-size: 3.5rem;
             font-weight: 700;
             margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, var(--light-text) 0%, var(--secondary-color) 100%);
+            background: var(--gradient-yellow);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 235, 59, 0.3);
         }
 
         .hero-subtitle {
@@ -169,10 +173,24 @@
             font-weight: 700;
             text-align: center;
             margin-bottom: 3rem;
-            background: linear-gradient(135deg, var(--light-text) 0%, var(--secondary-color) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--bright-yellow);
+            text-shadow: 0 0 20px rgba(255, 242, 0, 0.4);
+        }
+
+        /* Card and Content Titles */
+        .card-title, h5 {
+            color: var(--accent-yellow) !important;
+            font-weight: 600;
+        }
+
+        h6, .footer-brand {
+            color: var(--secondary-color) !important;
+            font-weight: 600;
+        }
+
+        h2, h3, h4 {
+            color: var(--bright-yellow);
+            text-shadow: 0 0 15px rgba(255, 242, 0, 0.3);
         }
 
         /* Footer */
