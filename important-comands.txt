@@ -7,7 +7,7 @@ php artisan admin:make ContentModerationLogController --model=App\\Models\\Conte
 php artisan db:seed --class=App\\Models\\MovieLike
 
 
-php artisan make:migration make_some_fields_nullable_for_content_reports --table=content_reports
+php artisan make:migration make_temp_status_to_movies_model_table --table=movie_models
 
 
 php artisan migrate
