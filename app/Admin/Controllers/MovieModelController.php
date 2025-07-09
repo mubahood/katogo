@@ -315,16 +315,7 @@ class MovieModelController extends AdminController
                 'Active' => 'Active',
                 'Inactive' => 'Inactive',
             ]);
-        $grid->column('temp_status', __('temp_status'))
-            ->filter([
-                'Active' => 'Active',
-                'Inactive' => 'Inactive',
-            ])->sortable()
-            ->editable('select', [
-                'Active' => 'Active',
-                'Inactive' => 'Inactive',
-            ]);
-
+     
 
         $grid->column('downloaded_to_new_server', __('Downloaded to new server'))->sortable()
             ->filter([
