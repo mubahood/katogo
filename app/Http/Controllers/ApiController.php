@@ -1042,7 +1042,7 @@ class ApiController extends BaseController
         $iosMovies = MovieModel::where(['platform_type' => 'ios'])->get();
 
         $platform_type  = Utils::get_platform();
-        if ($platform_type != 'android') {
+        if ($platform_type == 'ios') {
             $lists = [];
             $item['title'] = 'Continue Watching';
             $item['movies'] = $iosMovies;

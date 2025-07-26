@@ -21,8 +21,7 @@ class Utils
 
     public static function get_platform()
     {
-        return 'ios';
-        $platform_type = 'unknown';
+        $platform_type = 'android';
         if (isset($_GET['platform_type'])) {
             if ($_GET['platform_type'] == 'android') {
                 $platform_type = 'android';
