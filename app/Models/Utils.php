@@ -19,6 +19,18 @@ class Utils
 
 
 
+    public static function get_platform()
+    {
+        $platform_type = 'unknown';
+        if (isset($_GET['platform_type'])) {
+            if ($_GET['platform_type'] == 'android') {
+                $platform_type = 'android';
+            } else if ($_GET['platform_type'] == 'ios') {
+                $platform_type = 'ios';
+            }
+        }
+        return $platform_type;
+    }
     public static function upload_images_2($files, $is_single_file = false)
     {
 
