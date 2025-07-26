@@ -1054,7 +1054,7 @@ class ApiController extends BaseController
 
             $iosMovies = $iosMovies->shuffle();
             if (isset($iosMovies[0])) {
-                $item['top_movie'] = $iosMovies[0];
+                $item['top_movie'] = $iosMovies;
             }
             $lists = $item;
         }
