@@ -698,12 +698,12 @@ class ApiController extends BaseController
         $min_time = Carbon::now()->subHours(12);
         //maxk time now
         $max_time = Carbon::now();
-
+ 
 
         //movies with last_listing_date is between 12 hours ago and now
         $oldest_listed_movies = MovieModel::where([
             'status' => 'Active',
-            'type' => 'Movie',
+            'type' => 'Movie', 
         ])
             ->where('url', 'not like', '%movies.ug%')
             ->whereBetween('last_listing_date', [$min_time, $max_time])
@@ -711,13 +711,13 @@ class ApiController extends BaseController
             ->orderBy('last_listing_date', 'desc')
             ->limit(200)
             ->get($take_only);
-
+       
 
         //if less than 200, get the rest of the movies
         if (count($oldest_listed_movies) < 200) {
             $oldest_listed_movies = MovieModel::where([
                 'status' => 'Active',
-                'type' => 'Movie',
+                'type' => 'Movie', 
             ])
                 ->where('url', 'not like', '%movies.ug%')
                 ->orderBy('last_listing_date', 'desc')
@@ -732,7 +732,7 @@ class ApiController extends BaseController
             }
         }
 
-
+     
 
         //shuffle $oldest_listed_movies
         $oldest_listed_movies = $oldest_listed_movies->shuffle();
@@ -757,8 +757,8 @@ class ApiController extends BaseController
         } catch (\Throwable $th) {
         }
 
-
-
+ 
+ 
 
         $lists = [];
         $movies = $oldest_listed_movies;
@@ -770,7 +770,7 @@ class ApiController extends BaseController
             //top movies 
             //movies with most views_time_count but not in my_view_ids
             $top_movies = MovieModel::whereNotIn('id', $my_view_ids)
-                ->where('status', 'Active')
+                ->where('status', 'Active') 
                 ->where('type', 'Movie')
                 ->orderBy('views_time_count', 'desc')
                 ->limit(20)
@@ -792,7 +792,7 @@ class ApiController extends BaseController
             ->get();
         if ($watched_movies->count() > 0) {
             $my_list['title'] = "Continue Watching";
-
+ 
 
             $my_list['movies'] = $watched_movies->take(50)->map(function ($view) {
                 return MovieModel::find($view->movie_model_id);
@@ -832,7 +832,7 @@ class ApiController extends BaseController
             //trending movies
             $trending_movies = MovieModel::whereNotIn('id', $note_include_ids)
                 ->where('status', 'Active')
-                ->where('type', 'Movie')
+                ->where('type', 'Movie') 
                 ->orderBy('downloads_count', 'desc')
                 ->limit(30)
                 ->get($take_only);
@@ -840,12 +840,12 @@ class ApiController extends BaseController
             //shuffle $trending_movies
             $trending_movies = $trending_movies->shuffle();
 
-
+       
             //if trending movies is empty, return empty list
             if ($trending_movies->count() < 1) {
                 //get top 10 of that platform
                 $trending_movies = MovieModel::where('status', 'Active')
-                    ->where('type', 'Movie')
+                    ->where('type', 'Movie') 
                     ->orderBy('downloads_count', 'desc')
                     ->limit(10)
                     ->get($take_only);
@@ -1060,12 +1060,7 @@ class ApiController extends BaseController
         if ($u == null) {
             Utils::error("Unauthonticated.");
         } */
-       if($model == 'MovieModel'){
-        return $this->get_movies($r);
-       }
-        $m = $model;
         $model = "App\Models\\" . $model;
-
         $data = $model::where([])->limit(1000000)->get();
         Utils::success($data, "Listed successfully. " . $model);
     }

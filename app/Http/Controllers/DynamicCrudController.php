@@ -164,6 +164,7 @@ class DynamicCrudController extends Controller
 
     public function index(Request $request)
     {
+
         $u = Utils::get_user($request);
 
         if ($u == null) {
@@ -230,7 +231,14 @@ class DynamicCrudController extends Controller
                 $query->where('is_first_episode', $request->get('is_first_episode'));
                 $query->where('type', 'Series');
             }
-            $query->where('status', 'Active'); 
+            
+            $tableName = $modelInstance->getTable();
+
+            DB::table($tableName)
+                ->where('type', 'Series')
+                ->update(['status' => 'Active']); 
+
+            $query->where('status', 'Active');
             // make order by created_at desc
             // add these 
 
@@ -387,7 +395,7 @@ class DynamicCrudController extends Controller
             $query->where('is_first_episode', $request->get('is_first_episode'));
         }
 
-       
+
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
         $query->orderBy($sortBy, $sortDir);
