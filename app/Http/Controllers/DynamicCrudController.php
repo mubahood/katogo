@@ -238,7 +238,7 @@ class DynamicCrudController extends Controller
             if ($request->has('type')) {
                 $query->where('type', $request->get('type'));
                 //get only unique by category_id
-                $query->groupBy('category_id');
+                // $query->groupBy('category_id');
             }
         }
 
