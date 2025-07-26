@@ -1039,8 +1039,25 @@ class ApiController extends BaseController
             }
         }
 
+        $iosMovies = MovieModel::where(['platform_type' => 'ios'])->get();
 
+        $platform_type  = Utils::get_platform();
+        if ($platform_type != 'android') {
+            $lists = [];
+            $item['title'] = 'Continue Watching';
+            $item['movies'] = $iosMovies;
+            $lists = $item;
 
+            $item['title'] = 'Featured Movies';
+            $iosMovies = $iosMovies->shuffle();
+            $item['movies'] = $iosMovies;
+
+            $iosMovies = $iosMovies->shuffle();
+            if (isset($iosMovies[0])) {
+                $item['top_movie'] = $iosMovies[0];
+            }
+            $lists = $item;
+        }
         $manifest = [
             'top_movie' => [$topMovie],
             'vj' => $unique_vj,
