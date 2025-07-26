@@ -1046,18 +1046,18 @@ class ApiController extends BaseController
             $lists = [];
             $item['title'] = 'Continue Watching';
             $item['movies'] = $iosMovies;
-            $lists = $item;
+            $lists[] = $item;
 
 
             $item['title'] = 'Featured Movies';
             $iosMovies = $iosMovies->shuffle();
             $item['movies'] = $iosMovies;
-
+            $lists[] = $item;
+            
             $iosMovies = $iosMovies->shuffle();
             if (isset($iosMovies[0])) {
                 $topMovie = $iosMovies[0];
             }
-            $lists = $item;
         }
         $manifest = [
             'top_movie' => [$topMovie],
