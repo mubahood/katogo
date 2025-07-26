@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use App\Traits\ApiResponser;
 use Carbon\Carbon;
+use Dflydev\DotAccessData\Util;
 use Dotenv\Validator;
 use Encore\Admin\Auth\Database\Administrator;
 use Illuminate\Support\Facades\DB;
@@ -230,7 +231,7 @@ class DynamicCrudController extends Controller
                 $query->where('is_first_episode', $request->get('is_first_episode'));
                 $query->where('type', 'Series');
             }
-            $query->where('status', 'Active'); 
+            $query->where('status', 'Active');
             // make order by created_at desc
             // add these 
 
@@ -387,7 +388,13 @@ class DynamicCrudController extends Controller
             $query->where('is_first_episode', $request->get('is_first_episode'));
         }
 
-       
+        $platform_type = Utils::get_platform();
+
+        if ($platform_type == 'ios') {
+            $query->where('platform_type', 'ios');
+        }
+
+
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
         $query->orderBy($sortBy, $sortDir);
