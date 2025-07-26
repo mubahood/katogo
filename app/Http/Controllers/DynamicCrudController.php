@@ -235,6 +235,14 @@ class DynamicCrudController extends Controller
             // make order by created_at desc
             // add these 
 
+
+            $platform_type = Utils::get_platform();
+
+            if ($platform_type == 'ios') {
+                $query->where('platform_type', 'ios');
+            }
+
+
             //if type is set type to Series
             if ($request->has('type')) {
                 $query->where('type', $request->get('type'));
