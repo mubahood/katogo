@@ -11,6 +11,7 @@ use App\Models\TrendingNotification;
 use App\Models\Utils;
 use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
+use Encore\Admin\Facades\Admin;
 use Illuminate\Http\Request;
 use Illuminate\Process\Exceptions\ProcessFailedException;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,13 @@ use Symfony\Component\Process\Process;
 */
 
 // Landing page (homepage)
-Route::get('/', [LandingController::class, 'index'])->name('landing.index');
+Route::get('/', function () {
+    $loggedInUser = Admin::user();
+    if ($loggedInUser != null) {
+        return redirect(admin_url('/dashboard'));
+    }
+    return app(LandingController::class)->index();
+})->name('landing.index');
 
 // Static pages
 Route::get('/about', [LandingController::class, 'about'])->name('landing.about');
