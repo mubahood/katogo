@@ -4553,10 +4553,10 @@ class Utils
             $u = User::find($u->id);
             return $u;
         }
-        if ($u == null) {
+        /* if ($u == null) {
             $u = User::find(1);
             return $u;
-        }
+        } */
 
         $logged_in_user_id = $r->header('logged_in_user_id');
         $u = User::find($logged_in_user_id);
