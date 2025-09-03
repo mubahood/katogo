@@ -4546,24 +4546,108 @@ class Utils
         return $url;
     }
 
+    public static function get_guest_user()
+    {
+        $u = User::where('is_guest', 'Yes')->first();
+        if ($u == null) {
+            $u = new User();
+            $u->name = 'Guest User';
+            $u->email = 'guest@guest.com';
+            $u->is_guest = 'Yes';
+            $u->status = 'Active';
+            $u->profile_visibility = 'Public';
+            $u->first_name = 'Guest';
+            $u->last_name = 'User';
+            $u->sex = null;
+            $u->dob = null;
+            $u->avatar = null;
+            $u->bio = null;
+            $u->tagline = null;
+            $u->address = null;
+            $u->phone_number = null;
+            $u->country = null;
+            $u->state = null;
+            $u->city = null;
+            $u->body_type = null;
+            $u->languages_spoken = null;
+            $u->education_level = null;
+            $u->occupation = null;
+            $u->religion = null;
+            $u->political_views = null;
+            $u->age_range_min = 18;
+            $u->age_range_max = 35;
+            $u->max_distance_km = 50;
+            $u->smoking_habit = null;
+            $u->drinking_habit = null;
+            $u->pet_preference = null;
+            $u->profile_photos = null;
+            $u->content_filtering = 'On';
+            $u->safe_mode = 'On';
+            $u->company_id = 1;
+            $u->status = 'Active';
+            $u->online_status = null;
+            $u->email_verified = null;
+            $u->phone_verified = null;
+            $u->subscription_tier = null;
+            $u->subscription_expires = null;
+            $u->credits_balance = null;
+            $u->profile_views = null;
+            $u->likes_received = null;
+            $u->matches_count = null;
+            $u->terms_of_service_accepted = null;
+            $u->privacy_policy_accepted = null;
+            $u->community_guidelines_accepted = null;
+            $u->marketing_emails_consent = null;
+            $u->data_processing_consent = null;
+            $u->content_moderation_consent = null;
+            $u->terms_accepted_date = null;
+            $u->privacy_accepted_date = null;
+            $u->guidelines_accepted_date = null;
+            $u->notification_preferences = null;
+            $u->push_notifications = null;
+            $u->email_notifications = null;
+            $u->location_sharing = null;
+            $u->analytics_consent = null;
+            $u->crash_reporting = null;
+            $u->password = password_hash('4321', PASSWORD_DEFAULT); 
+            try {
+                $u->save();
+            } catch (\Throwable $th) {
+                return null;
+            }
+            $u = User::where('is_guest', 'Yes')->first();
+            if ($u != null) {
+                return $u;
+            }
+        }
+        return $u;
+    }
     public static function get_user(Request $r)
     {
         $u = auth('api')->user();
         if ($u != null) {
             $u = User::find($u->id);
+            if ($u != null) {
+                return $u;
+            }
             return $u;
         }
-        /* if ($u == null) {
-            $u = User::find(1);
-            return $u;
-        } */
 
         $logged_in_user_id = $r->header('logged_in_user_id');
         $u = User::find($logged_in_user_id);
         if ($u == null) {
             $logged_in_user_id = $r->get('logged_in_user_id');
             $u = User::find($logged_in_user_id);
+            if ($u != null) {
+                return $u;
+            }
         }
+
+        if ($u == null) {
+            $u = self::get_guest_user();
+            return $u;
+        }
+
         return $u;
     }
 
