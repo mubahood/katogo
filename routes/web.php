@@ -57,7 +57,7 @@ Route::get('set-all-movies-to-no', function () {
         'firebase_video_tested_by_human' => 'No',
         'firebase_video_tested_by_human_works' => 'No',
     ];
-    DB::table('movies')->update($data);
+    DB::table('movie_models')->update($data);
     dd('Done');
 });
 // Static pages

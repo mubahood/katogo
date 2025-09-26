@@ -136,24 +136,22 @@ class HomeController extends Controller
             $startOfMonth = $month->copy()->startOfMonth();
             $endOfMonth = $month->copy()->endOfMonth();
 
-            $headers = ['Day', 'New Movies', 'URL Tests', 'Firebase Transfers', 'Views'];
+            $headers = ['Day', 'New Users', 'Total Views', 'Watch Hours', 'User Growth'];
             $rows = [];
 
             // Get data for each day of the month
             for ($d = $startOfMonth; $d->lte($endOfMonth) && $d->lte(Carbon::today()); $d->addDay()) {
-                $dayMovies = MovieModel::whereDate('created_at', $d)->count();
-                $dayUrlTests = MovieModel::whereDate('updated_at', $d)
-                    ->where('video_url_tested_by_curl', 'Yes')->count();
-                $dayFirebaseTransfers = MovieModel::whereDate('updated_at', $d)
-                    ->where('firebase_transfer_successful', 'Yes')->count();
+                $dayUsers = User::whereDate('created_at', $d)->count();
                 $dayViews = MovieView::whereDate('created_at', $d)->count();
+                $dayWatchHours = round(MovieView::whereDate('created_at', $d)->sum('progress') / 3600, 1);
+                $totalUsersUpToDate = User::whereDate('created_at', '<=', $d)->count();
 
                 $rows[] = [
                     $d->format('d'),
-                    $dayMovies,
-                    $dayUrlTests,
-                    $dayFirebaseTransfers,
+                    $dayUsers,
                     $dayViews,
+                    $dayWatchHours.'h',
+                    number_format($totalUsersUpToDate),
                 ];
             }
 
