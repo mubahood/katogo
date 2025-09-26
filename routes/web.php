@@ -52,6 +52,55 @@ Route::get('/eula', [LandingController::class, 'eula'])->name('landing.eula');
 
 /*
 |--------------------------------------------------------------------------
+| Firebase Video Streaming Routes
+|--------------------------------------------------------------------------
+*/
+
+// Permanent video streaming route
+Route::get('/video/{filename}', function ($filename) {
+    // Validate filename for security
+    if (!preg_match('/^[a-zA-Z0-9_\-\.]+\.(mp4|mov|avi|mkv)$/', $filename)) {
+        return abort(404, 'Invalid video file');
+    }
+    
+    $firebasePath = "movies/{$filename}";
+    
+    // Generate fresh signed URL (24 hours)
+    $result = Utils::getFirebaseDownloadUrl($firebasePath, 24);
+    
+    if ($result['success']) {
+        // Redirect to Firebase URL - this makes the URL appear permanent to users
+        return redirect($result['url']);
+    }
+    
+    return abort(404, 'Video not found');
+})->name('video.stream');
+
+// Get permanent public URL for a video
+Route::get('/video/{filename}/permanent', function ($filename) {
+    if (!preg_match('/^[a-zA-Z0-9_\-\.]+\.(mp4|mov|avi|mkv)$/', $filename)) {
+        return abort(404, 'Invalid video file');
+    }
+    
+    $firebasePath = "movies/{$filename}";
+    $result = Utils::getFirebasePermanentUrl($firebasePath);
+    
+    if ($result['success']) {
+        return response()->json([
+            'success' => true,
+            'permanent_url' => $result['url'],
+            'expires' => $result['expires']
+        ]);
+    }
+    
+    return response()->json([
+        'success' => false,
+        'error' => $result['error']
+    ], 404);
+})->name('video.permanent');
+
+/*
+|--------------------------------------------------------------------------
 | API and Admin Routes (existing)
 |--------------------------------------------------------------------------
 */
@@ -881,4 +930,48 @@ Route::get('/make-tsv', function () {
 });
 Route::get('/down', function () {
     Utils::system_boot();
+});
+
+// Test Firebase Storage connection
+Route::get('/test-firebase-connection', function () {
+    try {
+        // Test Firebase connection
+        $storage = app('firebase.storage');
+        $bucket = $storage->getBucket();
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Firebase Storage connection successful!',
+            'bucket_name' => $bucket->name(),
+            'project_id' => config('firebase.project_id')
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
+});
+
+// Test video upload to Firebase
+Route::get('/test-firebase-upload', function () {
+    try {
+        // Test with a small sample video
+        $result = \App\Models\Utils::uploadVideoToFirebase(
+            'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+            'test_video_' . time(),
+            'test_uploads'
+        );
+        
+        return response()->json($result);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
 });

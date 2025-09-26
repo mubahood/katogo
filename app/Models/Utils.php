@@ -5603,4 +5603,319 @@ class Utils
 
         return $html;
     }
+
+    /**
+     * Check if a folder exists in Firebase Storage, create if it doesn't
+     * 
+     * @param string $folderPath The folder path to check/create
+     * @return array
+     */
+    public static function ensureFirebaseFolder($folderPath)
+    {
+        try {
+            $storage = app('firebase.storage');
+            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
+
+            // Check if folder exists by trying to list objects with the folder prefix
+            $objects = $bucket->objects(['prefix' => $folderPath . '/']);
+            $folderExists = false;
+
+            foreach ($objects as $object) {
+                $folderExists = true;
+                break; // If we find any object with this prefix, folder exists
+            }
+
+            if (!$folderExists) {
+                // Create folder by uploading a temporary marker file
+                $markerPath = $folderPath . '/.folder_marker';
+                $bucket->upload('', [
+                    'name' => $markerPath,
+                    'metadata' => [
+                        'contentType' => 'text/plain',
+                        'metadata' => [
+                            'created_at' => now()->toISOString(),
+                            'type' => 'folder_marker'
+                        ]
+                    ]
+                ]);
+            }
+
+            return [
+                'success' => true,
+                'folder_exists' => $folderExists,
+                'folder_created' => !$folderExists,
+                'error' => null
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => 'Failed to ensure folder exists: ' . $e->getMessage(),
+                'folder_exists' => false,
+                'folder_created' => false
+            ];
+        }
+    }
+
+    /**
+     * Get a permanent public URL for Firebase Storage file
+     * 
+     * @param string $firebasePath The path of the file in Firebase Storage
+     * @return array
+     */
+    public static function getFirebasePermanentUrl($firebasePath)
+    {
+        try {
+            $storage = app('firebase.storage');
+            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
+            $object = $bucket->object($firebasePath);
+
+            if (!$object->exists()) {
+                return [
+                    'success' => false,
+                    'error' => 'File not found in Firebase Storage',
+                    'url' => null
+                ];
+            }
+
+            // Make object publicly readable
+            $object->update([
+                'acl' => [
+                    [
+                        'entity' => 'allUsers',
+                        'role' => 'READER'
+                    ]
+                ]
+            ]);
+
+            // Generate permanent public URL
+            $publicUrl = "https://storage.googleapis.com/" . config('firebase.storage.bucket') . "/" . $firebasePath;
+
+            return [
+                'success' => true,
+                'error' => null,
+                'url' => $publicUrl,
+                'expires' => 'never'
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => 'Failed to create permanent URL: ' . $e->getMessage(),
+                'url' => null
+            ];
+        }
+    }
+
+    /**
+     * Upload a video to Firebase Storage
+     * 
+     * @param string $videoUrl The URL of the video to upload
+     * @param string|null $fileName Optional custom filename (without extension)
+     * @param string|null $folder Optional folder path in Firebase Storage
+     * @return array Array containing success status, firebase_url, and error message if any
+     */
+    public static function uploadVideoToFirebase($videoUrl, $fileName = null, $folder = null)
+    {
+        try {
+            // Validate video URL
+            if (empty($videoUrl)) {
+                return [
+                    'success' => false,
+                    'error' => 'Video URL cannot be empty',
+                    'firebase_url' => null
+                ];
+            }
+
+            // Get Firebase Storage instance
+            $storage = app('firebase.storage');
+            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
+
+            // Generate filename if not provided
+            if (!$fileName) {
+                $fileName = 'video_' . time() . '_' . rand(1000, 9999);
+            }
+
+            // Set folder path
+            $folderPath = $folder ?: config('firebase.storage.default_folder', 'movies');
+            
+            // Ensure folder exists before upload
+            $folderResult = self::ensureFirebaseFolder($folderPath);
+            if (!$folderResult['success']) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to ensure folder exists: ' . $folderResult['error'],
+                    'firebase_url' => null
+                ];
+            }
+
+            $firebasePath = $folderPath . '/' . $fileName . '.mp4';
+
+            // Create a temporary file for streaming download
+            $tempFile = tempnam(sys_get_temp_dir(), 'firebase_video_');
+            $fp = fopen($tempFile, 'w+');
+
+            // Download video content to temporary file (streaming)
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $videoUrl);
+            curl_setopt($ch, CURLOPT_FILE, $fp); // Write directly to file
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 600); // 10 minutes timeout for large files
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; Laravel Firebase Uploader)');
+            
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            $fileSize = curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+            curl_close($ch);
+            fclose($fp);
+
+            if ($result === false || !empty($error)) {
+                unlink($tempFile);
+                return [
+                    'success' => false,
+                    'error' => 'Failed to download video: ' . $error,
+                    'firebase_url' => null
+                ];
+            }
+
+            if ($httpCode !== 200) {
+                unlink($tempFile);
+                return [
+                    'success' => false,
+                    'error' => 'Failed to download video. HTTP code: ' . $httpCode,
+                    'firebase_url' => null
+                ];
+            }
+
+            // Get file size before upload
+            $actualFileSize = filesize($tempFile);
+
+            // Upload to Firebase Storage using file stream
+            $fileStream = fopen($tempFile, 'r');
+            if (!$fileStream) {
+                unlink($tempFile);
+                return [
+                    'success' => false,
+                    'error' => 'Failed to open temporary file for upload',
+                    'firebase_url' => null
+                ];
+            }
+
+            $object = $bucket->upload($fileStream, [
+                'name' => $firebasePath,
+                'metadata' => [
+                    'contentType' => 'video/mp4',
+                    'metadata' => [
+                        'uploaded_at' => now()->toISOString(),
+                        'original_url' => $videoUrl,
+                        'uploaded_by' => 'laravel_app'
+                    ]
+                ]
+            ]);
+            
+            if (is_resource($fileStream)) {
+                fclose($fileStream);
+            }
+
+            // Clean up temporary file
+            unlink($tempFile);
+
+            // Generate download URL
+            $downloadUrl = $object->signedUrl(new \DateTime('+1 year'));
+
+            return [
+                'success' => true,
+                'error' => null,
+                'firebase_url' => $downloadUrl,
+                'firebase_path' => $firebasePath,
+                'file_size' => $actualFileSize
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => 'Firebase upload failed: ' . $e->getMessage(),
+                'firebase_url' => null
+            ];
+        }
+    }
+
+    /**
+     * Get a public download URL for a Firebase Storage file
+     * 
+     * @param string $firebasePath The path of the file in Firebase Storage
+     * @param int $expirationHours Hours until the URL expires (default: 24)
+     * @return array
+     */
+    public static function getFirebaseDownloadUrl($firebasePath, $expirationHours = 24)
+    {
+        try {
+            $storage = app('firebase.storage');
+            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
+            $object = $bucket->object($firebasePath);
+
+            if (!$object->exists()) {
+                return [
+                    'success' => false,
+                    'error' => 'File not found in Firebase Storage',
+                    'url' => null
+                ];
+            }
+
+            $expirationTime = new \DateTime('+' . $expirationHours . ' hours');
+            $downloadUrl = $object->signedUrl($expirationTime);
+
+            return [
+                'success' => true,
+                'error' => null,
+                'url' => $downloadUrl,
+                'expires_at' => $expirationTime->format('Y-m-d H:i:s')
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => 'Failed to generate download URL: ' . $e->getMessage(),
+                'url' => null
+            ];
+        }
+    }
+
+    /**
+     * Delete a video from Firebase Storage
+     * 
+     * @param string $firebasePath The path of the file in Firebase Storage
+     * @return array
+     */
+    public static function deleteFirebaseVideo($firebasePath)
+    {
+        try {
+            $storage = app('firebase.storage');
+            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
+            $object = $bucket->object($firebasePath);
+
+            if (!$object->exists()) {
+                return [
+                    'success' => false,
+                    'error' => 'File not found in Firebase Storage'
+                ];
+            }
+
+            $object->delete();
+
+            return [
+                'success' => true,
+                'error' => null,
+                'message' => 'File deleted successfully'
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => 'Failed to delete file: ' . $e->getMessage()
+            ];
+        }
+    }
 }

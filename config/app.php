@@ -168,6 +168,7 @@ return [
         // App\Providers\BroadcastServiceProvider::class,
         App\Providers\EventServiceProvider::class,
         App\Providers\RouteServiceProvider::class,
+        App\Providers\FirebaseServiceProvider::class,
         Tymon\JWTAuth\Providers\LaravelServiceProvider::class, 
         Berkayk\OneSignal\OneSignalServiceProvider::class,
     ])->toArray(),
