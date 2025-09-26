@@ -361,24 +361,69 @@ class MovieModel extends Model
                 return 'No';
             }
 
-            // Check content type
+            // Enhanced content type validation
             if ($contentType) {
                 $contentType = strtolower(explode(';', $contentType)[0]);
                 
-                $videoTypes = [
+                // Strict video content types only - NO application/octet-stream
+                $validVideoTypes = [
                     'video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv',
                     'video/webm', 'video/mkv', 'video/3gp', 'video/mpeg', 'video/quicktime',
                     'video/x-msvideo', 'video/x-flv', 'video/x-matroska', 'video/ogg',
-                    'application/octet-stream' // Sometimes video files return this
+                    'video/mp2t', 'video/3gpp', 'video/3gpp2', 'video/x-ms-wmv'
                 ];
 
-                if (in_array($contentType, $videoTypes)) {
+                // Check if it's a proper video content type
+                if (in_array($contentType, $validVideoTypes)) {
+                    // Additional validation for octet-stream by checking file extension
+                    $urlPath = parse_url($testUrl, PHP_URL_PATH);
+                    $extension = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
+                    
+                    $validVideoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp', 'mpeg', 'mpg', 'm4v'];
+                    
+                    // For octet-stream, also verify file extension
+                    if ($contentType === 'application/octet-stream') {
+                        if (!in_array($extension, $validVideoExtensions)) {
+                            $this->video_url_tested_by_curl_works = 'No';
+                            $this->content_type = $contentType;
+                            $this->content_is_video = 'No';
+                            $this->save();
+                            return 'No';
+                        }
+                    }
+                    
+                    // Valid video content found
                     $this->video_url_tested_by_curl_works = 'Yes';
                     $this->content_type = $contentType;
                     $this->content_is_video = 'Yes';
                     $this->save();
                     return 'Yes';
                 }
+                
+                // Check for common non-video types that should be rejected
+                $nonVideoTypes = [
+                    'text/html', 'text/plain', 'text/xml', 'application/json',
+                    'application/xml', 'application/pdf', 'image/jpeg', 'image/png',
+                    'image/gif', 'application/zip', 'application/x-www-form-urlencoded'
+                ];
+                
+                if (in_array($contentType, $nonVideoTypes)) {
+                    $this->video_url_tested_by_curl_works = 'No';
+                    $this->content_type = $contentType;
+                    $this->content_is_video = 'No';
+                    $this->save();
+                    return 'No';
+                }
+            }
+
+            // If content type is unclear, do additional verification
+            // Download first few bytes to check for video file signatures
+            if ($this->performDeepVideoVerification($testUrl)) {
+                $this->video_url_tested_by_curl_works = 'Yes';
+                $this->content_type = 'video/unknown';
+                $this->content_is_video = 'Yes';
+                $this->save();
+                return 'Yes';
             }
 
             // If we reach here, it's not a valid video
@@ -391,6 +436,87 @@ class MovieModel extends Model
             $this->video_url_tested_by_curl_works = 'No';
             $this->save();
             return 'No';
+        }
+    }
+
+    /**
+     * Perform deep verification by checking file signature (magic bytes)
+     * Downloads first 32 bytes to identify actual file type
+     * 
+     * @param string $url
+     * @return bool
+     */
+    private function performDeepVideoVerification($url)
+    {
+        try {
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_RANGE => '0-31', // Only download first 32 bytes
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_TIMEOUT => 15,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            ]);
+
+            $data = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($error || $httpCode < 200 || $httpCode >= 300 || !$data) {
+                return false;
+            }
+
+            // Check for video file signatures (magic bytes)
+            $signatures = [
+                // MP4
+                "\x00\x00\x00\x18ftypmp41",
+                "\x00\x00\x00\x20ftypmp41", 
+                "\x00\x00\x00\x1Cftypmp42",
+                "ftypmp4",
+                "ftypisom",
+                // AVI
+                "RIFF",
+                // WebM
+                "\x1A\x45\xDF\xA3",
+                // MKV 
+                "\x1A\x45\xDF\xA3",
+                // MOV (QuickTime)
+                "moov",
+                "mdat",
+                "ftyp",
+                // FLV
+                "FLV",
+                // WMV/ASF
+                "\x30\x26\xB2\x75\x8E\x66\xCF\x11",
+                // 3GP
+                "ftyp3g",
+            ];
+
+            foreach ($signatures as $signature) {
+                if (strpos($data, $signature) !== false) {
+                    return true;
+                }
+            }
+
+            // Additional check for MP4 box headers
+            if (strlen($data) >= 8) {
+                $boxType = substr($data, 4, 4);
+                $mp4BoxTypes = ['ftyp', 'moov', 'mdat', 'free', 'skip', 'wide'];
+                if (in_array($boxType, $mp4BoxTypes)) {
+                    return true;
+                }
+            }
+
+            return false;
+
+        } catch (\Exception $e) {
+            return false;
         }
     }
 
@@ -526,21 +652,57 @@ class MovieModel extends Model
                 return 'No';
             }
 
-            // Check content type for video
+            // Enhanced Firebase content type validation
             if ($contentType) {
                 $contentType = strtolower(explode(';', $contentType)[0]);
-                $videoTypes = [
+                
+                // Strict video content types only - NO application/octet-stream
+                $validVideoTypes = [
                     'video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv',
                     'video/webm', 'video/mkv', 'video/3gp', 'video/mpeg', 'video/quicktime',
                     'video/x-msvideo', 'video/x-flv', 'video/x-matroska', 'video/ogg',
-                    'application/octet-stream'
+                    'video/mp2t', 'video/3gpp', 'video/3gpp2', 'video/x-ms-wmv'
                 ];
 
-                if (in_array($contentType, $videoTypes)) {
+                // Check if it's a proper video content type
+                if (in_array($contentType, $validVideoTypes)) {
                     $this->firebase_video_tested_by_curl_works = 'Yes';
+                    
+                    // Auto-activate if Firebase video is working
+                    if ($this->status !== 'Active') {
+                        $this->status = 'Active';
+                    }
+                    
                     $this->save();
                     return 'Yes';
                 }
+                
+                // Check for common non-video types that should be rejected
+                $nonVideoTypes = [
+                    'text/html', 'text/plain', 'text/xml', 'application/json',
+                    'application/xml', 'application/pdf', 'image/jpeg', 'image/png',
+                    'image/gif', 'application/zip', 'application/x-www-form-urlencoded',
+                    'application/octet-stream' // Explicitly reject this now
+                ];
+                
+                if (in_array($contentType, $nonVideoTypes)) {
+                    $this->firebase_video_tested_by_curl_works = 'No';
+                    $this->save();
+                    return 'No';
+                }
+            }
+
+            // If content type is unclear, do additional verification for Firebase URLs
+            if ($this->performDeepVideoVerification($this->firebase_video_url)) {
+                $this->firebase_video_tested_by_curl_works = 'Yes';
+                
+                // Auto-activate if Firebase video is working
+                if ($this->status !== 'Active') {
+                    $this->status = 'Active';
+                }
+                
+                $this->save();
+                return 'Yes';
             }
 
             $this->firebase_video_tested_by_curl_works = 'No';

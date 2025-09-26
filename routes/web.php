@@ -254,6 +254,7 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
     }
 })->name('admin.movies.test-urls');
 
+//curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 2: Production-Ready Firebase Transfer Endpoint with Type Support
 Route::get('/admin/movies/transfer-firebase', function(Request $request) {
     set_time_limit(900); // 15 minutes for large video transfers
@@ -397,6 +398,7 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
     }
 })->name('admin.movies.transfer-firebase');
 
+// curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 3: Production-Ready Firebase URL Testing Endpoint
 Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
     set_time_limit(300); // 5 minutes for URL testing
