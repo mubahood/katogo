@@ -48,8 +48,8 @@ class MovieModelController extends AdminController
         }
 
 
-        $grid->model()->orderBy('updated_at', 'desc');
-
+        $grid->model()->orderBy('id', 'asc');
+        $grid->column('id', __('Id'))->sortable()->editable();
 
 
         //add filters including filter by category
@@ -169,7 +169,7 @@ class MovieModelController extends AdminController
         $grid->column('vj', __('VJ'))->sortable()->hide();
 
         $grid->quickSearch('title', 'url', 'external_url', 'local_video_link');
-        $grid->column('id', __('Id'))->sortable()->hide();
+
         $grid->column('created_at', __('Created'))
             ->display(function ($created_at) {
                 return date('Y-m-d H:i:s', strtotime($created_at));
@@ -315,7 +315,7 @@ class MovieModelController extends AdminController
                 'Active' => 'Active',
                 'Inactive' => 'Inactive',
             ]);
-     
+
 
         $grid->column('downloaded_to_new_server', __('Downloaded to new server'))->sortable()
             ->filter([
@@ -333,6 +333,85 @@ class MovieModelController extends AdminController
                 return '<a href="' . $url . '" target="_blank">' . 'PLAY ' . $new_server_path . '</a>';
             })
             ->hide();
+
+        $grid->column('video_url_tested_by_curl', __('Video URL Tested by Curl'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('video_url_tested_by_curl_works', __('Video URL Curl Works'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('video_url_tested_by_human', __('Video URL Tested by Human'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('video_url_tested_by_human_works', __('Video URL Human Works'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('firebase_transfer_attempted', __('Firebase Transfer Attempted'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('firebase_transfer_transfer_in_progress', __('Firebase Transfer In Progress'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('firebase_transfer_successful', __('Firebase Transfer Successful'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('firebase_transfer_failure_reason', __('Firebase Transfer Failure Reason'))
+            ->editable('text')
+            ->sortable()
+            ->filter('like');
+
+        $grid->column('firebase_transfer_path', __('Firebase Transfer Path'))
+            ->editable('text')
+            ->sortable()
+            ->filter('like');
+
+        $grid->column('firebase_video_url', __('Firebase Video URL'))
+            ->editable('text')
+            ->sortable()
+            ->filter('like');
+
+        $grid->column('firebase_video_url_expires_at', __('Firebase Video URL Expires At'))
+            ->sortable()
+            ->filter('range', 'datetime');
+
+        $grid->column('firebase_video_tested_by_curl', __('Firebase Video Tested by Curl'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('firebase_video_tested_by_curl_works', __('Firebase Video Curl Works'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('firebase_video_tested_by_human', __('Firebase Video Tested by Human'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('firebase_video_tested_by_human_works', __('Firebase Video Human Works'))
+            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
+            ->sortable()
+            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+
+        $grid->column('old_video_url', __('Old Video URL'))
+            ->editable('text')
+            ->sortable()
+            ->filter('like');
 
         return $grid;
 
@@ -581,6 +660,51 @@ https://storage.googleapis.com/mubahood-movies/m.schooldynamics.ug/storage/video
                 'No' => 'No',
             ])
             ->default('No');
+
+        $form->divider('Video URL Testing');
+        $form->radio('video_url_tested_by_curl', __('Video URL Tested by Curl'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('video_url_tested_by_curl_works', __('Video URL Curl Works'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('video_url_tested_by_human', __('Video URL Tested by Human'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('video_url_tested_by_human_works', __('Video URL Human Works'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+
+        $form->divider('Firebase Transfer');
+        $form->radio('firebase_transfer_attempted', __('Firebase Transfer Attempted'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('firebase_transfer_transfer_in_progress', __('Firebase Transfer In Progress'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('firebase_transfer_successful', __('Firebase Transfer Successful'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->text('firebase_transfer_failure_reason', __('Firebase Transfer Failure Reason'));
+        $form->text('firebase_transfer_path', __('Firebase Transfer Path'));
+        $form->text('firebase_video_url', __('Firebase Video URL'));
+        $form->datetime('firebase_video_url_expires_at', __('Firebase Video URL Expires At'));
+
+        $form->divider('Firebase Video URL Testing');
+        $form->radio('firebase_video_tested_by_curl', __('Firebase Video Tested by Curl'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('firebase_video_tested_by_curl_works', __('Firebase Video Curl Works'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('firebase_video_tested_by_human', __('Firebase Video Tested by Human'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+        $form->radio('firebase_video_tested_by_human_works', __('Firebase Video Human Works'))
+            ->options(['Yes' => 'Yes', 'No' => 'No'])
+            ->default('No');
+
+        $form->text('old_video_url', __('Old Video URL'));
         return $form;
     }
 }

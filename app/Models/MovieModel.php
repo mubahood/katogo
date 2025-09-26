@@ -40,6 +40,14 @@ class MovieModel extends Model
         });
 
         static::updating(function ($model) {
+            // Auto-activate movies when Firebase video testing succeeds
+            if ($model->isDirty('firebase_video_tested_by_curl_works') && 
+                $model->firebase_video_tested_by_curl_works == 'Yes' && 
+                $model->status != 'Active') {
+                $model->status = 'Active';
+                $model->temp_status = 'Active';
+            }
+
             if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
                 if ($series != null) {
@@ -292,5 +300,324 @@ class MovieModel extends Model
         } catch (\Throwable $th) {
             //throw $th;
         }
+    }
+
+    /**
+     * Test if external video URL is working using cURL
+     * Checks content-type to verify it's a video file
+     * 
+     * @return string 'Yes' if working, 'No' if not working
+     */
+    public function testExternalVideoUrl()
+    {
+        try {
+            // Mark as being tested
+            $this->video_url_tested_by_curl = 'Yes';
+            $this->video_url_tested_by_curl_works = 'No';
+            $this->save();
+
+            // Get the video URL to test
+            $testUrl = $this->external_url ?? $this->url;
+            
+            if (empty($testUrl)) {
+                $this->video_url_tested_by_curl_works = 'No';
+                $this->save();
+                return 'No';
+            }
+
+            // Initialize cURL
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $testUrl,
+                CURLOPT_RETURNTRANSFER => false,
+                CURLOPT_HEADER => true,
+                CURLOPT_NOBODY => true, // HEAD request only
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            // Check for cURL errors
+            if ($error) {
+                $this->video_url_tested_by_curl_works = 'No';
+                $this->save();
+                return 'No';
+            }
+
+            // Check HTTP status code
+            if ($httpCode < 200 || $httpCode >= 400) {
+                $this->video_url_tested_by_curl_works = 'No';
+                $this->save();
+                return 'No';
+            }
+
+            // Check content type
+            if ($contentType) {
+                $contentType = strtolower(explode(';', $contentType)[0]);
+                
+                $videoTypes = [
+                    'video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv',
+                    'video/webm', 'video/mkv', 'video/3gp', 'video/mpeg', 'video/quicktime',
+                    'video/x-msvideo', 'video/x-flv', 'video/x-matroska', 'video/ogg',
+                    'application/octet-stream' // Sometimes video files return this
+                ];
+
+                if (in_array($contentType, $videoTypes)) {
+                    $this->video_url_tested_by_curl_works = 'Yes';
+                    $this->content_type = $contentType;
+                    $this->content_is_video = 'Yes';
+                    $this->save();
+                    return 'Yes';
+                }
+            }
+
+            // If we reach here, it's not a valid video
+            $this->video_url_tested_by_curl_works = 'No';
+            $this->save();
+            return 'No';
+
+        } catch (\Exception $e) {
+            $this->video_url_tested_by_curl = 'Yes';
+            $this->video_url_tested_by_curl_works = 'No';
+            $this->save();
+            return 'No';
+        }
+    }
+
+    /**
+     * Transfer video to Firebase Storage
+     * 
+     * @return array Result array with success status and details
+     */
+    public function transferToFirebase()
+    {
+        try {
+            // Mark transfer as attempted and in progress
+            $this->firebase_transfer_attempted = 'Yes';
+            $this->firebase_transfer_transfer_in_progress = 'Yes';
+            $this->firebase_transfer_successful = 'No';
+            $this->firebase_transfer_failure_reason = null;
+            $this->save();
+
+            // Check if already transferred
+            if ($this->firebase_transfer_successful === 'Yes' && !empty($this->firebase_video_url)) {
+                return [
+                    'success' => true,
+                    'message' => 'Already transferred to Firebase',
+                    'firebase_url' => $this->firebase_video_url
+                ];
+            }
+
+            // Get video URL
+            $videoUrl = $this->external_url ?? $this->url;
+            if (empty($videoUrl)) {
+                $this->firebase_transfer_transfer_in_progress = 'No';
+                $this->firebase_transfer_failure_reason = 'No video URL found';
+                $this->save();
+                return ['success' => false, 'error' => 'No video URL found'];
+            }
+
+            // Store old URL before transfer
+            if (empty($this->old_video_url)) {
+                $this->old_video_url = $videoUrl;
+                $this->save();
+            }
+
+            // Generate Firebase filename
+            $fileName = 'movie_' . $this->id . '_' . time();
+            
+            // Use Utils class to upload to Firebase
+            $result = Utils::uploadVideoToFirebase($videoUrl, $fileName, 'movies');
+
+            if ($result['success']) {
+                // Get permanent URL for the uploaded video
+                $permanentResult = Utils::getFirebasePermanentUrl($result['firebase_path']);
+                $firebaseUrl = $permanentResult['success'] ? $permanentResult['url'] : $result['firebase_url'];
+                
+                $this->firebase_transfer_transfer_in_progress = 'No';
+                $this->firebase_transfer_successful = 'Yes';
+                $this->firebase_transfer_path = $result['firebase_path'];
+                $this->firebase_video_url = $firebaseUrl;
+                $this->firebase_video_url_expires_at = $permanentResult['success'] ? null : now()->addYear();
+                $this->save();
+
+                return [
+                    'success' => true,
+                    'message' => 'Successfully transferred to Firebase',
+                    'firebase_url' => $firebaseUrl,
+                    'firebase_path' => $result['firebase_path']
+                ];
+            } else {
+                $this->firebase_transfer_transfer_in_progress = 'No';
+                $this->firebase_transfer_failure_reason = $result['error'];
+                $this->save();
+
+                return [
+                    'success' => false, 
+                    'error' => $result['error']
+                ];
+            }
+
+        } catch (\Exception $e) {
+            $this->firebase_transfer_transfer_in_progress = 'No';
+            $this->firebase_transfer_failure_reason = $e->getMessage();
+            $this->save();
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Test if Firebase video URL is working
+     * 
+     * @return string 'Yes' if working, 'No' if not working
+     */
+    public function testFirebaseVideoUrl()
+    {
+        try {
+            // Mark as being tested
+            $this->firebase_video_tested_by_curl = 'Yes';
+            $this->firebase_video_tested_by_curl_works = 'No';
+            $this->save();
+
+            if (empty($this->firebase_video_url)) {
+                return 'No';
+            }
+
+            // Initialize cURL
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $this->firebase_video_url,
+                CURLOPT_RETURNTRANSFER => false,
+                CURLOPT_HEADER => true,
+                CURLOPT_NOBODY => true, // HEAD request only
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            // Check for errors
+            if ($error || $httpCode < 200 || $httpCode >= 400) {
+                $this->firebase_video_tested_by_curl_works = 'No';
+                $this->save();
+                return 'No';
+            }
+
+            // Check content type for video
+            if ($contentType) {
+                $contentType = strtolower(explode(';', $contentType)[0]);
+                $videoTypes = [
+                    'video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv',
+                    'video/webm', 'video/mkv', 'video/3gp', 'video/mpeg', 'video/quicktime',
+                    'video/x-msvideo', 'video/x-flv', 'video/x-matroska', 'video/ogg',
+                    'application/octet-stream'
+                ];
+
+                if (in_array($contentType, $videoTypes)) {
+                    $this->firebase_video_tested_by_curl_works = 'Yes';
+                    $this->save();
+                    return 'Yes';
+                }
+            }
+
+            $this->firebase_video_tested_by_curl_works = 'No';
+            $this->save();
+            return 'No';
+
+        } catch (\Exception $e) {
+            $this->firebase_video_tested_by_curl = 'Yes';
+            $this->firebase_video_tested_by_curl_works = 'No';
+            $this->save();
+            return 'No';
+        }
+    }
+
+    /**
+     * Check if video exists in Firebase Storage
+     * 
+     * @return bool
+     */
+    public function checkFirebaseExists()
+    {
+        try {
+            if (empty($this->firebase_transfer_path)) {
+                return false;
+            }
+
+            $storage = app('firebase.storage');
+            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
+            $object = $bucket->object($this->firebase_transfer_path);
+
+            return $object->exists();
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get movies that need external URL testing
+     * 
+     * @param int $limit
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public static function getNeedsUrlTesting($limit = 50)
+    {
+        return self::where('video_url_tested_by_curl', '!=', 'Yes')
+                   ->whereNotNull('url')
+                   ->limit($limit)
+                   ->get();
+    }
+
+    /**
+     * Get movies ready for Firebase transfer
+     * 
+     * @param int $limit  
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public static function getNeedsFirebaseTransfer($limit = 10)
+    {
+        return self::where('video_url_tested_by_curl_works', 'Yes')
+                   ->where('firebase_transfer_successful', '!=', 'Yes')
+                   ->where('firebase_transfer_transfer_in_progress', '!=', 'Yes')
+                   ->limit($limit)
+                   ->get();
+    }
+
+    /**
+     * Get movies that need Firebase URL testing
+     * 
+     * @param int $limit
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public static function getNeedsFirebaseUrlTesting($limit = 50)
+    {
+        return self::where('firebase_transfer_successful', 'Yes')
+                   ->where('firebase_video_tested_by_curl', '!=', 'Yes')
+                   ->whereNotNull('firebase_video_url')
+                   ->limit($limit)
+                   ->get();
     }
 }
