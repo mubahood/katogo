@@ -37,7 +37,7 @@ Route::get('/', function () {
 
 Route::get('set-all-movies-to-no', function () {
     $data = [
-        'status' => 'No',
+        'status' => 'Inactive',
         'is_processed' => 'No',
         'downloaded_from_google' => 'No',
         'uploaded_to_from_google' => 'No',
