@@ -119,19 +119,7 @@ class MovieModel extends Model
     //getter for url
     public function getUrlAttribute($value)
     {
-
-        if (str_contains($value, 'https:')) {
-            return $value;
-        }
-        if (str_contains($value, 'http:')) {
-            return $value;
-        }
-
-        //check if it contains http, return the value
-        if (strpos($value, 'http') !== false) {
-            return $value;
-        }
-
+ 
         $url = $value;
         //check if url contains  http
         if (!str_contains($value, 'googleapis')) {
