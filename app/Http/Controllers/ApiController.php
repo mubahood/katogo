@@ -732,6 +732,21 @@ class ApiController extends BaseController
             }
         }
 
+        // Early return if no movies are available
+        if ($oldest_listed_movies->count() === 0) {
+            $manifest = [
+                'top_movie' => [],
+                'vj' => [],
+                'platform_type' => Utils::get_platform(),
+                'genres' => [],
+                'APP_VERSION' => $APP_VERSION ?? 18,
+                'lists' => [],
+                'UPDATE_NOTES' => $UPDATE_NOTES ?? '',
+                'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
+            ];
+            return Utils::success($manifest, "Listed successfully (no content available).");
+        }
+
 
 
         //shuffle $oldest_listed_movies
@@ -743,10 +758,13 @@ class ApiController extends BaseController
         $today = $now->format('d');
         $topMovie = null;
 
-        if (isset($oldest_listed_movies[$today])) {
-            $topMovie = $oldest_listed_movies[$today];
-        } else {
-            $topMovie = $oldest_listed_movies[0];
+        // Safely get top movie with proper null checks
+        if ($oldest_listed_movies->count() > 0) {
+            if (isset($oldest_listed_movies[$today])) {
+                $topMovie = $oldest_listed_movies[$today];
+            } else {
+                $topMovie = $oldest_listed_movies->first();
+            }
         }
 
         try {
@@ -762,8 +780,15 @@ class ApiController extends BaseController
 
         $lists = [];
         $movies = $oldest_listed_movies;
-        $my_view_ids = MovieView::where('user_id', $u->id)
-            ->pluck('movie_model_id');
+        $my_view_ids = [];
+        
+        // Safely get user's viewed movies
+        if ($u && $u->id) {
+            $my_view_ids = MovieView::where('user_id', $u->id)
+                ->pluck('movie_model_id')
+                ->toArray();
+        }
+        
         //top movies
         if (count($movies) > 10) {
 
@@ -779,34 +804,37 @@ class ApiController extends BaseController
             //shuffle $top_movies
             // $top_movies = $top_movies->shuffle(); 
 
-            $my_list['title'] = "Featured Movies";
-            $my_list['movies'] = $top_movies;
-            $lists[] = $my_list;
+            if ($top_movies->count() > 0) {
+                $my_list = [];
+                $my_list['title'] = "Featured Movies";
+                $my_list['movies'] = $top_movies;
+                $lists[] = $my_list;
+            }
         }
 
         //watched_movies continue watching
-
-        $watched_movies = MovieView::where('user_id', $u->id)
-            ->orderBy('updated_at', 'desc')
-            ->limit(50)
-            ->get();
+        $watched_movies = collect();
+        if ($u && $u->id) {
+            $watched_movies = MovieView::where('user_id', $u->id)
+                ->orderBy('updated_at', 'desc')
+                ->limit(50)
+                ->get();
+        }
+        
+        $my_list = [];
+        $my_list['title'] = "Continue Watching";
+        
         if ($watched_movies->count() > 0) {
-            $my_list['title'] = "Continue Watching";
-
-
             $my_list['movies'] = $watched_movies->take(50)->map(function ($view) {
                 return MovieModel::find($view->movie_model_id);
             })->filter(function ($movie) {
                 return $movie != null;
-            });
-
-
-            $lists[] = $my_list;
+            })->values();
         } else {
-            $my_list['title'] = "Continue Watching";
             $my_list['movies'] = [];
-            $lists[] = $my_list;
         }
+        
+        $lists[] = $my_list;
 
 
         //trending movies
@@ -814,8 +842,10 @@ class ApiController extends BaseController
 
             $note_include_ids = [];
             //get trending movies that are not in my_view_ids
-            foreach ($my_view_ids as $id) {
-                $note_include_ids[] = $id;
+            if (is_array($my_view_ids) || is_object($my_view_ids)) {
+                foreach ($my_view_ids as $id) {
+                    $note_include_ids[] = $id;
+                }
             }
 
             //add already added movies add to note_include_ids
@@ -824,7 +854,9 @@ class ApiController extends BaseController
                     continue;
                 }
                 foreach ($list['movies'] as $key2 => $movie) {
-                    $note_include_ids[] = $movie->id;
+                    if ($movie && isset($movie->id)) {
+                        $note_include_ids[] = $movie->id;
+                    }
                 }
             }
 
@@ -851,9 +883,12 @@ class ApiController extends BaseController
                     ->get($take_only);
             }
 
-            $my_list['title'] = "Trending Movies";
-            $my_list['movies'] = $trending_movies;
-            $lists[] = $my_list;
+            if ($trending_movies->count() > 0) {
+                $my_list = [];
+                $my_list['title'] = "Trending Movies";
+                $my_list['movies'] = $trending_movies;
+                $lists[] = $my_list;
+            }
         }
 
 
@@ -990,87 +1025,96 @@ class ApiController extends BaseController
 
 
         $unique_genres = [];
-        $sql = "SELECT DISTINCT genre FROM movie_models";
-        $genres = DB::select($sql);
-        foreach ($genres as $key => $genre) {
-            $slilts = explode(",", $genre->genre);
-            foreach ($slilts as $key => $slit) {
-                $slit = trim($slit);
-                if (!in_array($slit, $unique_genres)) {
-                    $unique_genres[] = $slit;
+        try {
+            $sql = "SELECT DISTINCT genre FROM movie_models WHERE genre IS NOT NULL AND genre != ''";
+            $genres = DB::select($sql);
+            foreach ($genres as $key => $genre) {
+                if (isset($genre->genre) && !empty($genre->genre)) {
+                    $slilts = explode(",", $genre->genre);
+                    foreach ($slilts as $key => $slit) {
+                        $slit = trim($slit);
+                        if (strlen($slit) > 0 && !in_array($slit, $unique_genres)) {
+                            $unique_genres[] = $slit;
+                        }
+                    }
                 }
             }
-        }
 
-        $temp_genres = $unique_genres;
-        $unique_genres = [];
-        //slits using /
-        foreach ($temp_genres as $key => $genre) {
-            $slilts = explode("/", $genre);
-            foreach ($slilts as $key => $slit) {
-                $slit = trim($slit);
-                if (strlen($slit) < 2) {
-                    continue;
-                }
-                if (!in_array($slit, $unique_genres)) {
-                    $unique_genres[] = $slit;
+            $temp_genres = $unique_genres;
+            $unique_genres = [];
+            //slits using /
+            foreach ($temp_genres as $key => $genre) {
+                if (!empty($genre)) {
+                    $slilts = explode("/", $genre);
+                    foreach ($slilts as $key => $slit) {
+                        $slit = trim($slit);
+                        if (strlen($slit) >= 2 && !in_array($slit, $unique_genres)) {
+                            $unique_genres[] = $slit;
+                        }
+                    }
                 }
             }
+        } catch (\Exception $e) {
+            // If genre processing fails, continue with empty array
+            $unique_genres = [];
         }
 
         $unique_vj = [];
-        $sql = "SELECT DISTINCT vj FROM movie_models";
-        $vjs = DB::select($sql);
-        foreach ($vjs as $key => $vj) {
-            $slilts = explode(",", $vj->vj);
-            foreach ($slilts as $key => $slit) {
-                $slit = trim($slit);
-                //remove vj from vj
-                $slit = str_replace("vj", "", $slit);
-                $slit = str_replace("VJ", "", $slit);
-                $slit = str_replace("Vj", "", $slit);
-                $slit = str_replace("Vj", "", $slit);
-                $slit = str_replace("vj", "", $slit);
-                $slit = str_replace(" ", "", $slit);
-                $slit = str_replace("-", "", $slit);
-                if (!in_array($slit, $unique_vj)) {
-                    $unique_vj[] = $slit;
+        try {
+            $sql = "SELECT DISTINCT vj FROM movie_models WHERE vj IS NOT NULL AND vj != ''";
+            $vjs = DB::select($sql);
+            foreach ($vjs as $key => $vj) {
+                if (isset($vj->vj) && !empty($vj->vj)) {
+                    $slilts = explode(",", $vj->vj);
+                    foreach ($slilts as $key => $slit) {
+                        $slit = trim($slit);
+                        //remove vj from vj
+                        $slit = str_replace(["vj", "VJ", "Vj"], "", $slit);
+                        $slit = str_replace([" ", "-"], "", $slit);
+                        if (strlen($slit) > 0 && !in_array($slit, $unique_vj)) {
+                            $unique_vj[] = $slit;
+                        }
+                    }
                 }
             }
+        } catch (\Exception $e) {
+            // If VJ processing fails, continue with empty array
+            $unique_vj = [];
         }
 
         $iosMovies = MovieModel::where(['platform_type' => 'ios'])->get();
 
-        $platform_type  = Utils::get_platform();
-        if ($platform_type == 'ios') {
+        $platform_type = Utils::get_platform();
+        if ($platform_type == 'ios' && $iosMovies->count() > 0) {
             $lists = [];
+            $item = [];
             $item['title'] = 'Continue Watching';
             $item['movies'] = $iosMovies;
             $lists[] = $item;
 
-
+            $item = [];
             $item['title'] = 'Featured Movies';
             $iosMovies = $iosMovies->shuffle();
             $item['movies'] = $iosMovies;
             $lists[] = $item;
             
             $iosMovies = $iosMovies->shuffle();
-            if (isset($iosMovies[0])) {
-                $topMovie = $iosMovies[0];
+            if ($iosMovies->count() > 0) {
+                $topMovie = $iosMovies->first();
             }
         }
         $manifest = [
-            'top_movie' => [$topMovie],
-            'vj' => $unique_vj,
+            'top_movie' => $topMovie ? [$topMovie] : [],
+            'vj' => $unique_vj ?? [],
             'platform_type' => Utils::get_platform(),
-            'genres' => $unique_genres,
-            'APP_VERSION' => $APP_VERSION,
-            'lists' => $lists,
-            'UPDATE_NOTES' => $UPDATE_NOTES,
-            'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER,
+            'genres' => $unique_genres ?? [],
+            'APP_VERSION' => $APP_VERSION ?? 18,
+            'lists' => $lists ?? [],
+            'UPDATE_NOTES' => $UPDATE_NOTES ?? '',
+            'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
         ];
 
-        Utils::success($manifest, "Listed successfully.");
+        return Utils::success($manifest, "Listed successfully.");
     }
 
     public function my_list(Request $r, $model)
