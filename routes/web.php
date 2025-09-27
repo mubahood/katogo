@@ -128,8 +128,8 @@ Route::get('/video/{filename}/permanent', function ($filename) {
 
 /*
 |--------------------------------------------------------------------------
-| Movie URL Testing and Firebase Transfer Routes
- curl -s https://katogo.schooldynamics.ug/admin/movies/test-firebase-urls
+| Movie URL Testing and Firebase Transfer Routes 
+| curl -s https://katogo.schooldynamics.ug/admin/movies/test-firebase-urls
 |--------------------------------------------------------------------------
 */
 
