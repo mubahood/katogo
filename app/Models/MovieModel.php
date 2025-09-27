@@ -48,6 +48,8 @@ class MovieModel extends Model
             ) {
                 $model->status = 'Active';
                 $model->temp_status = 'Active';
+                $model->old_video_url = $model->url;
+                $model->url = $model->firebase_video_url;
             }
 
             if ($model->type == 'Series') {
@@ -119,7 +121,7 @@ class MovieModel extends Model
     //getter for url
     public function getUrlAttribute($value)
     {
- 
+
         $url = $value;
         //check if url contains  http
         if (!str_contains($value, 'googleapis')) {
@@ -128,24 +130,13 @@ class MovieModel extends Model
                 //check if firebase_video_url is not null and not empty
                 if ($this->firebase_video_url != null && strlen($this->firebase_video_url) > 5) {
                     $url = $this->firebase_video_url;
+                    $sql = "UPDATE movie_models SET url = '$url', old_video_url = '{$value}' WHERE id = {$this->id}";
+                    DB::update($sql);
                     return $url;
                 }
             }
         }
 
-        //check if doest not have http
-        if (strpos($url, 'http') === false) {
-            return 'https://movies.ug/' . $value;
-        }
-        return $url;
-        if ($value == null || $value == '' || strlen($value) < 5) {
-            return '';
-        }
-
-        //check if does not contain google and return this.external_url
-        if (!(strpos($value, 'google') !== false)) {
-            return $this->external_url;
-        }
         return $value;
     }
 
