@@ -1,2 +1,0 @@
-E:/github/luganda-translated-movies-mobo/android/app/.cxx/Debug/5r166h34/x86/CMakeFiles/edit_cache.dir
-E:/github/luganda-translated-movies-mobo/android/app/.cxx/Debug/5r166h34/x86/CMakeFiles/rebuild_cache.dir
