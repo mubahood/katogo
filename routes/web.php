@@ -89,17 +89,17 @@ Route::get('/video/{filename}', function ($filename) {
     if (!preg_match('/^[a-zA-Z0-9_\-\.]+\.(mp4|mov|avi|mkv)$/', $filename)) {
         return abort(404, 'Invalid video file');
     }
-    
+
     $firebasePath = "movies/{$filename}";
-    
+
     // Generate fresh signed URL (24 hours)
     $result = Utils::getFirebaseDownloadUrl($firebasePath, 24);
-    
+
     if ($result['success']) {
         // Redirect to Firebase URL - this makes the URL appear permanent to users
         return redirect($result['url']);
     }
-    
+
     return abort(404, 'Video not found');
 })->name('video.stream');
 
@@ -108,10 +108,10 @@ Route::get('/video/{filename}/permanent', function ($filename) {
     if (!preg_match('/^[a-zA-Z0-9_\-\.]+\.(mp4|mov|avi|mkv)$/', $filename)) {
         return abort(404, 'Invalid video file');
     }
-    
+
     $firebasePath = "movies/{$filename}";
     $result = Utils::getFirebasePermanentUrl($firebasePath);
-    
+
     if ($result['success']) {
         return response()->json([
             'success' => true,
@@ -119,7 +119,7 @@ Route::get('/video/{filename}/permanent', function ($filename) {
             'expires' => $result['expires']
         ]);
     }
-    
+
     return response()->json([
         'success' => false,
         'error' => $result['error']
@@ -133,14 +133,14 @@ Route::get('/video/{filename}/permanent', function ($filename) {
 */
 
 // Route 1: Production-Ready URL Testing Endpoint
-Route::get('/admin/movies/test-urls', function(Request $request) {
+Route::get('/admin/movies/test-urls', function (Request $request) {
     set_time_limit(300); // 5 minutes for extensive processing
-    
+
     try {
         // Input validation and sanitization
         $limit = (int) $request->get('limit', 20);
         $type = $request->get('type'); // Optional: 'Movie' or 'Series'
-        
+
         // Validate limit range
         if ($limit < 1 || $limit > 100) {
             return response()->json([
@@ -149,7 +149,7 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
                 'provided_limit' => $limit
             ], 400);
         }
-        
+
         // Validate type if provided
         if ($type && !in_array($type, ['Movie', 'Series'])) {
             return response()->json([
@@ -158,18 +158,18 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
                 'provided_type' => $type
             ], 400);
         }
-        
+
         // Get movies with optional type filtering
         $query = \App\Models\MovieModel::whereNotIn('video_url_tested_by_curl', ['Yes'])
             ->orderBy('id', 'asc')
             ->limit($limit);
-            
+
         if ($type) {
             $query->where('type', $type);
         }
-        
+
         $movies = $query->get();
-        
+
         if ($movies->isEmpty()) {
             return response()->json([
                 'success' => true,
@@ -181,7 +181,7 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
                 'results' => []
             ]);
         }
-        
+
         $results = [
             'total_tested' => 0,
             'working' => 0,
@@ -195,7 +195,7 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
                 'movies_found' => $movies->count()
             ]
         ];
-        
+
         foreach ($movies as $movie) {
             $results['total_tested']++;
             $movieResult = [
@@ -205,10 +205,10 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
                 'url' => $movie->url,
                 'external_url' => $movie->external_url,
             ];
-            
+
             try {
                 $result = $movie->testExternalVideoUrl();
-                
+
                 if ($result === 'Yes') {
                     $results['working']++;
                     $movieResult['status'] = 'success';
@@ -218,32 +218,30 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
                     $movieResult['status'] = 'failed';
                     $movieResult['works'] = 'No';
                 }
-                
+
                 // Get fresh data for content type
                 $fresh = $movie->fresh();
                 $movieResult['content_type'] = $fresh->content_type;
                 $movieResult['content_is_video'] = $fresh->content_is_video;
                 $movieResult['tested_at'] = $fresh->updated_at;
-                
             } catch (\Exception $e) {
                 $results['errors']++;
                 $movieResult['status'] = 'error';
                 $movieResult['works'] = 'Error';
                 $movieResult['error_message'] = $e->getMessage();
-                
+
                 // Log error for debugging
                 Log::error("URL Testing Error for Movie {$movie->id}: " . $e->getMessage());
             }
-            
+
             $results['results'][] = $movieResult;
         }
-        
+
         $results['processing_info']['completed_at'] = now()->toISOString();
         $results['processing_info']['duration_seconds'] = now()->diffInSeconds($results['processing_info']['started_at']);
         $results['success'] = true;
-        
+
         return response()->json($results);
-        
     } catch (\Exception $e) {
         Log::error("URL Testing Endpoint Error: " . $e->getMessage());
         return response()->json([
@@ -256,14 +254,18 @@ Route::get('/admin/movies/test-urls', function(Request $request) {
 
 //curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 2: Production-Ready Firebase Transfer Endpoint with Type Support
-Route::get('/admin/movies/transfer-firebase', function(Request $request) {
+Route::get('/admin/movies/transfer-firebase', function (Request $request) {
     set_time_limit(900); // 15 minutes for large video transfers
-    
+
     try {
         // Input validation and sanitization
         $limit = (int) $request->get('limit', 5);
         $type = $request->get('type'); // REQUIRED: 'Movie' or 'Series'
-        
+
+        if ($type == null || strlen($type) < 3) {
+            $type = 'Movie';
+        }
+
         // Validate required type parameter
         if (!$type || !in_array($type, ['Movie', 'Series'])) {
             return response()->json([
@@ -273,7 +275,7 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                 'usage' => 'Add ?type=Movie or ?type=Series to the URL'
             ], 400);
         }
-        
+
         // Validate limit range for safety
         if ($limit < 1 || $limit > 10) {
             return response()->json([
@@ -282,16 +284,16 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                 'provided_limit' => $limit
             ], 400);
         }
-        
+
         // Get movies that need Firebase transfer with type filtering
         $query = \App\Models\MovieModel::where('video_url_tested_by_curl_works', 'Yes')
             ->where('type', $type)
             ->whereNotIn('firebase_transfer_successful', ['Yes'])
             ->orderBy('id', 'asc')
             ->limit($limit);
-            
+
         $movies = $query->get();
-        
+
         if ($movies->isEmpty()) {
             return response()->json([
                 'success' => true,
@@ -303,7 +305,7 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                 'results' => []
             ]);
         }
-        
+
         $results = [
             'total_processed' => 0,
             'successful_transfers' => 0,
@@ -317,7 +319,7 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                 'movies_found' => $movies->count()
             ]
         ];
-        
+
         foreach ($movies as $movie) {
             $results['total_processed']++;
             $movieResult = [
@@ -326,14 +328,14 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                 'type' => $movie->type,
                 'original_url' => $movie->url,
             ];
-            
+
             try {
                 // Check if already exists in Firebase first
                 if ($movie->checkFirebaseExists()) {
                     $movie->firebase_transfer_successful = 'Yes';
                     $movie->firebase_transfer_attempted = 'Yes';
                     $movie->save();
-                    
+
                     $results['skipped']++;
                     $movieResult['status'] = 'skipped';
                     $movieResult['message'] = 'Already exists in Firebase';
@@ -342,7 +344,7 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                 } else {
                     // Perform the transfer
                     $transferResult = $movie->transferToFirebase();
-                    
+
                     if ($transferResult['success']) {
                         $results['successful_transfers']++;
                         $movieResult['status'] = 'success';
@@ -357,18 +359,17 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                         $movieResult['message'] = $transferResult['message'] ?? 'Transfer failed';
                     }
                 }
-                
+
                 $movieResult['processed_at'] = now()->toISOString();
-                
             } catch (\Exception $e) {
                 $results['failed_transfers']++;
                 $movieResult['status'] = 'error';
                 $movieResult['error'] = $e->getMessage();
                 $movieResult['message'] = 'Exception during transfer process';
-                
+
                 // Log critical transfer errors
                 Log::error("Firebase Transfer Error for {$type} Movie {$movie->id}: " . $e->getMessage());
-                
+
                 // Update movie status to reflect error
                 try {
                     $movie->firebase_transfer_attempted = 'Yes';
@@ -378,16 +379,15 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
                     Log::error("Failed to save error status for Movie {$movie->id}: " . $saveError->getMessage());
                 }
             }
-            
+
             $results['results'][] = $movieResult;
         }
-        
+
         $results['processing_info']['completed_at'] = now()->toISOString();
         $results['processing_info']['duration_seconds'] = now()->diffInSeconds($results['processing_info']['started_at']);
         $results['success'] = true;
-        
+
         return response()->json($results);
-        
     } catch (\Exception $e) {
         Log::error("Firebase Transfer Endpoint Error: " . $e->getMessage());
         return response()->json([
@@ -400,14 +400,14 @@ Route::get('/admin/movies/transfer-firebase', function(Request $request) {
 
 // curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 3: Production-Ready Firebase URL Testing Endpoint
-Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
+Route::get('/admin/movies/test-firebase-urls', function (Request $request) {
     set_time_limit(300); // 5 minutes for URL testing
-    
+
     try {
         // Input validation and sanitization
         $limit = (int) $request->get('limit', 20);
         $type = $request->get('type'); // Optional: 'Movie' or 'Series'
-        
+
         // Validate limit range
         if ($limit < 1 || $limit > 50) {
             return response()->json([
@@ -416,7 +416,7 @@ Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
                 'provided_limit' => $limit
             ], 400);
         }
-        
+
         // Validate type if provided
         if ($type && !in_array($type, ['Movie', 'Series'])) {
             return response()->json([
@@ -425,19 +425,19 @@ Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
                 'provided_type' => $type
             ], 400);
         }
-        
+
         // Get movies that need Firebase URL testing
         $query = \App\Models\MovieModel::where('firebase_transfer_successful', 'Yes')
             ->whereNotIn('firebase_video_tested_by_curl', ['Yes'])
             ->orderBy('id', 'asc')
             ->limit($limit);
-            
+
         if ($type) {
             $query->where('type', $type);
         }
-        
+
         $movies = $query->get();
-        
+
         if ($movies->isEmpty()) {
             return response()->json([
                 'success' => true,
@@ -449,7 +449,7 @@ Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
                 'results' => []
             ]);
         }
-        
+
         $results = [
             'total_tested' => 0,
             'working' => 0,
@@ -464,7 +464,7 @@ Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
                 'movies_found' => $movies->count()
             ]
         ];
-        
+
         foreach ($movies as $movie) {
             $results['total_tested']++;
             $movieResult = [
@@ -474,19 +474,19 @@ Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
                 'firebase_url' => $movie->firebase_video_url,
                 'firebase_path' => $movie->firebase_transfer_path,
             ];
-            
+
             try {
                 $result = $movie->testFirebaseVideoUrl();
-                
+
                 // Get fresh data to check for auto-activation
                 $fresh = $movie->fresh();
                 $wasActivated = ($fresh->status == 'Active' && $result === 'Yes');
-                
+
                 if ($result === 'Yes') {
                     $results['working']++;
                     $movieResult['status'] = 'success';
                     $movieResult['works'] = 'Yes';
-                    
+
                     if ($wasActivated) {
                         $results['auto_activated']++;
                         $movieResult['auto_activated'] = true;
@@ -502,31 +502,29 @@ Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
                     $movieResult['auto_activated'] = false;
                     $movieResult['message'] = 'Firebase URL not accessible';
                 }
-                
+
                 $movieResult['content_type'] = $fresh->content_type;
                 $movieResult['current_status'] = $fresh->status;
                 $movieResult['tested_at'] = $fresh->updated_at;
-                
             } catch (\Exception $e) {
                 $results['errors']++;
                 $movieResult['status'] = 'error';
                 $movieResult['works'] = 'Error';
                 $movieResult['auto_activated'] = false;
                 $movieResult['error_message'] = $e->getMessage();
-                
+
                 // Log Firebase testing errors
                 Log::error("Firebase URL Testing Error for Movie {$movie->id}: " . $e->getMessage());
             }
-            
+
             $results['results'][] = $movieResult;
         }
-        
+
         $results['processing_info']['completed_at'] = now()->toISOString();
         $results['processing_info']['duration_seconds'] = now()->diffInSeconds($results['processing_info']['started_at']);
         $results['success'] = true;
-        
+
         return response()->json($results);
-        
     } catch (\Exception $e) {
         Log::error("Firebase URL Testing Endpoint Error: " . $e->getMessage());
         return response()->json([
@@ -538,21 +536,21 @@ Route::get('/admin/movies/test-firebase-urls', function(Request $request) {
 })->name('admin.movies.test-firebase-urls');
 
 // Route 4: Comprehensive Dashboard with Production-Level Statistics
-Route::get('/admin/movies/dashboard', function(Request $request) {
+Route::get('/admin/movies/dashboard', function (Request $request) {
     set_time_limit(120); // Extended time for comprehensive analysis
-    
+
     try {
         // 1. BASIC MOVIE STATISTICS
         $total_movies = \App\Models\MovieModel::count();
         $movies_count = \App\Models\MovieModel::where('type', 'Movie')->count();
         $series_count = \App\Models\MovieModel::where('type', 'Series')->count();
-        
+
         // 2. STATUS BREAKDOWN
         $status_stats = [
             'active' => \App\Models\MovieModel::where('status', 'Active')->count(),
             'inactive' => \App\Models\MovieModel::where('status', 'Inactive')->count(),
         ];
-        
+
         // 3. URL TESTING PIPELINE STATISTICS
         $url_testing_stats = [
             'not_tested' => \App\Models\MovieModel::whereNotIn('video_url_tested_by_curl', ['Yes'])->count(),
@@ -563,7 +561,7 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
             'human_tested' => \App\Models\MovieModel::where('video_url_tested_by_human', 'Yes')->count(),
             'human_verified_working' => \App\Models\MovieModel::where('video_url_tested_by_human_works', 'Yes')->count(),
         ];
-        
+
         // 4. FIREBASE TRANSFER PIPELINE STATISTICS
         $firebase_transfer_stats = [
             'ready_for_transfer' => \App\Models\MovieModel::where('video_url_tested_by_curl_works', 'Yes')
@@ -574,7 +572,7 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
             'transfer_failed' => \App\Models\MovieModel::where('firebase_transfer_attempted', 'Yes')
                 ->where('firebase_transfer_successful', '!=', 'Yes')->count(),
         ];
-        
+
         // 5. FIREBASE URL TESTING STATISTICS
         $firebase_url_stats = [
             'need_testing' => \App\Models\MovieModel::where('firebase_transfer_successful', 'Yes')
@@ -585,7 +583,7 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
                 ->where('firebase_video_tested_by_curl_works', 'No')->count(),
             'human_firebase_tested' => \App\Models\MovieModel::where('firebase_video_tested_by_human', 'Yes')->count(),
         ];
-        
+
         // 6. CONTENT TYPE ANALYSIS
         $content_stats = [
             'content_processed' => \App\Models\MovieModel::where('content_type_processed', 'Yes')->count(),
@@ -593,7 +591,7 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
             'confirmed_videos' => \App\Models\MovieModel::where('content_is_video', 'Yes')->count(),
             'non_videos' => \App\Models\MovieModel::where('content_is_video', 'No')->count(),
         ];
-        
+
         // 7. CATEGORY AND TYPE BREAKDOWN
         $type_breakdown = [
             'movies' => [
@@ -607,14 +605,14 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
                 'firebase_ready' => \App\Models\MovieModel::where('type', 'Series')->where('firebase_video_tested_by_curl_works', 'Yes')->count(),
             ]
         ];
-        
+
         // 8. ERROR TRACKING AND ANALYTICS
         $error_stats = [
             'movies_with_errors' => \App\Models\MovieModel::whereNotNull('error_message')->count(),
             'firebase_transfer_errors' => \App\Models\MovieModel::whereNotNull('firebase_transfer_failure_reason')->count(),
             'download_errors' => \App\Models\MovieModel::where('video_is_downloaded_to_server_status', 'error')->count(),
         ];
-        
+
         // 9. PROCESSING PIPELINE EFFICIENCY
         $pipeline_stats = [
             'complete_pipeline' => \App\Models\MovieModel::where('video_url_tested_by_curl_works', 'Yes')
@@ -627,19 +625,19 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
             'stuck_at_firebase_testing' => \App\Models\MovieModel::where('firebase_transfer_successful', 'Yes')
                 ->whereNotIn('firebase_video_tested_by_curl', ['Yes'])->count(),
         ];
-        
+
         // 10. PERFORMANCE METRICS
         $performance_stats = [
-            'success_rate_url_testing' => $url_testing_stats['tested_total'] > 0 ? 
+            'success_rate_url_testing' => $url_testing_stats['tested_total'] > 0 ?
                 round(($url_testing_stats['working_urls'] / $url_testing_stats['tested_total']) * 100, 2) : 0,
-            'success_rate_firebase_transfer' => $firebase_transfer_stats['transfer_attempted'] > 0 ? 
+            'success_rate_firebase_transfer' => $firebase_transfer_stats['transfer_attempted'] > 0 ?
                 round(($firebase_transfer_stats['transfer_successful'] / $firebase_transfer_stats['transfer_attempted']) * 100, 2) : 0,
-            'success_rate_firebase_urls' => $firebase_url_stats['tested_total'] > 0 ? 
+            'success_rate_firebase_urls' => $firebase_url_stats['tested_total'] > 0 ?
                 round(($firebase_url_stats['working_firebase_urls'] / $firebase_url_stats['tested_total']) * 100, 2) : 0,
-            'overall_pipeline_completion' => $total_movies > 0 ? 
+            'overall_pipeline_completion' => $total_movies > 0 ?
                 round(($pipeline_stats['complete_pipeline'] / $total_movies) * 100, 2) : 0,
         ];
-        
+
         // 11. RECENT ACTIVITY (Last 24 hours)
         $recent_stats = [
             'urls_tested_today' => \App\Models\MovieModel::where('video_url_tested_by_curl', 'Yes')
@@ -649,14 +647,14 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
             'activated_today' => \App\Models\MovieModel::where('status', 'Active')
                 ->where('updated_at', '>=', now()->subDay())->count(),
         ];
-        
+
         // 12. NEXT ACTIONS NEEDED
         $action_items = [
             'ready_for_url_testing' => $pipeline_stats['stuck_at_url_testing'],
             'ready_for_firebase_transfer' => $pipeline_stats['stuck_at_firebase_transfer'],
             'ready_for_firebase_testing' => $pipeline_stats['stuck_at_firebase_testing'],
         ];
-        
+
         return response()->json([
             'success' => true,
             'generated_at' => now()->toISOString(),
@@ -685,7 +683,6 @@ Route::get('/admin/movies/dashboard', function(Request $request) {
                 'action_items' => $action_items,
             ],
         ]);
-        
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
@@ -1533,14 +1530,13 @@ Route::get('/test-firebase-connection', function () {
         // Test Firebase connection
         $storage = app('firebase.storage');
         $bucket = $storage->getBucket();
-        
+
         return response()->json([
             'success' => true,
             'message' => 'Firebase Storage connection successful!',
             'bucket_name' => $bucket->name(),
             'project_id' => config('firebase.project_id')
         ]);
-        
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
@@ -1559,9 +1555,8 @@ Route::get('/test-firebase-upload', function () {
             'test_video_' . time(),
             'test_uploads'
         );
-        
+
         return response()->json($result);
-        
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
