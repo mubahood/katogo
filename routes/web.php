@@ -134,7 +134,7 @@ Route::get('/video/{filename}/permanent', function ($filename) {
 
 // Route 1: Production-Ready URL Testing Endpoint
 Route::get('/admin/movies/test-urls', function (Request $request) {
-    set_time_limit(300); // 5 minutes for extensive processing
+    set_time_limit(999300); // 5 minutes for extensive processing
 
     try {
         // Input validation and sanitization
@@ -255,7 +255,7 @@ Route::get('/admin/movies/test-urls', function (Request $request) {
 //curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 2: Production-Ready Firebase Transfer Endpoint with Type Support
 Route::get('/admin/movies/transfer-firebase', function (Request $request) {
-    set_time_limit(900); // 15 minutes for large video transfers
+    set_time_limit(999900); // 15 minutes for large video transfers
 
     try {
         // Input validation and sanitization
@@ -401,7 +401,7 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
 // curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 3: Production-Ready Firebase URL Testing Endpoint
 Route::get('/admin/movies/test-firebase-urls', function (Request $request) {
-    set_time_limit(300); // 5 minutes for URL testing
+    set_time_limit(999300); // 5 minutes for URL testing
 
     try {
         // Input validation and sanitization
@@ -537,7 +537,7 @@ Route::get('/admin/movies/test-firebase-urls', function (Request $request) {
 
 // Route 4: Comprehensive Dashboard with Production-Level Statistics
 Route::get('/admin/movies/dashboard', function (Request $request) {
-    set_time_limit(120); // Extended time for comprehensive analysis
+    set_time_limit(999120); // Extended time for comprehensive analysis
 
     try {
         // 1. BASIC MOVIE STATISTICS
