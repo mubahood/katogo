@@ -43,8 +43,7 @@ class MovieModel extends Model
             // Auto-activate movies when Firebase video testing succeeds
             if (
                 $model->isDirty('firebase_video_tested_by_curl_works') &&
-                $model->firebase_video_tested_by_curl_works == 'Yes' &&
-                $model->status != 'Active'
+                $model->firebase_video_tested_by_curl_works == 'Yes'
             ) {
                 $model->status = 'Active';
                 $model->temp_status = 'Active';
