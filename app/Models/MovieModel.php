@@ -41,9 +41,11 @@ class MovieModel extends Model
 
         static::updating(function ($model) {
             // Auto-activate movies when Firebase video testing succeeds
-            if ($model->isDirty('firebase_video_tested_by_curl_works') && 
-                $model->firebase_video_tested_by_curl_works == 'Yes' && 
-                $model->status != 'Active') {
+            if (
+                $model->isDirty('firebase_video_tested_by_curl_works') &&
+                $model->firebase_video_tested_by_curl_works == 'Yes' &&
+                $model->status != 'Active'
+            ) {
                 $model->status = 'Active';
                 $model->temp_status = 'Active';
             }
@@ -132,8 +134,15 @@ class MovieModel extends Model
 
         $url = $value;
         //check if url contains  http
-        if (str_contains($value, 'googleapis')) {
-            $url = $this->external_url;
+        if (!str_contains($value, 'googleapis')) {
+            //check if is active
+            if ($this->status == 'Active' && $this->external_url != null && strlen($this->external_url) > 5) {
+                //check if firebase_video_url is not null and not empty
+                if ($this->firebase_video_url != null && strlen($this->firebase_video_url) > 5) {
+                    $url = $this->firebase_video_url;
+                    return $url;
+                }
+            }
         }
 
         //check if doest not have http
@@ -318,7 +327,7 @@ class MovieModel extends Model
 
             // Get the video URL to test
             $testUrl = $this->external_url ?? $this->url;
-            
+
             if (empty($testUrl)) {
                 $this->video_url_tested_by_curl_works = 'No';
                 $this->save();
@@ -364,13 +373,27 @@ class MovieModel extends Model
             // Enhanced content type validation
             if ($contentType) {
                 $contentType = strtolower(explode(';', $contentType)[0]);
-                
+
                 // Strict video content types only - NO application/octet-stream
                 $validVideoTypes = [
-                    'video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv',
-                    'video/webm', 'video/mkv', 'video/3gp', 'video/mpeg', 'video/quicktime',
-                    'video/x-msvideo', 'video/x-flv', 'video/x-matroska', 'video/ogg',
-                    'video/mp2t', 'video/3gpp', 'video/3gpp2', 'video/x-ms-wmv'
+                    'video/mp4',
+                    'video/avi',
+                    'video/mov',
+                    'video/wmv',
+                    'video/flv',
+                    'video/webm',
+                    'video/mkv',
+                    'video/3gp',
+                    'video/mpeg',
+                    'video/quicktime',
+                    'video/x-msvideo',
+                    'video/x-flv',
+                    'video/x-matroska',
+                    'video/ogg',
+                    'video/mp2t',
+                    'video/3gpp',
+                    'video/3gpp2',
+                    'video/x-ms-wmv'
                 ];
 
                 // Check if it's a proper video content type
@@ -378,9 +401,9 @@ class MovieModel extends Model
                     // Additional validation for octet-stream by checking file extension
                     $urlPath = parse_url($testUrl, PHP_URL_PATH);
                     $extension = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
-                    
+
                     $validVideoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp', 'mpeg', 'mpg', 'm4v'];
-                    
+
                     // For octet-stream, also verify file extension
                     if ($contentType === 'application/octet-stream') {
                         if (!in_array($extension, $validVideoExtensions)) {
@@ -391,7 +414,7 @@ class MovieModel extends Model
                             return 'No';
                         }
                     }
-                    
+
                     // Valid video content found
                     $this->video_url_tested_by_curl_works = 'Yes';
                     $this->content_type = $contentType;
@@ -399,14 +422,22 @@ class MovieModel extends Model
                     $this->save();
                     return 'Yes';
                 }
-                
+
                 // Check for common non-video types that should be rejected
                 $nonVideoTypes = [
-                    'text/html', 'text/plain', 'text/xml', 'application/json',
-                    'application/xml', 'application/pdf', 'image/jpeg', 'image/png',
-                    'image/gif', 'application/zip', 'application/x-www-form-urlencoded'
+                    'text/html',
+                    'text/plain',
+                    'text/xml',
+                    'application/json',
+                    'application/xml',
+                    'application/pdf',
+                    'image/jpeg',
+                    'image/png',
+                    'image/gif',
+                    'application/zip',
+                    'application/x-www-form-urlencoded'
                 ];
-                
+
                 if (in_array($contentType, $nonVideoTypes)) {
                     $this->video_url_tested_by_curl_works = 'No';
                     $this->content_type = $contentType;
@@ -430,7 +461,6 @@ class MovieModel extends Model
             $this->video_url_tested_by_curl_works = 'No';
             $this->save();
             return 'No';
-
         } catch (\Exception $e) {
             $this->video_url_tested_by_curl = 'Yes';
             $this->video_url_tested_by_curl_works = 'No';
@@ -476,7 +506,7 @@ class MovieModel extends Model
             $signatures = [
                 // MP4
                 "\x00\x00\x00\x18ftypmp41",
-                "\x00\x00\x00\x20ftypmp41", 
+                "\x00\x00\x00\x20ftypmp41",
                 "\x00\x00\x00\x1Cftypmp42",
                 "ftypmp4",
                 "ftypisom",
@@ -514,7 +544,6 @@ class MovieModel extends Model
             }
 
             return false;
-
         } catch (\Exception $e) {
             return false;
         }
@@ -561,7 +590,7 @@ class MovieModel extends Model
 
             // Generate Firebase filename
             $fileName = 'movie_' . $this->id . '_' . time();
-            
+
             // Use Utils class to upload to Firebase
             $result = Utils::uploadVideoToFirebase($videoUrl, $fileName, 'movies');
 
@@ -569,7 +598,7 @@ class MovieModel extends Model
                 // Get permanent URL for the uploaded video
                 $permanentResult = Utils::getFirebasePermanentUrl($result['firebase_path']);
                 $firebaseUrl = $permanentResult['success'] ? $permanentResult['url'] : $result['firebase_url'];
-                
+
                 $this->firebase_transfer_transfer_in_progress = 'No';
                 $this->firebase_transfer_successful = 'Yes';
                 $this->firebase_transfer_path = $result['firebase_path'];
@@ -589,11 +618,10 @@ class MovieModel extends Model
                 $this->save();
 
                 return [
-                    'success' => false, 
+                    'success' => false,
                     'error' => $result['error']
                 ];
             }
-
         } catch (\Exception $e) {
             $this->firebase_transfer_transfer_in_progress = 'No';
             $this->firebase_transfer_failure_reason = $e->getMessage();
@@ -655,36 +683,58 @@ class MovieModel extends Model
             // Enhanced Firebase content type validation
             if ($contentType) {
                 $contentType = strtolower(explode(';', $contentType)[0]);
-                
+
                 // Strict video content types only - NO application/octet-stream
                 $validVideoTypes = [
-                    'video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv',
-                    'video/webm', 'video/mkv', 'video/3gp', 'video/mpeg', 'video/quicktime',
-                    'video/x-msvideo', 'video/x-flv', 'video/x-matroska', 'video/ogg',
-                    'video/mp2t', 'video/3gpp', 'video/3gpp2', 'video/x-ms-wmv'
+                    'video/mp4',
+                    'video/avi',
+                    'video/mov',
+                    'video/wmv',
+                    'video/flv',
+                    'video/webm',
+                    'video/mkv',
+                    'video/3gp',
+                    'video/mpeg',
+                    'video/quicktime',
+                    'video/x-msvideo',
+                    'video/x-flv',
+                    'video/x-matroska',
+                    'video/ogg',
+                    'video/mp2t',
+                    'video/3gpp',
+                    'video/3gpp2',
+                    'video/x-ms-wmv'
                 ];
 
                 // Check if it's a proper video content type
                 if (in_array($contentType, $validVideoTypes)) {
                     $this->firebase_video_tested_by_curl_works = 'Yes';
-                    
+
                     // Auto-activate if Firebase video is working
                     if ($this->status !== 'Active') {
                         $this->status = 'Active';
                     }
-                    
+
                     $this->save();
                     return 'Yes';
                 }
-                
+
                 // Check for common non-video types that should be rejected
                 $nonVideoTypes = [
-                    'text/html', 'text/plain', 'text/xml', 'application/json',
-                    'application/xml', 'application/pdf', 'image/jpeg', 'image/png',
-                    'image/gif', 'application/zip', 'application/x-www-form-urlencoded',
+                    'text/html',
+                    'text/plain',
+                    'text/xml',
+                    'application/json',
+                    'application/xml',
+                    'application/pdf',
+                    'image/jpeg',
+                    'image/png',
+                    'image/gif',
+                    'application/zip',
+                    'application/x-www-form-urlencoded',
                     'application/octet-stream' // Explicitly reject this now
                 ];
-                
+
                 if (in_array($contentType, $nonVideoTypes)) {
                     $this->firebase_video_tested_by_curl_works = 'No';
                     $this->save();
@@ -695,12 +745,12 @@ class MovieModel extends Model
             // If content type is unclear, do additional verification for Firebase URLs
             if ($this->performDeepVideoVerification($this->firebase_video_url)) {
                 $this->firebase_video_tested_by_curl_works = 'Yes';
-                
+
                 // Auto-activate if Firebase video is working
                 if ($this->status !== 'Active') {
                     $this->status = 'Active';
                 }
-                
+
                 $this->save();
                 return 'Yes';
             }
@@ -708,7 +758,6 @@ class MovieModel extends Model
             $this->firebase_video_tested_by_curl_works = 'No';
             $this->save();
             return 'No';
-
         } catch (\Exception $e) {
             $this->firebase_video_tested_by_curl = 'Yes';
             $this->firebase_video_tested_by_curl_works = 'No';
@@ -748,9 +797,9 @@ class MovieModel extends Model
     public static function getNeedsUrlTesting($limit = 50)
     {
         return self::where('video_url_tested_by_curl', '!=', 'Yes')
-                   ->whereNotNull('url')
-                   ->limit($limit)
-                   ->get();
+            ->whereNotNull('url')
+            ->limit($limit)
+            ->get();
     }
 
     /**
@@ -762,10 +811,10 @@ class MovieModel extends Model
     public static function getNeedsFirebaseTransfer($limit = 10)
     {
         return self::where('video_url_tested_by_curl_works', 'Yes')
-                   ->where('firebase_transfer_successful', '!=', 'Yes')
-                   ->where('firebase_transfer_transfer_in_progress', '!=', 'Yes')
-                   ->limit($limit)
-                   ->get();
+            ->where('firebase_transfer_successful', '!=', 'Yes')
+            ->where('firebase_transfer_transfer_in_progress', '!=', 'Yes')
+            ->limit($limit)
+            ->get();
     }
 
     /**
@@ -777,9 +826,9 @@ class MovieModel extends Model
     public static function getNeedsFirebaseUrlTesting($limit = 50)
     {
         return self::where('firebase_transfer_successful', 'Yes')
-                   ->where('firebase_video_tested_by_curl', '!=', 'Yes')
-                   ->whereNotNull('firebase_video_url')
-                   ->limit($limit)
-                   ->get();
+            ->where('firebase_video_tested_by_curl', '!=', 'Yes')
+            ->whereNotNull('firebase_video_url')
+            ->limit($limit)
+            ->get();
     }
 }
