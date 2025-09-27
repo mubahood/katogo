@@ -1,0 +1,23 @@
+/* Custom dashboard hover styles */
+
+/* InfoBox hover effect */
+.info-box {
+    transition: box-shadow 0.2s, background 0.2s;
+}
+.info-box:hover {
+    box-shadow: 0 0 12px 2px #2196f333;
+    background: #e3f2fd !important;
+    border-color: #2196f3 !important;
+}
+
+/* Table row hover effect */
+.table > tbody > tr:hover {
+    background-color: #f5f5f5 !important;
+    color: #1976d2 !important;
+}
+
+/* Box hover effect */
+.box:hover {
+    border-color: #1976d2 !important;
+    background: #f0f7ff !important;
+}

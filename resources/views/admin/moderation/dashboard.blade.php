@@ -186,3 +186,7 @@
         </div>
     </section>
 </div>
+
+@push('styles')
+<link rel="stylesheet" href="/css/dashboard-custom.css">
+@endpush

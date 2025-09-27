@@ -49,18 +49,18 @@ class HomeController extends Controller
 
         // Main Statistics InfoBoxes
         $mainStats = [
-            ['Total Movies', 'film', 'blue', admin_url('movies'), number_format($totalMovies)],
-            ['Active Movies', 'check-circle', 'green', admin_url('movies-active'), number_format($activeMovies)],
-            ['Production Ready', 'cloud-check', 'purple', admin_url('movies'), number_format($completePipeline)],
-            ['Pipeline Progress', 'progress-check', 'orange', admin_url('movies'), $overallCompletion . '%'],
+            ['Total Movies', 'film', 'blue', admin_url('movies?all=1'), number_format($totalMovies)],
+            ['Active Movies', 'check-circle', 'green', admin_url('movies?status=active'), number_format($activeMovies)],
+            ['Production Ready', 'cloud-check', 'purple', admin_url('movies?status=active&type=production'), number_format($completePipeline)],
+            ['Pipeline Progress', 'progress-check', 'orange', admin_url('movies?progress=1'), $overallCompletion . '%'],
         ];
-        
+
         // Type Breakdown
         $typeStats = [
-            ['Movies Type', 'video', 'info', admin_url('movies-movies'), number_format($moviesCount)],
-            ['Series Type', 'list', 'warning', admin_url('movies-series'), number_format($seriesCount)],
-            ['URLs Working', 'link', 'success', admin_url('movies'), number_format($urlsWorking)],
-            ['Firebase Ready', 'cloud', 'primary', admin_url('movies'), number_format($firebaseWorking)],
+            ['Movies Type', 'video', 'info', admin_url('movies?type=Movie'), number_format($moviesCount)],
+            ['Series Type', 'list', 'warning', admin_url('movies?type=Series'), number_format($seriesCount)],
+            ['URLs Working', 'link', 'success', admin_url('movies?url_tested=working'), number_format($urlsWorking)],
+            ['Firebase Ready', 'cloud', 'primary', admin_url('movies?firebase_ready=1'), number_format($firebaseWorking)],
         ];
 
         // Additional Business Metrics
@@ -68,24 +68,24 @@ class HomeController extends Controller
         $totalViews = MovieView::count();
         $totalViewingHours = round(MovieView::sum('progress') / 3600, 1);
         $recentMovies = MovieModel::where('created_at', '>=', Carbon::now()->subDays(30))->count();
-        
+
         $businessStats = [
-            ['Total Users', 'users', 'success', admin_url('users'), number_format($totalUsers)],
-            ['Total Views', 'eye', 'info', admin_url('movie-views'), number_format($totalViews)],
-            ['Watch Hours', 'clock-o', 'warning', admin_url('movie-views'), number_format($totalViewingHours).'h'],
-            ['New Movies (30d)', 'plus-circle', 'danger', admin_url('movies'), number_format($recentMovies)],
+            ['Total Users', 'users', 'success', admin_url('users?all=1'), number_format($totalUsers)],
+            ['Total Views', 'eye', 'info', admin_url('movie-views?all=1'), number_format($totalViews)],
+            ['Watch Hours', 'clock-o', 'warning', admin_url('movie-views?hours=1'), number_format($totalViewingHours).'h'],
+            ['New Movies (30d)', 'plus-circle', 'danger', admin_url('movies?recent=1'), number_format($recentMovies)],
         ];
 
         // System Performance Metrics
         $errorMovies = MovieModel::whereNotNull('error_message')->count();
         $processingQueue = $urlNotTested + $readyForTransfer;
         $systemEfficiency = $totalMovies > 0 ? round((($totalMovies - $errorMovies) / $totalMovies) * 100, 1) : 100;
-        
+
         $systemStats = [
-            ['Processing Queue', 'tasks', 'orange', admin_url('movies'), number_format($processingQueue)],
-            ['Error Count', 'exclamation-triangle', 'danger', admin_url('movies'), number_format($errorMovies)],
-            ['System Efficiency', 'tachometer', 'success', admin_url('movies'), $systemEfficiency.'%'],
-            ['Success Rate', 'check-circle-o', 'primary', admin_url('movies'), $urlSuccessRate.'%'],
+            ['Processing Queue', 'tasks', 'orange', admin_url('movies?queue=1'), number_format($processingQueue)],
+            ['Error Count', 'exclamation-triangle', 'danger', admin_url('movies?errors=1'), number_format($errorMovies)],
+            ['System Efficiency', 'tachometer', 'success', admin_url('movies?efficiency=1'), $systemEfficiency.'%'],
+            ['Success Rate', 'check-circle-o', 'primary', admin_url('movies?success=1'), $urlSuccessRate.'%'],
         ];
 
         // URL Processing Pipeline Table
