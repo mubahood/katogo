@@ -15,19 +15,43 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*', 'katogo/api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+        'http://localhost:8888',
+        '*'
+    ],
 
     'allowed_origins_patterns' => [],
 
-    'allowed_headers' => ['*'],
+    'allowed_headers' => [
+        '*',
+        'Authorization',
+        'Tok',
+        'logged_in_user_id',
+        'platform_type',
+        'Content-Type',
+        'X-Requested-With',
+        'Accept',
+        'Origin',
+        'User-Agent',
+        'DNT',
+        'Cache-Control',
+        'X-Mx-ReqToken',
+        'Keep-Alive',
+        'X-Requested-With',
+        'If-Modified-Since'
+    ],
 
-    'exposed_headers' => [],
+    'exposed_headers' => ['Authorization', 'Tok'],
 
-    'max_age' => 0,
+    'max_age' => 86400,
 
     'supports_credentials' => false,
 

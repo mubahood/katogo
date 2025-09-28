@@ -4655,6 +4655,16 @@ class Utils
     {
         //set header response to json
         header('Content-Type: application/json');
+        
+        // Add CORS headers for browser compatibility
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, Tok, logged_in_user_id, platform_type, X-Requested-With, Accept, Origin');
+        header('Access-Control-Allow-Credentials: false');
+        header('Access-Control-Expose-Headers: Authorization, Tok');
+        header('Access-Control-Max-Age: 86400');
+        
         http_response_code(200);
         echo json_encode([
             'code' => 1,
@@ -4667,6 +4677,16 @@ class Utils
     public static function error($message)
     {
         header('Content-Type: application/json');
+        
+        // Add CORS headers for browser compatibility
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, Tok, logged_in_user_id, platform_type, X-Requested-With, Accept, Origin');
+        header('Access-Control-Allow-Credentials: false');
+        header('Access-Control-Expose-Headers: Authorization, Tok');
+        header('Access-Control-Max-Age: 86400');
+        
         http_response_code(200);
         echo json_encode([
             'code' => 0,
