@@ -371,6 +371,77 @@ class DynamicCrudController extends Controller
         } else {
             $query->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium']);
         }
+        // Enhanced search parameter that searches movies and series separately
+        if ($request->filled('search')) {
+            $searchTerm = $request->get('search');
+            $perPage = $request->get('per_page', 21);
+            
+            // Search movies (top 8 results)
+            $movieQuery = MovieModel::query()->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium'])
+                ->where('type', 'Movie')
+                ->where(function ($q) use ($searchTerm) {
+                    $q->where('title', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('description', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('genre', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('category', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('actor', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('vj', 'LIKE', '%' . $searchTerm . '%');
+                })
+                ->orderBy('title', 'asc')
+                ->limit(8);
+                
+            // Search series (top 8 results, only first episodes to avoid repetition)
+            $seriesQuery = MovieModel::query()->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium'])
+                ->where('type', 'Series')
+                ->where('is_first_episode', 'Yes') // Only first episodes to avoid repetition
+                ->where(function ($q) use ($searchTerm) {
+                    $q->where('title', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('description', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('genre', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('category', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('actor', 'LIKE', '%' . $searchTerm . '%')
+                      ->orWhere('vj', 'LIKE', '%' . $searchTerm . '%');
+                })
+                ->orderBy('title', 'asc')
+                ->limit(8);
+                
+            $movies = $movieQuery->get();
+            $series = $seriesQuery->get();
+            
+            // Merge results alphabetically
+            $mergedResults = $movies->concat($series)->sortBy('title')->take($perPage);
+            
+            // Convert to collection for pagination-like response
+            $movieIds = $mergedResults->pluck('id')->toArray();
+            
+            // Get views and likes for merged results
+            $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))
+                ->whereIn('movie_model_id', $movieIds)
+                ->groupBy('movie_model_id')
+                ->pluck('total', 'movie_model_id');
+            $likes = MovieLike::select('movie_model_id', \DB::raw('count(*) as total'))
+                ->whereIn('movie_model_id', $movieIds)
+                ->groupBy('movie_model_id')
+                ->pluck('total', 'movie_model_id');
+                
+            $results = $mergedResults->map(function ($movie) use ($views, $likes) {
+                $movie->views_count = $views[$movie->id] ?? 0;
+                $movie->likes_count = $likes[$movie->id] ?? 0;
+                return $movie;
+            });
+            
+            $response = [
+                'items' => $results,
+                'pagination' => [
+                    'current_page' => 1,
+                    'per_page'     => $perPage,
+                    'total'        => $results->count(),
+                    'last_page'    => 1,
+                ]
+            ];
+            return $this->success($response, "Movies retrieved successfully.");
+        }
+        
         if ($request->filled('title')) {
             $query->where('title', 'LIKE', '%' . $request->get('title') . '%');
         }
@@ -613,5 +684,359 @@ class DynamicCrudController extends Controller
 
 
         return $this->success($paymentRecord, $message = "Payment successful.", 1);
+    }
+
+    /**
+     * Get single movie by ID with related movies
+     * Used for video watch page with smart related movies algorithm
+     */
+    public function movie(Request $request, $id)
+    {
+        // Get the current user for authentication
+        $u = Utils::get_user($request);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $u->last_online_at = now();
+                $u->save();
+            }
+        }
+
+        // Check if user is authenticated
+        $current = $u;
+        if ($current == null) {
+            return $this->error('User not logged in.', 401);
+        }
+
+        // Find the main movie
+        $movie = MovieModel::find($id);
+        if (!$movie) {
+            return $this->error('Movie not found.', 404);
+        }
+
+        // Get movie views and likes count
+        $viewsCount = MovieView::where('movie_model_id', $movie->id)->count();
+        $likesCount = MovieLike::where('movie_model_id', $movie->id)->count();
+        
+        $movie->views_count = $viewsCount;
+        $movie->likes_count = $likesCount;
+
+        // Smart related movies algorithm using title word matching
+        $relatedMovies = $this->getRelatedMovies($movie, 12);
+
+        $response = [
+            'movie' => $movie,
+            'related_movies' => $relatedMovies,
+            'user_interactions' => [
+                'has_liked' => MovieLike::where('movie_model_id', $movie->id)
+                                       ->where('user_id', $current->id)
+                                       ->exists(),
+                'has_viewed' => MovieView::where('movie_model_id', $movie->id)
+                                        ->where('user_id', $current->id)
+                                        ->exists(),
+            ]
+        ];
+
+        return $this->success($response, "Movie retrieved successfully.");
+    }
+
+    /**
+     * Smart algorithm to find related movies based on title word matching
+     * Priority: Same series > Same genre > Title word matches > Same type
+     */
+    private function getRelatedMovies($movie, $limit = 12)
+    {
+        $relatedMovies = collect();
+
+        // 1. If it's a series, get other episodes from same series (highest priority)
+        if ($movie->type == 'Series' && !empty($movie->category)) {
+            $seriesMovies = MovieModel::where('type', 'Series')
+                ->where('category', $movie->category)
+                ->where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->orderBy('episode_number', 'asc')
+                ->limit(6)
+                ->get();
+            $relatedMovies = $relatedMovies->concat($seriesMovies);
+        }
+
+        // 2. Get movies from same genre (if not enough from series)
+        if ($relatedMovies->count() < $limit && !empty($movie->genre)) {
+            $genreMovies = MovieModel::where('genre', $movie->genre)
+                ->where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->whereNotIn('id', $relatedMovies->pluck('id'))
+                ->inRandomOrder()
+                ->limit($limit - $relatedMovies->count())
+                ->get();
+            $relatedMovies = $relatedMovies->concat($genreMovies);
+        }
+
+        // 3. Smart title word matching algorithm
+        if ($relatedMovies->count() < $limit) {
+            $titleWords = $this->extractSignificantWords($movie->title);
+            
+            if (count($titleWords) > 0) {
+                $wordMatchMovies = MovieModel::where('id', '!=', $movie->id)
+                    ->where('status', 'Active')
+                    ->whereNotIn('id', $relatedMovies->pluck('id'))
+                    ->where(function ($query) use ($titleWords) {
+                        foreach ($titleWords as $word) {
+                            $query->orWhere('title', 'LIKE', '%' . $word . '%');
+                        }
+                    })
+                    ->inRandomOrder()
+                    ->limit($limit - $relatedMovies->count())
+                    ->get();
+                $relatedMovies = $relatedMovies->concat($wordMatchMovies);
+            }
+        }
+
+        // 4. Fill remaining slots with same type movies (Movie/Series)
+        if ($relatedMovies->count() < $limit) {
+            $typeMovies = MovieModel::where('type', $movie->type)
+                ->where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->whereNotIn('id', $relatedMovies->pluck('id'))
+                ->inRandomOrder()
+                ->limit($limit - $relatedMovies->count())
+                ->get();
+            $relatedMovies = $relatedMovies->concat($typeMovies);
+        }
+
+        // Add views and likes count to related movies
+        $movieIds = $relatedMovies->pluck('id')->toArray();
+        $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))
+            ->whereIn('movie_model_id', $movieIds)
+            ->groupBy('movie_model_id')
+            ->pluck('total', 'movie_model_id');
+        $likes = MovieLike::select('movie_model_id', \DB::raw('count(*) as total'))
+            ->whereIn('movie_model_id', $movieIds)
+            ->groupBy('movie_model_id')
+            ->pluck('total', 'movie_model_id');
+
+        return $relatedMovies->map(function ($movie) use ($views, $likes) {
+            $movie->views_count = $views[$movie->id] ?? 0;
+            $movie->likes_count = $likes[$movie->id] ?? 0;
+            return $movie;
+        })->take($limit);
+    }
+
+    /**
+     * Extract significant words from movie title for matching
+     * Removes common words, numbers, and special characters
+     */
+    private function extractSignificantWords($title)
+    {
+        // Common words to exclude from matching
+        $stopWords = [
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'movie', 'film', 'part', 'episode', 'season', '2022', '2023', '2024', '2025',
+            'hd', 'full', 'watch', 'online', 'free', 'download', 'streaming'
+        ];
+
+        // Clean and split title into words
+        $title = strtolower($title);
+        $title = preg_replace('/[^a-zA-Z0-9\s]/', ' ', $title); // Remove special chars
+        $words = array_filter(explode(' ', $title), function($word) use ($stopWords) {
+            return strlen(trim($word)) > 2 && !in_array(strtolower(trim($word)), $stopWords);
+        });
+
+        // Return first 3 most significant words for matching
+        return array_slice(array_values($words), 0, 3);
+    }
+
+    /**
+     * Save or update video playback progress
+     */
+    public function save_video_progress(Request $request)
+    {
+        try {
+            // Get authenticated user
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            // Validate required fields
+            $request->validate([
+                'movie_model_id' => 'required|integer|exists:movie_models,id',
+                'progress' => 'required|numeric|min:0',
+                'duration' => 'required|numeric|min:0',
+            ]);
+
+            // Calculate additional fields
+            $progress = floatval($request->input('progress'));
+            $duration = floatval($request->input('duration'));
+            $percentage = $duration > 0 ? round(($progress / $duration) * 100, 2) : 0;
+            $maxProgress = max($progress, 0);
+
+            // Create or update movie view record
+            $movieView = MovieView::updateOrCreate(
+                [
+                    'movie_model_id' => $request->input('movie_model_id'),
+                    'user_id' => $user->id,
+                ],
+                [
+                    'progress' => $progress,
+                    'max_progress' => max($maxProgress, MovieView::where('movie_model_id', $request->input('movie_model_id'))
+                        ->where('user_id', $user->id)->value('max_progress') ?? 0),
+                    'ip_address' => $request->ip(),
+                    'device' => $request->input('device', 'Unknown'),
+                    'platform' => $request->input('platform', 'Web'),
+                    'browser' => $request->input('browser', 'Unknown'),
+                    'country' => $request->input('country', ''),
+                    'city' => $request->input('city', ''),
+                    'status' => $percentage >= 90 ? 'Completed' : 'Active',
+                ]
+            );
+
+            return $this->success([
+                'id' => $movieView->id,
+                'progress' => $progress,
+                'max_progress' => $movieView->max_progress,
+                'percentage' => $percentage,
+                'status' => $movieView->status,
+                'message' => 'Video progress saved successfully'
+            ], 'Progress saved');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to save progress: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get video progress for a specific movie
+     */
+    public function get_video_progress(Request $request, $movie_id)
+    {
+        try {
+            // Get authenticated user
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            // Find the progress record
+            $progress = MovieView::where('movie_model_id', $movie_id)
+                ->where('user_id', $user->id)
+                ->orderBy('updated_at', 'desc')
+                ->first();
+
+            if (!$progress) {
+                return $this->success(null, 'No progress found');
+            }
+
+            // Get movie details for duration if not stored
+            $movie = MovieModel::find($movie_id);
+            $duration = $progress->duration ?? ($movie ? $movie->duration : 0);
+
+            return $this->success([
+                'id' => $progress->id,
+                'movie_model_id' => $progress->movie_model_id,
+                'progress' => floatval($progress->progress),
+                'max_progress' => floatval($progress->max_progress),
+                'duration' => floatval($duration),
+                'percentage' => $duration > 0 ? round(($progress->progress / $duration) * 100, 2) : 0,
+                'status' => $progress->status,
+                'last_watched_at' => $progress->updated_at->toISOString(),
+                'device' => $progress->device,
+                'platform' => $progress->platform,
+                'browser' => $progress->browser,
+            ], 'Progress retrieved');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to get progress: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get user's watch history with progress
+     */
+    public function get_watch_history(Request $request)
+    {
+        try {
+            // Get authenticated user
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            $page = $request->input('page', 1);
+            $limit = $request->input('limit', 20);
+
+            // Get watch history with movie details
+            $history = MovieView::where('user_id', $user->id)
+                ->where('progress', '>', 120) // Only show videos watched for more than 2 minutes
+                ->with(['movie' => function($query) {
+                    $query->select(['id', 'title', 'thumbnail_url', 'year', 'type', 'category', 'episode_number']);
+                }])
+                ->orderBy('updated_at', 'desc')
+                ->paginate($limit, ['*'], 'page', $page);
+
+            $items = $history->items();
+            $formattedHistory = collect($items)->map(function ($view) {
+                $movie = $view->movie;
+                if (!$movie) return null;
+
+                return [
+                    'id' => $view->id,
+                    'movie_id' => $movie->id,
+                    'movie_title' => $movie->title,
+                    'movie_thumbnail' => $movie->thumbnail_url,
+                    'movie_year' => $movie->year,
+                    'movie_type' => $movie->type,
+                    'movie_category' => $movie->category,
+                    'episode_number' => $movie->episode_number,
+                    'progress' => floatval($view->progress),
+                    'max_progress' => floatval($view->max_progress),
+                    'percentage' => $view->progress && $view->duration ? 
+                        round(($view->progress / $view->duration) * 100, 2) : 0,
+                    'status' => $view->status,
+                    'last_watched_at' => $view->updated_at->toISOString(),
+                    'device' => $view->device,
+                    'platform' => $view->platform,
+                ];
+            })->filter()->values();
+
+            return $this->success([
+                'items' => $formattedHistory,
+                'total' => $history->total(),
+                'current_page' => $history->currentPage(),
+                'last_page' => $history->lastPage(),
+                'per_page' => $history->perPage(),
+            ], 'Watch history retrieved');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to get watch history: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Delete video progress (reset progress)
+     */
+    public function delete_video_progress(Request $request, $movie_id)
+    {
+        try {
+            // Get authenticated user
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            // Delete the progress record
+            $deleted = MovieView::where('movie_model_id', $movie_id)
+                ->where('user_id', $user->id)
+                ->delete();
+
+            if ($deleted > 0) {
+                return $this->success(['deleted' => true], 'Progress deleted successfully');
+            } else {
+                return $this->success(['deleted' => false], 'No progress found to delete');
+            }
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to delete progress: ' . $e->getMessage(), 500);
+        }
     }
 }
