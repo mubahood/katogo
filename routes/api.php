@@ -58,6 +58,14 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::POST('chat-start', [ApiController::class, 'chat_start']);
     Route::POST('chat-delete', [ApiController::class, 'chat_delete']);
 
+    // Account Layout & User Management Routes
+    Route::get('account/dashboard', [DynamicCrudController::class, 'get_account_dashboard']);
+    Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);
+    Route::post('account/watchlist/add', [DynamicCrudController::class, 'add_to_watchlist']);
+    Route::delete('account/watchlist/{movie_id}', [DynamicCrudController::class, 'remove_from_watchlist']);
+    Route::get('account/likes', [DynamicCrudController::class, 'get_liked_movies']);
+    Route::post('account/likes/toggle', [DynamicCrudController::class, 'toggle_movie_like']);
+
     // Content Moderation & Safety Routes
     Route::post('moderation/report-content', [ModerationController::class, 'reportContent']);
     Route::post('moderation/report', [ModerationController::class, 'reportContent']); // Alias for backward compatibility

@@ -21,6 +21,22 @@ use Symfony\Component\Process\Process;
 
 /*
 |--------------------------------------------------------------------------
+| Authentication Routes
+|--------------------------------------------------------------------------
+*/
+
+// Basic Authentication Routes
+Route::get('/login', function () {
+    return redirect('/'); // Redirect to landing page with login form
+})->name('login');
+
+Route::post('/logout', function () {
+    auth()->logout();
+    return redirect('/');
+})->name('logout');
+
+/*
+|--------------------------------------------------------------------------
 | Landing Site Routes
 |--------------------------------------------------------------------------
 */
@@ -76,6 +92,48 @@ Route::post('/contact', [LandingController::class, 'contactSubmit'])->name('land
 Route::get('/privacy-policy', [LandingController::class, 'privacyPolicy'])->name('landing.privacy-policy');
 Route::get('/terms-of-service', [LandingController::class, 'termsOfService'])->name('landing.terms-of-service');
 Route::get('/eula', [LandingController::class, 'eula'])->name('landing.eula');
+
+// Account management page (requires authentication)
+Route::get('/account', function () {
+    return view('account');
+})->middleware('auth')->name('account.index');
+
+// Temporary test routes for account system
+Route::get('/test-account-apis', function () {
+    $user = \App\Models\User::first();
+    if (!$user) {
+        $user = \App\Models\User::create([
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'password' => bcrypt('password123'),
+        ]);
+    }
+
+    auth()->login($user);
+    $controller = new \App\Http\Controllers\DynamicCrudController();
+
+    try {
+        $request = new \Illuminate\Http\Request();
+        $dashboardResponse = $controller->get_account_dashboard($request);
+        $dashboard = json_decode($dashboardResponse->getContent(), true);
+        
+        return response()->json([
+            'message' => 'Account API Test Results',
+            'dashboard_status' => $dashboard['success'] ? 'PASS' : 'FAIL',
+            'user' => $user->only(['id', 'name', 'email']),
+            'timestamp' => now()->toISOString()
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'API Test Failed',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+Route::get('/test-frontend', function () {
+    return view('account');
+});
 
 /*
 |--------------------------------------------------------------------------

@@ -375,6 +375,33 @@
                 </ul>
                 
                 <ul class="navbar-nav">
+                    @auth
+                    <!-- User is logged in -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <img src="https://ui-avatars.com/api/?name={{ urlencode(auth()->user()->name) }}&color=fff&background=e50914" class="rounded-circle me-2" width="32" height="32" alt="Profile">
+                            {{ auth()->user()->name }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdown">
+                            <li><a class="dropdown-item" href="{{ route('account.index') }}">My Account</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form method="POST" action="{{ route('logout') }}">
+                                    @csrf
+                                    <button type="submit" class="dropdown-item">Logout</button>
+                                </form>
+                            </li>
+                        </ul>
+                    </li>
+                    @else
+                    <!-- User is not logged in -->
+                    <li class="nav-item">
+                        <button class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#loginModal">
+                            Login
+                        </button>
+                    </li>
+                    @endauth
+                    
                     @if(env('LANDING_APP_STORE_URL'))
                     <li class="nav-item">
                         <a class="nav-link" href="{{ env('LANDING_APP_STORE_URL') }}" target="_blank">

@@ -1060,4 +1060,291 @@ class DynamicCrudController extends Controller
             return $this->error('Failed to delete progress: ' . $e->getMessage(), 500);
         }
     }
+
+    /**
+     * Add movie to watchlist
+     */
+    public function add_to_watchlist(Request $request)
+    {
+        try {
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            $request->validate([
+                'movie_id' => 'required|integer|exists:movie_models,id'
+            ]);
+
+            $watchlist = \App\Models\Watchlist::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'movie_model_id' => $request->movie_id
+                ],
+                [
+                    'status' => 'active',
+                    'added_at' => now()
+                ]
+            );
+
+            return $this->success([
+                'watchlist_id' => $watchlist->id,
+                'added' => true
+            ], 'Added to watchlist');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to add to watchlist: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Remove movie from watchlist
+     */
+    public function remove_from_watchlist(Request $request, $movie_id)
+    {
+        try {
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            $removed = \App\Models\Watchlist::where('user_id', $user->id)
+                ->where('movie_model_id', $movie_id)
+                ->delete();
+
+            return $this->success([
+                'removed' => $removed > 0
+            ], $removed > 0 ? 'Removed from watchlist' : 'Movie not in watchlist');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to remove from watchlist: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get user's watchlist
+     */
+    public function get_watchlist(Request $request)
+    {
+        try {
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            $perPage = $request->get('per_page', 20);
+            $page = $request->get('page', 1);
+
+            $watchlist = \App\Models\Watchlist::with(['movie'])
+                ->where('user_id', $user->id)
+                ->where('status', 'active')
+                ->orderBy('added_at', 'desc')
+                ->paginate($perPage, ['*'], 'page', $page);
+
+            $formattedWatchlist = $watchlist->map(function ($item) {
+                $movie = $item->movie;
+                if (!$movie) return null;
+
+                return [
+                    'watchlist_id' => $item->id,
+                    'movie_id' => $movie->id,
+                    'title' => $movie->title,
+                    'thumbnail' => $movie->thumbnail_url,
+                    'year' => $movie->year,
+                    'type' => $movie->type,
+                    'category' => $movie->category,
+                    'episode_number' => $movie->episode_number,
+                    'added_at' => $item->added_at->toISOString(),
+                ];
+            })->filter()->values();
+
+            return $this->success([
+                'items' => $formattedWatchlist,
+                'total' => $watchlist->total(),
+                'current_page' => $watchlist->currentPage(),
+                'last_page' => $watchlist->lastPage(),
+                'per_page' => $watchlist->perPage(),
+            ], 'Watchlist retrieved');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to get watchlist: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Toggle like/unlike for a movie
+     */
+    public function toggle_movie_like(Request $request)
+    {
+        try {
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            $request->validate([
+                'movie_id' => 'required|integer|exists:movie_models,id'
+            ]);
+
+            $existingLike = MovieLike::where('user_id', $user->id)
+                ->where('movie_model_id', $request->movie_id)
+                ->first();
+
+            if ($existingLike) {
+                // Unlike
+                $existingLike->delete();
+                return $this->success([
+                    'liked' => false,
+                    'action' => 'unliked'
+                ], 'Movie unliked');
+            } else {
+                // Like
+                MovieLike::create([
+                    'user_id' => $user->id,
+                    'movie_model_id' => $request->movie_id,
+                    'type' => 'like'
+                ]);
+                return $this->success([
+                    'liked' => true,
+                    'action' => 'liked'
+                ], 'Movie liked');
+            }
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to toggle like: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get user's liked movies
+     */
+    public function get_liked_movies(Request $request)
+    {
+        try {
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            $perPage = $request->get('per_page', 20);
+            $page = $request->get('page', 1);
+
+            $likes = MovieLike::with(['movie'])
+                ->where('user_id', $user->id)
+                ->where('type', 'like')
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage, ['*'], 'page', $page);
+
+            $formattedLikes = $likes->map(function ($like) {
+                $movie = $like->movie;
+                if (!$movie) return null;
+
+                return [
+                    'like_id' => $like->id,
+                    'movie_id' => $movie->id,
+                    'title' => $movie->title,
+                    'thumbnail' => $movie->thumbnail_url,
+                    'year' => $movie->year,
+                    'type' => $movie->type,
+                    'category' => $movie->category,
+                    'episode_number' => $movie->episode_number,
+                    'liked_at' => $like->created_at->toISOString(),
+                ];
+            })->filter()->values();
+
+            return $this->success([
+                'items' => $formattedLikes,
+                'total' => $likes->total(),
+                'current_page' => $likes->currentPage(),
+                'last_page' => $likes->lastPage(),
+                'per_page' => $likes->perPage(),
+            ], 'Liked movies retrieved');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to get liked movies: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get account dashboard summary
+     */
+    public function get_account_dashboard(Request $request)
+    {
+        try {
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            // Get quick stats
+            $watchlistCount = \App\Models\Watchlist::where('user_id', $user->id)
+                ->where('status', 'active')
+                ->count();
+
+            $likesCount = MovieLike::where('user_id', $user->id)
+                ->where('type', 'like')
+                ->count();
+
+            $watchHistoryCount = MovieView::where('user_id', $user->id)
+                ->distinct('movie_model_id')
+                ->count();
+
+            // Get recent activity
+            $recentWatched = MovieView::with(['movie'])
+                ->where('user_id', $user->id)
+                ->orderBy('updated_at', 'desc')
+                ->limit(5)
+                ->get()
+                ->map(function ($view) {
+                    $movie = $view->movie;
+                    if (!$movie) return null;
+                    return [
+                        'movie_id' => $movie->id,
+                        'title' => $movie->title,
+                        'thumbnail' => $movie->thumbnail_url,
+                        'progress' => floatval($view->progress),
+                        'last_watched' => $view->updated_at->toISOString(),
+                    ];
+                })->filter()->values();
+
+            $recentLikes = MovieLike::with(['movie'])
+                ->where('user_id', $user->id)
+                ->where('type', 'like')
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get()
+                ->map(function ($like) {
+                    $movie = $like->movie;
+                    if (!$movie) return null;
+                    return [
+                        'movie_id' => $movie->id,
+                        'title' => $movie->title,
+                        'thumbnail' => $movie->thumbnail_url,
+                        'liked_at' => $like->created_at->toISOString(),
+                    ];
+                })->filter()->values();
+
+            return $this->success([
+                'stats' => [
+                    'watchlist_count' => $watchlistCount,
+                    'likes_count' => $likesCount,
+                    'watch_history_count' => $watchHistoryCount,
+                ],
+                'recent_activity' => [
+                    'recent_watched' => $recentWatched,
+                    'recent_likes' => $recentLikes,
+                ],
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'avatar' => $user->avatar,
+                    'member_since' => $user->created_at->toISOString(),
+                ]
+            ], 'Dashboard data retrieved');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to get dashboard data: ' . $e->getMessage(), 500);
+        }
+    }
 }
