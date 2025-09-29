@@ -871,6 +871,27 @@ class DynamicCrudController extends Controller
             $percentage = $duration > 0 ? round(($progress / $duration) * 100, 2) : 0;
             $maxProgress = max($progress, 0);
 
+            // De-duplication guard: Avoid excessive writes if called too frequently with minimal change
+            $existing = MovieView::where('movie_model_id', $request->input('movie_model_id'))
+                ->where('user_id', $user->id)
+                ->first();
+
+            if ($existing) {
+                $secondsSinceUpdate = now()->diffInSeconds($existing->updated_at);
+                $progressDelta = abs($progress - floatval($existing->progress));
+                if ($secondsSinceUpdate < 4 && $progressDelta < 3) {
+                    // Too soon with tiny change: skip DB write and return current state
+                    return $this->success([
+                        'id' => $existing->id,
+                        'progress' => floatval($existing->progress),
+                        'max_progress' => floatval($existing->max_progress),
+                        'percentage' => $duration > 0 ? round(($existing->progress / $duration) * 100, 2) : 0,
+                        'status' => $existing->status,
+                        'message' => 'Skipped duplicate progress update'
+                    ], 'Progress unchanged');
+                }
+            }
+
             // Create or update movie view record
             $movieView = MovieView::updateOrCreate(
                 [

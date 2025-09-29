@@ -40,7 +40,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
     
     // Video Progress & Watch History Routes
-    Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress']);
+    Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress'])->middleware('throttle:video-progress');
     Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
     Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
     Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);

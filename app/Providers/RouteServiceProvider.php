@@ -28,6 +28,14 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
+        // Specific throttle for video progress saves: ~12 per minute (~once every 5s)
+        RateLimiter::for('video-progress', function (Request $request) {
+            $userKey = $request->user()?->id ?: $request->ip();
+            // Group by movie as well to allow separate limits per video
+            $movieId = (string) ($request->input('movie_model_id') ?? 'unknown');
+            return Limit::perMinute(12)->by($userKey . ':movie:' . $movieId);
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')
