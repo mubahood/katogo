@@ -16,7 +16,7 @@ class MovieDownloadController extends AdminController
      *
      * @var string
      */
-    protected $title = 'MovieDownload';
+    protected $title = 'Movie Downloads';
 
     /**
      * Make a grid builder.

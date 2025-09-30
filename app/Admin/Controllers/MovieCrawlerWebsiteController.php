@@ -27,28 +27,25 @@ class MovieCrawlerWebsiteController extends AdminController
         $grid = new Grid(new MovieCrawlerWebsite());
         $grid->model()->orderBy('id', 'desc');
 
-        $grid->column('id', __('Id'))->sortable();
+        $grid->column('id', __('Id'))->sortable()->hide();
         $grid->column('name', __('Name'))->sortable();
-        $grid->column('url', __('Url'));
-        $grid->column('about', __('About'));
-        $grid->column('priority', __('Priority'));
-        $grid->column('last_fetched_at', __('Last fetched at'));
-        $grid->column('page_number', __('Page number'));
-        $grid->column('total_movies_found', __('Total movies found'));
-        $grid->column('new_movies_found', __('New movies found'));
+        $grid->column('url', __('Url'))->hide();
+        $grid->column('about', __('About'))->hide();
+        $grid->column('priority', __('Priority'))->hide();
+        $grid->column('last_fetched_at', __('Last fetched at'))->sortable();
+        $grid->column('page_number', __('Page number'))->sortable();
+        $grid->column('total_movies_found', __('Total movies found'))->sortable();
+        $grid->column('new_movies_found', __('New movies found'))->sortable();
         $grid->column('status', __('Status'));
-        $grid->column('fetch_status', __('Fetch status'));
+        $grid->column('fetch_status', __('Fetch status'))
+            ->sortable();
         $grid->column('failed_message', __('Failed message'));
-        $grid->column('response_data', __('Response data'));
-        $grid->column('slug', __('Slug'));
+        $grid->column('response_data', __('Response data'))->hide()
+            ->sortable();
+        $grid->column('slug', __('Slug'))->sortable();
         $grid->column('last_page_url', __('Last page url'));
-        $grid->column('max_page', __('Max page'));
-        $grid->column('error_message', __('Error message'));
-        $grid->column('email', __('Email'));
-        $grid->column('password', __('Password'));
-        $grid->column('token', __('Token'));
-        $grid->column('token_expiry', __('Token expiry'));
-
+        $grid->column('max_page', __('Max page'))->hide();
+        $grid->column('error_message', __('Error message'))->sortable();
         return $grid;
     }
 
