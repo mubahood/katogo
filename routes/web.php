@@ -391,7 +391,7 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
             'firebase_transfer_attempted' => 'No',
             'imdb_url' => 'MyVj',
         ])->orderBy('id', 'asc')
-            ->limit(10)
+            ->limit(5)
             ->get();
 
         //if empty, use original query

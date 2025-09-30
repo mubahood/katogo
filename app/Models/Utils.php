@@ -24,12 +24,12 @@ class Utils
             'status' => 'pending',
         ])
             ->orderBy('id', 'desc')
-            ->limit(20)
+            ->limit(10)
             ->get();
         foreach ($pages as $key => $page) {
             try {
                 $page->fetch_page_content();
-                sleep(2);
+                // sleep(2);
             } catch (\Throwable $th) {
                 throw $th;
                 $page->status = 'failed';
