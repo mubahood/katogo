@@ -51,6 +51,9 @@ class MovieModelController extends AdminController
         $grid->model()->orderBy('id', 'asc');
         $grid->column('id', __('Id'))->sortable()->editable();
 
+        $grid->column('imdb_url', __('FROM MY VJ'))
+            ->sortable()
+            ->filter();
 
         //add filters including filter by category
         //add MovieStatusChange batch\
@@ -203,8 +206,7 @@ class MovieModelController extends AdminController
         $this->content_type =  $contentType;
 */
 
-        $grid->column('imdb_url', __('imdb url'))->sortable()
-            ->hide();
+
 
 
         $grid->column('description', __('Description'))->hide();
