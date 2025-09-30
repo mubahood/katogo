@@ -32,9 +32,8 @@ Route::get('crawler', function () {
 
 
     //set unlimited time
-    set_time_limit(-1);
-    //set unlimited memory
-    ini_set('memory_limit', -1);
+    set_time_limit(600); // 10 minutes
+    ini_set('memory_limit', '512M'); // 512 MB
     try {
         Utils::fetch_pages();
     } catch (\Throwable $th) {
@@ -923,11 +922,11 @@ Route::get('fix-serries-movies', function (Request $request) {
     }
 
     //set limited time
-    ini_set('memory_limit', -1);
-    ini_set('max_execution_time', -1);
-    ini_set('max_input_time', -1);
-    ini_set('upload_max_filesize', -1);
-    ini_set('post_max_size', -1);
+    ini_set('memory_limit', '256M');
+    ini_set('max_execution_time', '300');
+    ini_set('max_input_time', '300');
+    ini_set('upload_max_filesize', '50M');
+    ini_set('post_max_size', '50M');
     foreach ($series as $key => $ser) {
 
         $my_html = null;
@@ -1119,12 +1118,12 @@ Route::get('process-movies', function (Request $request) {
     //https://movies.ug/videos/Leighton%20Meester-The%20Weekend%20Away%20(2022).mp4
 
     //set unlimited time
-    ini_set('memory_limit', -1);
-    ini_set('max_execution_time', -1);
-    ini_set('max_input_time', -1);
-    ini_set('upload_max_filesize', -1);
-    ini_set('post_max_size', -1);
-    ini_set('max_input_vars', -1);
+    ini_set('memory_limit', '512M');
+    ini_set('max_execution_time', '600');
+    ini_set('max_input_time', '600');
+    ini_set('upload_max_filesize', '100M');
+    ini_set('post_max_size', '100M');
+    ini_set('max_input_vars', '10000');
     //get movies that does not have http in url
 
     /*     MovieModel::where('type','Movie')
