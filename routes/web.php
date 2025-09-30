@@ -387,17 +387,17 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
             ->limit($limit);
 
         //override
-        $movies = MovieModel::where([
+       /*  $movies = MovieModel::where([
             'firebase_transfer_attempted' => 'No',
             'stars' => 'MyVj', 
         ])->orderBy('id', 'asc')
             ->limit(10)
-            ->get();
+            ->get(); */
 
         //if empty, use original query
-        if ($movies->count() == 0) {
-            $movies = $query->get();
-        }
+        /* if ($movies->count() == 0) {
+        } */
+        $movies = $query->get();
 
         if ($movies->isEmpty()) {
             return response()->json([
