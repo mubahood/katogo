@@ -1,14 +1,14 @@
-php artisan make:model ContentModerationLog -m
-php artisan make:model MovieCrawlerWebsite -m
+php artisan make:model MovieCrawlerPage -m
+php artisan make:model MovieCrawlerPage -m
 php artisan make:model MovieCrawlerPage -m
 
 php artisan admin:make MyCounterController --model=App\Models\MyCounter
-php artisan admin:make ContentModerationLogController --model=App\\Models\\ContentModerationLog
+php artisan admin:make ProductController --model=App\\Models\\Product
 
-php artisan db:seed --class=App\\Models\\MovieLike
+php artisan db:seed --class=App\\Models\\Product
 
 
-php artisan make:migration make_is_firebase_things_to__movie_models --table=movie_models
+php artisan make:migration add_page_source_url_to_movie_models --table=movie_models
 
 
 php artisan migrate

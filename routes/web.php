@@ -4,6 +4,7 @@ use App\Http\Controllers\ApiController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\MainController;
 use App\Models\Gen;
+use App\Models\MovieCrawlerPage;
 use App\Models\MovieModel;
 use App\Models\MovieView;
 use App\Models\SeriesMovie;
@@ -24,6 +25,26 @@ use Symfony\Component\Process\Process;
 | Authentication Routes
 |--------------------------------------------------------------------------
 */
+
+Route::get('crawler', function () {
+
+
+    Utils::fetch_pages_content();
+    return;
+    //set unlimited time
+    set_time_limit(0);
+    //set unlimited memory
+    ini_set('memory_limit', -1);
+    try {
+        Utils::fetch_pages();
+    } catch (\Throwable $th) {
+        echo "Failed to fetch pages because " . $th->getMessage();
+    }
+
+    Utils::fetch_pages_content();
+
+    die("done");
+});
 
 // Basic Authentication Routes
 Route::get('/login', function () {
@@ -116,7 +137,7 @@ Route::get('/test-account-apis', function () {
         $request = new \Illuminate\Http\Request();
         $dashboardResponse = $controller->get_account_dashboard($request);
         $dashboard = json_decode($dashboardResponse->getContent(), true);
-        
+
         return response()->json([
             'message' => 'Account API Test Results',
             'dashboard_status' => $dashboard['success'] ? 'PASS' : 'FAIL',
@@ -351,7 +372,18 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
             ->orderBy('id', 'asc')
             ->limit($limit);
 
-        $movies = $query->get();
+        //override
+        $movies = MovieModel::where([
+            'firebase_transfer_attempted' => 'No',
+            'imdb_url' => 'MyVj',
+        ])->orderBy('id', 'asc')
+            ->limit(10)
+            ->get(); 
+
+        //if empty, use original query
+        if ($movies->count() == 0) {
+            $movies = $query->get();
+        }
 
         if ($movies->isEmpty()) {
             return response()->json([

@@ -18,6 +18,54 @@ class Utils
 {
 
 
+    static function fetch_pages_content()
+    {
+        $pages = MovieCrawlerPage::where([
+            'status' => 'pending',
+        ])
+            ->orderBy('id', 'desc')
+            ->limit(20)
+            ->get();
+        foreach ($pages as $key => $page) {
+            try {
+                $page->fetch_page_content();
+                sleep(2);
+            } catch (\Throwable $th) {
+                throw $th;
+                $page->status = 'failed';
+                $page->error_message = $th->getMessage();
+                $page->last_fetched_at = Carbon::now();
+                try {
+                    $page->save();
+                } catch (\Throwable $th) {
+                    throw $th;
+                }
+            }
+        }
+    }
+
+
+    static function fetch_pages()
+    {
+        $next_company = MovieCrawlerWebsite::where([
+            'status' => 'Active'
+
+        ])
+            ->orderBy('last_fetched_at', 'asc')
+            ->first();
+        if ($next_company == null) {
+            throw new Exception("No active job website found");
+        }
+        try {
+            $next_company->get_next_page_content();
+        } catch (\Throwable $th) {
+            $next_company->fetch_status = 'failed';
+            $next_company->error_message = $th->getMessage();
+            $next_company->last_fetched_at = Carbon::now();
+            $next_company->save();
+            throw $th;
+        }
+    }
 
     public static function get_platform()
     {
@@ -1465,9 +1513,13 @@ class Utils
         try {
             // Create a cookie jar with the required cookies (use domain without scheme)
             $cookieJar = \GuzzleHttp\Cookie\CookieJar::fromArray([
-                'laravel_session' => 'eyJpdiI6ImZsdTRXdi9NZ0FHV09TUzVJMmpEbVE9PSIsInZhbHVlIjoiRDg2UVFSUTI1bklXQnNFK3VaZU1uM2NDSkVzZFFTQnpYendicjdobjhQaStWTHBvMGxXTytEMGoxS1psS3BDekRyeWtwYjFtS280L0lWV1N2bjcxTXpnd1dsOHRGTXVTMkV1MGpCR3FCK0VZRjdmRGlodExrRXlvbVRsci9Cd1giLCJtYWMiOiJkNWI0YjVjMzUxNTU0MGE5ZjI3ZjYxNTNlYWRiMjhmMTI0ODJhZTMyNDcyMGIwMGI3ODU1OTViNjNhNjAyMGEzIiwidGFnIjoiIn0%3D',
+                'PHPSESSID' => 'vcipmq8lsc2st0r5bjut3ji7p3',
+                '__cf_logged_in' => '1',
+                'g_state' => '{"i_l":0}',
+                'COOKIE_BROWSER_ID_1' => 'browser_id_pM4gwhEqbCih_fkH68E_HlOkmnFhItD7BgbqNHMo9WyTT9qXgI',
+                'kndctr_8AD56F28618A50850A495FB6_AdobeOrg_identity' => 'CiY5MjA3Mjc4NzIxNzI0MzAxMDY0ODU2MDI5MDc3NjQ4NzQ1Mzk5M1IOCIjI8KmUMyoDVkE2MALwAYjI8KmUMw==',
                 'XSRF-TOKEN'     => 'eyJpdiI6IkJMelllbDkrQWJrYVBtamN5ZUJ6SGc9PSIsInZhbHVlIjoiSFVlc3pHZTBjWk5Ib0l6b0FFYnpiRWFuWDc1Mm1WdkFJYmNUdFp1M0pVSWRNRVJZR3dMVE4zTjM2TEZLSHVXN05zQkVHNHl4cy9yeGZMNWxkS21Pb05SK0kzajJUTUdueThzM2ZXSnVDVnllRUFxb1lXV3A4bU1uRHNFZEVZN20iLCJtYWMiOiI0ODMyNWY1YmE3OTA4YTEzYWQ0MmFlYmE2ZTFmYzliNmMyODVhMzNlMzVlMDEzNmQzODkxYjAyOGYzODIyYzM2IiwidGFnIjoiIn0%3D'
-            ], 'ugaflix.com');
+            ], 'ugawatch.com');
 
             // Create the Guzzle client with options similar to the original cURL setup.
             $client = new \GuzzleHttp\Client([
@@ -4609,7 +4661,7 @@ class Utils
             $u->location_sharing = null;
             $u->analytics_consent = null;
             $u->crash_reporting = null;
-            $u->password = password_hash('4321', PASSWORD_DEFAULT); 
+            $u->password = password_hash('4321', PASSWORD_DEFAULT);
             try {
                 $u->save();
             } catch (\Throwable $th) {
@@ -4655,7 +4707,7 @@ class Utils
     {
         //set header response to json
         header('Content-Type: application/json');
-        
+
         // Add CORS headers for browser compatibility
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
         header('Access-Control-Allow-Origin: ' . $origin);
@@ -4664,7 +4716,7 @@ class Utils
         header('Access-Control-Allow-Credentials: false');
         header('Access-Control-Expose-Headers: Authorization, Tok');
         header('Access-Control-Max-Age: 86400');
-        
+
         http_response_code(200);
         echo json_encode([
             'code' => 1,
@@ -4677,7 +4729,7 @@ class Utils
     public static function error($message)
     {
         header('Content-Type: application/json');
-        
+
         // Add CORS headers for browser compatibility
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
         header('Access-Control-Allow-Origin: ' . $origin);
@@ -4686,7 +4738,7 @@ class Utils
         header('Access-Control-Allow-Credentials: false');
         header('Access-Control-Expose-Headers: Authorization, Tok');
         header('Access-Control-Max-Age: 86400');
-        
+
         http_response_code(200);
         echo json_encode([
             'code' => 0,
@@ -5666,7 +5718,6 @@ class Utils
                 'folder_created' => !$folderExists,
                 'error' => null
             ];
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -5717,7 +5768,6 @@ class Utils
                 'url' => $publicUrl,
                 'expires' => 'never'
             ];
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -5758,7 +5808,7 @@ class Utils
 
             // Set folder path
             $folderPath = $folder ?: config('firebase.storage.default_folder', 'movies');
-            
+
             // Ensure folder exists before upload
             $folderResult = self::ensureFirebaseFolder($folderPath);
             if (!$folderResult['success']) {
@@ -5783,7 +5833,7 @@ class Utils
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($ch, CURLOPT_TIMEOUT, 600); // 10 minutes timeout for large files
             curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; Laravel Firebase Uploader)');
-            
+
             $result = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
@@ -5834,7 +5884,7 @@ class Utils
                     ]
                 ]
             ]);
-            
+
             if (is_resource($fileStream)) {
                 fclose($fileStream);
             }
@@ -5852,7 +5902,6 @@ class Utils
                 'firebase_path' => $firebasePath,
                 'file_size' => $actualFileSize
             ];
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -5893,7 +5942,6 @@ class Utils
                 'url' => $downloadUrl,
                 'expires_at' => $expirationTime->format('Y-m-d H:i:s')
             ];
-
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -5930,7 +5978,6 @@ class Utils
                 'error' => null,
                 'message' => 'File deleted successfully'
             ];
-
         } catch (\Exception $e) {
             return [
                 'success' => false,

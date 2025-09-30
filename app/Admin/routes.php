@@ -47,6 +47,8 @@ Route::group([
     $router->resource('my-counters', MyCounterController::class);
     $router->resource('movie-downloads', MovieDownloadController::class);
     $router->resource('product-categories', ProductCategoryController::class);
+    $router->resource('products', ProductController::class);
+
 
     $router->resource('content-moderation-logs', ContentModerationLogController::class);
 
@@ -74,7 +76,8 @@ Route::group([
     $router->delete('moderation/blocks/{id}', 'ModerationAdminController@deleteBlock')->name('moderation.blocks.delete');
 
 
-
+    $router->resource('movie-crawler-websites', MovieCrawlerWebsiteController::class);
+    $router->resource('movie-crawler-pages', MovieCrawlerPageController::class);
 
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound
     //https://omulimisa.org/api/v1/e-learning/events
