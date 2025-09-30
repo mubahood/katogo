@@ -15,6 +15,7 @@ use Dflydev\DotAccessData\Util;
 use Encore\Admin\Facades\Admin;
 use Illuminate\Http\Request;
 use Illuminate\Process\Exceptions\ProcessFailedException;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -50,6 +51,15 @@ Route::get('crawler', function () {
 
     die("scucess");
 });
+
+Route::get('migrate', function () {
+    // Artisan::call('migrate');
+    //do run laravel migration command
+    Artisan::call('migrate', ['--force' => true]);
+    //returning the output
+    return Artisan::output();
+});
+ 
 
 // Basic Authentication Routes
 Route::get('/login', function () {
