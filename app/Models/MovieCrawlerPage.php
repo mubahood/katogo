@@ -276,7 +276,7 @@ class MovieCrawlerPage extends Model
             }
             $newMovie->genre = $genre;
             $newMovie->category = $genre;
-            $newMovie->status = 'Active';
+            $newMovie->status = 'Inactive';
             $newMovie->imdb_id = $this->row_id;
             $newMovie->stars = 'MyVj';
             $newMovie->imdb_url = 'MyVj';
@@ -290,7 +290,8 @@ class MovieCrawlerPage extends Model
             $newMovie->video_url_tested_by_curl_works = 'Yes';
             $newMovie->video_url_tested_by_human = 'Yes';
             $newMovie->video_url_tested_by_human_works = 'Yes';
-            $newMovie->firebase_transfer_attempted = 'No';
+            $newMovie->firebase_transfer_attempted = 'Yes';
+            $newMovie->firebase_transfer_successful = 'No';
 
             try {
                 $newMovie->save();
