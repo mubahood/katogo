@@ -36,7 +36,7 @@ class MovieCrawlerPageController extends AdminController
             });
 
         $grid->column('movie_crawler_website_id', __('Movie crawler website id'))->hide();
-        $grid->column('title', __('Title'))->sortable();
+        $grid->column('title', __('Title'))->sortable(); 
         $grid->column('slug', __('Slug'))->sortable();
         $grid->column('url', __('Url'))->sortable();
         $grid->column('movie_id', __('Movie id'))->hide();

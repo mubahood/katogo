@@ -51,7 +51,7 @@ class MovieModelController extends AdminController
         $grid->model()->orderBy('id', 'asc');
         $grid->column('id', __('Id'))->sortable()->editable();
 
-        $grid->column('imdb_url', __('FROM MY VJ'))
+        $grid->column('stars', __('FROM MY VJ'))
             ->sortable()
             ->filter();
 

@@ -389,7 +389,7 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
         //override
         $movies = MovieModel::where([
             'firebase_transfer_attempted' => 'No',
-            'imdb_url' => 'MyVj',
+            'stars' => 'MyVj',
         ])->orderBy('id', 'asc')
             ->limit(5)
             ->get();
