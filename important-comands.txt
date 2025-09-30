@@ -1,5 +1,6 @@
 php artisan make:model ContentModerationLog -m
-php artisan make:model TrendingNotification -m
+php artisan make:model MovieCrawlerWebsite -m
+php artisan make:model MovieCrawlerPage -m
 
 php artisan admin:make MyCounterController --model=App\Models\MyCounter
 php artisan admin:make ContentModerationLogController --model=App\\Models\\ContentModerationLog
