@@ -29,10 +29,9 @@ use Symfony\Component\Process\Process;
 Route::get('crawler', function () {
 
 
-    Utils::fetch_pages_content();
-    return;
+
     //set unlimited time
-    set_time_limit(0);
+    set_time_limit(-1);
     //set unlimited memory
     ini_set('memory_limit', -1);
     try {
@@ -41,9 +40,15 @@ Route::get('crawler', function () {
         echo "Failed to fetch pages because " . $th->getMessage();
     }
 
-    Utils::fetch_pages_content();
+    try {
 
-    die("done");
+        Utils::fetch_pages_content();
+    } catch (\Throwable $th) {
+        echo "Failed to fetch page contents because " . $th->getMessage();
+        //throw $th;
+    }
+
+    die("scucess");
 });
 
 // Basic Authentication Routes
@@ -378,7 +383,7 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
             'imdb_url' => 'MyVj',
         ])->orderBy('id', 'asc')
             ->limit(10)
-            ->get(); 
+            ->get();
 
         //if empty, use original query
         if ($movies->count() == 0) {
