@@ -58,7 +58,7 @@ Route::get('migrate', function () {
     //returning the output
     return Artisan::output();
 });
- 
+
 
 // Basic Authentication Routes
 Route::get('/login', function () {
@@ -389,9 +389,9 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
         //override
         $movies = MovieModel::where([
             'firebase_transfer_attempted' => 'No',
-            'stars' => 'MyVj',
+            'stars' => 'MyVj', 
         ])->orderBy('id', 'asc')
-            ->limit(5)
+            ->limit(10)
             ->get();
 
         //if empty, use original query
