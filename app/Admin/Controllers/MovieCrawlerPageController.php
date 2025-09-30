@@ -26,24 +26,35 @@ class MovieCrawlerPageController extends AdminController
     {
         $grid = new Grid(new MovieCrawlerPage());
 
-        $grid->column('id', __('Id'));
-        $grid->column('created_at', __('Created at'));
-        $grid->column('updated_at', __('Updated at'));
-        $grid->column('movie_crawler_website_id', __('Movie crawler website id'));
-        $grid->column('title', __('Title'));
-        $grid->column('slug', __('Slug'));
-        $grid->column('url', __('Url'));
-        $grid->column('movie_id', __('Movie id'));
-        $grid->column('page_content', __('Page content'));
-        $grid->column('error_message', __('Error message'));
-        $grid->column('status', __('Status'));
-        $grid->column('last_fetched_at', __('Last fetched at'));
-        $grid->column('type', __('Type'));
-        $grid->column('row_id', __('Row id'));
-        $grid->column('img_port_muno_file_name', __('Img port muno file name'));
-        $grid->column('bunny_file_name', __('Bunny file name'));
-        $grid->column('tmdb_poster_path', __('Tmdb poster path'));
-        $grid->column('vj', __('Vj'));
+        $grid->model()->orderBy('id', 'desc');
+        $grid->quickSearch('title', 'slug', 'url', 'movie_id', 'page_content', 'error_message', 'status'); 
+        $grid->column('id', __('Id'))->sortable();
+        $grid->column('created_at', __('Created'))
+            ->sortable()
+            ->display(function ($created_at) {
+                return date('Y-m-d H:i:s', strtotime($created_at));
+            });
+
+        $grid->column('movie_crawler_website_id', __('Movie crawler website id'))->hide();
+        $grid->column('title', __('Title'))->sortable();
+        $grid->column('slug', __('Slug'))->sortable();
+        $grid->column('url', __('Url'))->sortable();
+        $grid->column('movie_id', __('Movie id'))->hide();
+        $grid->column('page_content', __('Page content'))->hide();
+        $grid->column('error_message', __('Error message'))->sortable();
+        $grid->column('status', __('Status'))->sortable()
+        ->filter([
+            'pending' => 'Pending',
+            'success' => 'Success',
+            'error' => 'Error',
+        ]);
+        $grid->column('last_fetched_at', __('Last fetched at'))->sortable();
+        $grid->column('type', __('Type'))->sortable();
+        $grid->column('row_id', __('Row id'))->hide();
+        $grid->column('img_port_muno_file_name', __('Img port muno file name'))->hide();
+        $grid->column('bunny_file_name', __('Bunny file name'))->hide();
+        $grid->column('tmdb_poster_path', __('Tmdb poster path'))->hide();
+        $grid->column('vj', __('Vj'))->sortable();
 
         return $grid;
     }
