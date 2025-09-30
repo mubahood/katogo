@@ -29,6 +29,7 @@ class MovieModelController extends AdminController
     {
 
         $grid = new Grid(new MovieModel());
+        $grid->model()->orderBy('id', 'desc');
 
         $url_segs = explode('/', request()->url());
         if (in_array('movies-active', $url_segs)) {
@@ -197,7 +198,12 @@ class MovieModelController extends AdminController
             ->hide();
 
         $grid->column('url', __('url'))
-
+            ->display(function ($url) {
+                if (empty($url) || is_null($url)) {
+                    return '<span class="text-muted">No video URL</span>';
+                }
+                return $url;
+            })
             ->video(['videoWidth' => 720, 'videoHeight' => 480])->sortable();
         /* 
         $this->content_type_processed = 'Yes';
