@@ -122,7 +122,7 @@ const AccountLayout: React.FC<AccountLayoutProps> = ({
         <div className="account-header-content">
           <h1 className="account-title">
             <span className="account-icon">⚙️</span>
-            My Account
+            Account
           </h1>
           {onClose && (
             <button 
