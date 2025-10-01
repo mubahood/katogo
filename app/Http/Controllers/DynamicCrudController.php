@@ -509,6 +509,81 @@ class DynamicCrudController extends Controller
         return $this->success($response, "Movies retrieved successfully.");
     }
 
+    /**
+     * Get a random active movie for landing page video background
+     * This endpoint is publicly accessible (no authentication required)
+     */
+    public function random_movie(Request $request)
+    {
+        try {
+            // Get a random active movie with video URL (Movies only)
+            $movie = MovieModel::query()
+                ->select([
+                    'id', 'title', 'url', 'firebase_video_url', 'external_url', 
+                    'thumbnail_url', 'image_url', 'description', 'year', 
+                    'rating', 'genre', 'type', 'category', 'actor', 'vj'
+                ])
+                ->where('status', 'Active')
+                ->where('type', 'Movie')
+                ->whereNotNull('url')
+                ->where('url', '!=', '')
+                ->where('content_is_video', 'Yes')
+                ->inRandomOrder()
+                ->first();
+
+            if (!$movie) {
+                // Fallback: get any movie with video content (Movies only)
+                $movie = MovieModel::query()
+                    ->select([
+                        'id', 'title', 'url', 'firebase_video_url', 'external_url',
+                        'thumbnail_url', 'image_url', 'description', 'year', 
+                        'rating', 'genre', 'type', 'category', 'actor', 'vj'
+                    ])
+                    ->where('type', 'Movie')
+                    ->whereNotNull('url')
+                    ->where('url', '!=', '')
+                    ->inRandomOrder()
+                    ->first();
+            }
+
+            if (!$movie) {
+                return $this->error("No movies available", 404);
+            }
+
+            // Prepare video URL - prefer Firebase URL, then regular URL
+            $videoUrl = null;
+            if (!empty($movie->firebase_video_url)) {
+                $videoUrl = $movie->firebase_video_url;
+            } elseif (!empty($movie->url)) {
+                $videoUrl = $movie->url;
+            } elseif (!empty($movie->external_url)) {
+                $videoUrl = $movie->external_url;
+            }
+
+            // Format response for landing page
+            $response = [
+                'id' => $movie->id,
+                'title' => $movie->title ?? 'Unknown Movie',
+                'description' => $movie->description ?? 'No description available',
+                'video_url' => $videoUrl,
+                'thumbnail_url' => $movie->thumbnail_url,
+                'image_url' => $movie->image_url,
+                'year' => $movie->year,
+                'rating' => $movie->rating,
+                'genre' => $movie->genre,
+                'type' => $movie->type ?? 'Movie',
+                'category' => $movie->category,
+                'actor' => $movie->actor,
+                'vj' => $movie->vj
+            ];
+
+            return $this->success($response, "Random movie retrieved successfully.");
+
+        } catch (\Exception $e) {
+            return $this->error("Failed to retrieve random movie: " . $e->getMessage(), 500);
+        }
+    }
+
 
 
 

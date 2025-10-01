@@ -21,6 +21,9 @@ Route::post('auth/login', [ApiController::class, 'login']);
 // Content filtering endpoint (used by app's automated systems)
 Route::post('moderation/filter-content', [ModerationController::class, 'filterContent']);
 
+// Public endpoint for random movie (no authentication required)
+Route::get('random-movie', [DynamicCrudController::class, 'random_movie']);
+
 Route::post('api/{model}', [ApiController::class, 'my_update']);
 // Route::get('movies', [ApiController::class, 'get_movies']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
@@ -52,7 +55,8 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::POST("consultation-card-payment", [DynamicCrudController::class, 'consultation_card_payment']);
 
     Route::POST('chat-send', [ApiController::class, 'chat_send']);
-    Route::get('chat-heads', [ApiController::class, 'chat_heads']);
+    Route::get('/debug-chat/{id}', [App\Http\Controllers\ApiController::class, 'debug_chat']);
+Route::get('/chat-heads', [App\Http\Controllers\ApiController::class, 'chat_heads']);
     Route::get('chat-messages', [ApiController::class, 'chat_messages']);
     Route::POST('chat-mark-as-read', [ApiController::class, 'chat_mark_as_read']);
     Route::POST('chat-start', [ApiController::class, 'chat_start']);
