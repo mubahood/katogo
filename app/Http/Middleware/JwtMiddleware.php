@@ -80,15 +80,13 @@ class JwtMiddleware extends BaseMiddleware
             $request->headers->set('authorization', $Authorization); // set header in request
 
             $user = FacadesJWTAuth::parseToken()->authenticate();
-        } catch (Exception $e) {
-            return $next($request);
-            if ($e instanceof \Tymon\JWTAuth\Exceptions\TokenInvalidException) {
-                return response()->json(['status' => 'Token is Invalid']);
-            } else if ($e instanceof \Tymon\JWTAuth\Exceptions\TokenExpiredException) {
-                return response()->json(['status' => 'Token is Expired']);
-            } else {
-                return Utils::error($e->getMessage());
+            
+            if (!$user) {
+                return response()->json(['code' => 0, 'message' => 'User not found'], 401);
             }
+        } catch (Exception $e) {
+            // If JWT fails, the request continues and Utils::get_user will check for logged_in_user_id header
+            // This allows backward compatibility with older clients that don't use JWT
         }
         return $next($request);
     }

@@ -450,6 +450,7 @@ class ApiController extends BaseController
     public function chat_heads(Request $r)
     {
         $u = Utils::get_user($r);
+        
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
@@ -460,92 +461,115 @@ class ApiController extends BaseController
         if ($u == null) {
             return $this->error('User not found.');
         }
-
+        
         // Get all chat heads where user is either customer or product owner
-        // Convert user ID to string to handle potential type mismatches
-        $user_id_str = (string)$u->id;
-        $chat_heads = ChatHead::where('product_owner_id', $u->id)
-                             ->orWhere('product_owner_id', $user_id_str)
-                             ->orWhere('customer_id', $u->id)
-                             ->orWhere('customer_id', $user_id_str)
-                             ->orderBy('updated_at', 'desc')
-                             ->get();
+        // Use proper query with where conditions
+        $chat_heads = ChatHead::where(function($query) use ($u) {
+                $query->where('product_owner_id', $u->id)
+                      ->orWhere('customer_id', $u->id);
+            })
+            ->orderBy('updated_at', 'desc')
+            ->get();
 
         $heads = [];
         $me = $u;
         
         foreach ($chat_heads as $head) {
-            // Determine the other participant (handle both string and int IDs)
-            $their_id = null;
-            if ($me->id == $head->customer_id || (string)$me->id == $head->customer_id) {
-                $their_id = $head->product_owner_id;
-            } else {
-                $their_id = $head->customer_id;
-            }
+            try {
+                // Determine the other participant
+                $their_id = null;
+                $is_customer = ($me->id == $head->customer_id);
+                
+                if ($is_customer) {
+                    $their_id = $head->product_owner_id;
+                } else {
+                    $their_id = $head->customer_id;
+                }
 
-            $them = User::find($their_id);
-            if ($them == null) {
-                continue; // Skip if other user doesn't exist
-            }
+                // Get the other user
+                $them = User::find($their_id);
+                if ($them == null) {
+                    // Skip if other user doesn't exist
+                    continue;
+                }
 
             // Get the last message for this chat head
             $lastMesg = ChatMessage::where('chat_head_id', $head->id)
                                   ->orderBy('created_at', 'desc')
                                   ->first();
 
-            // Calculate unread message counts
-            $customer_unread_messages_count = ChatMessage::where('chat_head_id', $head->id)
-                ->where('receiver_id', $head->customer_id)
-                ->where('status', 'sent')
-                ->count();
-            $product_owner_unread_messages_count = ChatMessage::where('chat_head_id', $head->id)
-                ->where('receiver_id', $head->product_owner_id)
-                ->where('status', 'sent')
+            // Calculate unread message counts for the current user
+            $my_unread_count = ChatMessage::where('chat_head_id', $head->id)
+                ->where('receiver_id', $me->id)
+                ->where('status', '!=', 'read')
                 ->count();
             
-            $head->customer_unread_messages_count = $customer_unread_messages_count;
-            $head->product_owner_unread_messages_count = $product_owner_unread_messages_count;
-            
-            // Properly set participant names and photos based on roles (handle string/int IDs)
-            if ($me->id == $head->customer_id || (string)$me->id == $head->customer_id) {
-                // Current user is customer, so 'them' is the product owner
-                $head->product_owner_name = $them->name;
-                $head->product_owner_photo = $them->avatar ?? '';
-                $head->product_owner_text = $them->name;
-                $head->product_owner_last_seen = $them->online_status ?? 'offline';
-                
-                // Ensure customer info is set
-                $head->customer_name = $me->name;
-                $head->customer_photo = $me->avatar ?? '';
-                $head->customer_text = $me->name;
-                $head->customer_last_seen = 'online';
+            // Set unread count in the appropriate field based on role
+            if ($is_customer) {
+                $head->customer_unread_messages_count = $my_unread_count;
+                $head->product_owner_unread_messages_count = 0;
+                $head->unread_count = $my_unread_count; // Add convenient field
             } else {
-                // Current user is product owner, so 'them' is the customer
-                $head->customer_name = $them->name;
-                $head->customer_photo = $them->avatar ?? '';
-                $head->customer_text = $them->name;
-                $head->customer_last_seen = $them->online_status ?? 'offline';
+                $head->product_owner_unread_messages_count = $my_unread_count;
+                $head->customer_unread_messages_count = 0;
+                $head->unread_count = $my_unread_count; // Add convenient field
+            }
+            
+            // Set the other person's information consistently
+            if ($is_customer) {
+                // I am the customer, they are the product owner
+                $head->product_owner_name = $them->name ?? 'Unknown';
+                $head->product_owner_photo = $them->avatar ?? 'no_image.png';
+                $head->product_owner_last_seen = $them->last_online_at ?? 'offline';
                 
-                // Ensure product owner info is set
+                // Ensure my info is set
+                $head->customer_name = $me->name;
+                $head->customer_photo = $me->avatar ?? 'no_image.png';
+                $head->customer_last_seen = 'online';
+                
+                // Convenience fields for frontend
+                $head->other_user_id = $them->id;
+                $head->other_user_name = $them->name ?? 'Unknown';
+                $head->other_user_photo = $them->avatar ?? 'no_image.png';
+                $head->other_user_last_seen = $them->last_online_at ?? 'offline';
+            } else {
+                // I am the product owner, they are the customer
+                $head->customer_name = $them->name ?? 'Unknown';
+                $head->customer_photo = $them->avatar ?? 'no_image.png';
+                $head->customer_last_seen = $them->last_online_at ?? 'offline';
+                
+                // Ensure my info is set
                 $head->product_owner_name = $me->name;
-                $head->product_owner_photo = $me->avatar ?? '';
-                $head->product_owner_text = $me->name;
+                $head->product_owner_photo = $me->avatar ?? 'no_image.png';
                 $head->product_owner_last_seen = 'online';
+                
+                // Convenience fields for frontend
+                $head->other_user_id = $them->id;
+                $head->other_user_name = $them->name ?? 'Unknown';
+                $head->other_user_photo = $them->avatar ?? 'no_image.png';
+                $head->other_user_last_seen = $them->last_online_at ?? 'offline';
             }
             
             // Set last message info
             if ($lastMesg != null) {
                 $head->last_message_body = $lastMesg->body;
-                $head->last_message_time = $lastMesg->created_at;
+                $head->last_message_time = $lastMesg->created_at->toDateTimeString();
                 $head->last_message_status = $lastMesg->status;
+                $head->last_message_sender_id = $lastMesg->sender_id;
+                $head->is_last_message_mine = ($lastMesg->sender_id == $me->id);
             } else {
                 // Default values for new chats without messages
                 $head->last_message_body = 'Chat started';
-                $head->last_message_time = $head->created_at;
+                $head->last_message_time = $head->created_at->toDateTimeString();
                 $head->last_message_status = 'new';
+                $head->last_message_sender_id = null;
+                $head->is_last_message_mine = false;
             }
 
             $heads[] = $head;
+            } catch (\Exception $e) {
+                continue;
+            }
         }
 
         return $this->success($heads, 'Success');
@@ -1367,9 +1391,11 @@ class ApiController extends BaseController
         if ($token == null) {
             return $this->error('Wrong credentials.');
         }
-        $user->token = $token;
-        $user->remember_token = $token;
-
+        
+        // Add token to user object for API response (don't save to DB)
+        $user_data = $user->toArray();
+        $user_data['token'] = $token;
+        $user_data['remember_token'] = $token;
 
         $company = Company::find($user->company_id);
         if ($company == null) {
@@ -1377,7 +1403,7 @@ class ApiController extends BaseController
         }
 
         Utils::success([
-            'user' => $user,
+            'user' => $user_data,
             'company' => $company,
         ], "Login successful.");
     }
