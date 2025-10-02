@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MovieLike;
 use App\Models\MovieModel;
 use App\Models\MovieView;
+use App\Models\MovieWishlist;
 use App\Models\User;
 use App\Models\Utils;
 use Illuminate\Http\Request;
@@ -958,11 +959,11 @@ class DynamicCrudController extends Controller
             'movie' => $movie,
             'related_movies' => $relatedMovies,
             'user_interactions' => [
-                'has_liked' => MovieLike::where('movie_model_id', $movie->id)
-                                       ->where('user_id', $current->id)
-                                       ->exists(),
+                'has_liked' => MovieLike::hasUserLikedMovie($current->id, $movie->id),
+                'has_wishlisted' => MovieWishlist::hasUserWishlistedMovie($current->id, $movie->id),
                 'has_viewed' => MovieView::where('movie_model_id', $movie->id)
                                         ->where('user_id', $current->id)
+                                        ->where('status', 'Active')
                                         ->exists(),
             ]
         ];
@@ -1320,7 +1321,7 @@ class DynamicCrudController extends Controller
             }
 
             $page = $request->input('page', 1);
-            $limit = $request->input('limit', 20);
+            $limit = $request->input('limit', 100);
 
             // Get watch history with movie details
             $history = MovieView::where('user_id', $user->id)
@@ -1347,8 +1348,8 @@ class DynamicCrudController extends Controller
                     'episode_number' => $movie->episode_number,
                     'progress' => floatval($view->progress),
                     'max_progress' => floatval($view->max_progress),
-                    'percentage' => $view->progress && $view->duration ? 
-                        round(($view->progress / $view->duration) * 100, 2) : 0,
+                    'percentage' => $view->progress && $view->max_progress ? 
+                        round(($view->progress / $view->max_progress) * 100, 2) : 0,
                     'status' => $view->status,
                     'last_watched_at' => $view->updated_at->toISOString(),
                     'device' => $view->device,
@@ -1513,41 +1514,253 @@ class DynamicCrudController extends Controller
     public function toggle_movie_like(Request $request)
     {
         try {
-            $user = Utils::get_user($request);
+            // Get authenticated user only (no guest fallback)
+            $user = auth('api')->user();
+            
             if (!$user) {
-                return $this->error('Authentication required', 401);
+                \Log::warning('Like attempt without authentication');
+                return $this->error('You must be logged in to like movies', 401);
+            }
+            
+            // Verify user exists in database
+            $user = User::find($user->id);
+            if (!$user) {
+                \Log::error('Authenticated user not found in database: ' . $user->id);
+                return $this->error('User account not found. Please log in again.', 401);
+            }
+            
+            // Check if this is a guest user
+            if (isset($user->is_guest) && $user->is_guest === 'Yes') {
+                return $this->error('Guest users cannot like movies. Please create an account.', 403);
             }
 
             $request->validate([
                 'movie_id' => 'required|integer|exists:movie_models,id'
             ]);
 
+            $movieId = $request->movie_id;
+            
+            // Check if user already liked this movie
             $existingLike = MovieLike::where('user_id', $user->id)
-                ->where('movie_model_id', $request->movie_id)
+                ->where('movie_model_id', $movieId)
                 ->first();
 
             if ($existingLike) {
-                // Unlike
+                // Unlike - delete the like
                 $existingLike->delete();
+                
+                // Get updated likes count
+                $likesCount = MovieLike::getMovieLikesCount($movieId);
+                
                 return $this->success([
                     'liked' => false,
-                    'action' => 'unliked'
-                ], 'Movie unliked');
+                    'action' => 'unliked',
+                    'likes_count' => $likesCount
+                ], 'Movie unliked successfully');
             } else {
-                // Like
-                MovieLike::create([
+                // Like - create new like with device info
+                $like = MovieLike::create([
                     'user_id' => $user->id,
-                    'movie_model_id' => $request->movie_id,
-                    'type' => 'like'
+                    'movie_model_id' => $movieId,
+                    'ip_address' => $request->ip(),
+                    'device' => $request->header('User-Agent') ? $this->detectDevice($request->header('User-Agent')) : null,
+                    'platform' => $request->header('User-Agent') ? $this->detectPlatform($request->header('User-Agent')) : null,
+                    'browser' => $request->header('User-Agent') ? $this->detectBrowser($request->header('User-Agent')) : null,
+                    'country' => $request->header('CF-IPCountry') ?? null, // Cloudflare header
+                    'city' => null, // Can be populated with GeoIP service if needed
+                    'status' => 'Active'
                 ]);
+                
+                // Get updated likes count
+                $likesCount = MovieLike::getMovieLikesCount($movieId);
+                
                 return $this->success([
                     'liked' => true,
-                    'action' => 'liked'
-                ], 'Movie liked');
+                    'action' => 'liked',
+                    'likes_count' => $likesCount,
+                    'like_id' => $like->id
+                ], 'Movie liked successfully');
             }
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Like toggle validation error: ' . json_encode($e->errors()));
+            return $this->error('Invalid movie ID: ' . json_encode($e->errors()), 400);
         } catch (\Exception $e) {
+            \Log::error('Like toggle error: ' . $e->getMessage() . ' | Line: ' . $e->getLine() . ' | File: ' . $e->getFile());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
             return $this->error('Failed to toggle like: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Detect device type from User-Agent
+     */
+    private function detectDevice($userAgent): string
+    {
+        if (preg_match('/mobile|android|iphone|ipad|phone/i', $userAgent)) {
+            return 'Mobile';
+        } elseif (preg_match('/tablet|ipad/i', $userAgent)) {
+            return 'Tablet';
+        }
+        return 'Desktop';
+    }
+
+    /**
+     * Detect platform from User-Agent
+     */
+    private function detectPlatform($userAgent): string
+    {
+        if (preg_match('/windows/i', $userAgent)) {
+            return 'Windows';
+        } elseif (preg_match('/macintosh|mac os/i', $userAgent)) {
+            return 'MacOS';
+        } elseif (preg_match('/linux/i', $userAgent)) {
+            return 'Linux';
+        } elseif (preg_match('/android/i', $userAgent)) {
+            return 'Android';
+        } elseif (preg_match('/iphone|ipad|ipod/i', $userAgent)) {
+            return 'iOS';
+        }
+        return 'Unknown';
+    }
+
+    /**
+     * Detect browser from User-Agent
+     */
+    private function detectBrowser($userAgent): string
+    {
+        if (preg_match('/edge/i', $userAgent)) {
+            return 'Edge';
+        } elseif (preg_match('/opr|opera/i', $userAgent)) {
+            return 'Opera';
+        } elseif (preg_match('/chrome/i', $userAgent)) {
+            return 'Chrome';
+        } elseif (preg_match('/safari/i', $userAgent)) {
+            return 'Safari';
+        } elseif (preg_match('/firefox/i', $userAgent)) {
+            return 'Firefox';
+        } elseif (preg_match('/msie|trident/i', $userAgent)) {
+            return 'Internet Explorer';
+        }
+        return 'Unknown';
+    }
+
+    /**
+     * Toggle movie wishlist (add to wishlist / remove from wishlist)
+     */
+    public function toggle_movie_wishlist(Request $request)
+    {
+        try {
+            // Get authenticated user only (no guest fallback)
+            $user = auth('api')->user();
+            
+            if (!$user) {
+                \Log::warning('Wishlist attempt without authentication');
+                return $this->error('You must be logged in to add movies to wishlist', 401);
+            }
+            
+            // Verify user exists in database
+            $user = User::find($user->id);
+            if (!$user) {
+                \Log::error('Authenticated user not found in database: ' . $user->id);
+                return $this->error('User account not found. Please log in again.', 401);
+            }
+            
+            // Check if this is a guest user
+            if (isset($user->is_guest) && $user->is_guest === 'Yes') {
+                return $this->error('Guest users cannot add movies to wishlist. Please create an account.', 403);
+            }
+
+            $request->validate([
+                'movie_id' => 'required|integer|exists:movie_models,id'
+            ]);
+
+            $movieId = $request->movie_id;
+            
+            // Check if user already wishlisted this movie
+            $existingWishlist = MovieWishlist::where('user_id', $user->id)
+                ->where('movie_model_id', $movieId)
+                ->first();
+
+            if ($existingWishlist) {
+                // Remove from wishlist
+                $existingWishlist->delete();
+                
+                // Get updated wishlist count
+                $wishlistCount = MovieWishlist::getMovieWishlistCount($movieId);
+                
+                return $this->success([
+                    'wishlisted' => false,
+                    'action' => 'removed',
+                    'wishlist_count' => $wishlistCount
+                ], 'Movie removed from wishlist');
+            } else {
+                // Add to wishlist with device info
+                $wishlist = MovieWishlist::create([
+                    'user_id' => $user->id,
+                    'movie_model_id' => $movieId,
+                    'ip_address' => $request->ip(),
+                    'device' => $request->header('User-Agent') ? $this->detectDevice($request->header('User-Agent')) : null,
+                    'platform' => $request->header('User-Agent') ? $this->detectPlatform($request->header('User-Agent')) : null,
+                    'browser' => $request->header('User-Agent') ? $this->detectBrowser($request->header('User-Agent')) : null,
+                    'country' => $request->header('CF-IPCountry') ?? null,
+                    'city' => null,
+                    'status' => 'Active'
+                ]);
+                
+                // Get updated wishlist count
+                $wishlistCount = MovieWishlist::getMovieWishlistCount($movieId);
+                
+                return $this->success([
+                    'wishlisted' => true,
+                    'action' => 'added',
+                    'wishlist_count' => $wishlistCount,
+                    'wishlist_id' => $wishlist->id
+                ], 'Movie added to wishlist');
+            }
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Wishlist toggle validation error: ' . json_encode($e->errors()));
+            return $this->error('Invalid movie ID: ' . json_encode($e->errors()), 400);
+        } catch (\Exception $e) {
+            \Log::error('Wishlist toggle error: ' . $e->getMessage() . ' | Line: ' . $e->getLine() . ' | File: ' . $e->getFile());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return $this->error('Failed to toggle wishlist: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get user's wishlisted movies
+     */
+    public function get_wishlisted_movies(Request $request)
+    {
+        try {
+            $user = auth('api')->user();
+            
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
+            $page = $request->get('page', 1);
+            $perPage = $request->get('per_page', 20);
+
+            $wishlists = MovieWishlist::where('user_id', $user->id)
+                ->where('status', 'Active')
+                ->with(['movie'])
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            return $this->success([
+                'wishlists' => $wishlists->items(),
+                'total' => $wishlists->total(),
+                'current_page' => $wishlists->currentPage(),
+                'per_page' => $wishlists->perPage(),
+                'last_page' => $wishlists->lastPage()
+            ], 'Wishlisted movies retrieved successfully');
+
+        } catch (\Exception $e) {
+            \Log::error('Get wishlisted movies error: ' . $e->getMessage());
+            return $this->error('Failed to fetch wishlisted movies', 500);
         }
     }
 
@@ -1565,9 +1778,9 @@ class DynamicCrudController extends Controller
             $perPage = $request->get('per_page', 20);
             $page = $request->get('page', 1);
 
+            // Note: Removed 'type' filter as movie_likes table doesn't have this column
             $likes = MovieLike::with(['movie'])
                 ->where('user_id', $user->id)
-                ->where('type', 'like')
                 ->orderBy('created_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
 
@@ -1617,8 +1830,8 @@ class DynamicCrudController extends Controller
                 ->where('status', 'active')
                 ->count();
 
+            // Note: Removed 'type' filter as movie_likes table doesn't have this column
             $likesCount = MovieLike::where('user_id', $user->id)
-                ->where('type', 'like')
                 ->count();
 
             $watchHistoryCount = MovieView::where('user_id', $user->id)
@@ -1643,9 +1856,9 @@ class DynamicCrudController extends Controller
                     ];
                 })->filter()->values();
 
+            // Note: Removed 'type' filter as movie_likes table doesn't have this column
             $recentLikes = MovieLike::with(['movie'])
                 ->where('user_id', $user->id)
-                ->where('type', 'like')
                 ->orderBy('created_at', 'desc')
                 ->limit(5)
                 ->get()

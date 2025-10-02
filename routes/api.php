@@ -67,8 +67,11 @@ Route::get('/chat-heads', [App\Http\Controllers\ApiController::class, 'chat_head
     Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);
     Route::post('account/watchlist/add', [DynamicCrudController::class, 'add_to_watchlist']);
     Route::delete('account/watchlist/{movie_id}', [DynamicCrudController::class, 'remove_from_watchlist']);
+    Route::get('account/watch-history', [DynamicCrudController::class, 'get_watch_history']);
     Route::get('account/likes', [DynamicCrudController::class, 'get_liked_movies']);
     Route::post('account/likes/toggle', [DynamicCrudController::class, 'toggle_movie_like']);
+    Route::get('account/wishlist', [DynamicCrudController::class, 'get_wishlisted_movies']);
+    Route::post('account/wishlist/toggle', [DynamicCrudController::class, 'toggle_movie_wishlist']);
 
     // Content Moderation & Safety Routes
     Route::post('moderation/report-content', [ModerationController::class, 'reportContent']);

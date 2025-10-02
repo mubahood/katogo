@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class MovieLike extends Model
+class MovieWishlist extends Model
 {
     use HasFactory;
 
@@ -33,7 +33,7 @@ class MovieLike extends Model
     ];
 
     /**
-     * Get the user who liked the movie
+     * Get the user who wishlisted the movie
      */
     public function user()
     {
@@ -41,7 +41,7 @@ class MovieLike extends Model
     }
 
     /**
-     * Get the movie that was liked
+     * Get the movie that was wishlisted
      */
     public function movie()
     {
@@ -49,9 +49,9 @@ class MovieLike extends Model
     }
 
     /**
-     * Check if a user has liked a specific movie
+     * Check if a user has wishlisted a specific movie
      */
-    public static function hasUserLikedMovie(int $userId, int $movieId): bool
+    public static function hasUserWishlistedMovie(int $userId, int $movieId): bool
     {
         return self::where('user_id', $userId)
             ->where('movie_model_id', $movieId)
@@ -60,9 +60,9 @@ class MovieLike extends Model
     }
 
     /**
-     * Get total likes for a movie
+     * Get total wishlist count for a movie
      */
-    public static function getMovieLikesCount(int $movieId): int
+    public static function getMovieWishlistCount(int $movieId): int
     {
         return self::where('movie_model_id', $movieId)
             ->where('status', 'Active')
