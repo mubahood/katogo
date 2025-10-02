@@ -371,50 +371,204 @@ class DynamicCrudController extends Controller
         } else {
             $query->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium']);
         }
-        // Enhanced search parameter that searches movies and series separately
+        
+        // ENHANCED INTELLIGENT SEARCH ENGINE
         if ($request->filled('search')) {
-            $searchTerm = $request->get('search');
-            $perPage = $request->get('per_page', 21);
+            $searchTerm = trim($request->get('search'));
+            $isLiveSearch = $request->get('live_search', false); // Check if this is live search
+            $perPage = $isLiveSearch ? 25 : $request->get('per_page', 21);
             
-            // Search movies (top 8 results)
-            $movieQuery = MovieModel::query()->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium'])
-                ->where('type', 'Movie')
-                ->where(function ($q) use ($searchTerm) {
-                    $q->where('title', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('description', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('genre', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('category', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('actor', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('vj', 'LIKE', '%' . $searchTerm . '%');
-                })
-                ->orderBy('title', 'asc')
-                ->limit(8);
-                
-            // Search series (top 8 results, only first episodes to avoid repetition)
-            $seriesQuery = MovieModel::query()->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium'])
-                ->where('type', 'Series')
-                ->where('is_first_episode', 'Yes') // Only first episodes to avoid repetition
-                ->where(function ($q) use ($searchTerm) {
-                    $q->where('title', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('description', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('genre', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('category', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('actor', 'LIKE', '%' . $searchTerm . '%')
-                      ->orWhere('vj', 'LIKE', '%' . $searchTerm . '%');
-                })
-                ->orderBy('title', 'asc')
-                ->limit(8);
-                
-            $movies = $movieQuery->get();
-            $series = $seriesQuery->get();
+            // Words to ignore when breaking down search
+            $ignoreWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'for', 'and', 'that', 'with', 'to', 'is', 'are', 'was', 'were'];
             
-            // Merge results alphabetically
-            $mergedResults = $movies->concat($series)->sortBy('title')->take($perPage);
+            // Array to store found movie IDs with relevance scores
+            $movieScores = [];
             
-            // Convert to collection for pagination-like response
-            $movieIds = $mergedResults->pluck('id')->toArray();
+            // ===== PHASE 1: SEARCH MOVIES (type = 'Movie') =====
             
-            // Get views and likes for merged results
+            // 1.1: Full search keyword in movie titles
+            $fullMatchMovies = MovieModel::where('type', 'Movie')
+                ->where('title', 'LIKE', '%' . $searchTerm . '%')
+                ->pluck('id')->toArray();
+            foreach ($fullMatchMovies as $id) {
+                // Highest score for full match
+                $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + 1000 : 1000;
+            }
+            
+            // 1.2: Break down by removing last word
+            $words = explode(' ', $searchTerm);
+            if (count($words) > 1) {
+                $tempWords = $words;
+                while (count($tempWords) > 0) {
+                    array_pop($tempWords); // Remove last word
+                    
+                    // Skip if only ignored words remain
+                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+                        return !in_array(strtolower($word), $ignoreWords);
+                    });
+                    
+                    if (empty($validWords)) {
+                        break;
+                    }
+                    
+                    $searchPhrase = implode(' ', $validWords);
+                    $matches = MovieModel::where('type', 'Movie')
+                        ->where('title', 'LIKE', '%' . $searchPhrase . '%')
+                        ->pluck('id')->toArray();
+                    
+                    foreach ($matches as $id) {
+                        $score = 500 / count($words); // Lower score for partial match
+                        $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
+                    }
+                }
+            }
+            
+            // 1.3: Break down by removing first word
+            if (count($words) > 1) {
+                $tempWords = $words;
+                while (count($tempWords) > 0) {
+                    array_shift($tempWords); // Remove first word
+                    
+                    // Skip if only ignored words remain
+                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+                        return !in_array(strtolower($word), $ignoreWords);
+                    });
+                    
+                    if (empty($validWords)) {
+                        break;
+                    }
+                    
+                    $searchPhrase = implode(' ', $validWords);
+                    $matches = MovieModel::where('type', 'Movie')
+                        ->where('title', 'LIKE', '%' . $searchPhrase . '%')
+                        ->pluck('id')->toArray();
+                    
+                    foreach ($matches as $id) {
+                        $score = 400 / count($words); // Lower score for partial match
+                        $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
+                    }
+                }
+            }
+            
+            // ===== PHASE 2: SEARCH SERIES (type = 'Series', is_first_episode = 'Yes') =====
+            
+            // 2.1: Full search keyword in series titles
+            $fullMatchSeries = MovieModel::where('type', 'Series')
+                ->where('is_first_episode', 'Yes')
+                ->where('title', 'LIKE', '%' . $searchTerm . '%')
+                ->pluck('id')->toArray();
+            foreach ($fullMatchSeries as $id) {
+                $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + 1000 : 1000;
+            }
+            
+            // 2.2: Break down by removing last word for Series
+            if (count($words) > 1) {
+                $tempWords = $words;
+                while (count($tempWords) > 0) {
+                    array_pop($tempWords);
+                    
+                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+                        return !in_array(strtolower($word), $ignoreWords);
+                    });
+                    
+                    if (empty($validWords)) {
+                        break;
+                    }
+                    
+                    $searchPhrase = implode(' ', $validWords);
+                    $matches = MovieModel::where('type', 'Series')
+                        ->where('is_first_episode', 'Yes')
+                        ->where('title', 'LIKE', '%' . $searchPhrase . '%')
+                        ->pluck('id')->toArray();
+                    
+                    foreach ($matches as $id) {
+                        $score = 500 / count($words);
+                        $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
+                    }
+                }
+            }
+            
+            // 2.3: Break down by removing first word for Series
+            if (count($words) > 1) {
+                $tempWords = $words;
+                while (count($tempWords) > 0) {
+                    array_shift($tempWords);
+                    
+                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+                        return !in_array(strtolower($word), $ignoreWords);
+                    });
+                    
+                    if (empty($validWords)) {
+                        break;
+                    }
+                    
+                    $searchPhrase = implode(' ', $validWords);
+                    $matches = MovieModel::where('type', 'Series')
+                        ->where('is_first_episode', 'Yes')
+                        ->where('title', 'LIKE', '%' . $searchPhrase . '%')
+                        ->pluck('id')->toArray();
+                    
+                    foreach ($matches as $id) {
+                        $score = 400 / count($words);
+                        $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
+                    }
+                }
+            }
+            
+            // ===== PHASE 3: FETCH MOVIES BY IDs =====
+            if (empty($movieScores)) {
+                // No results found, return empty
+                $response = [
+                    'items' => [],
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page'     => $perPage,
+                        'total'        => 0,
+                        'last_page'    => 1,
+                    ]
+                ];
+                return $this->success($response, "No movies found.");
+            }
+            
+            // ===== PHASE 4: SORT BY RELEVANCE =====
+            // Sort by score (highest first)
+            arsort($movieScores);
+            $sortedIds = array_keys($movieScores);
+            
+            // Limit results
+            if ($isLiveSearch) {
+                $sortedIds = array_slice($sortedIds, 0, 25);
+            }
+            
+            // Fetch movies in the order of relevance
+            $movies = MovieModel::select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium'])
+                ->whereIn('id', $sortedIds)
+                ->get()
+                ->keyBy('id');
+            
+            // Reorder according to relevance score
+            $orderedMovies = collect();
+            foreach ($sortedIds as $id) {
+                if (isset($movies[$id])) {
+                    $orderedMovies->push($movies[$id]);
+                }
+            }
+            
+            // Paginate for full search
+            if (!$isLiveSearch) {
+                $currentPage = $request->get('page', 1);
+                $orderedMovies = $orderedMovies->forPage($currentPage, $perPage);
+                $totalResults = count($sortedIds);
+                $lastPage = ceil($totalResults / $perPage);
+            } else {
+                $currentPage = 1;
+                $totalResults = $orderedMovies->count();
+                $lastPage = 1;
+            }
+            
+            $movieIds = $orderedMovies->pluck('id')->toArray();
+            
+            // Get views and likes for results
             $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))
                 ->whereIn('movie_model_id', $movieIds)
                 ->groupBy('movie_model_id')
@@ -424,7 +578,7 @@ class DynamicCrudController extends Controller
                 ->groupBy('movie_model_id')
                 ->pluck('total', 'movie_model_id');
                 
-            $results = $mergedResults->map(function ($movie) use ($views, $likes) {
+            $results = $orderedMovies->map(function ($movie) use ($views, $likes) {
                 $movie->views_count = $views[$movie->id] ?? 0;
                 $movie->likes_count = $likes[$movie->id] ?? 0;
                 return $movie;
@@ -433,10 +587,10 @@ class DynamicCrudController extends Controller
             $response = [
                 'items' => $results,
                 'pagination' => [
-                    'current_page' => 1,
+                    'current_page' => $currentPage,
                     'per_page'     => $perPage,
-                    'total'        => $results->count(),
-                    'last_page'    => 1,
+                    'total'        => $totalResults,
+                    'last_page'    => $lastPage,
                 ]
             ];
             return $this->success($response, "Movies retrieved successfully.");
@@ -796,8 +950,9 @@ class DynamicCrudController extends Controller
         $movie->views_count = $viewsCount;
         $movie->likes_count = $likesCount;
 
-        // Smart related movies algorithm using title word matching
-        $relatedMovies = $this->getRelatedMovies($movie, 12);
+        // Smart related movies algorithm - unlimited for series, max 30 for movies
+        $limit = $movie->type == 'Series' ? 999 : 30;
+        $relatedMovies = $this->getRelatedMovies($movie, $limit);
 
         $response = [
             'movie' => $movie,
@@ -816,70 +971,172 @@ class DynamicCrudController extends Controller
     }
 
     /**
-     * Smart algorithm to find related movies based on title word matching
-     * Priority: Same series > Same genre > Title word matches > Same type
+     * Enhanced smart algorithm to find related movies
+     * Uses advanced scoring system similar to search algorithm
+     * Priority: Same series > Genre match > VJ match > Title similarity > Actor > Same year > Same type
+     * Max: Unlimited for series, 30 for movies
      */
-    private function getRelatedMovies($movie, $limit = 12)
+    private function getRelatedMovies($movie, $limit = 30)
     {
-        $relatedMovies = collect();
-
-        // 1. If it's a series, get other episodes from same series (highest priority)
-        if ($movie->type == 'Series' && !empty($movie->category)) {
+        $movieScores = [];
+        $isSeries = $movie->type == 'Series';
+        
+        // ===== PHASE 1: SERIES EPISODES (UNLIMITED) =====
+        if ($isSeries && !empty($movie->category)) {
             $seriesMovies = MovieModel::where('type', 'Series')
                 ->where('category', $movie->category)
                 ->where('id', '!=', $movie->id)
                 ->where('status', 'Active')
-                ->orderBy('episode_number', 'asc')
-                ->limit(6)
                 ->get();
-            $relatedMovies = $relatedMovies->concat($seriesMovies);
+            
+            foreach ($seriesMovies as $sm) {
+                $movieScores[$sm->id] = ['movie' => $sm, 'score' => 10000]; // Highest priority
+            }
         }
-
-        // 2. Get movies from same genre (if not enough from series)
-        if ($relatedMovies->count() < $limit && !empty($movie->genre)) {
+        
+        // ===== PHASE 2: EXACT GENRE MATCH (High Priority) =====
+        if (!empty($movie->genre)) {
             $genreMovies = MovieModel::where('genre', $movie->genre)
                 ->where('id', '!=', $movie->id)
                 ->where('status', 'Active')
-                ->whereNotIn('id', $relatedMovies->pluck('id'))
-                ->inRandomOrder()
-                ->limit($limit - $relatedMovies->count())
+                ->whereNotIn('id', array_keys($movieScores))
+                ->limit(50) // Get more candidates
                 ->get();
-            $relatedMovies = $relatedMovies->concat($genreMovies);
-        }
-
-        // 3. Smart title word matching algorithm
-        if ($relatedMovies->count() < $limit) {
-            $titleWords = $this->extractSignificantWords($movie->title);
             
-            if (count($titleWords) > 0) {
-                $wordMatchMovies = MovieModel::where('id', '!=', $movie->id)
-                    ->where('status', 'Active')
-                    ->whereNotIn('id', $relatedMovies->pluck('id'))
-                    ->where(function ($query) use ($titleWords) {
-                        foreach ($titleWords as $word) {
-                            $query->orWhere('title', 'LIKE', '%' . $word . '%');
-                        }
-                    })
-                    ->inRandomOrder()
-                    ->limit($limit - $relatedMovies->count())
-                    ->get();
-                $relatedMovies = $relatedMovies->concat($wordMatchMovies);
+            foreach ($genreMovies as $gm) {
+                $movieScores[$gm->id] = ['movie' => $gm, 'score' => 5000];
             }
         }
-
-        // 4. Fill remaining slots with same type movies (Movie/Series)
-        if ($relatedMovies->count() < $limit) {
+        
+        // ===== PHASE 3: SAME VJ/DIRECTOR (High Priority) =====
+        if (!empty($movie->vj) || !empty($movie->director)) {
+            $director = !empty($movie->vj) ? $movie->vj : $movie->director;
+            $directorMovies = MovieModel::where(function($query) use ($director) {
+                    $query->where('vj', 'LIKE', '%' . $director . '%')
+                          ->orWhere('director', 'LIKE', '%' . $director . '%');
+                })
+                ->where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->whereNotIn('id', array_keys($movieScores))
+                ->limit(40)
+                ->get();
+            
+            foreach ($directorMovies as $dm) {
+                $movieScores[$dm->id] = ['movie' => $dm, 'score' => 4000];
+            }
+        }
+        
+        // ===== PHASE 4: ADVANCED TITLE SIMILARITY (Similar to Search Algorithm) =====
+        $titleWords = $this->extractSignificantWords($movie->title);
+        if (count($titleWords) > 0) {
+            // 4.1: Full phrase match
+            $fullPhrase = implode(' ', $titleWords);
+            $fullMatches = MovieModel::where('title', 'LIKE', '%' . $fullPhrase . '%')
+                ->where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->whereNotIn('id', array_keys($movieScores))
+                ->limit(30)
+                ->get();
+            
+            foreach ($fullMatches as $fm) {
+                $movieScores[$fm->id] = ['movie' => $fm, 'score' => 3000];
+            }
+            
+            // 4.2: Individual word matches (progressive breakdown)
+            if (count($titleWords) > 1) {
+                $tempWords = $titleWords;
+                while (count($tempWords) > 0) {
+                    array_pop($tempWords); // Remove last word
+                    if (empty($tempWords)) break;
+                    
+                    $searchPhrase = implode(' ', $tempWords);
+                    $matches = MovieModel::where('title', 'LIKE', '%' . $searchPhrase . '%')
+                        ->where('id', '!=', $movie->id)
+                        ->where('status', 'Active')
+                        ->whereNotIn('id', array_keys($movieScores))
+                        ->limit(20)
+                        ->get();
+                    
+                    $score = 2000 / count($titleWords);
+                    foreach ($matches as $m) {
+                        $movieScores[$m->id] = ['movie' => $m, 'score' => $score];
+                    }
+                }
+            }
+            
+            // 4.3: Any word match
+            $wordMatches = MovieModel::where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->whereNotIn('id', array_keys($movieScores))
+                ->where(function ($query) use ($titleWords) {
+                    foreach ($titleWords as $word) {
+                        $query->orWhere('title', 'LIKE', '%' . $word . '%');
+                    }
+                })
+                ->limit(30)
+                ->get();
+            
+            foreach ($wordMatches as $wm) {
+                if (!isset($movieScores[$wm->id])) {
+                    $movieScores[$wm->id] = ['movie' => $wm, 'score' => 1500];
+                }
+            }
+        }
+        
+        // ===== PHASE 5: SAME ACTOR =====
+        if (!empty($movie->actor)) {
+            $actorMovies = MovieModel::where('actor', 'LIKE', '%' . $movie->actor . '%')
+                ->where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->whereNotIn('id', array_keys($movieScores))
+                ->limit(30)
+                ->get();
+            
+            foreach ($actorMovies as $am) {
+                $movieScores[$am->id] = ['movie' => $am, 'score' => 1200];
+            }
+        }
+        
+        // ===== PHASE 6: SAME YEAR =====
+        if (!empty($movie->year)) {
+            $yearMovies = MovieModel::where('year', $movie->year)
+                ->where('id', '!=', $movie->id)
+                ->where('status', 'Active')
+                ->whereNotIn('id', array_keys($movieScores))
+                ->limit(30)
+                ->get();
+            
+            foreach ($yearMovies as $ym) {
+                $movieScores[$ym->id] = ['movie' => $ym, 'score' => 800];
+            }
+        }
+        
+        // ===== PHASE 7: SAME TYPE (Fallback) =====
+        if (count($movieScores) < $limit) {
             $typeMovies = MovieModel::where('type', $movie->type)
                 ->where('id', '!=', $movie->id)
                 ->where('status', 'Active')
-                ->whereNotIn('id', $relatedMovies->pluck('id'))
+                ->whereNotIn('id', array_keys($movieScores))
                 ->inRandomOrder()
-                ->limit($limit - $relatedMovies->count())
+                ->limit($limit - count($movieScores))
                 ->get();
-            $relatedMovies = $relatedMovies->concat($typeMovies);
+            
+            foreach ($typeMovies as $tm) {
+                $movieScores[$tm->id] = ['movie' => $tm, 'score' => 500];
+            }
         }
-
-        // Add views and likes count to related movies
+        
+        // Sort by score (highest first)
+        uasort($movieScores, function($a, $b) {
+            return $b['score'] <=> $a['score'];
+        });
+        
+        // Extract movies and limit
+        $relatedMovies = collect(array_map(function($item) {
+            return $item['movie'];
+        }, $movieScores))->take($limit);
+        
+        // Add views and likes count
         $movieIds = $relatedMovies->pluck('id')->toArray();
         $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))
             ->whereIn('movie_model_id', $movieIds)
@@ -890,11 +1147,15 @@ class DynamicCrudController extends Controller
             ->groupBy('movie_model_id')
             ->pluck('total', 'movie_model_id');
 
-        return $relatedMovies->map(function ($movie) use ($views, $likes) {
-            $movie->views_count = $views[$movie->id] ?? 0;
-            $movie->likes_count = $likes[$movie->id] ?? 0;
-            return $movie;
-        })->take($limit);
+        // Convert to array with numeric keys (not associative)
+        $result = $relatedMovies->map(function ($m) use ($views, $likes) {
+            $m->views_count = $views[$m->id] ?? 0;
+            $m->likes_count = $likes[$m->id] ?? 0;
+            return $m;
+        })->values();
+        
+        // Return as array to ensure JSON encodes as array [] not object {}
+        return array_values($result->toArray());
     }
 
     /**
@@ -907,7 +1168,7 @@ class DynamicCrudController extends Controller
         $stopWords = [
             'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
             'movie', 'film', 'part', 'episode', 'season', '2022', '2023', '2024', '2025',
-            'hd', 'full', 'watch', 'online', 'free', 'download', 'streaming'
+            'hd', 'full', 'watch', 'online', 'free', 'download', 'streaming', 'vj', 'ice', 'new'
         ];
 
         // Clean and split title into words
@@ -917,8 +1178,8 @@ class DynamicCrudController extends Controller
             return strlen(trim($word)) > 2 && !in_array(strtolower(trim($word)), $stopWords);
         });
 
-        // Return first 3 most significant words for matching
-        return array_slice(array_values($words), 0, 3);
+        // Return first 4 most significant words for matching
+        return array_slice(array_values($words), 0, 4);
     }
 
     /**
