@@ -1269,11 +1269,29 @@ class ApiController extends BaseController
             $isEdit = false;
         }
 
+        // Debug: Log file upload attempt
+        if ($r->hasFile('photo')) {
+            \Log::info('Photo file received', [
+                'temp_file_field' => $r->temp_file_field,
+                'file_name' => $r->file('photo')->getClientOriginalName(),
+                'file_size' => $r->file('photo')->getSize(),
+                'mime_type' => $r->file('photo')->getMimeType()
+            ]);
+        } else {
+            \Log::info('No photo file in request', [
+                'temp_file_field' => $r->temp_file_field,
+                'has_files' => $r->hasFile('photo')
+            ]);
+        }
+
 
         $table_name = $object->getTable();
         $columns = Schema::getColumnListing($table_name);
         $except = ['id', 'created_at', 'updated_at', 'password', 'remember_token', 'company_id', 'status', 'deleted_at'];
         $data = $r->all();
+
+        // Define numeric fields that need validation
+        $numericFields = ['latitude', 'longitude', 'height_cm', 'age_range_min', 'age_range_max', 'max_distance_km'];
 
         foreach ($data as $key => $value) {
             if (!in_array($key, $columns)) {
@@ -1282,25 +1300,95 @@ class ApiController extends BaseController
             if (in_array($key, $except)) {
                 continue;
             }
-            $object->$key = $value;
+            
+            // Clean and validate numeric fields
+            if (in_array($key, $numericFields)) {
+                // Skip if value is empty
+                if (empty($value) || !is_numeric($value)) {
+                    continue;
+                }
+                
+                // Validate and sanitize based on field type
+                switch ($key) {
+                    case 'latitude':
+                        $numValue = floatval($value);
+                        if ($numValue >= -90 && $numValue <= 90) {
+                            $object->$key = $numValue;
+                        }
+                        break;
+                    case 'longitude':
+                        $numValue = floatval($value);
+                        if ($numValue >= -180 && $numValue <= 180) {
+                            $object->$key = $numValue;
+                        }
+                        break;
+                    case 'height_cm':
+                        $numValue = intval($value);
+                        if ($numValue >= 100 && $numValue <= 250) {
+                            $object->$key = $numValue;
+                        }
+                        break;
+                    case 'age_range_min':
+                    case 'age_range_max':
+                        $numValue = intval($value);
+                        if ($numValue >= 18 && $numValue <= 100) {
+                            $object->$key = $numValue;
+                        }
+                        break;
+                    case 'max_distance_km':
+                        $numValue = intval($value);
+                        if ($numValue >= 1 && $numValue <= 500) {
+                            $object->$key = $numValue;
+                        }
+                        break;
+                }
+            } else {
+                // For non-numeric fields, trim whitespace
+                if (is_string($value)) {
+                    $object->$key = trim($value);
+                } else {
+                    $object->$key = $value;
+                }
+            }
         }
         $object->company_id = $u->company_id;
 
 
-        //temp_image_field
+        //temp_image_field - Handle file uploads (avatar, profile photos, etc.)
         if ($r->temp_file_field != null) {
             if (strlen($r->temp_file_field) > 1) {
-                $file  = $r->file('photo');
+                $file = $r->file('photo');
                 if ($file != null) {
+                    // Validate file
+                    if (!$file->isValid()) {
+                        Utils::error("Invalid file upload.");
+                    }
+                    
+                    // Validate file type (images only)
+                    $allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                    if (!in_array($file->getMimeType(), $allowedMimes)) {
+                        Utils::error("Invalid file type. Only images are allowed (JPEG, PNG, GIF, WebP).");
+                    }
+                    
+                    // Validate file size (max 5MB)
+                    $maxSize = 5 * 1024 * 1024; // 5MB in bytes
+                    if ($file->getSize() > $maxSize) {
+                        Utils::error("File too large. Maximum size is 5MB.");
+                    }
+                    
                     $path = "";
                     try {
-                        $path = Utils::file_upload($r->file('photo'));
+                        $path = Utils::file_upload($file);
                     } catch (\Exception $e) {
-                        $path = "";
+                        Utils::error("Failed to upload file: " . $e->getMessage());
                     }
+                    
                     if (strlen($path) > 3) {
-                        $fiel_name = $r->temp_file_field;
-                        $object->$fiel_name = $path;
+                        $field_name = $r->temp_file_field;
+                        // Save the uploaded file path to the specified field
+                        $object->$field_name = $path;
+                    } else {
+                        Utils::error("File upload failed. Please try again.");
                     }
                 }
             }
