@@ -291,4 +291,319 @@ class User extends Administrator implements JWTSubject
             ->active()
             ->exists();
     }
+
+    /**
+     * ========================================
+     * SUBSCRIPTION-RELATED METHODS
+     * ========================================
+     */
+
+    /**
+     * Get all subscriptions for this user
+     */
+    public function subscriptions()
+    {
+        return $this->hasMany(\App\Models\Subscription::class, 'user_id');
+    }
+
+    /**
+     * Get subscription transactions
+     */
+    public function subscriptionTransactions()
+    {
+        return $this->hasMany(\App\Models\SubscriptionTransaction::class, 'user_id');
+    }
+
+    /**
+     * Get the user's currently active subscription
+     * Returns the most recent active subscription
+     * CRITICAL: Includes GRACE PERIOD - subscription is active until grace period ends
+     * 
+     * @return \App\Models\Subscription|null
+     */
+    public function activeSubscription()
+    {
+        // CRITICAL: Get ALL Active subscriptions and check properly
+        // Don't filter by end_date_time here - let isActive() handle it with grace period
+        $subscriptions = $this->subscriptions()
+            ->where('status', 'Active')
+            ->where('payment_status', 'Completed') // Only completed payments
+            ->orderBy('end_date_time', 'desc')
+            ->get();
+
+        // CRITICAL: Check each subscription with grace period included
+        foreach ($subscriptions as $subscription) {
+            if ($subscription->isActive(true)) { // Include grace period
+                return $subscription;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if user has an active subscription
+     * This is the main method used for access control
+     * 
+     * @param bool $includeGracePeriod Include grace period in check (default: true)
+     * @return bool
+     */
+    public function hasActiveSubscription($includeGracePeriod = true)
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription) {
+            return false;
+        }
+
+        return $subscription->isActive($includeGracePeriod);
+    }
+
+    /**
+     * Check if user subscription is expiring soon
+     * 
+     * @param int $days Number of days to check (default: 7)
+     * @return bool
+     */
+    public function isSubscriptionExpiringSoon($days = 7)
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription) {
+            return false;
+        }
+
+        $daysRemaining = $subscription->daysRemaining();
+        return $daysRemaining > 0 && $daysRemaining <= $days;
+    }
+
+    /**
+     * Get days remaining on current subscription
+     * 
+     * @return int
+     */
+    public function subscriptionDaysRemaining()
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription) {
+            return 0;
+        }
+
+        return $subscription->daysRemaining();
+    }
+
+    /**
+     * Check if user is in grace period
+     * 
+     * @return bool
+     */
+    public function isInSubscriptionGracePeriod()
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription) {
+            return false;
+        }
+
+        return $subscription->isInGracePeriod();
+    }
+
+    /**
+     * Get subscription status for display
+     * 
+     * @return array
+     */
+    public function getSubscriptionStatus()
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription) {
+            return [
+                'has_subscription' => false,
+                'has_active_subscription' => false, // FIXED: Added this key
+                'status' => 'No Subscription',
+                'is_active' => false,
+                'days_remaining' => 0,
+                'hours_remaining' => 0, // FIXED: Added this key
+                'end_date' => null,
+                'is_in_grace_period' => false,
+            ];
+        }
+
+        // Check if subscription is truly active (including grace period)
+        $isActive = $subscription->isActive(true);
+
+        return [
+            'has_subscription' => true,
+            'has_active_subscription' => $isActive, // FIXED: Added this key with correct logic
+            'status' => $subscription->status,
+            'is_active' => $isActive,
+            'days_remaining' => $subscription->daysRemaining(true), // Include grace period
+            'hours_remaining' => $subscription->hoursRemaining(),
+            'end_date' => $subscription->end_date_time,
+            'formatted_end_date' => $subscription->getFormattedEndDate(),
+            'is_in_grace_period' => $subscription->isInGracePeriod(),
+            'plan' => $subscription->plan ? $subscription->plan->toApiArray() : null,
+            'subscription' => $subscription->toApiArray(),
+        ];
+    }
+
+    /**
+     * Get pending subscription (awaiting payment)
+     * 
+     * @return \App\Models\Subscription|null
+     */
+    public function pendingSubscription()
+    {
+        return $this->subscriptions()
+            ->where('status', 'Pending')
+            ->where('payment_status', 'Pending')
+            ->orderBy('created_at', 'desc')
+            ->first();
+    }
+
+    /**
+     * Check if user has a pending subscription payment
+     * 
+     * @return bool
+     */
+    public function hasPendingSubscription()
+    {
+        return $this->pendingSubscription() !== null;
+    }
+
+    /**
+     * Get subscription history (completed subscriptions)
+     * 
+     * @param int $limit
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function subscriptionHistory($limit = 10)
+    {
+        return $this->subscriptions()
+            ->whereIn('status', ['Active', 'Expired', 'Cancelled'])
+            ->where('payment_status', 'Completed')
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+    }
+
+    /**
+     * Calculate total spent on subscriptions
+     * 
+     * @return float
+     */
+    public function totalSubscriptionSpent()
+    {
+        return $this->subscriptions()
+            ->where('payment_status', 'Completed')
+            ->sum('amount_paid');
+    }
+
+    /**
+     * Check if user can download content
+     * Based on subscription plan limits
+     * 
+     * @return bool
+     */
+    public function canDownload()
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription || !$subscription->plan) {
+            return false;
+        }
+
+        // If plan has no download limit (NULL), allow unlimited
+        if ($subscription->plan->max_downloads === null) {
+            return true;
+        }
+
+        // Count downloads during this subscription period
+        // TODO: Implement download tracking if needed
+        // For now, just check if plan allows downloads
+        return $subscription->plan->max_downloads > 0;
+    }
+
+    /**
+     * Check if user has ad-free experience
+     * 
+     * @return bool
+     */
+    public function isAdFree()
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription || !$subscription->plan) {
+            return false;
+        }
+
+        return $subscription->plan->ad_free;
+    }
+
+    /**
+     * Check if user can watch HD content
+     * 
+     * @return bool
+     */
+    public function canWatchHD()
+    {
+        $subscription = $this->activeSubscription();
+
+        if (!$subscription || !$subscription->plan) {
+            return false;
+        }
+
+        return $subscription->plan->hd_streaming;
+    }
+
+    /**
+     * Create a new subscription for this user
+     * Handles extension logic if user already has active subscription
+     * 
+     * @param \App\Models\SubscriptionPlan $plan
+     * @return \App\Models\Subscription
+     */
+    public function createSubscription(\App\Models\SubscriptionPlan $plan)
+    {
+        $activeSubscription = $this->activeSubscription();
+
+        if ($activeSubscription && $activeSubscription->end_date_time > now()) {
+            // EXTEND: Add days to existing subscription
+            $startDate = \Carbon\Carbon::parse($activeSubscription->end_date_time);
+            $endDate = $startDate->copy()->addDays($plan->duration_days);
+
+            $subscription = new \App\Models\Subscription([
+                'user_id' => $this->id,
+                'plan_id' => $plan->id,
+                'days' => $plan->duration_days,
+                'start_date_time' => $startDate,
+                'end_date_time' => $endDate,
+                'amount_paid' => $plan->getActualPrice(),
+                'currency' => $plan->currency,
+                'is_extension' => true,
+                'extended_from_id' => $activeSubscription->id,
+                'status' => 'Pending', // Will be activated after payment
+            ]);
+        } else {
+            // NEW: Create fresh subscription
+            $startDate = now();
+            $endDate = $startDate->copy()->addDays($plan->duration_days);
+
+            $subscription = new \App\Models\Subscription([
+                'user_id' => $this->id,
+                'plan_id' => $plan->id,
+                'days' => $plan->duration_days,
+                'start_date_time' => $startDate,
+                'end_date_time' => $endDate,
+                'amount_paid' => $plan->getActualPrice(),
+                'currency' => $plan->currency,
+                'status' => 'Pending', // Will be activated after payment
+            ]);
+        }
+
+        $subscription->save();
+        return $subscription;
+    }
 }

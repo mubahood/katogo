@@ -12,7 +12,35 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        // Subscription System Commands
+        
+        // Check for expired subscriptions - runs daily at 1:00 AM
+        $schedule->command('subscriptions:check-expired')
+            ->dailyAt('01:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/subscriptions-check-expired.log'));
+
+        // Send expiry notifications - runs daily at 9:00 AM
+        $schedule->command('subscriptions:send-expiry-notifications --days=3')
+            ->dailyAt('09:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/subscriptions-expiry-notifications.log'));
+
+        // Check pending payments - runs every 15 minutes
+        $schedule->command('subscriptions:check-pending-payments --age=15 --limit=50')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/subscriptions-check-pending.log'));
+
+        // Optional: Send second reminder 1 day before expiry
+        $schedule->command('subscriptions:send-expiry-notifications --days=1')
+            ->dailyAt('10:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/subscriptions-expiry-notifications-1day.log'));
     }
 
     /**

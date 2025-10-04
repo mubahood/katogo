@@ -1148,6 +1148,76 @@ class ApiController extends BaseController
                 $topMovie = $iosMovies->first();
             }
         }
+        // Get subscription information for authenticated user
+        $subscription_info = [
+            'has_active_subscription' => false,
+            'days_remaining' => 0,
+            'hours_remaining' => 0,
+            'is_in_grace_period' => false,
+            'subscription_status' => 'No Active Subscription',
+            'end_date' => null,
+            'require_subscription' => true, // Flag to trigger frontend redirect
+        ];
+
+        if ($u && $u->id) {
+            try {
+                $subscription_status = $u->getSubscriptionStatus();
+                
+                // CRITICAL: Validate subscription data consistency
+                $has_active = $subscription_status['has_active_subscription'] ?? false;
+                $days_remaining = $subscription_status['days_remaining'] ?? 0;
+                $status = $subscription_status['status'] ?? 'No Active Subscription';
+                
+                // Log subscription status for debugging
+                \Log::info('📊 Manifest: Building subscription info', [
+                    'user_id' => $u->id,
+                    'has_active_subscription' => $has_active,
+                    'days_remaining' => $days_remaining,
+                    'hours_remaining' => $subscription_status['hours_remaining'] ?? 0,
+                    'status' => $status,
+                    'is_in_grace_period' => $subscription_status['is_in_grace_period'] ?? false,
+                ]);
+                
+                // VALIDATION: If days_remaining > 0 or status is Active, has_active_subscription MUST be true
+                if (($days_remaining > 0 || $status === 'Active') && !$has_active) {
+                    \Log::error('🚨 CRITICAL: Subscription data inconsistency detected!', [
+                        'user_id' => $u->id,
+                        'has_active_subscription' => $has_active,
+                        'days_remaining' => $days_remaining,
+                        'status' => $status,
+                        'ERROR' => 'has_active_subscription is false but subscription appears active',
+                    ]);
+                    
+                    // FIX IT: Force has_active_subscription to true if logic indicates active
+                    $has_active = true;
+                    \Log::info('✅ FIXED: Corrected has_active_subscription to true');
+                }
+                
+                $subscription_info = [
+                    'has_active_subscription' => $has_active,
+                    'days_remaining' => $days_remaining,
+                    'hours_remaining' => $subscription_status['hours_remaining'] ?? 0,
+                    'is_in_grace_period' => $subscription_status['is_in_grace_period'] ?? false,
+                    'subscription_status' => $status,
+                    'end_date' => $subscription_status['end_date'] ?? null,
+                    'require_subscription' => !$has_active,
+                ];
+                
+                \Log::info('✅ Manifest: Subscription info built successfully', [
+                    'user_id' => $u->id,
+                    'final_data' => $subscription_info,
+                ]);
+                
+            } catch (\Exception $e) {
+                // If subscription check fails, use default values
+                \Log::error('💥 Failed to get subscription status in manifest', [
+                    'user_id' => $u->id ?? null,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
+        }
+
         $manifest = [
             'top_movie' => $topMovie ? [$topMovie] : [],
             'vj' => $unique_vj ?? [],
@@ -1157,6 +1227,7 @@ class ApiController extends BaseController
             'lists' => $lists ?? [],
             'UPDATE_NOTES' => $UPDATE_NOTES ?? '',
             'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
+            'subscription' => $subscription_info, // Add subscription information
         ];
 
         return Utils::success($manifest, "Listed successfully.");

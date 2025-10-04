@@ -3,6 +3,7 @@
 use App\Http\Controllers\ApiController;
 use App\Http\Controllers\DynamicCrudController;
 use App\Http\Controllers\ModerationController;
+use App\Http\Controllers\SubscriptionApiController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -24,6 +25,40 @@ Route::post('moderation/filter-content', [ModerationController::class, 'filterCo
 // Public endpoint for random movie (no authentication required)
 Route::get('random-movie', [DynamicCrudController::class, 'random_movie']);
 
+// ========================================
+// SUBSCRIPTION ROUTES
+// ========================================
+
+// Public Subscription Routes (no authentication required)
+Route::get('subscription-plans', [SubscriptionApiController::class, 'listPlans']);
+
+// Pesapal Callback & IPN (no authentication required)
+Route::get('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'callback']);
+Route::post('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'callback']); // Support both GET and POST
+Route::post('subscriptions/pesapal/ipn', [SubscriptionApiController::class, 'ipn']);
+
+// Pesapal Callback & IPN Routes (Public - No Auth Required)
+Route::get('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'pesapalCallback']);
+Route::post('subscriptions/pesapal/ipn', [SubscriptionApiController::class, 'pesapalIpn']);
+
+// Payment Status Check (Public - but validates ownership)
+Route::get('subscriptions/payment-status/{trackingId}', [SubscriptionApiController::class, 'getPaymentStatus']);
+
+// Authenticated Subscription Routes
+Route::middleware([JwtMiddleware::class])->group(function () {
+    Route::post('subscriptions/create', [SubscriptionApiController::class, 'create']);
+    Route::get('subscriptions/my-subscription', [SubscriptionApiController::class, 'mySubscription']);
+    Route::get('subscriptions/history', [SubscriptionApiController::class, 'history']);
+    Route::post('subscriptions/retry-payment', [SubscriptionApiController::class, 'retryPayment']);
+    Route::post('subscriptions/check-status', [SubscriptionApiController::class, 'checkStatus']);
+    
+    // Pending Subscription Management Routes
+    Route::get('subscriptions/pending', [SubscriptionApiController::class, 'getPending']);
+    Route::post('subscriptions/{id}/initiate-payment', [SubscriptionApiController::class, 'initiatePayment']);
+    Route::post('subscriptions/{id}/check-payment', [SubscriptionApiController::class, 'checkPendingPayment']);
+    Route::post('subscriptions/{id}/cancel', [SubscriptionApiController::class, 'cancelPending']);
+});
+
 Route::post('api/{model}', [ApiController::class, 'my_update']);
 // Route::get('movies', [ApiController::class, 'get_movies']);
 Route::get('api/{model}', [ApiController::class, 'my_list']);
@@ -39,14 +74,19 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
     Route::get('me', [ApiController::class, 'me']);
     Route::get('manifest', [ApiController::class, 'manifest']);
-    Route::get('movies', [DynamicCrudController::class, 'movies']);
-    Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
     
-    // Video Progress & Watch History Routes
-    Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress'])->middleware('throttle:video-progress');
-    Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
-    Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
-    Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
+    // ===== SUBSCRIPTION-PROTECTED MOVIE ROUTES =====
+    // These routes require an active subscription (allows grace period)
+    Route::middleware(['subscription'])->group(function () {
+        Route::get('movies', [DynamicCrudController::class, 'movies']);
+        Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
+        
+        // Video Progress & Watch History Routes
+        Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress'])->middleware('throttle:video-progress');
+        Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
+        Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
+        Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
+    });
     
     Route::get('users-list', [DynamicCrudController::class, 'users_list']);
     Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
@@ -64,14 +104,19 @@ Route::get('/chat-heads', [App\Http\Controllers\ApiController::class, 'chat_head
 
     // Account Layout & User Management Routes
     Route::get('account/dashboard', [DynamicCrudController::class, 'get_account_dashboard']);
-    Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);
-    Route::post('account/watchlist/add', [DynamicCrudController::class, 'add_to_watchlist']);
-    Route::delete('account/watchlist/{movie_id}', [DynamicCrudController::class, 'remove_from_watchlist']);
-    Route::get('account/watch-history', [DynamicCrudController::class, 'get_watch_history']);
-    Route::get('account/likes', [DynamicCrudController::class, 'get_liked_movies']);
-    Route::post('account/likes/toggle', [DynamicCrudController::class, 'toggle_movie_like']);
-    Route::get('account/wishlist', [DynamicCrudController::class, 'get_wishlisted_movies']);
-    Route::post('account/wishlist/toggle', [DynamicCrudController::class, 'toggle_movie_wishlist']);
+    
+    // ===== SUBSCRIPTION-PROTECTED WATCHLIST & PREFERENCES =====
+    // Premium features that require active subscription
+    Route::middleware(['subscription'])->group(function () {
+        Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);
+        Route::post('account/watchlist/add', [DynamicCrudController::class, 'add_to_watchlist']);
+        Route::delete('account/watchlist/{movie_id}', [DynamicCrudController::class, 'remove_from_watchlist']);
+        Route::get('account/watch-history', [DynamicCrudController::class, 'get_watch_history']);
+        Route::get('account/likes', [DynamicCrudController::class, 'get_liked_movies']);
+        Route::post('account/likes/toggle', [DynamicCrudController::class, 'toggle_movie_like']);
+        Route::get('account/wishlist', [DynamicCrudController::class, 'get_wishlisted_movies']);
+        Route::post('account/wishlist/toggle', [DynamicCrudController::class, 'toggle_movie_wishlist']);
+    });
 
     // Content Moderation & Safety Routes
     Route::post('moderation/report-content', [ModerationController::class, 'reportContent']);
