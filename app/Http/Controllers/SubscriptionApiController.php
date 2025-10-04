@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Models\Utils;
 use App\Services\SubscriptionPesapalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -35,7 +36,7 @@ class SubscriptionApiController extends Controller
     {
         try {
             $lang = $request->get('lang', 'en'); // en, lg, sw
-            
+
             $plans = SubscriptionPlan::active()
                 ->ordered()
                 ->get()
@@ -49,7 +50,6 @@ class SubscriptionApiController extends Controller
                 'message' => 'Subscription plans retrieved successfully',
                 'data' => $plans,
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to list subscription plans', [
                 'error' => $e->getMessage()
@@ -88,7 +88,12 @@ class SubscriptionApiController extends Controller
                 ], 400);
             }
 
+
             $user = $request->user();
+
+            if (! $user) {
+                $user = Utils::get_user($request);
+            }
 
             if (!$user) {
                 return response()->json([
@@ -149,7 +154,6 @@ class SubscriptionApiController extends Controller
             }
 
             throw new \Exception('Failed to initialize payment');
-
         } catch (\Exception $e) {
             Log::error('Failed to create subscription', [
                 'user_id' => $request->user()?->id,
@@ -218,7 +222,6 @@ class SubscriptionApiController extends Controller
                 $redirectUrl = "{$frontendUrl}/subscription-result?status={$status}&subscription_id={$subscription->id}";
                 return redirect($redirectUrl);
             }
-
         } catch (\Exception $e) {
             Log::error('Pesapal subscription callback processing failed', [
                 'error' => $e->getMessage(),
@@ -261,7 +264,6 @@ class SubscriptionApiController extends Controller
                 'orderMerchantReference' => $merchantReference,
                 'status' => 200
             ]);
-
         } catch (\Exception $e) {
             Log::error('Pesapal subscription IPN processing failed', [
                 'error' => $e->getMessage(),
@@ -303,7 +305,6 @@ class SubscriptionApiController extends Controller
                 'message' => 'Subscription status retrieved successfully',
                 'data' => $subscriptionStatus,
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to get subscription status', [
                 'user_id' => $request->user()?->id,
@@ -353,7 +354,6 @@ class SubscriptionApiController extends Controller
                 'message' => 'Subscription history retrieved successfully',
                 'data' => $data,
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to get subscription history', [
                 'user_id' => $request->user()?->id,
@@ -440,7 +440,6 @@ class SubscriptionApiController extends Controller
             }
 
             throw new \Exception('Failed to initialize payment');
-
         } catch (\Exception $e) {
             Log::error('Failed to retry payment', [
                 'user_id' => $request->user()?->id,
@@ -519,7 +518,6 @@ class SubscriptionApiController extends Controller
                 'message' => 'Payment status checked successfully',
                 'data' => $subscription->toApiArray(),
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to check payment status', [
                 'user_id' => $request->user()?->id,
@@ -604,7 +602,6 @@ class SubscriptionApiController extends Controller
                     'pending_subscription' => null,
                 ],
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to get pending subscription', [
                 'user_id' => $request->user()?->id,
@@ -701,7 +698,6 @@ class SubscriptionApiController extends Controller
             }
 
             throw new \Exception('Failed to initialize payment');
-
         } catch (\Exception $e) {
             Log::error('Failed to initiate pending payment', [
                 'user_id' => $request->user()?->id,
@@ -784,7 +780,6 @@ class SubscriptionApiController extends Controller
                     'subscription' => $subscription->toApiArray(),
                 ],
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to check pending payment', [
                 'user_id' => $request->user()?->id,
@@ -866,7 +861,6 @@ class SubscriptionApiController extends Controller
                     'message' => 'Subscription canceled successfully.',
                 ],
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to cancel pending subscription', [
                 'user_id' => $request->user()?->id,
@@ -947,7 +941,7 @@ class SubscriptionApiController extends Controller
 
             // Redirect to frontend with status
             $frontendUrl = env('APP_FRONTEND_URL', env('APP_URL'));
-            $redirectUrl = match($result['status']) {
+            $redirectUrl = match ($result['status']) {
                 'success' => "{$frontendUrl}/subscription/callback?status=success&tracking_id={$orderTrackingId}",
                 'failed' => "{$frontendUrl}/subscription/callback?status=failed&tracking_id={$orderTrackingId}",
                 'pending' => "{$frontendUrl}/subscription/callback?status=pending&tracking_id={$orderTrackingId}",
@@ -959,7 +953,6 @@ class SubscriptionApiController extends Controller
             ]);
 
             return redirect($redirectUrl);
-
         } catch (\Exception $e) {
             Log::error('💥 Pesapal Callback: CRITICAL ERROR', [
                 'error' => $e->getMessage(),
@@ -1014,7 +1007,6 @@ class SubscriptionApiController extends Controller
                 'status' => 'success',
                 'message' => 'IPN processed'
             ], 200);
-
         } catch (\Exception $e) {
             Log::error('💥 Pesapal IPN: Processing failed', [
                 'error' => $e->getMessage(),
@@ -1118,7 +1110,6 @@ class SubscriptionApiController extends Controller
                     'is_paid' => $subscription->isPaid(),
                 ],
             ]);
-
         } catch (\Exception $e) {
             Log::error('💥 Payment Status Check: CRITICAL ERROR', [
                 'tracking_id' => $trackingId,
@@ -1175,7 +1166,7 @@ class SubscriptionApiController extends Controller
                 'pesapal_tracking_id' => $subscription->pesapal_tracking_id,
                 'pesapal_merchant_reference' => $subscription->pesapal_merchant_reference,
             ],
-            'transactions' => $subscription->transactions->map(function($tx) {
+            'transactions' => $subscription->transactions->map(function ($tx) {
                 return [
                     'id' => $tx->id,
                     'type' => $tx->transaction_type,
@@ -1200,7 +1191,7 @@ class SubscriptionApiController extends Controller
      */
     private function getStatusMessage($status)
     {
-        return match($status) {
+        return match ($status) {
             'success' => 'Payment completed successfully. Your subscription is now active!',
             'failed' => 'Payment failed. Please try again or contact support.',
             'pending' => 'Payment is being processed. Please wait...',
