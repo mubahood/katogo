@@ -365,6 +365,33 @@ class DynamicCrudController extends Controller
 
     public function movies(Request $request)
     {
+        // ===== SUBSCRIPTION PROTECTION =====
+        // Check if user is authenticated and has active subscription
+        $user = Utils::get_user($request);
+        if ($user == null) {
+            return $this->error('Authentication required. Please login to access movies.', 401);
+        }
+        
+        // Refresh user data
+        $user = User::find($user->id);
+        if ($user == null) {
+            return $this->error('User not found.', 404);
+        }
+        
+        // Check subscription status (includes grace period)
+        if (!$user->hasActiveSubscription(true)) {
+            return response()->json([
+                'code' => 0,
+                'message' => 'No active subscription. Please subscribe to access movies.',
+                'data' => [
+                    'subscription_required' => true,
+                    'has_subscription' => false,
+                    'subscription_status' => 'inactive'
+                ]
+            ], 403);
+        }
+        // ===== END SUBSCRIPTION PROTECTION =====
+
         $fetchAll = strtoupper($request->query('FETCH_ALL')) === 'YES';
         $query = MovieModel::query();
         if ($fetchAll) {
@@ -922,21 +949,36 @@ class DynamicCrudController extends Controller
      */
     public function movie(Request $request, $id)
     {
+        // ===== SUBSCRIPTION PROTECTION =====
         // Get the current user for authentication
         $u = Utils::get_user($request);
-        if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+        if ($u == null) {
+            return $this->error('Authentication required. Please login to access movie details.', 401);
         }
-
-        // Check if user is authenticated
-        $current = $u;
+        
+        // Refresh user data and update last online
+        $current = User::find($u->id);
         if ($current == null) {
-            return $this->error('User not logged in.', 401);
+            return $this->error('User not found.', 404);
         }
+        
+        $current->last_online_at = now();
+        $current->save();
+        
+        // Check subscription status (includes grace period)
+        if (!$current->hasActiveSubscription(true)) {
+            return response()->json([
+                'code' => 0,
+                'message' => 'No active subscription. Please subscribe to access movie details.',
+                'data' => [
+                    'subscription_required' => true,
+                    'has_subscription' => false,
+                    'subscription_status' => 'inactive',
+                    'movie_id' => $id
+                ]
+            ], 403);
+        }
+        // ===== END SUBSCRIPTION PROTECTION =====
 
         // Find the main movie
         $movie = MovieModel::find($id);

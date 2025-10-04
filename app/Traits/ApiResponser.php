@@ -13,12 +13,14 @@ trait ApiResponser
         ]);
     }
 
-    protected function error($message = "")
+    protected function error($message = "", $statusCode = 400, $additionalData = [])
     {
-        return response()->json([
+        $response = [
             'code' => 0,
             'message' => $message,
-            'data' => ""
-        ]);
+            'data' => $additionalData ?: ""
+        ];
+        
+        return response()->json($response, $statusCode);
     }
 }

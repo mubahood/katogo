@@ -59,9 +59,6 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('subscriptions/{id}/cancel', [SubscriptionApiController::class, 'cancelPending']);
 });
 
-Route::post('api/{model}', [ApiController::class, 'my_update']);
-// Route::get('movies', [ApiController::class, 'get_movies']);
-Route::get('api/{model}', [ApiController::class, 'my_list']);
 Route::get('products-1', [ApiController::class, 'products_1']); 
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {
@@ -217,3 +214,10 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('moderation/stock-item', [ModerationController::class, 'moderateStockItem']);
     Route::post('moderation/stock-sub-category', [ModerationController::class, 'moderateStockSubCategory']);
 });
+
+// ========================================
+// CATCH-ALL DYNAMIC ROUTES (MUST BE LAST!)
+// ========================================
+// These routes should be at the END to avoid intercepting specific routes above
+Route::post('api/{model}', [ApiController::class, 'my_update']);
+Route::get('api/{model}', [ApiController::class, 'my_list']);

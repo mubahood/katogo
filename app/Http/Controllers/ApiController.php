@@ -1218,6 +1218,54 @@ class ApiController extends BaseController
             }
         }
 
+        // Get dashboard statistics for authenticated user
+        $dashboard_stats = [
+            'watchlist_count' => 0,
+            'watch_history_count' => 0,
+            'liked_movies_count' => 0,
+            'products_count' => 0,
+            'active_chats_count' => 0,
+            'total_orders_count' => 0,
+        ];
+
+        if ($u && $u->id) {
+            try {
+                // Count watchlist items
+                $dashboard_stats['watchlist_count'] = \App\Models\MovieWishlist::where('user_id', $u->id)
+                    ->count();
+
+                // Count watch history
+                $dashboard_stats['watch_history_count'] = \App\Models\MovieView::where('user_id', $u->id)
+                    ->count();
+
+                // Count liked movies
+                $dashboard_stats['liked_movies_count'] = \App\Models\MovieLike::where('user_id', $u->id)
+                    ->count();
+
+                // Count user's products
+                $dashboard_stats['products_count'] = \App\Models\Product::where('user_id', $u->id)
+                    ->count();
+
+                // Count active chats (messages sent by user)
+                $sent_count = \App\Models\ChatMessage::where('sender_id', $u->id)
+                    ->distinct('receiver_id')
+                    ->count('receiver_id');
+                
+                // Count active chats (messages received by user)
+                $received_count = \App\Models\ChatMessage::where('receiver_id', $u->id)
+                    ->distinct('sender_id')
+                    ->count('sender_id');
+                
+                $dashboard_stats['active_chats_count'] = $sent_count + $received_count;
+
+                // Orders count - set to 0 for now (Order model doesn't exist yet)
+                $dashboard_stats['total_orders_count'] = 0;
+
+            } catch (\Exception $e) {
+                // If stats collection fails, use default values (already set above)
+            }
+        }
+
         $manifest = [
             'top_movie' => $topMovie ? [$topMovie] : [],
             'vj' => $unique_vj ?? [],
@@ -1228,6 +1276,7 @@ class ApiController extends BaseController
             'UPDATE_NOTES' => $UPDATE_NOTES ?? '',
             'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
             'subscription' => $subscription_info, // Add subscription information
+            'dashboard_stats' => $dashboard_stats, // Add dashboard statistics
         ];
 
         return Utils::success($manifest, "Listed successfully.");
@@ -1239,7 +1288,29 @@ class ApiController extends BaseController
         if ($u == null) {
             Utils::error("Unauthonticated.");
         } */
-        $model = "App\Models\\" . $model;
+        
+        // Map lowercase/incorrect model names to actual model classes
+        $modelMapping = [
+            'movies' => 'MovieModel',
+            'movie' => 'MovieModel',
+            'moviemodel' => 'MovieModel',
+            'seriesmovies' => 'SeriesMovie',
+            'seriesmovie' => 'SeriesMovie',
+            'chatmessages' => 'ChatMessage',
+            'chatmessage' => 'ChatMessage',
+            'chatheads' => 'ChatHead',
+            'chathead' => 'ChatHead',
+            'products' => 'Product',
+            'users' => 'User',
+            'subscriptions' => 'Subscription',
+            'subscriptionplans' => 'SubscriptionPlan',
+            'subscriptionplan' => 'SubscriptionPlan',
+        ];
+        
+        // Use mapped name if exists, otherwise use the provided model name
+        $modelName = $modelMapping[strtolower($model)] ?? $model;
+        $model = "App\Models\\" . $modelName;
+        
         $data = $model::where([])->limit(1000000)->get();
         Utils::success($data, "Listed successfully. " . $model);
     }

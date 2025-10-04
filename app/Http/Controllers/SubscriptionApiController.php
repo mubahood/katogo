@@ -560,7 +560,6 @@ class SubscriptionApiController extends Controller
             // Find pending subscription with Pending or Processing payment status
             $pendingSubscription = $user->subscriptions()
                 ->with('plan')
-                ->where('status', 'Pending')
                 ->whereIn('payment_status', ['Pending', 'Processing'])
                 ->orderBy('created_at', 'DESC')
                 ->first();
@@ -599,7 +598,7 @@ class SubscriptionApiController extends Controller
             return response()->json([
                 'code' => 1,
                 'status' => 200,
-                'message' => 'No pending subscription',
+                'message' => 'No pending subscription. USER ID: ' . $user->id,
                 'data' => [
                     'has_pending' => false,
                     'pending_subscription' => null,
