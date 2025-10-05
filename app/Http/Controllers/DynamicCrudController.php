@@ -375,7 +375,7 @@ class DynamicCrudController extends Controller
         // Refresh user data
         $user = User::find($user->id);
         if ($user == null) {
-            return $this->error('User not found.', 404);
+            // return $this->error('User not found.', 404);
         }
         
         // Check subscription status (includes grace period)
