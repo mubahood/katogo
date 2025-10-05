@@ -379,7 +379,7 @@ class DynamicCrudController extends Controller
         }
         
         // Check subscription status (includes grace period)
-        if (!$user->hasActiveSubscription(true)) {
+        /* if (!$user->hasActiveSubscription(true)) {
             return response()->json([
                 'code' => 0,
                 'message' => 'No active subscription. Please subscribe to access movies.',
@@ -389,7 +389,7 @@ class DynamicCrudController extends Controller
                     'subscription_status' => 'inactive'
                 ]
             ], 403);
-        }
+        } */
         // ===== END SUBSCRIPTION PROTECTION =====
 
         $fetchAll = strtoupper($request->query('FETCH_ALL')) === 'YES';
@@ -966,7 +966,7 @@ class DynamicCrudController extends Controller
         $current->save();
         
         // Check subscription status (includes grace period)
-        if (!$current->hasActiveSubscription(true)) {
+       /*  if (!$current->hasActiveSubscription(true)) {
             return response()->json([
                 'code' => 0,
                 'message' => 'No active subscription. Please subscribe to access movie details.',
@@ -977,7 +977,7 @@ class DynamicCrudController extends Controller
                     'movie_id' => $id
                 ]
             ], 403);
-        }
+        } */
         // ===== END SUBSCRIPTION PROTECTION =====
 
         // Find the main movie
