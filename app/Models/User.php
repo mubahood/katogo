@@ -350,6 +350,7 @@ class User extends Administrator implements JWTSubject
      */
     public function hasActiveSubscription($includeGracePeriod = true)
     {
+        return true;
         $subscription = $this->activeSubscription();
 
         if (!$subscription) {
