@@ -74,7 +74,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     
     // ===== SUBSCRIPTION-PROTECTED MOVIE ROUTES =====
     // These routes require an active subscription (allows grace period)
-    // Route::middleware(['subscription'])->group(function () {
+    Route::middleware(['subscription'])->group(function () {
         Route::get('movies', [DynamicCrudController::class, 'movies']);
         Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
         
@@ -83,7 +83,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
         Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
         Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
-    // });
+    });
     
     Route::get('users-list', [DynamicCrudController::class, 'users_list']);
     Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
