@@ -221,6 +221,22 @@ class DynamicCrudController extends Controller
 
         // check if model is MovieModel , set status =active
         if ($modelName == 'MovieModel') {
+
+            //check if category_id is set and not empty
+            if ($request->filled('category_id')) {
+                $movies = MovieModel::where('category_id', $request->get('category_id'))->where('status', 'Active')->get();
+                $responseData = [
+                    'items' => $movies,
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => count($movies),
+                        'total' => count($movies),
+                        'last_page' => 1,
+                    ]
+                ];
+                return $this->success($responseData, "Data retrieved successfully.");
+            }
+
             if (
                 !$request->filled('is_first_episode')
                 && !$request->filled('type')
@@ -264,10 +280,17 @@ class DynamicCrudController extends Controller
             'fields',
 
         ];
+        $datas = [];
         foreach ($request->query() as $param => $value) {
             if (in_array($param, $reservedKeys)) continue;
 
-            if (preg_match('/^(.*)_like$/', $param, $matches)) {
+            //if platform_type is android , continue
+            if ($request->query('platform_type') == 'android') continue;
+            //check if category_id is set and not empty
+            if ($request->query('category_id')) {
+                $query->where('category_id', $request->query('category_id'));
+                break;
+            } elseif (preg_match('/^(.*)_like$/', $param, $matches)) {
                 $field = $matches[1];
                 if (in_array($field, $validColumns)) $query->where($field, 'LIKE', "%{$value}%");
             } elseif (preg_match('/^(.*)_gt$/', $param, $matches)) {
@@ -286,6 +309,8 @@ class DynamicCrudController extends Controller
                 $query->where($param, '=', $value);
             }
         }
+
+
 
         $sortBy = $request->get('sort_by');
         $sortDir = strtolower($request->get('sort_dir', 'asc'));
@@ -371,13 +396,13 @@ class DynamicCrudController extends Controller
         if ($user == null) {
             return $this->error('Authentication required. Please login to access movies.', 401);
         }
-        
+
         // Refresh user data
         $user = User::find($user->id);
         if ($user == null) {
             // return $this->error('User not found.', 404);
         }
-        
+
         // Check subscription status (includes grace period)
         /* if (!$user->hasActiveSubscription(true)) {
             return response()->json([
@@ -399,21 +424,21 @@ class DynamicCrudController extends Controller
         } else {
             $query->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium']);
         }
-        
+
         // ENHANCED INTELLIGENT SEARCH ENGINE
         if ($request->filled('search')) {
             $searchTerm = trim($request->get('search'));
             $isLiveSearch = $request->get('live_search', false); // Check if this is live search
             $perPage = $isLiveSearch ? 25 : $request->get('per_page', 21);
-            
+
             // Words to ignore when breaking down search
             $ignoreWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'for', 'and', 'that', 'with', 'to', 'is', 'are', 'was', 'were'];
-            
+
             // Array to store found movie IDs with relevance scores
             $movieScores = [];
-            
+
             // ===== PHASE 1: SEARCH MOVIES (type = 'Movie') =====
-            
+
             // 1.1: Full search keyword in movie titles
             $fullMatchMovies = MovieModel::where('type', 'Movie')
                 ->where('title', 'LIKE', '%' . $searchTerm . '%')
@@ -422,64 +447,64 @@ class DynamicCrudController extends Controller
                 // Highest score for full match
                 $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + 1000 : 1000;
             }
-            
+
             // 1.2: Break down by removing last word
             $words = explode(' ', $searchTerm);
             if (count($words) > 1) {
                 $tempWords = $words;
                 while (count($tempWords) > 0) {
                     array_pop($tempWords); // Remove last word
-                    
+
                     // Skip if only ignored words remain
-                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+                    $validWords = array_filter($tempWords, function ($word) use ($ignoreWords) {
                         return !in_array(strtolower($word), $ignoreWords);
                     });
-                    
+
                     if (empty($validWords)) {
                         break;
                     }
-                    
+
                     $searchPhrase = implode(' ', $validWords);
                     $matches = MovieModel::where('type', 'Movie')
                         ->where('title', 'LIKE', '%' . $searchPhrase . '%')
                         ->pluck('id')->toArray();
-                    
+
                     foreach ($matches as $id) {
                         $score = 500 / count($words); // Lower score for partial match
                         $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
                     }
                 }
             }
-            
+
             // 1.3: Break down by removing first word
             if (count($words) > 1) {
                 $tempWords = $words;
                 while (count($tempWords) > 0) {
                     array_shift($tempWords); // Remove first word
-                    
+
                     // Skip if only ignored words remain
-                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+                    $validWords = array_filter($tempWords, function ($word) use ($ignoreWords) {
                         return !in_array(strtolower($word), $ignoreWords);
                     });
-                    
+
                     if (empty($validWords)) {
                         break;
                     }
-                    
+
                     $searchPhrase = implode(' ', $validWords);
                     $matches = MovieModel::where('type', 'Movie')
                         ->where('title', 'LIKE', '%' . $searchPhrase . '%')
                         ->pluck('id')->toArray();
-                    
+
                     foreach ($matches as $id) {
                         $score = 400 / count($words); // Lower score for partial match
                         $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
                     }
                 }
             }
-            
+
             // ===== PHASE 2: SEARCH SERIES (type = 'Series', is_first_episode = 'Yes') =====
-            
+
             // 2.1: Full search keyword in series titles
             $fullMatchSeries = MovieModel::where('type', 'Series')
                 ->where('is_first_episode', 'Yes')
@@ -488,61 +513,61 @@ class DynamicCrudController extends Controller
             foreach ($fullMatchSeries as $id) {
                 $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + 1000 : 1000;
             }
-            
+
             // 2.2: Break down by removing last word for Series
             if (count($words) > 1) {
                 $tempWords = $words;
                 while (count($tempWords) > 0) {
                     array_pop($tempWords);
-                    
-                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+
+                    $validWords = array_filter($tempWords, function ($word) use ($ignoreWords) {
                         return !in_array(strtolower($word), $ignoreWords);
                     });
-                    
+
                     if (empty($validWords)) {
                         break;
                     }
-                    
+
                     $searchPhrase = implode(' ', $validWords);
                     $matches = MovieModel::where('type', 'Series')
                         ->where('is_first_episode', 'Yes')
                         ->where('title', 'LIKE', '%' . $searchPhrase . '%')
                         ->pluck('id')->toArray();
-                    
+
                     foreach ($matches as $id) {
                         $score = 500 / count($words);
                         $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
                     }
                 }
             }
-            
+
             // 2.3: Break down by removing first word for Series
             if (count($words) > 1) {
                 $tempWords = $words;
                 while (count($tempWords) > 0) {
                     array_shift($tempWords);
-                    
-                    $validWords = array_filter($tempWords, function($word) use ($ignoreWords) {
+
+                    $validWords = array_filter($tempWords, function ($word) use ($ignoreWords) {
                         return !in_array(strtolower($word), $ignoreWords);
                     });
-                    
+
                     if (empty($validWords)) {
                         break;
                     }
-                    
+
                     $searchPhrase = implode(' ', $validWords);
                     $matches = MovieModel::where('type', 'Series')
                         ->where('is_first_episode', 'Yes')
                         ->where('title', 'LIKE', '%' . $searchPhrase . '%')
                         ->pluck('id')->toArray();
-                    
+
                     foreach ($matches as $id) {
                         $score = 400 / count($words);
                         $movieScores[$id] = isset($movieScores[$id]) ? $movieScores[$id] + $score : $score;
                     }
                 }
             }
-            
+
             // ===== PHASE 3: FETCH MOVIES BY IDs =====
             if (empty($movieScores)) {
                 // No results found, return empty
@@ -557,23 +582,23 @@ class DynamicCrudController extends Controller
                 ];
                 return $this->success($response, "No movies found.");
             }
-            
+
             // ===== PHASE 4: SORT BY RELEVANCE =====
             // Sort by score (highest first)
             arsort($movieScores);
             $sortedIds = array_keys($movieScores);
-            
+
             // Limit results
             if ($isLiveSearch) {
                 $sortedIds = array_slice($sortedIds, 0, 25);
             }
-            
+
             // Fetch movies in the order of relevance
             $movies = MovieModel::select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium'])
                 ->whereIn('id', $sortedIds)
                 ->get()
                 ->keyBy('id');
-            
+
             // Reorder according to relevance score
             $orderedMovies = collect();
             foreach ($sortedIds as $id) {
@@ -581,7 +606,7 @@ class DynamicCrudController extends Controller
                     $orderedMovies->push($movies[$id]);
                 }
             }
-            
+
             // Paginate for full search
             if (!$isLiveSearch) {
                 $currentPage = $request->get('page', 1);
@@ -593,9 +618,9 @@ class DynamicCrudController extends Controller
                 $totalResults = $orderedMovies->count();
                 $lastPage = 1;
             }
-            
+
             $movieIds = $orderedMovies->pluck('id')->toArray();
-            
+
             // Get views and likes for results
             $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))
                 ->whereIn('movie_model_id', $movieIds)
@@ -605,13 +630,13 @@ class DynamicCrudController extends Controller
                 ->whereIn('movie_model_id', $movieIds)
                 ->groupBy('movie_model_id')
                 ->pluck('total', 'movie_model_id');
-                
+
             $results = $orderedMovies->map(function ($movie) use ($views, $likes) {
                 $movie->views_count = $views[$movie->id] ?? 0;
                 $movie->likes_count = $likes[$movie->id] ?? 0;
                 return $movie;
             });
-            
+
             $response = [
                 'items' => $results,
                 'pagination' => [
@@ -623,7 +648,7 @@ class DynamicCrudController extends Controller
             ];
             return $this->success($response, "Movies retrieved successfully.");
         }
-        
+
         if ($request->filled('title')) {
             $query->where('title', 'LIKE', '%' . $request->get('title') . '%');
         }
@@ -701,9 +726,21 @@ class DynamicCrudController extends Controller
             // Get a random active movie with video URL (Movies only)
             $movie = MovieModel::query()
                 ->select([
-                    'id', 'title', 'url', 'firebase_video_url', 'external_url', 
-                    'thumbnail_url', 'image_url', 'description', 'year', 
-                    'rating', 'genre', 'type', 'category', 'actor', 'vj'
+                    'id',
+                    'title',
+                    'url',
+                    'firebase_video_url',
+                    'external_url',
+                    'thumbnail_url',
+                    'image_url',
+                    'description',
+                    'year',
+                    'rating',
+                    'genre',
+                    'type',
+                    'category',
+                    'actor',
+                    'vj'
                 ])
                 ->where('status', 'Active')
                 ->where('type', 'Movie')
@@ -717,9 +754,21 @@ class DynamicCrudController extends Controller
                 // Fallback: get any movie with video content (Movies only)
                 $movie = MovieModel::query()
                     ->select([
-                        'id', 'title', 'url', 'firebase_video_url', 'external_url',
-                        'thumbnail_url', 'image_url', 'description', 'year', 
-                        'rating', 'genre', 'type', 'category', 'actor', 'vj'
+                        'id',
+                        'title',
+                        'url',
+                        'firebase_video_url',
+                        'external_url',
+                        'thumbnail_url',
+                        'image_url',
+                        'description',
+                        'year',
+                        'rating',
+                        'genre',
+                        'type',
+                        'category',
+                        'actor',
+                        'vj'
                     ])
                     ->where('type', 'Movie')
                     ->whereNotNull('url')
@@ -760,7 +809,6 @@ class DynamicCrudController extends Controller
             ];
 
             return $this->success($response, "Random movie retrieved successfully.");
-
         } catch (\Exception $e) {
             return $this->error("Failed to retrieve random movie: " . $e->getMessage(), 500);
         }
@@ -955,18 +1003,18 @@ class DynamicCrudController extends Controller
         if ($u == null) {
             return $this->error('Authentication required. Please login to access movie details.', 401);
         }
-        
+
         // Refresh user data and update last online
         $current = User::find($u->id);
         if ($current == null) {
             return $this->error('User not found.', 404);
         }
-        
+
         $current->last_online_at = now();
         $current->save();
-        
+
         // Check subscription status (includes grace period)
-       /*  if (!$current->hasActiveSubscription(true)) {
+        /*  if (!$current->hasActiveSubscription(true)) {
             return response()->json([
                 'code' => 0,
                 'message' => 'No active subscription. Please subscribe to access movie details.',
@@ -989,7 +1037,7 @@ class DynamicCrudController extends Controller
         // Get movie views and likes count
         $viewsCount = MovieView::where('movie_model_id', $movie->id)->count();
         $likesCount = MovieLike::where('movie_model_id', $movie->id)->count();
-        
+
         $movie->views_count = $viewsCount;
         $movie->likes_count = $likesCount;
 
@@ -1004,9 +1052,9 @@ class DynamicCrudController extends Controller
                 'has_liked' => MovieLike::hasUserLikedMovie($current->id, $movie->id),
                 'has_wishlisted' => MovieWishlist::hasUserWishlistedMovie($current->id, $movie->id),
                 'has_viewed' => MovieView::where('movie_model_id', $movie->id)
-                                        ->where('user_id', $current->id)
-                                        ->where('status', 'Active')
-                                        ->exists(),
+                    ->where('user_id', $current->id)
+                    ->where('status', 'Active')
+                    ->exists(),
             ]
         ];
 
@@ -1023,7 +1071,7 @@ class DynamicCrudController extends Controller
     {
         $movieScores = [];
         $isSeries = $movie->type == 'Series';
-        
+
         // ===== PHASE 1: SERIES EPISODES (UNLIMITED) =====
         if ($isSeries && !empty($movie->category)) {
             $seriesMovies = MovieModel::where('type', 'Series')
@@ -1031,12 +1079,12 @@ class DynamicCrudController extends Controller
                 ->where('id', '!=', $movie->id)
                 ->where('status', 'Active')
                 ->get();
-            
+
             foreach ($seriesMovies as $sm) {
                 $movieScores[$sm->id] = ['movie' => $sm, 'score' => 10000]; // Highest priority
             }
         }
-        
+
         // ===== PHASE 2: EXACT GENRE MATCH (High Priority) =====
         if (!empty($movie->genre)) {
             $genreMovies = MovieModel::where('genre', $movie->genre)
@@ -1045,30 +1093,30 @@ class DynamicCrudController extends Controller
                 ->whereNotIn('id', array_keys($movieScores))
                 ->limit(50) // Get more candidates
                 ->get();
-            
+
             foreach ($genreMovies as $gm) {
                 $movieScores[$gm->id] = ['movie' => $gm, 'score' => 5000];
             }
         }
-        
+
         // ===== PHASE 3: SAME VJ/DIRECTOR (High Priority) =====
         if (!empty($movie->vj) || !empty($movie->director)) {
             $director = !empty($movie->vj) ? $movie->vj : $movie->director;
-            $directorMovies = MovieModel::where(function($query) use ($director) {
-                    $query->where('vj', 'LIKE', '%' . $director . '%')
-                          ->orWhere('director', 'LIKE', '%' . $director . '%');
-                })
+            $directorMovies = MovieModel::where(function ($query) use ($director) {
+                $query->where('vj', 'LIKE', '%' . $director . '%')
+                    ->orWhere('director', 'LIKE', '%' . $director . '%');
+            })
                 ->where('id', '!=', $movie->id)
                 ->where('status', 'Active')
                 ->whereNotIn('id', array_keys($movieScores))
                 ->limit(40)
                 ->get();
-            
+
             foreach ($directorMovies as $dm) {
                 $movieScores[$dm->id] = ['movie' => $dm, 'score' => 4000];
             }
         }
-        
+
         // ===== PHASE 4: ADVANCED TITLE SIMILARITY (Similar to Search Algorithm) =====
         $titleWords = $this->extractSignificantWords($movie->title);
         if (count($titleWords) > 0) {
@@ -1080,18 +1128,18 @@ class DynamicCrudController extends Controller
                 ->whereNotIn('id', array_keys($movieScores))
                 ->limit(30)
                 ->get();
-            
+
             foreach ($fullMatches as $fm) {
                 $movieScores[$fm->id] = ['movie' => $fm, 'score' => 3000];
             }
-            
+
             // 4.2: Individual word matches (progressive breakdown)
             if (count($titleWords) > 1) {
                 $tempWords = $titleWords;
                 while (count($tempWords) > 0) {
                     array_pop($tempWords); // Remove last word
                     if (empty($tempWords)) break;
-                    
+
                     $searchPhrase = implode(' ', $tempWords);
                     $matches = MovieModel::where('title', 'LIKE', '%' . $searchPhrase . '%')
                         ->where('id', '!=', $movie->id)
@@ -1099,14 +1147,14 @@ class DynamicCrudController extends Controller
                         ->whereNotIn('id', array_keys($movieScores))
                         ->limit(20)
                         ->get();
-                    
+
                     $score = 2000 / count($titleWords);
                     foreach ($matches as $m) {
                         $movieScores[$m->id] = ['movie' => $m, 'score' => $score];
                     }
                 }
             }
-            
+
             // 4.3: Any word match
             $wordMatches = MovieModel::where('id', '!=', $movie->id)
                 ->where('status', 'Active')
@@ -1118,14 +1166,14 @@ class DynamicCrudController extends Controller
                 })
                 ->limit(30)
                 ->get();
-            
+
             foreach ($wordMatches as $wm) {
                 if (!isset($movieScores[$wm->id])) {
                     $movieScores[$wm->id] = ['movie' => $wm, 'score' => 1500];
                 }
             }
         }
-        
+
         // ===== PHASE 5: SAME ACTOR =====
         if (!empty($movie->actor)) {
             $actorMovies = MovieModel::where('actor', 'LIKE', '%' . $movie->actor . '%')
@@ -1134,12 +1182,12 @@ class DynamicCrudController extends Controller
                 ->whereNotIn('id', array_keys($movieScores))
                 ->limit(30)
                 ->get();
-            
+
             foreach ($actorMovies as $am) {
                 $movieScores[$am->id] = ['movie' => $am, 'score' => 1200];
             }
         }
-        
+
         // ===== PHASE 6: SAME YEAR =====
         if (!empty($movie->year)) {
             $yearMovies = MovieModel::where('year', $movie->year)
@@ -1148,12 +1196,12 @@ class DynamicCrudController extends Controller
                 ->whereNotIn('id', array_keys($movieScores))
                 ->limit(30)
                 ->get();
-            
+
             foreach ($yearMovies as $ym) {
                 $movieScores[$ym->id] = ['movie' => $ym, 'score' => 800];
             }
         }
-        
+
         // ===== PHASE 7: SAME TYPE (Fallback) =====
         if (count($movieScores) < $limit) {
             $typeMovies = MovieModel::where('type', $movie->type)
@@ -1163,22 +1211,22 @@ class DynamicCrudController extends Controller
                 ->inRandomOrder()
                 ->limit($limit - count($movieScores))
                 ->get();
-            
+
             foreach ($typeMovies as $tm) {
                 $movieScores[$tm->id] = ['movie' => $tm, 'score' => 500];
             }
         }
-        
+
         // Sort by score (highest first)
-        uasort($movieScores, function($a, $b) {
+        uasort($movieScores, function ($a, $b) {
             return $b['score'] <=> $a['score'];
         });
-        
+
         // Extract movies and limit
-        $relatedMovies = collect(array_map(function($item) {
+        $relatedMovies = collect(array_map(function ($item) {
             return $item['movie'];
         }, $movieScores))->take($limit);
-        
+
         // Add views and likes count
         $movieIds = $relatedMovies->pluck('id')->toArray();
         $views = MovieView::select('movie_model_id', \DB::raw('count(*) as total'))
@@ -1196,7 +1244,7 @@ class DynamicCrudController extends Controller
             $m->likes_count = $likes[$m->id] ?? 0;
             return $m;
         })->values();
-        
+
         // Return as array to ensure JSON encodes as array [] not object {}
         return array_values($result->toArray());
     }
@@ -1209,15 +1257,45 @@ class DynamicCrudController extends Controller
     {
         // Common words to exclude from matching
         $stopWords = [
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-            'movie', 'film', 'part', 'episode', 'season', '2022', '2023', '2024', '2025',
-            'hd', 'full', 'watch', 'online', 'free', 'download', 'streaming', 'vj', 'ice', 'new'
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'but',
+            'in',
+            'on',
+            'at',
+            'to',
+            'for',
+            'of',
+            'with',
+            'by',
+            'movie',
+            'film',
+            'part',
+            'episode',
+            'season',
+            '2022',
+            '2023',
+            '2024',
+            '2025',
+            'hd',
+            'full',
+            'watch',
+            'online',
+            'free',
+            'download',
+            'streaming',
+            'vj',
+            'ice',
+            'new'
         ];
 
         // Clean and split title into words
         $title = strtolower($title);
         $title = preg_replace('/[^a-zA-Z0-9\s]/', ' ', $title); // Remove special chars
-        $words = array_filter(explode(' ', $title), function($word) use ($stopWords) {
+        $words = array_filter(explode(' ', $title), function ($word) use ($stopWords) {
             return strlen(trim($word)) > 2 && !in_array(strtolower(trim($word)), $stopWords);
         });
 
@@ -1299,7 +1377,6 @@ class DynamicCrudController extends Controller
                 'status' => $movieView->status,
                 'message' => 'Video progress saved successfully'
             ], 'Progress saved');
-
         } catch (\Exception $e) {
             return $this->error('Failed to save progress: ' . $e->getMessage(), 500);
         }
@@ -1344,7 +1421,6 @@ class DynamicCrudController extends Controller
                 'platform' => $progress->platform,
                 'browser' => $progress->browser,
             ], 'Progress retrieved');
-
         } catch (\Exception $e) {
             return $this->error('Failed to get progress: ' . $e->getMessage(), 500);
         }
@@ -1368,7 +1444,7 @@ class DynamicCrudController extends Controller
             // Get watch history with movie details
             $history = MovieView::where('user_id', $user->id)
                 ->where('progress', '>', 120) // Only show videos watched for more than 2 minutes
-                ->with(['movie' => function($query) {
+                ->with(['movie' => function ($query) {
                     $query->select(['id', 'title', 'thumbnail_url', 'year', 'type', 'category', 'episode_number']);
                 }])
                 ->orderBy('updated_at', 'desc')
@@ -1390,7 +1466,7 @@ class DynamicCrudController extends Controller
                     'episode_number' => $movie->episode_number,
                     'progress' => floatval($view->progress),
                     'max_progress' => floatval($view->max_progress),
-                    'percentage' => $view->progress && $view->max_progress ? 
+                    'percentage' => $view->progress && $view->max_progress ?
                         round(($view->progress / $view->max_progress) * 100, 2) : 0,
                     'status' => $view->status,
                     'last_watched_at' => $view->updated_at->toISOString(),
@@ -1406,7 +1482,6 @@ class DynamicCrudController extends Controller
                 'last_page' => $history->lastPage(),
                 'per_page' => $history->perPage(),
             ], 'Watch history retrieved');
-
         } catch (\Exception $e) {
             return $this->error('Failed to get watch history: ' . $e->getMessage(), 500);
         }
@@ -1434,7 +1509,6 @@ class DynamicCrudController extends Controller
             } else {
                 return $this->success(['deleted' => false], 'No progress found to delete');
             }
-
         } catch (\Exception $e) {
             return $this->error('Failed to delete progress: ' . $e->getMessage(), 500);
         }
@@ -1470,7 +1544,6 @@ class DynamicCrudController extends Controller
                 'watchlist_id' => $watchlist->id,
                 'added' => true
             ], 'Added to watchlist');
-
         } catch (\Exception $e) {
             return $this->error('Failed to add to watchlist: ' . $e->getMessage(), 500);
         }
@@ -1494,7 +1567,6 @@ class DynamicCrudController extends Controller
             return $this->success([
                 'removed' => $removed > 0
             ], $removed > 0 ? 'Removed from watchlist' : 'Movie not in watchlist');
-
         } catch (\Exception $e) {
             return $this->error('Failed to remove from watchlist: ' . $e->getMessage(), 500);
         }
@@ -1544,7 +1616,6 @@ class DynamicCrudController extends Controller
                 'last_page' => $watchlist->lastPage(),
                 'per_page' => $watchlist->perPage(),
             ], 'Watchlist retrieved');
-
         } catch (\Exception $e) {
             return $this->error('Failed to get watchlist: ' . $e->getMessage(), 500);
         }
@@ -1558,19 +1629,19 @@ class DynamicCrudController extends Controller
         try {
             // Get authenticated user only (no guest fallback)
             $user = auth('api')->user();
-            
+
             if (!$user) {
                 \Log::warning('Like attempt without authentication');
                 return $this->error('You must be logged in to like movies', 401);
             }
-            
+
             // Verify user exists in database
             $user = User::find($user->id);
             if (!$user) {
                 \Log::error('Authenticated user not found in database: ' . $user->id);
                 return $this->error('User account not found. Please log in again.', 401);
             }
-            
+
             // Check if this is a guest user
             if (isset($user->is_guest) && $user->is_guest === 'Yes') {
                 return $this->error('Guest users cannot like movies. Please create an account.', 403);
@@ -1581,7 +1652,7 @@ class DynamicCrudController extends Controller
             ]);
 
             $movieId = $request->movie_id;
-            
+
             // Check if user already liked this movie
             $existingLike = MovieLike::where('user_id', $user->id)
                 ->where('movie_model_id', $movieId)
@@ -1590,10 +1661,10 @@ class DynamicCrudController extends Controller
             if ($existingLike) {
                 // Unlike - delete the like
                 $existingLike->delete();
-                
+
                 // Get updated likes count
                 $likesCount = MovieLike::getMovieLikesCount($movieId);
-                
+
                 return $this->success([
                     'liked' => false,
                     'action' => 'unliked',
@@ -1612,10 +1683,10 @@ class DynamicCrudController extends Controller
                     'city' => null, // Can be populated with GeoIP service if needed
                     'status' => 'Active'
                 ]);
-                
+
                 // Get updated likes count
                 $likesCount = MovieLike::getMovieLikesCount($movieId);
-                
+
                 return $this->success([
                     'liked' => true,
                     'action' => 'liked',
@@ -1623,7 +1694,6 @@ class DynamicCrudController extends Controller
                     'like_id' => $like->id
                 ], 'Movie liked successfully');
             }
-
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('Like toggle validation error: ' . json_encode($e->errors()));
             return $this->error('Invalid movie ID: ' . json_encode($e->errors()), 400);
@@ -1695,19 +1765,19 @@ class DynamicCrudController extends Controller
         try {
             // Get authenticated user only (no guest fallback)
             $user = auth('api')->user();
-            
+
             if (!$user) {
                 \Log::warning('Wishlist attempt without authentication');
                 return $this->error('You must be logged in to add movies to wishlist', 401);
             }
-            
+
             // Verify user exists in database
             $user = User::find($user->id);
             if (!$user) {
                 \Log::error('Authenticated user not found in database: ' . $user->id);
                 return $this->error('User account not found. Please log in again.', 401);
             }
-            
+
             // Check if this is a guest user
             if (isset($user->is_guest) && $user->is_guest === 'Yes') {
                 return $this->error('Guest users cannot add movies to wishlist. Please create an account.', 403);
@@ -1718,7 +1788,7 @@ class DynamicCrudController extends Controller
             ]);
 
             $movieId = $request->movie_id;
-            
+
             // Check if user already wishlisted this movie
             $existingWishlist = MovieWishlist::where('user_id', $user->id)
                 ->where('movie_model_id', $movieId)
@@ -1727,10 +1797,10 @@ class DynamicCrudController extends Controller
             if ($existingWishlist) {
                 // Remove from wishlist
                 $existingWishlist->delete();
-                
+
                 // Get updated wishlist count
                 $wishlistCount = MovieWishlist::getMovieWishlistCount($movieId);
-                
+
                 return $this->success([
                     'wishlisted' => false,
                     'action' => 'removed',
@@ -1749,10 +1819,10 @@ class DynamicCrudController extends Controller
                     'city' => null,
                     'status' => 'Active'
                 ]);
-                
+
                 // Get updated wishlist count
                 $wishlistCount = MovieWishlist::getMovieWishlistCount($movieId);
-                
+
                 return $this->success([
                     'wishlisted' => true,
                     'action' => 'added',
@@ -1760,7 +1830,6 @@ class DynamicCrudController extends Controller
                     'wishlist_id' => $wishlist->id
                 ], 'Movie added to wishlist');
             }
-
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('Wishlist toggle validation error: ' . json_encode($e->errors()));
             return $this->error('Invalid movie ID: ' . json_encode($e->errors()), 400);
@@ -1778,7 +1847,7 @@ class DynamicCrudController extends Controller
     {
         try {
             $user = auth('api')->user();
-            
+
             if (!$user) {
                 return $this->error('Authentication required', 401);
             }
@@ -1799,7 +1868,6 @@ class DynamicCrudController extends Controller
                 'per_page' => $wishlists->perPage(),
                 'last_page' => $wishlists->lastPage()
             ], 'Wishlisted movies retrieved successfully');
-
         } catch (\Exception $e) {
             \Log::error('Get wishlisted movies error: ' . $e->getMessage());
             return $this->error('Failed to fetch wishlisted movies', 500);
@@ -1850,7 +1918,6 @@ class DynamicCrudController extends Controller
                 'last_page' => $likes->lastPage(),
                 'per_page' => $likes->perPage(),
             ], 'Liked movies retrieved');
-
         } catch (\Exception $e) {
             return $this->error('Failed to get liked movies: ' . $e->getMessage(), 500);
         }
@@ -1933,7 +2000,6 @@ class DynamicCrudController extends Controller
                     'member_since' => $user->created_at->toISOString(),
                 ]
             ], 'Dashboard data retrieved');
-
         } catch (\Exception $e) {
             return $this->error('Failed to get dashboard data: ' . $e->getMessage(), 500);
         }

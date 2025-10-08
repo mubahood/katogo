@@ -63,10 +63,10 @@ use Symfony\Component\Process\Process;
 - make sure you understand everything very well
 */
 
+/**
+ * Main crawler endpoint - handles all website crawling including munowatch series
+ */
 Route::get('crawler', function () {
-
-
-
     //set unlimited time
     set_time_limit(600); // 10 minutes
     ini_set('memory_limit', '512M'); // 512 MB
@@ -77,157 +77,72 @@ Route::get('crawler', function () {
     }
 
     try {
-
         Utils::fetch_pages_content();
     } catch (\Throwable $th) {
         echo "Failed to fetch page contents because " . $th->getMessage();
-        //throw $th;
     }
 
-    die("scucess");
+    die("success");
 });
 
 /**
- * VERY SPECIAL MUNOWATCH SERIES CRAWLER ENDPOINT 🎬✨
+ * PRODUCTION MUNOWATCH SERIES CRAWLER ENDPOINT 🎬
  * 
- * Test endpoint for the munowatch series crawler functionality.
- * This endpoint demonstrates the exceptional series processing capabilities.
+ * Production endpoint for crawling munowatch series content.
+ * Integrates with the existing 3-level crawler architecture.
+ * Focuses specifically on series content from munowatch API.
  */
-Route::get('test-munowatch-series-crawler', function () {
+Route::get('munowatch-series-crawler', function () {
     set_time_limit(600); // 10 minutes
     ini_set('memory_limit', '512M'); // 512 MB
     
-    echo "<h1>🎬 VERY SPECIAL MUNOWATCH SERIES CRAWLER TEST 🎬</h1>";
-    echo "<p>Testing the exceptional series processing capabilities...</p>";
-    
     try {
-        // ===== TEST SERIES CRAWLER WITH SAMPLE DATA =====
-        
-        // Create a test MovieCrawlerPage with sample series JSON
-        $testSeriesJson = [
-            'series' => [
-                'title' => 'Test Series Title',
-                'description' => 'This is a test series to demonstrate the exceptional crawler capabilities.',
-                'thumbnail' => 'https://example.com/series-poster.jpg',
-                'total_episodes' => 3,
-                'total_seasons' => 1,
-                'genre' => 'Action',
-                'year' => '2024',
-                'language' => 'English',
-                'rating' => 'PG-13',
-                'id' => 'test-series-123',
-                'episodes' => [
-                    [
-                        'id' => 'ep1',
-                        'title' => 'Episode 1: The Beginning',
-                        'episode_number' => 1,
-                        'description' => 'The first episode of our test series.',
-                        'playingUrl' => 'https://example.com/episode1.mp4',
-                        'duration' => '45:30',
-                        'thumbnail' => 'https://example.com/ep1-thumb.jpg'
-                    ],
-                    [
-                        'id' => 'ep2', 
-                        'title' => 'Episode 2: The Journey',
-                        'episode_number' => 2,
-                        'description' => 'The second episode continues the story.',
-                        'playingUrl' => 'https://example.com/episode2.mp4',
-                        'duration' => '42:15',
-                        'thumbnail' => 'https://example.com/ep2-thumb.jpg'
-                    ],
-                    [
-                        'id' => 'ep3',
-                        'title' => 'Episode 3: The Conclusion', 
-                        'episode_number' => 3,
-                        'description' => 'The thrilling conclusion.',
-                        'playingUrl' => 'https://example.com/episode3.mp4',
-                        'duration' => '48:00',
-                        'thumbnail' => 'https://example.com/ep3-thumb.jpg'
-                    ]
-                ]
-            ]
-        ];
-        
-        // Find or create a munowatch website record
+        // Get munowatch website configuration
         $munowatchWebsite = MovieCrawlerWebsite::where('slug', MovieCrawlerWebsite::MUNOWATCH)->first();
-        if (!$munowatchWebsite) {
-            echo "<p style='color: red;'>❌ Error: Munowatch website not configured. Please set up the MovieCrawlerWebsite first.</p>";
-            return;
+        if (!$munowatchWebsite || $munowatchWebsite->status !== 'Active') {
+            throw new Exception('Munowatch website not configured or inactive');
         }
         
-        // Create test crawler page
-        $testPage = new MovieCrawlerPage();
-        $testPage->movie_crawler_website_id = $munowatchWebsite->id;
-        $testPage->url = 'https://api.munowatch.test/series/test-series-123';
-        $testPage->page_content = json_encode($testSeriesJson);
-        $testPage->status = 'pending';
-        $testPage->save();
+        echo "🚀 Starting Munowatch Series Crawler...\n";
+        echo "=====================================\n\n";
         
-        echo "<h2>🔍 Testing Series Detection & Processing</h2>";
-        echo "<p><strong>Test URL:</strong> {$testPage->url}</p>";
-        echo "<p><strong>Test Data:</strong> Series with 3 episodes</p>";
+        // Step 1: Fetch pages (Level 1 - Website → Pages)
+        echo "📥 Level 1: Fetching series pages...\n";
+        $munowatchWebsite->get_next_page_content();
+        echo "✅ Pages fetched successfully\n\n";
         
-        // Process the test series
-        $result = $testPage->process_munowatch_intelligent();
+        // Step 2: Process page content (Level 2 - Pages → Content)  
+        echo "🔍 Level 2: Processing page content...\n";
+        Utils::fetch_pages_content();
+        echo "✅ Content processed successfully\n\n";
         
-        echo "<h2>📊 Processing Results</h2>";
-        echo "<p><strong>Status:</strong> {$testPage->status}</p>";
-        echo "<p><strong>Notes:</strong> {$testPage->notes}</p>";
+        // Step 3: Report results
+        echo "📊 Crawler Results:\n";
+        echo "==================\n";
         
-        if ($testPage->status === 'success') {
-            echo "<p style='color: green;'>✅ <strong>Series processing completed successfully!</strong></p>";
-            
-            // Display created series
-            if ($testPage->series_id) {
-                $createdSeries = SeriesMovie::find($testPage->series_id);
-                if ($createdSeries) {
-                    echo "<h3>📺 Created Series:</h3>";
-                    echo "<ul>";
-                    echo "<li><strong>ID:</strong> {$createdSeries->id}</li>";
-                    echo "<li><strong>Title:</strong> {$createdSeries->title}</li>";
-                    echo "<li><strong>Episodes:</strong> {$createdSeries->total_episodes}</li>";
-                    echo "<li><strong>Status:</strong> {$createdSeries->is_active}</li>";
-                    echo "</ul>";
-                    
-                    // Display created episodes
-                    $episodes = MovieModel::where('category_id', $createdSeries->id)
-                                         ->where('type', 'Series')
-                                         ->orderBy('episode_number')
-                                         ->get();
-                    
-                    echo "<h3>🎬 Created Episodes:</h3>";
-                    echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
-                    echo "<tr><th>Episode #</th><th>Title</th><th>Duration</th><th>Status</th><th>First Episode</th></tr>";
-                    
-                    foreach ($episodes as $episode) {
-                        echo "<tr>";
-                        echo "<td>{$episode->episode_number}</td>";
-                        echo "<td>{$episode->title}</td>";
-                        echo "<td>{$episode->duration}</td>";
-                        echo "<td>{$episode->status}</td>";
-                        echo "<td>{$episode->is_first_episode}</td>";
-                        echo "</tr>";
-                    }
-                    echo "</table>";
-                }
-            }
-        } else {
-            echo "<p style='color: red;'>❌ <strong>Error:</strong> {$testPage->error_message}</p>";
-        }
+        $pendingPages = MovieCrawlerPage::where('movie_crawler_website_id', $munowatchWebsite->id)
+                                       ->where('status', 'pending')
+                                       ->count();
         
-        echo "<h2>🧪 Advanced Testing Features</h2>";
-        echo "<p>✅ Intelligent series vs movie detection</p>";
-        echo "<p>✅ Comprehensive metadata extraction</p>";
-        echo "<p>✅ Perfect episode organization and sequencing</p>";
-        echo "<p>✅ Robust duplicate detection</p>";
-        echo "<p>✅ Seamless integration with existing series system</p>";
-        echo "<p>✅ Error-free episode relationship management</p>";
+        $successPages = MovieCrawlerPage::where('movie_crawler_website_id', $munowatchWebsite->id)
+                                       ->where('status', 'success')
+                                       ->count();
         
-        echo "<br><p><strong>🎯 This demonstrates the 'very special' munowatch series crawler in action!</strong></p>";
+        $seriesCount = SeriesMovie::where('created_at', '>=', Carbon::now()->subHour())
+                                 ->count();
         
-    } catch (\Throwable $th) {
-        echo "<p style='color: red;'>❌ <strong>Fatal Error:</strong> " . $th->getMessage() . "</p>";
-        echo "<pre>" . $th->getTraceAsString() . "</pre>";
+        echo "Pending Pages: $pendingPages\n";
+        echo "Processed Pages: $successPages\n";  
+        echo "New Series Created: $seriesCount\n\n";
+        
+        echo "🎯 Munowatch Series Crawler Completed Successfully!\n";
+        
+    } catch (Exception $e) {
+        echo "❌ Error: " . $e->getMessage() . "\n";
+        Log::error('Munowatch series crawler failed', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
     }
 });
 
