@@ -138,7 +138,9 @@ class MovieModel extends Model
 
         //encode the url
         $value = $url;
-        $value = str_replace(' ', '%20', $value); 
+        $value = str_replace(' ', '%20', $value);
+        //replace http with https
+        $value = str_replace('http://', 'https://', $value);
         return $value;
     }
 

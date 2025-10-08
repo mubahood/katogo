@@ -341,6 +341,8 @@ class DynamicCrudController extends Controller
             $items = $items->map(function ($item) {
                 if (isset($item['url'])) {
                     $item['url'] = str_replace(" ", "%20", $item['url']);
+                    //replace http with https
+                    $item['url'] = preg_replace("/^http:/i", "https:", $item['url']);
                 }
                 return $item;
             });
