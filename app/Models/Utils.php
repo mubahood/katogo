@@ -6283,7 +6283,7 @@ class Utils
             throw new \InvalidArgumentException('Invalid URL format');
         }
         
-        $allowedDomains = ['munowatch.com', 'www.munowatch.com', 'api.munowatch.com'];
+        $allowedDomains = ['munowatch.com', 'www.munowatch.com', 'api.munowatch.com', 'munowatch.org', 'www.munowatch.org', 'api.munowatch.org'];
         if (!in_array(strtolower($parsedUrl['host']), $allowedDomains)) {
             Log::warning('Munowatch API call to non-standard domain', [
                 'url' => $url,

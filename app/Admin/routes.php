@@ -26,6 +26,7 @@ Route::group([
     $router->resource('movies-content-is-video', MovieModelController::class);
     $router->resource('movies-processed', MovieModelController::class);
     $router->resource('movies-not-processed', MovieModelController::class);
+    $router->resource('munowatch-movie-categories', MunowatchMovieCategoryController::class);
 
 
     $router->resource('movies', MovieModelController::class);
