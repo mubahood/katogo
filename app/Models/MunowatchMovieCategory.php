@@ -190,14 +190,14 @@ class MunowatchMovieCategory extends Model
 
     /**
      * Determine the best API endpoint for fetching movies from this category
+     * 
+     * Based on Flutter app analysis, the app ONLY uses:
+     * 1. Dashboard API to get initial 15 movies per category
+     * 2. Shows endpoint for TV shows only (category 5)  
+     * 3. Does NOT use browse/list endpoints directly for category fetching
      */
     public function determineBestAPIEndpoint()
     {
-        // Based on testing, only certain endpoints work:
-        // - shows/g/{categoryId}/{userId}/{lastId} works for TV shows (category 5)
-        // - search/{query}/{userId}/{lastId} works for search
-        // - browse and list endpoints return 500 errors
-        
         $categoryId = $this->munowatch_category_id;
         
         if ($categoryId == 5) {
@@ -206,31 +206,11 @@ class MunowatchMovieCategory extends Model
             $this->pagination_endpoint = "shows/g/{$categoryId}/{uid}/{lid}";
             $this->has_pagination = true;
         } else {
-            // For other categories, use search with category-specific terms
-            $this->api_endpoint_type = 'search';
-            
-            // Map category names to search terms
-            $searchTerms = [
-                1 => 'latest',        // My List
-                3 => 'romance',       // Romance
-                4 => 'latest',        // Latest on Munowatch
-                6 => 'popular',       // You may also like
-                8 => 'drama',         // Drama
-                9 => 'sci-fi',        // Sci Fi
-                10 => 'horror',       // Horror
-                17 => 'latest',       // Continue watching
-                18 => 'latest',       // Latest Uploads
-                20 => 'popular',      // Favourites
-                22 => 'popular',      // Most Liked
-                23 => 'episodes',     // Last watched episodes
-            ];
-            
-            $searchTerm = $searchTerms[$categoryId] ?? 'latest';
-            $this->pagination_endpoint = "search/{$searchTerm}/{uid}/{lid}";
-            $this->has_pagination = true;
-            
-            // Store search term for URL generation
-            $this->api_parameters = ['search_term' => $searchTerm];
+            // All other categories use dashboard data only - no separate endpoint needed
+            // The Flutter app gets movies for all categories from the dashboard API
+            $this->api_endpoint_type = self::ENDPOINT_DASHBOARD;
+            $this->pagination_endpoint = null; // Not needed for dashboard
+            $this->has_pagination = false; // Dashboard gives fixed 15 movies per category
         }
 
         $this->save();
@@ -238,85 +218,109 @@ class MunowatchMovieCategory extends Model
 
     /**
      * Get the API URL for fetching movies from this category
+     * 
+     * Following the Flutter app pattern:
+     * - Category 5 (TV Shows): uses shows endpoint 
+     * - All other categories: use movies from dashboard data (no separate API call needed)
      */
     public function getMoviesFetchURL($page = 1, $userId = '169464')
     {
         $baseUrl = 'https://munowatch.org/api/';
-        $lastId = ($page - 1) * 20; // Assume 20 items per page, use lastId for pagination
         
         switch ($this->api_endpoint_type) {
             case self::ENDPOINT_SHOWS:
+                $lastId = ($page - 1) * 20; // Use lastId for pagination like Flutter app
                 return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $lastId], $this->pagination_endpoint);
                 
-            case 'search':
-                $searchTerm = $this->api_parameters['search_term'] ?? 'latest';
-                return $baseUrl . "search/{$searchTerm}/{$userId}/{$lastId}";
-                
-            case self::ENDPOINT_BROWSE:
-                // Keep for fallback, though it doesn't work
-                return $baseUrl . $this->pagination_endpoint;
-                
-            case self::ENDPOINT_LIST:
-                // Keep for fallback, though it doesn't work
-                return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $lastId], $this->pagination_endpoint);
+            case self::ENDPOINT_DASHBOARD:
+                // Dashboard categories don't need separate API calls
+                // Movies are already available from dashboard fetch
+                return $baseUrl . "dashboard/v2/{$userId}";
                 
             default:
-                // Fallback to search
-                return $baseUrl . "search/latest/{$userId}/{$lastId}";
+                // Fallback to dashboard
+                return $baseUrl . "dashboard/v2/{$userId}";
         }
     }
 
     /**
-     * Fetch movies for this category
+     * Fetch movies for this category following Flutter app pattern
+     * 
+     * - For dashboard categories: returns the movies from the latest dashboard fetch
+     * - For TV shows category: makes API call to shows endpoint
      */
     public function fetchMovies($page = 1, $userId = '169464')
     {
         try {
-            $url = $this->getMoviesFetchURL($page, $userId);
             $jwtToken = config('munowatch.jwt_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0');
             
             Log::info('Fetching movies for category', [
                 'category_id' => $this->munowatch_category_id,
                 'category_name' => $this->category_name,
                 'page' => $page,
-                'url' => $url
+                'endpoint_type' => $this->api_endpoint_type
             ]);
 
-            $response = Utils::call_munowatch_api(
-                $url,
-                $jwtToken, // Bearer token
-                $jwtToken, // API key (same for munowatch)
-                'GET'
-            );
+            if ($this->api_endpoint_type === self::ENDPOINT_DASHBOARD) {
+                // For dashboard categories, return the movies from sample_movies
+                $movies = $this->sample_movies ?? [];
+                
+                Log::info('Returning dashboard movies for category', [
+                    'category_id' => $this->munowatch_category_id,
+                    'category_name' => $this->category_name,
+                    'movies_count' => count($movies)
+                ]);
+                
+                // Update fetch statistics
+                $this->update([
+                    'last_movies_fetched_at' => Carbon::now(),
+                    'current_page' => $page,
+                    'status' => self::STATUS_ACTIVE,
+                    'last_error_message' => null
+                ]);
+                
+                return $movies; // Return array directly like Flutter app
+                
+            } else {
+                // For TV shows and other special endpoints, make API call
+                $url = $this->getMoviesFetchURL($page, $userId);
+                
+                $response = Utils::call_munowatch_api(
+                    $url,
+                    $jwtToken, // Bearer token
+                    $jwtToken, // API key (same for munowatch)
+                    'GET'
+                );
 
-            $moviesData = json_decode($response, true);
-            
-            if (!$moviesData) {
-                throw new \Exception('Invalid JSON response for category: ' . substr($response, 0, 200));
+                $moviesData = json_decode($response, true);
+                
+                if (!$moviesData) {
+                    throw new \Exception('Invalid JSON response for category: ' . substr($response, 0, 200));
+                }
+                
+                // Validate response structure
+                if (!is_array($moviesData)) {
+                    throw new \Exception('Response is not an array: ' . gettype($moviesData));
+                }
+                
+                // Log the successful response structure for debugging
+                Log::info('Category movies fetched successfully from API', [
+                    'category_id' => $this->munowatch_category_id,
+                    'category_name' => $this->category_name,
+                    'movies_count' => count($moviesData),
+                    'response_sample' => array_slice($moviesData, 0, 2) // First 2 items for structure
+                ]);
+
+                // Update fetch statistics
+                $this->update([
+                    'last_movies_fetched_at' => Carbon::now(),
+                    'current_page' => $page,
+                    'status' => self::STATUS_ACTIVE,
+                    'last_error_message' => null
+                ]);
+
+                return $moviesData;
             }
-            
-            // Validate response structure
-            if (!is_array($moviesData)) {
-                throw new \Exception('Response is not an array: ' . gettype($moviesData));
-            }
-            
-            // Log the successful response structure for debugging
-            Log::info('Category movies fetched successfully', [
-                'category_id' => $this->munowatch_category_id,
-                'category_name' => $this->category_name,
-                'movies_count' => count($moviesData),
-                'response_sample' => array_slice($moviesData, 0, 2) // First 2 items for structure
-            ]);
-
-            // Update fetch statistics
-            $this->update([
-                'last_movies_fetched_at' => Carbon::now(),
-                'current_page' => $page,
-                'status' => self::STATUS_ACTIVE,
-                'last_error_message' => null
-            ]);
-
-            return $moviesData;
 
         } catch (\Exception $e) {
             $this->update([

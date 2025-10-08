@@ -17,7 +17,7 @@ class MovieCrawlerWebsite extends Model
         parent::boot();
 
         static::updating(function ($model) {
-            if ($model->status != 'Active' || $model->status != 'Inactive') {
+            if ($model->status != 'Active' && $model->status != 'Inactive') {
                 $model->status = 'Active';
             }
         });
