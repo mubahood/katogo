@@ -137,101 +137,64 @@ class MovieCrawlerWebsite extends Model
     }
     
     /**
-     * Handle Munowatch specific page link generation with category rotation
+     * Handle Munowatch specific page link generation using category management system
+     * 
+     * Now uses MunowatchCategory model for proper category rotation and management.
+     * Categories are fetched from database with their own crawling status and parameters.
      * 
      * @return string Next page URL
-     * @throws \Exception When URL template is invalid
+     * @throws \Exception When no categories available or API structure invalid
      */
     private function handleMunowatchPageLink()
     {
-        $page_number = (int)$this->page_number + 1;
+        // Get the next category for crawling using the new category system
+        $category = MunowatchCategory::getNextForCrawling();
         
-        // Categories: 1=movie, 2=series, 3=korean, 4=animation
-        $categories = [1, 2, 3, 4];
-        $current_category = 1; // Default to movies
+        if (!$category) {
+            throw new \Exception('No munowatch categories available for crawling. Please seed categories first.');
+        }
         
-        // Extract current category from URL template with validation
-        if (preg_match('/\/p\/(\d+)\//', $this->url, $matches)) {
-            $current_category = (int)$matches[1];
+        // Start crawling this category if not already in progress
+        if ($category->crawl_status !== MunowatchCategory::CRAWL_IN_PROGRESS) {
+            $category->startCrawling();
+        }
+        
+        // Get next page for this category
+        $nextPage = $category->nextPage();
+        $userId = $this->email; // User ID stored in email field (169464)
+        
+        // Generate API URL using the category's method
+        $this->last_page_url = $category->getApiUrl($nextPage, $userId);
+        $this->page_number = $nextPage;
+        
+        // Check if category has reached page limit (20 pages per category)
+        if ($nextPage >= 20) {
+            // Complete this category and reset for next crawling cycle
+            $category->completeCrawling($category->new_videos_last_crawl);
+            $category->resetCrawling();
             
-            // Validate category is in allowed range
-            if (!in_array($current_category, $categories)) {
-                Log::warning('Invalid category detected in munowatch URL', [
-                    'website_id' => $this->id,
-                    'invalid_category' => $current_category,
-                    'url_template' => $this->url
-                ]);
-                $current_category = 1; // Reset to movies
-            }
-        } else {
-            Log::warning('Could not extract category from munowatch URL template', [
+            Log::info('Munowatch category completed, moving to next', [
                 'website_id' => $this->id,
-                'url_template' => $this->url
+                'completed_category' => $category->name,
+                'completed_category_id' => $category->munowatch_id,
+                'pages_crawled' => $nextPage,
+                'next_category_ready' => MunowatchCategory::getNextForCrawling()?->name ?? 'None'
             ]);
         }
         
-        // Validate URL template has required placeholders
-        if (!str_contains($this->url, '{category_id}') || !str_contains($this->url, '{page}')) {
-            throw new \Exception('Munowatch URL template missing required placeholders: {category_id} and/or {page}');
-        }
+        // Store current category info for tracking
+        $this->setAttribute('current_munowatch_category_id', $category->id);
         
-        // For pages 1-20, use current category
-        if ($page_number <= 20) {
-            $this->page_number = $page_number;
-            $this->last_page_url = str_replace(['{category_id}', '{page}'], [$current_category, $page_number], $this->url);
-            
-            Log::debug('Munowatch page progression', [
-                'website_id' => $this->id,
-                'category' => $current_category,
-                'page' => $page_number,
-                'url' => $this->last_page_url
-            ]);
-            
-            return $this->last_page_url;
-        } else {
-            // Move to next category and reset to page 1
-            $current_index = array_search($current_category, $categories);
-            
-            if ($current_index === false) {
-                Log::error('Current category not found in categories array', [
-                    'website_id' => $this->id,
-                    'current_category' => $current_category,
-                    'available_categories' => $categories
-                ]);
-                $current_index = 0; // Default to first category
-            }
-            
-            $next_index = ($current_index + 1) % count($categories);
-            $next_category = $categories[$next_index];
-            
-            // Update the URL template with new category
-            $old_url = $this->url;
-            $this->url = str_replace('/p/' . $current_category . '/', '/p/' . $next_category . '/', $this->url);
-            $this->page_number = 1;
-            
-            // Validate URL was updated correctly
-            if ($this->url === $old_url) {
-                throw new \Exception("Failed to update URL template for category rotation (current: $current_category, next: $next_category)");
-            }
-            
-            $this->last_page_url = str_replace(['{category_id}', '{page}'], [$next_category, 1], $this->url);
-            
-            Log::info('Munowatch category rotation', [
-                'website_id' => $this->id,
-                'from_category' => $current_category,
-                'to_category' => $next_category,
-                'reset_page' => 1,
-                'new_url_template' => $this->url,
-                'next_page_url' => $this->last_page_url
-            ]);
-            
-            // Save the changes
-            if (!$this->save()) {
-                throw new \Exception('Failed to save category rotation changes to database');
-            }
-            
-            return $this->last_page_url;
-        }
+        Log::debug('Munowatch page generation with category system', [
+            'website_id' => $this->id,
+            'category_name' => $category->name,
+            'category_id' => $category->munowatch_id,
+            'page' => $nextPage,
+            'url' => $this->last_page_url,
+            'crawl_status' => $category->crawl_status
+        ]);
+        
+        return $this->last_page_url;
     }
 
 

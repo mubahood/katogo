@@ -29,13 +29,13 @@ class MunowatchProductionSeeder extends Seeder
             return;
         }
         
-        // Insert munowatch configuration
+        // Insert munowatch configuration with correct API structure
         $id = DB::table('movie_crawler_websites')->insertGetId([
             'name' => 'Munowatch API',
-            'url' => 'https://munowatch.com/api/list/p/{category_id}/3/{page}',
+            'url' => 'https://munowatch.org/api/list/{pipe}/{pid}/{uid}/{lid}',
             'slug' => 'munowatch',
-            'token' => 'munowatch123',
-            'email' => 'Api-munowatch-2024',
+            'token' => 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
+            'email' => '169464', // User ID from .env
             'status' => 'Active',
             'page_number' => 0,
             'max_page' => 50,
@@ -54,10 +54,12 @@ class MunowatchProductionSeeder extends Seeder
         echo "✅ Munowatch crawler record created (ID: {$id})\n";
         echo "🎯 Configuration:\n";
         echo "   - Name: Munowatch API\n";
+        echo "   - Base URL: https://munowatch.org/api/\n";
+        echo "   - API Format: list/{pipe}/{pid}/{uid}/{lid}\n";
         echo "   - Slug: munowatch\n";
-        echo "   - Token: munowatch123\n";
-        echo "   - API Key: Api-munowatch-2024\n";
+        echo "   - JWT Token: (Real token configured)\n";
+        echo "   - User ID: 169464\n";
         echo "   - Status: Active\n";
-        echo "🚀 Ready for crawler operations!\n";
+        echo "🚀 Ready for crawler operations with CORRECTED API structure!\n";
     }
 }
