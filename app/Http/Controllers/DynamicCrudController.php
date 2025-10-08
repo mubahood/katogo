@@ -335,6 +335,16 @@ class DynamicCrudController extends Controller
             $data = $item->toArray();
             return $fields ? collect($data)->only($fields)->toArray() : $data;
         });
+        
+        //if movies,look and encode the url
+        if ($modelName == 'MovieModel') {
+            $items = $items->map(function ($item) {
+                if (isset($item['url'])) {
+                    $item['url'] = str_replace(" ", "%20", $item['url']);
+                }
+                return $item;
+            });
+        }
 
         $responseData = [
             'items' => $items,
