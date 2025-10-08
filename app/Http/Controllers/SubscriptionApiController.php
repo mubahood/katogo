@@ -288,6 +288,11 @@ class SubscriptionApiController extends Controller
         try {
             $user = $request->user();
 
+            $user = Utils::get_user($request);
+            if ($user == null) {
+                Utils::error("Not authenticated.");
+            }
+
             if (!$user) {
                 return response()->json([
                     'code' => 0,
