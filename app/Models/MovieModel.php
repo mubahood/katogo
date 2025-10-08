@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Models;
-
+// 	  http://munoserver54.club/saka/saka42/Curse Of The Piper EMMY.mp4
 use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
 use GuzzleHttp\Client;
@@ -131,11 +131,14 @@ class MovieModel extends Model
                     $url = $this->firebase_video_url;
                     $sql = "UPDATE movie_models SET url = '$url', old_video_url = '{$value}' WHERE id = {$this->id}";
                     DB::update($sql);
-                    return $url;
+                    // return $url;
                 }
             }
         }
 
+        //encode the url
+        $value = $url;
+        $value = rawurlencode($value);
         return $value;
     }
 
