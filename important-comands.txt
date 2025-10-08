@@ -1,20 +1,33 @@
-php artisan make:model MovieCrawlerPage -m
-php artisan make:model MovieCrawlerPage -m
-php artisan make:model MovieCrawlerPage -m
+=== MUNOWATCH PRODUCTION DEPLOYMENT COMMANDS ===
 
-php artisan admin:make MunowatchCategoryController --model=App\Models\MunowatchCategory
-php artisan admin:make MunowatchCategoryController --model=App\Models\MunowatchCategoryController --model=App\\Models\\MunowatchCategory
+# Complete Munowatch System Setup (Category Management + API Integration)
+php artisan db:seed --class=MunowatchCompleteSeeder
 
-php artisan db:seed --class=App\\Models\\php artisan admin:make MunowatchCategoryController --model=App\Models\MunowatchCategory
+# Individual Components (if needed)
+php artisan db:seed --class=MunowatchCategorySeeder
+php artisan db:seed --class=MunowatchProductionSeeder
 
+# Database Migrations
+php artisan migrate  # Includes munowatch_categories table and current_munowatch_category_id column
 
-(base) mac@Macs-MacBook-Pro katogo % php artisan admin:make MunowatchCategoryController --model=App\\Models\\MunowatchCategory
+# System Validation
+php artisan tinker --execute="
+\$categories = App\Models\MunowatchCategory::active()->count();
+\$website = App\Models\MovieCrawlerWebsite::where('slug', 'munowatch')->first();
+echo \"Categories: \$categories, Website: \" . (\$website ? 'OK' : 'Missing') . PHP_EOL;
+"
 
-php artisan make:migration add_page_source_url_to_movie_models --table=movie_models
+=== MUNOWATCH SYSTEM FEATURES ===
+✅ Category Management: Movies, Series, Korean, Animation
+✅ Priority System: Featured categories crawled more frequently  
+✅ API Structure: https://munowatch.org/api/list/{pipe}/{pid}/{uid}/{lid}
+✅ Authentication: JWT Bearer token
+✅ Error Handling: 3-retry mechanism with exponential backoff
+✅ Status Tracking: Per-category crawling progress
+✅ Database Relations: Foreign keys and constraints
+✅ Production Ready: Complete monitoring and logging
 
-
-php artisan migrate
----
+=== ORIGINAL COMMANDS ===
 - This week sales
 - 
 - Employes total*
