@@ -70,7 +70,7 @@ Route::get('crawler', function () {
     set_time_limit(600); // 10 minutes
     ini_set('memory_limit', '512M'); // 512 MB
     try {
-        Utils::fetch_pages();
+        // Utils::fetch_pages();
     } catch (\Throwable $th) {
         echo "Failed to fetch pages because " . $th->getMessage();
     }

@@ -30,7 +30,7 @@ class MovieCrawlerPage extends Model
                         'X-Api-Key' => $baseToken,
                         'User-Agent' => 'okhttp/4.9.0'
                     ];
-                    $data = Utils::get_url($this->url, $headers);
+                    $data = Utils::get_url_with_auth($this->url, $headers);
                 } else {
                     throw new \Exception('Munowatch authentication token not found');
                 }

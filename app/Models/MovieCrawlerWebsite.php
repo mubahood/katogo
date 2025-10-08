@@ -59,11 +59,13 @@ class MovieCrawlerWebsite extends Model
         try {
             if ($this->slug == self::MUNOWATCH) {
                 // Use the correct headers format for munowatch API (same as Flutter app)
+                $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
                 $headers = [
-                    'X-Api-Key' => $this->token,
+                    'Authorization' => 'Bearer ' . $baseToken,
+                    'X-Api-Key' => $baseToken,
                     'User-Agent' => 'okhttp/4.9.0'
                 ];
-                $my_html = Utils::get_url($this->last_page_url, $headers);
+                $my_html = Utils::get_url_with_auth($this->last_page_url, $headers);
             } else {
                 $my_html = Utils::get_url($this->last_page_url);
             }
