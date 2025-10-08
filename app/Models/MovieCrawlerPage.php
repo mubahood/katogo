@@ -355,21 +355,75 @@ class MovieCrawlerPage extends Model
 
             $preview = $jsonData['preview'];
 
-            // Extract movie details from the preview data
+            // ===== EXTRACT ALL AVAILABLE DATA FROM MUNOWATCH API =====
+            
+            // Basic movie information
             $title = $preview['video_title'] ?? 'Unknown Title';
-            $description = $preview['video_description'] ?? '';
+            $description = $preview['description'] ?? '';
+            $videoName = $preview['video_name'] ?? '';
+            $fullVideoName = $preview['full_video_name'] ?? '';
+            
+            // Genre and categorization  
             $genre = $preview['genre'] ?? '';
-            $duration = $preview['duration'] ?? '';
-            $poster = $preview['poster_url'] ?? '';
-            $videoId = $preview['id'] ?? '';
-
-            // Extract video URLs (key part for video links!)
+            $categoryId = $preview['category_id'] ?? '';
+            $tabCategoryId = $preview['tab_category_id'] ?? '';
+            
+            // Duration and technical details
+            $duration = $preview['duration'] ?? ''; // Format: "01h 28m"
+            $secondsDuration = $preview['secduration'] ?? 0; // Seconds
+            $ldur = $preview['ldur'] ?? 0; // Another duration field
+            $size = $preview['size'] ?? ''; // Format: "592.9 MB"
+            
+            // URLs and thumbnails (FOCUS ON THUMBNAIL_URL!)
+            $thumbnail = $preview['thumbnail'] ?? '';
+            $posterUrl = ''; // Not available in this API response
+            
+            // Video URLs (priority: playingUrl > embedUrl > openload)
             $playingUrl = $preview['playingUrl'] ?? '';
             $embedUrl = $preview['embedurl'] ?? '';
             $openloadUrl = $preview['openload'] ?? '';
             $nextEpisodeUrl = $preview['nxt_playing_url'] ?? '';
-
-            // Determine the primary video URL (priority: playingUrl > embedUrl > openloadUrl)
+            
+            // VJ Information (FOCUS ON VJ EXTRACTION!)
+            $vjName = $preview['vjname'] ?? '';
+            $vjId = $preview['vj_id'] ?? '';
+            $vjRelease = $preview['vjrelease'] ?? '';
+            
+            // Movie metadata
+            $recordingDate = $preview['recording_date'] ?? ''; // Format: "2003-03-06"
+            $year = '';
+            if (!empty($recordingDate)) {
+                $year = date('Y', strtotime($recordingDate));
+            }
+            $language = $preview['lang_name'] ?? '';
+            $ageRating = $preview['age_id'] ?? '';
+            
+            // Episode and series information
+            $seriesCode = $preview['series_code'] ?? '';
+            $episodes = $preview['episodes'] ?? 0;
+            $episodeState = $preview['episode_state'] ?? '';
+            $nextEpisodeId = $preview['nxt_eps_id'] ?? 0;
+            $nextEpisodeTitle = $preview['nxt_eps_title'] ?? '';
+            
+            // Status and access information
+            $access = $preview['access'] ?? '';
+            $paidFor = $preview['paid_for'] ?? '';
+            $newMovie = $preview['new_movie'] ?? '';
+            $priority = $preview['priority'] ?? '';
+            $userAccess = $preview['user_access'] ?? '';
+            $isSubscriber = $preview['issubscriber'] ?? '';
+            $download = $preview['download'] ?? '';
+            
+            // Additional metadata
+            $videoId = $preview['id'] ?? '';
+            $createDate = $preview['create_date'] ?? '';
+            $scheduleDate = $preview['schedule_date'] ?? '';
+            $userId = $preview['user_id'] ?? '';
+            $videoStatusId = $preview['video_status_id'] ?? '';
+            $networkId = $preview['network_id'] ?? '';
+            $notification = $preview['notification'] ?? '';
+            
+            // ===== DETERMINE PRIMARY VIDEO URL =====
             $primaryVideoUrl = '';
             if (!empty($playingUrl)) {
                 $primaryVideoUrl = $playingUrl;
@@ -379,7 +433,7 @@ class MovieCrawlerPage extends Model
                 $primaryVideoUrl = $openloadUrl;
             }
 
-            // Check for existing movie by title to avoid duplicates
+            // ===== CHECK FOR EXISTING MOVIE TO AVOID DUPLICATES =====
             $existing_post = MovieModel::where('title', $title)
                 ->where('status', 'Active')
                 ->first();
@@ -390,45 +444,94 @@ class MovieCrawlerPage extends Model
                 return;
             }
 
-            // Create new movie record
+            // ===== CREATE NEW MOVIE RECORD WITH ALL EXTRACTED DATA =====
             $movie = new MovieModel();
+            
+            // Basic information
             $movie->title = $title;
             $movie->description = $description;
-            $movie->genre = $genre;
-            $movie->duration = $duration;
             $movie->external_url = $this->url; // API endpoint URL
             $movie->page_source_url = $this->url;
-            $movie->poster_url = $poster;
-            $movie->type = $this->type ?? 'Movie';
-            $movie->vj = $this->vj ?? 'Munowatch API';
-            $movie->status = 'Active';
             $movie->external_id = $videoId;
-
-            // Store video URLs (this is the key fix!)
-            $movie->url = $primaryVideoUrl; // Main video URL for playback
             
-            // Store additional video URLs in description or notes for reference
-            $videoUrls = [];
-            if (!empty($playingUrl)) $videoUrls['playing'] = $playingUrl;
-            if (!empty($embedUrl)) $videoUrls['embed'] = $embedUrl;
-            if (!empty($openloadUrl)) $videoUrls['openload'] = $openloadUrl;
-            if (!empty($nextEpisodeUrl)) $videoUrls['next_episode'] = $nextEpisodeUrl;
+            // Video URL (main field for playback)
+            $movie->url = $primaryVideoUrl;
             
-            // Append video URLs info to description
-            if (!empty($videoUrls)) {
-                $movie->description .= "\n\nVideo URLs: " . json_encode($videoUrls, JSON_PRETTY_PRINT);
+            // Image URLs (FOCUS: THUMBNAIL_URL PROPERLY SET!)
+            $movie->thumbnail_url = $thumbnail;
+            $movie->image_url = $thumbnail; // Use same for both fields
+            $movie->poster_url = $thumbnail; // Use thumbnail as poster since no separate poster
+            
+            // Genre and category
+            $movie->genre = $genre;
+            $movie->category = $genre; // Use genre as category
+            $movie->category_id = $categoryId;
+            
+            // Duration (convert to consistent format)
+            $movie->duration = $duration; // Keep original format like "01h 28m"
+            
+            // Movie metadata
+            $movie->year = $year;
+            $movie->language = $language;
+            $movie->country = ''; // Not available in API
+            $movie->rating = $ageRating;
+            
+            // Size (convert to float if possible)
+            if (!empty($size)) {
+                preg_match('/(\d+\.?\d*)\s*(MB|GB)/i', $size, $matches);
+                if (isset($matches[1]) && isset($matches[2])) {
+                    $sizeValue = (float)$matches[1];
+                    if (strtoupper($matches[2]) === 'GB') {
+                        $sizeValue *= 1024; // Convert GB to MB
+                    }
+                    $movie->size = $sizeValue;
+                }
             }
             
-            // Set category based on genre or type
-            if (!empty($genre)) {
-                $movie->category = $genre;
+            // VJ Information (FOCUS: PROPER VJ EXTRACTION!)
+            if (!empty($vjName)) {
+                $movie->vj = $vjName;
             } else {
-                $movie->category = $this->type ?? 'Movie';
+                $movie->vj = 'Munowatch API';
+            }
+            
+            // Type determination (Movie vs Series vs Episode)
+            $movie->type = 'Movie'; // Default
+            if ($episodes > 0 || !empty($episodeState) || !empty($seriesCode)) {
+                if ($episodes > 1) {
+                    $movie->type = 'Series';
+                } elseif (!empty($episodeState)) {
+                    $movie->type = 'Episode';
+                }
+            }
+            
+            // Status
+            $movie->status = 'Active';
+            
+            // ===== STORE ADDITIONAL VIDEO URLS AND METADATA =====
+            $additionalData = [];
+            if (!empty($playingUrl)) $additionalData['playing_url'] = $playingUrl;
+            if (!empty($embedUrl)) $additionalData['embed_url'] = $embedUrl;
+            if (!empty($openloadUrl)) $additionalData['openload_url'] = $openloadUrl;
+            if (!empty($nextEpisodeUrl)) $additionalData['next_episode_url'] = $nextEpisodeUrl;
+            if (!empty($vjRelease)) $additionalData['vj_release'] = $vjRelease;
+            if (!empty($createDate)) $additionalData['create_date'] = $createDate;
+            if (!empty($seriesCode)) $additionalData['series_code'] = $seriesCode;
+            if (!empty($videoName)) $additionalData['video_name'] = $videoName;
+            if (!empty($secondsDuration)) $additionalData['seconds_duration'] = $secondsDuration;
+            if (!empty($access)) $additionalData['access_level'] = $access;
+            if (!empty($paidFor)) $additionalData['paid_content'] = $paidFor;
+            if (!empty($priority)) $additionalData['priority'] = $priority;
+            
+            // Append additional data to description for reference
+            if (!empty($additionalData)) {
+                $movie->description .= "\n\nAdditional Metadata:\n" . json_encode($additionalData, JSON_PRETTY_PRINT);
             }
 
+            // ===== SAVE MOVIE TO DATABASE =====
             $movie->save();
 
-            // Link the movie to this crawler page
+            // ===== LINK MOVIE TO CRAWLER PAGE =====
             $this->movie_id = $movie->id;
             $this->status = 'success';
             $this->error_message = null;
