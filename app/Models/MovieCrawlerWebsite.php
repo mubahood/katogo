@@ -11,6 +11,18 @@ class MovieCrawlerWebsite extends Model
 {
     use HasFactory;
 
+    //boot
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::updating(function ($model) {
+            if ($model->status != 'Active' || $model->status != 'Inactive') {
+                $model->status = 'Active';
+            }
+        });
+    }
+
     //constant for fetch status
     const MY_VJ = 'my-vj';
     const MUNOWATCH = 'munowatch';
@@ -32,7 +44,7 @@ class MovieCrawlerWebsite extends Model
      */
 
     public function get_next_page_content()
-    { 
+    {
         $this->fetch_status = 'in_progress';
         $this->error_message = null;
         $this->fetch_status = 'in_progress';
@@ -72,21 +84,18 @@ class MovieCrawlerWebsite extends Model
             if (empty($this->slug)) {
                 throw new \Exception('Website slug is empty - cannot generate page link');
             }
-            
+
             if (empty($this->url)) {
                 throw new \Exception('Website URL template is empty - cannot generate page link');
             }
-            
+
             if ($this->slug == self::MY_VJ) {
                 return $this->handleMyVjPageLink();
-                
             } elseif ($this->slug == self::MUNOWATCH) {
                 return $this->handleMunowatchPageLink();
-                
             } else {
                 throw new \Exception("Unsupported website slug: {$this->slug}");
             }
-            
         } catch (\Exception $e) {
             Log::error('Failed to generate next page link', [
                 'website_id' => $this->id,
@@ -95,15 +104,15 @@ class MovieCrawlerWebsite extends Model
                 'url_template' => $this->url,
                 'error' => $e->getMessage()
             ]);
-            
+
             // Set error state
             $this->error_message = 'Page link generation failed: ' . $e->getMessage();
             $this->fetch_status = 'failed';
-            
+
             throw $e;
         }
     }
-    
+
     /**
      * Handle MY_VJ specific page link generation
      * 
@@ -112,7 +121,7 @@ class MovieCrawlerWebsite extends Model
     private function handleMyVjPageLink()
     {
         $page_number = (int)$this->page_number + 1;
-        
+
         // Validate and adjust max_page if needed
         if ($this->max_page > 50) {
             $this->max_page = 49;
@@ -121,7 +130,7 @@ class MovieCrawlerWebsite extends Model
                 'new_max_page' => $this->max_page
             ]);
         }
-        
+
         if ($page_number > $this->max_page) {
             $page_number = 0;
             Log::info('MY_VJ page cycling - reset to 0', [
@@ -129,13 +138,13 @@ class MovieCrawlerWebsite extends Model
                 'max_page' => $this->max_page
             ]);
         }
-        
+
         $this->page_number = $page_number;
         $this->last_page_url = $this->url . $page_number;
-        
+
         return str_replace('{page_number}', $this->page_number, $this->url);
     }
-    
+
     /**
      * Handle Munowatch specific page link generation using dynamic categories from dashboard API
      * 
@@ -159,7 +168,7 @@ class MovieCrawlerWebsite extends Model
 
         // Get the next category to fetch movies from
         $category = MunowatchMovieCategory::getNextForMovieFetching();
-        
+
         if (!$category) {
             Log::warning('No munowatch categories available for fetching movies');
             // Fallback to a default page if no categories are available
@@ -168,17 +177,17 @@ class MovieCrawlerWebsite extends Model
 
         // Mark category as being fetched
         $category->startFetching();
-        
+
         // Store reference to current category for tracking
         $this->update(['current_munowatch_category_id' => $category->id]);
-        
+
         // Get the API URL for fetching movies from this category
         $url = $category->getMoviesFetchURL();
-        
+
         // Store URL for tracking
         $this->last_page_url = $url;
         $this->page_number = 1; // Start with page 1 for each category
-        
+
         Log::info('Selected munowatch category for crawling', [
             'category_id' => $category->munowatch_category_id,
             'category_name' => $category->category_name,
@@ -201,7 +210,7 @@ class MovieCrawlerWebsite extends Model
      *
      * @throws \Exception If JSON decoding fails or if the response structure is invalid.
      * @return void
-     */ 
+     */
     public function process_pages()
     {
         try {
@@ -212,7 +221,7 @@ class MovieCrawlerWebsite extends Model
 
             $jobLinks = [];
             $jobLinksNew = [];
-            
+
             if ($this->slug == self::MY_VJ) {
                 $this->processMYVJPages($jobLinksNew);
             } elseif ($this->slug == self::MUNOWATCH) {
@@ -227,28 +236,27 @@ class MovieCrawlerWebsite extends Model
             $this->new_movies_found = count($jobLinksNew);
             $this->fetch_status = "success";
             $this->error_message = null;
-            
+
             $this->save();
-            
+
             Log::info('Successfully processed pages', [
                 'website_id' => $this->id,
                 'slug' => $this->slug,
                 'new_movies_found' => $this->new_movies_found,
                 'total_movies_found' => $this->total_movies_found
             ]);
-            
         } catch (\Exception $e) {
             $this->fetch_status = 'failed';
             $this->error_message = $e->getMessage();
             $this->save();
-            
+
             Log::error('Failed to process pages', [
                 'website_id' => $this->id,
                 'slug' => $this->slug,
                 'error' => $e->getMessage(),
                 'response_data_length' => strlen($this->response_data ?? '')
             ]);
-            
+
             throw $e;
         }
     }
@@ -267,15 +275,15 @@ class MovieCrawlerWebsite extends Model
         } catch (\Exception $e) {
             throw new \Exception('Failed to decode MY_VJ JSON response: ' . $e->getMessage());
         }
-        
+
         if ($jsonObject === null) {
             throw new \Exception('Failed to decode JSON response - null result');
         }
-        
+
         if (!isset($jsonObject['movies']) || $jsonObject['movies'] === null) {
             throw new \Exception('No movies found in JSON response');
         }
-        
+
         if (!is_array($jsonObject['movies'])) {
             throw new \Exception('Movies is not an array in JSON response');
         }
@@ -283,7 +291,7 @@ class MovieCrawlerWebsite extends Model
         foreach ($jsonObject['movies'] as $key => $movieObject) {
             try {
                 $movieObject = (object) $movieObject; // Convert array to object for compatibility
-                
+
                 if (empty($movieObject->slug)) {
                     Log::warning('MY_VJ movie missing slug', ['key' => $key, 'title' => $movieObject->title ?? 'Unknown']);
                     continue;
@@ -314,7 +322,7 @@ class MovieCrawlerWebsite extends Model
                 $page->page_content = null;
                 $page->error_message = null;
                 $page->last_fetched_at = null;
-                
+
                 // Determine type based on URL
                 $isMovie = false;
                 if (strpos($this->url, 'explore-movies') !== false) {
@@ -323,16 +331,15 @@ class MovieCrawlerWebsite extends Model
                 } else {
                     $page->type = 'Series';
                 }
-                
+
                 $page->row_id = $movieObject->row_id ?? null;
                 $page->img_port_muno_file_name = $movieObject->img_port_muno_file_name ?? null;
                 $page->bunny_file_name = $movieObject->bunny_file_name ?? null;
                 $page->tmdb_poster_path = $movieObject->tmdb_poster_path ?? null;
                 $page->vj = $movieObject->vj ?? 'Unknown VJ';
-                
+
                 $page->save();
                 $jobLinksNew[] = $url1;
-                
             } catch (\Exception $e) {
                 Log::error('Failed to process MY_VJ movie', [
                     'key' => $key,
@@ -359,23 +366,23 @@ class MovieCrawlerWebsite extends Model
         } catch (\Exception $e) {
             throw new \Exception('Failed to decode Munowatch JSON response: ' . $e->getMessage());
         }
-        
+
         if ($jsonObject === null) {
             throw new \Exception('Failed to decode JSON response - null result');
         }
-        
+
         if (!isset($jsonObject['data']) || $jsonObject['data'] === null) {
             throw new \Exception('No data found in JSON response');
         }
-        
+
         if (!is_array($jsonObject['data'])) {
             throw new \Exception('Data is not an array in JSON response');
         }
-        
+
         foreach ($jsonObject['data'] as $key => $movieObject) {
             try {
                 $movieObject = (object) $movieObject; // Convert array to object for compatibility
-                
+
                 if (empty($movieObject->slug)) {
                     Log::warning('Munowatch movie missing slug', ['key' => $key, 'title' => $movieObject->title ?? 'Unknown']);
                     continue;
@@ -401,13 +408,13 @@ class MovieCrawlerWebsite extends Model
                 $page->page_content = null;
                 $page->error_message = null;
                 $page->last_fetched_at = null;
-                
+
                 // Determine type based on category_id in current URL
                 $current_category = 1;
                 if (preg_match('/\/p\/(\d+)\//', $this->url, $matches)) {
                     $current_category = (int)$matches[1];
                 }
-                
+
                 // Category mapping: 1=movie, 2=series, 3=korean, 4=animation
                 switch ($current_category) {
                     case 1:
@@ -425,17 +432,16 @@ class MovieCrawlerWebsite extends Model
                     default:
                         $page->type = 'Movie';
                 }
-                
+
                 // Store additional munowatch-specific fields
                 $page->row_id = $movieObject->id ?? null;
                 $page->img_port_muno_file_name = $movieObject->poster ?? null;
                 $page->bunny_file_name = $movieObject->video_url ?? null;
                 $page->tmdb_poster_path = $movieObject->poster_path ?? null;
                 $page->vj = 'Munowatch API';
-                
+
                 $page->save();
                 $jobLinksNew[] = $url;
-                
             } catch (\Exception $e) {
                 Log::error('Failed to process Munowatch movie', [
                     'key' => $key,
