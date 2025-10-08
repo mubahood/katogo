@@ -58,7 +58,12 @@ class MovieCrawlerWebsite extends Model
         $this->get_next_page_link();
         try {
             if ($this->slug == self::MUNOWATCH) {
-                $my_html = Utils::call_munowatch_api($this->last_page_url, $this->token, $this->email);
+                // Use the correct headers format for munowatch API (same as Flutter app)
+                $headers = [
+                    'X-Api-Key' => $this->token,
+                    'User-Agent' => 'okhttp/4.9.0'
+                ];
+                $my_html = Utils::get_url($this->last_page_url, $headers);
             } else {
                 $my_html = Utils::get_url($this->last_page_url);
             }
@@ -409,9 +414,9 @@ class MovieCrawlerWebsite extends Model
                     continue;
                 }
 
-                // Create URL based on munowatch structure - use vid for dashboard responses
-                $slug = $movieObject->slug ?? $movieId; // Use slug if available, otherwise use vid
-                $url = 'https://munowatch.org/movie/' . $slug;
+                // Create URL based on munowatch API structure - preview endpoint for details
+                $userId = '169464'; // Default user ID used by the API
+                $url = "https://munowatch.org/api/preview/v2/{$movieId}/{$userId}";
 
                 // Check if page already exists
                 $existingPage = MovieCrawlerPage::where('url', $url)->first();
@@ -425,7 +430,7 @@ class MovieCrawlerWebsite extends Model
                 $page->movie_crawler_website_id = $this->id;
                 $page->title = $movieObject->title ?? 'Unknown Title';
                 $page->status = 'pending';
-                $page->slug = $slug;
+                $page->slug = (string)$movieId; // Use movieId as slug
                 $page->movie_id = null;
                 $page->page_content = null;
                 $page->error_message = null;
