@@ -2,13 +2,13 @@ php artisan make:model MovieCrawlerPage -m
 php artisan make:model MovieCrawlerPage -m
 php artisan make:model MovieCrawlerPage -m
 
-php artisan admin:make SubscriptionPlanController --model=App\Models\SubscriptionPlan
-php artisan admin:make SubscriptionPlanController --model=App\Models\SubscriptionPlanController --model=App\\Models\\SubscriptionPlan
+php artisan admin:make MunowatchCategoryController --model=App\Models\MunowatchCategory
+php artisan admin:make MunowatchCategoryController --model=App\Models\MunowatchCategoryController --model=App\\Models\\MunowatchCategory
 
-php artisan db:seed --class=App\\Models\\php artisan admin:make SubscriptionPlanController --model=App\Models\SubscriptionPlan
+php artisan db:seed --class=App\\Models\\php artisan admin:make MunowatchCategoryController --model=App\Models\MunowatchCategory
 
 
-(base) mac@Macs-MacBook-Pro katogo % php artisan admin:make SubscriptionPlanController --model=App\\Models\\SubscriptionPlan
+(base) mac@Macs-MacBook-Pro katogo % php artisan admin:make MunowatchCategoryController --model=App\\Models\\MunowatchCategory
 
 php artisan make:migration add_page_source_url_to_movie_models --table=movie_models
 

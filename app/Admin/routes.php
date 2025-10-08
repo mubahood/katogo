@@ -14,7 +14,10 @@ Route::group([
     $router->get('dashboard', 'HomeController@index')->name('home');
 
 
-     $router->resource('subscription-plans', SubscriptionPlanController::class);
+
+    $router->resource('munowatch-categories', MunowatchCategoryController::class);
+
+    $router->resource('subscription-plans', SubscriptionPlanController::class);
     $router->resource('scraper-models', ScraperModelController::class);
     $router->resource('movies-active', MovieModelController::class);
     $router->resource('movies-series', MovieModelController::class);
