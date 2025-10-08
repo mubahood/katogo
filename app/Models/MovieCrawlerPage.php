@@ -404,10 +404,7 @@ class MovieCrawlerPage extends Model
             }
         }
     }
-                throw $th; // Throw original error
-            }
-        }
-    }
+                
 
     public function process_munowatch()
     {
@@ -796,10 +793,19 @@ class MovieCrawlerPage extends Model
                 'final_episode_count' => $actualEpisodeCount,
                 'is_new_series' => $isNewSeries
             ];
-                    $episodePlayingUrl = $episodeData['playingUrl'] ?? $episodeData['playing_url'] ?? '';
-                    $episodeEmbedUrl = $episodeData['embedurl'] ?? $episodeData['embed_url'] ?? '';
-                    $episodeOpenloadUrl = $episodeData['openload'] ?? $episodeData['openload_url'] ?? '';
-                    $episodeStreamUrl = $episodeData['stream_url'] ?? $episodeData['url'] ?? '';
+            
+            $this->notes = "Series processing completed successfully.\n" . json_encode($processingStats, JSON_PRETTY_PRINT);
+            $this->save();
+
+            return $series;
+
+        } catch (\Throwable $th) {
+            $this->status = 'error';
+            $this->error_message = 'Error processing munowatch series data: ' . $th->getMessage();
+            $this->save();
+            throw $th;
+        }
+    }
                     
                     // Determine primary video URL for episode
                     $primaryEpisodeUrl = '';

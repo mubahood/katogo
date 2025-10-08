@@ -288,9 +288,8 @@ class SubscriptionApiController extends Controller
         try {
             $user = $request->user();
 
-            $user = Utils::get_user($request);
-            if ($user == null) {
-                Utils::error("Not authenticated.");
+            if (!$user) {
+                $user = Utils::get_user($request);
             }
 
             if (!$user) {
@@ -356,6 +355,10 @@ class SubscriptionApiController extends Controller
             $user = $request->user();
 
             if (!$user) {
+                $user = Utils::get_user($request);
+            }
+
+            if (!$user) {
                 return response()->json([
                     'code' => 0,
                     'status' => 401,
@@ -417,6 +420,20 @@ class SubscriptionApiController extends Controller
             }
 
             $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 401,
+                    'message' => 'Authentication required',
+                    'data' => null,
+                ], 401);
+            }
+
             $subscription = Subscription::findOrFail($request->subscription_id);
 
             // Verify ownership
@@ -503,6 +520,20 @@ class SubscriptionApiController extends Controller
             }
 
             $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 401,
+                    'message' => 'Authentication required',
+                    'data' => null,
+                ], 401);
+            }
+
             $subscription = Subscription::findOrFail($request->subscription_id);
 
             // Verify ownership
@@ -568,6 +599,10 @@ class SubscriptionApiController extends Controller
     {
         try {
             $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
 
             if (!$user) {
                 return response()->json([
@@ -652,6 +687,10 @@ class SubscriptionApiController extends Controller
     {
         try {
             $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
 
             if (!$user) {
                 return response()->json([
@@ -751,6 +790,10 @@ class SubscriptionApiController extends Controller
             $user = $request->user();
 
             if (!$user) {
+                $user = Utils::get_user($request);
+            }
+
+            if (!$user) {
                 return response()->json([
                     'code' => 0,
                     'status' => 401,
@@ -831,6 +874,10 @@ class SubscriptionApiController extends Controller
     {
         try {
             $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
 
             if (!$user) {
                 return response()->json([
