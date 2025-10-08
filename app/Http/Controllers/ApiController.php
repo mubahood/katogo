@@ -845,28 +845,6 @@ class ApiController extends BaseController
         $lists[] = $my_list;
 
         
-        //top movies
-        if (count($movies) > 10) {
-
-            //top movies 
-            //movies with most views_time_count but not in my_view_ids
-            $top_movies = MovieModel::whereNotIn('id', $my_view_ids)
-                ->where('status', 'Active')
-                ->where('type', 'Movie')
-                ->orderBy('views_time_count', 'desc')
-                ->limit(20)
-                ->get($take_only);
-
-            //shuffle $top_movies
-            // $top_movies = $top_movies->shuffle(); 
-
-            if ($top_movies->count() > 0) {
-                $my_list = [];
-                $my_list['title'] = "Featured Movies";
-                $my_list['movies'] = $top_movies;
-                $lists[] = $my_list;
-            }
-        }
 
         //watched_movies continue watching
         $watched_movies = collect();
@@ -891,6 +869,30 @@ class ApiController extends BaseController
         }
         
         $lists[] = $my_list;
+
+                //top movies
+        if (count($movies) > 10) {
+
+            //top movies 
+            //movies with most views_time_count but not in my_view_ids
+            $top_movies = MovieModel::whereNotIn('id', $my_view_ids)
+                ->where('status', 'Active')
+                ->where('type', 'Movie')
+                ->orderBy('views_time_count', 'desc')
+                ->limit(20)
+                ->get($take_only);
+
+            //shuffle $top_movies
+            // $top_movies = $top_movies->shuffle(); 
+
+            if ($top_movies->count() > 0) {
+                $my_list = [];
+                $my_list['title'] = "Top Movies";
+                $my_list['movies'] = $top_movies;
+                $lists[] = $my_list;
+            }
+        }
+
 
 
         //trending movies
