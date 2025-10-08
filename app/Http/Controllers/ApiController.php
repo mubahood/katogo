@@ -833,6 +833,17 @@ class ApiController extends BaseController
                 ->pluck('movie_model_id')
                 ->toArray();
         }
+
+        //add latest movies list
+        $my_list = [];
+        $my_list['title'] = "Latest Movies";
+        $my_list['movies'] = MovieModel::where('status', 'Active')
+            ->where('type', 'Movie')
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get($take_only);
+        $lists[] = $my_list;
+
         
         //top movies
         if (count($movies) > 10) {

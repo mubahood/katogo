@@ -106,6 +106,11 @@ Route::get('munowatch-series-crawler', function () {
         echo "🚀 Starting Munowatch Series Crawler...\n";
         echo "=====================================\n\n";
         
+        // Show current configuration
+        $currentCategory = \App\Models\MunowatchMovieCategory::find($munowatchWebsite->current_munowatch_category_id);
+        echo "📋 Current Category: " . ($currentCategory ? $currentCategory->category_name : 'Unknown') . "\n";
+        echo "📋 API Endpoint Type: " . ($currentCategory ? $currentCategory->api_endpoint_type : 'Unknown') . "\n\n";
+        
         // Step 1: Fetch pages (Level 1 - Website → Pages)
         echo "📥 Level 1: Fetching series pages...\n";
         $munowatchWebsite->get_next_page_content();
@@ -116,7 +121,7 @@ Route::get('munowatch-series-crawler', function () {
         Utils::fetch_pages_content();
         echo "✅ Content processed successfully\n\n";
         
-        // Step 3: Report results
+        // Step 3: Report detailed results
         echo "📊 Crawler Results:\n";
         echo "==================\n";
         
@@ -128,12 +133,42 @@ Route::get('munowatch-series-crawler', function () {
                                        ->where('status', 'success')
                                        ->count();
         
-        $seriesCount = SeriesMovie::where('created_at', '>=', Carbon::now()->subHour())
+        $recentSeries = SeriesMovie::where('created_at', '>=', Carbon::now()->subHour())
                                  ->count();
+        
+        $recentMovies = \App\Models\MovieModel::where('created_at', '>=', Carbon::now()->subHour())
+                                             ->count();
+        
+        $recentSeriesEpisodes = \App\Models\MovieModel::where('type', 'Series')
+                                                      ->where('created_at', '>=', Carbon::now()->subHour())
+                                                      ->count();
         
         echo "Pending Pages: $pendingPages\n";
         echo "Processed Pages: $successPages\n";  
-        echo "New Series Created: $seriesCount\n\n";
+        echo "New Series Created: $recentSeries\n";
+        echo "New Movies Created: $recentMovies\n";
+        echo "New Series Episodes: $recentSeriesEpisodes\n\n";
+        
+        // Debug information if no series found
+        if ($recentSeries == 0 && $recentSeriesEpisodes == 0 && $recentMovies > 0) {
+            echo "⚠️  DEBUG INFO: Only movies detected, no series\n";
+            echo "💡 This may indicate:\n";
+            echo "   - Current category contains mostly movies\n";
+            echo "   - Series detection logic needs refinement\n";
+            echo "   - API response format has changed\n\n";
+            
+            // Show sample of recent content
+            $recentContent = \App\Models\MovieModel::where('created_at', '>=', Carbon::now()->subHour())
+                                                   ->orderBy('id', 'desc')
+                                                   ->limit(3)
+                                                   ->get(['id', 'title', 'type']);
+            
+            echo "📋 Recent Content Sample:\n";
+            foreach ($recentContent as $item) {
+                echo "  - ID: {$item->id} | Type: {$item->type} | Title: " . substr($item->title, 0, 50) . "...\n";
+            }
+            echo "\n";
+        }
         
         echo "🎯 Munowatch Series Crawler Completed Successfully!\n";
         
