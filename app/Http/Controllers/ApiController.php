@@ -1635,6 +1635,24 @@ class ApiController extends BaseController
             return $this->error('Wrong credentials.');
         }
         
+        // CHECKPOINT 4: Auto-assign free trial on successful login
+        try {
+            $freeTrialResult = $user->autoAssignFreeTrial();
+            if ($freeTrialResult['success']) {
+                \Illuminate\Support\Facades\Log::info('Free trial auto-assigned on login', [
+                    'user_id' => $user->id,
+                    'endpoint' => 'login',
+                    'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to auto-assign free trial on login', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'endpoint' => 'login',
+            ]);
+        }
+        
         // Add token to user object for API response (don't save to DB)
         $user_data = $user->toArray();
         $user_data['token'] = $token;

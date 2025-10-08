@@ -8,6 +8,7 @@ use Encore\Admin\Auth\Database\Administrator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\HasApiTokens;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
@@ -350,7 +351,6 @@ class User extends Administrator implements JWTSubject
      */
     public function hasActiveSubscription($includeGracePeriod = true)
     {
-        return true;
         $subscription = $this->activeSubscription();
 
         if (!$subscription) {
@@ -606,5 +606,215 @@ class User extends Administrator implements JWTSubject
 
         $subscription->save();
         return $subscription;
+    }
+
+    /**
+     * Give free subscription to user if they don't already have one
+     * 
+     * CRITICAL: This method is designed to be called multiple times safely
+     * It includes comprehensive checks to prevent duplicates and errors
+     * 
+     * @param bool $forceNew Force creation of new free trial even if user has subscriptions
+     * @return array Result with status, message, and subscription data
+     */
+    public function giveFreeSubscription($forceNew = false)
+    {
+        try {
+            // STEP 1: Check if user already has an active subscription
+            if (!$forceNew) {
+                $activeSubscription = $this->activeSubscription();
+                if ($activeSubscription) {
+                    Log::info('User already has active subscription', [
+                        'user_id' => $this->id,
+                        'subscription_id' => $activeSubscription->id,
+                        'plan_name' => $activeSubscription->plan->name ?? 'Unknown',
+                        'end_date' => $activeSubscription->end_date_time,
+                    ]);
+                    
+                    return [
+                        'success' => false,
+                        'already_has_subscription' => true,
+                        'message' => 'User already has an active subscription',
+                        'subscription' => $activeSubscription->toArray(),
+                        'user_id' => $this->id,
+                    ];
+                }
+            }
+
+            // STEP 2: Check if user already has a free trial subscription (completed or active)
+            if (!$forceNew) {
+                $existingFreeTrial = $this->subscriptions()
+                    ->whereHas('plan', function ($query) {
+                        $query->where('is_trial', true)
+                              ->orWhere('slug', 'free-trial-15-days')
+                              ->orWhere('name', 'Free Trial');
+                    })
+                    ->whereIn('status', ['Active', 'Expired', 'Completed'])
+                    ->whereIn('payment_status', ['Completed', 'Free'])
+                    ->first();
+
+                if ($existingFreeTrial) {
+                    Log::info('User already used free trial', [
+                        'user_id' => $this->id,
+                        'trial_subscription_id' => $existingFreeTrial->id,
+                        'trial_status' => $existingFreeTrial->status,
+                        'trial_end_date' => $existingFreeTrial->end_date_time,
+                    ]);
+                    
+                    return [
+                        'success' => false,
+                        'already_used_trial' => true,
+                        'message' => 'User has already used their free trial',
+                        'trial_subscription' => $existingFreeTrial->toArray(),
+                        'user_id' => $this->id,
+                    ];
+                }
+            }
+
+            // STEP 3: Get the free trial plan
+            $freeTrialPlan = \App\Models\SubscriptionPlan::where(function ($query) {
+                $query->where('slug', 'free-trial-15-days')
+                      ->orWhere('name', 'Free Trial')
+                      ->orWhere(function ($subQuery) {
+                          $subQuery->where('price', 0)
+                                   ->where('duration_days', 15)
+                                   ->where('is_trial', true);
+                      });
+            })
+            ->where('status', 'Active')
+            ->first();
+
+            if (!$freeTrialPlan) {
+                Log::error('Free trial plan not found', [
+                    'user_id' => $this->id,
+                    'action' => 'giveFreeSubscription',
+                ]);
+                
+                return [
+                    'success' => false,
+                    'plan_not_found' => true,
+                    'message' => 'Free trial plan not found in database',
+                    'user_id' => $this->id,
+                ];
+            }
+
+            // STEP 4: Create the free subscription
+            $startDate = now();
+            $endDate = $startDate->copy()->addDays($freeTrialPlan->duration_days);
+
+            $freeSubscription = new \App\Models\Subscription([
+                'user_id' => $this->id,
+                'plan_id' => $freeTrialPlan->id,
+                'days' => $freeTrialPlan->duration_days,
+                'start_date_time' => $startDate,
+                'end_date_time' => $endDate,
+                'grace_period_end' => $endDate->copy()->addDays(3), // 3 days grace period
+                'status' => 'Active', // CRITICAL: Mark as Active immediately
+                'auto_renew' => false, // Free trial doesn't auto-renew
+                'payment_method' => 'Free', // Special payment method for free subscriptions
+                'payment_status' => 'Completed', // CRITICAL: Mark as paid (free)
+                'pesapal_transaction_id' => null, // No payment transaction
+                'pesapal_tracking_id' => null,
+                'pesapal_merchant_reference' => 'FREE-TRIAL-' . $this->id . '-' . time(),
+                'pesapal_signature' => null,
+                'pesapal_response' => ['type' => 'free_trial', 'auto_assigned' => true],
+                'payment_url' => null,
+                'payment_confirmed_at' => now(), // CRITICAL: Mark as confirmed
+                'failed_at' => null,
+                'amount_paid' => 0.00, // Free trial costs nothing
+                'currency' => $freeTrialPlan->currency,
+                'is_extension' => false,
+                'extended_from_id' => null,
+                'cancelled_at' => null,
+                'cancelled_reason' => null,
+                'cancelled_by' => null,
+                'ip_address' => request() ? request()->ip() : null,
+                'user_agent' => request() ? request()->userAgent() : 'System Auto-Assignment',
+                'expiry_notification_sent' => false,
+                'expiry_notification_at' => null,
+            ]);
+
+            // STEP 5: Save the subscription
+            $freeSubscription->save();
+
+            // STEP 6: Log the successful creation
+            Log::info('Free subscription created successfully', [
+                'user_id' => $this->id,
+                'subscription_id' => $freeSubscription->id,
+                'plan_id' => $freeTrialPlan->id,
+                'plan_name' => $freeTrialPlan->name,
+                'start_date' => $startDate->toDateTimeString(),
+                'end_date' => $endDate->toDateTimeString(),
+                'duration_days' => $freeTrialPlan->duration_days,
+                'amount_paid' => $freeSubscription->amount_paid,
+                'status' => $freeSubscription->status,
+                'payment_status' => $freeSubscription->payment_status,
+            ]);
+
+            // STEP 7: Return success response
+            return [
+                'success' => true,
+                'message' => 'Free subscription created successfully',
+                'subscription' => $freeSubscription->toArray(),
+                'plan' => $freeTrialPlan->toArray(),
+                'user_id' => $this->id,
+                'start_date' => $startDate->toDateTimeString(),
+                'end_date' => $endDate->toDateTimeString(),
+                'days_granted' => $freeTrialPlan->duration_days,
+            ];
+
+        } catch (\Exception $e) {
+            // STEP 8: Handle any errors gracefully
+            Log::error('Failed to create free subscription', [
+                'user_id' => $this->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'force_new' => $forceNew,
+            ]);
+
+            return [
+                'success' => false,
+                'error' => true,
+                'message' => 'Failed to create free subscription: ' . $e->getMessage(),
+                'user_id' => $this->id,
+                'exception' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Check if user is eligible for free trial
+     * 
+     * @return bool
+     */
+    public function isEligibleForFreeTrial()
+    {
+        // Check if user already has any subscription (active or expired)
+        $hasAnySubscription = $this->subscriptions()
+            ->whereIn('status', ['Active', 'Expired', 'Completed'])
+            ->whereIn('payment_status', ['Completed', 'Free'])
+            ->exists();
+
+        return !$hasAnySubscription;
+    }
+
+    /**
+     * Auto-assign free trial if user is eligible
+     * This is a safe wrapper around giveFreeSubscription
+     * 
+     * @return array
+     */
+    public function autoAssignFreeTrial()
+    {
+        if (!$this->isEligibleForFreeTrial()) {
+            return [
+                'success' => false,
+                'already_has_subscription' => true,
+                'message' => 'User is not eligible for free trial',
+                'user_id' => $this->id,
+            ];
+        }
+
+        return $this->giveFreeSubscription();
     }
 }

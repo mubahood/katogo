@@ -297,6 +297,24 @@ class SubscriptionApiController extends Controller
                 ], 401);
             }
 
+            // CHECKPOINT 3: Auto-assign free trial if user is eligible
+            try {
+                $freeTrialResult = $user->autoAssignFreeTrial();
+                if ($freeTrialResult['success']) {
+                    Log::info('Free trial auto-assigned via mySubscription endpoint', [
+                        'user_id' => $user->id,
+                        'endpoint' => 'mySubscription',
+                        'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to auto-assign free trial in mySubscription endpoint', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                    'endpoint' => 'mySubscription',
+                ]);
+            }
+
             $subscriptionStatus = $user->getSubscriptionStatus();
 
             return response()->json([

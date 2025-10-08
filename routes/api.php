@@ -59,6 +59,13 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('subscriptions/{id}/cancel', [SubscriptionApiController::class, 'cancelPending']);
 });
 
+// FREE TRIAL TEST ROUTES (Remove in production)
+Route::get('test-free-trial/{user_id?}', [App\Http\Controllers\FreeTrialTestController::class, 'testFreeTrial']);
+Route::get('test-auto-assignment/{user_id?}', [App\Http\Controllers\FreeTrialTestController::class, 'testAutoAssignment']);
+Route::get('test-free-trial-plan', [App\Http\Controllers\FreeTrialTestController::class, 'getFreeTrialPlan']);
+Route::get('test-free-trial-stats', [App\Http\Controllers\FreeTrialTestController::class, 'getFreeTrialStats']);
+Route::delete('test-free-trial-cleanup/{user_id?}', [App\Http\Controllers\FreeTrialTestController::class, 'cleanupTestData']);
+
 Route::get('products-1', [ApiController::class, 'products_1']); 
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {

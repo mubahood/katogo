@@ -377,8 +377,27 @@ class MovieCrawlerPage extends Model
                 $totalEpisodes = $preview['total_episodes'] ?? 0;
                 $seriesCode = $preview['series_code'] ?? '';
                 $episodeState = $preview['episode_state'] ?? '';
+                $nxtEps = $preview['nxt_eps'] ?? '';
+                $nxtEpsId = $preview['nxt_eps_id'] ?? '';
                 
+                // Enhanced series detection for munowatch API
                 if ($episodes > 1 || $totalEpisodes > 1 || !empty($seriesCode) || !empty($episodeState)) {
+                    $isSeries = true;
+                }
+                
+                // Check for next episode indicators (series specific)
+                if (!empty($nxtEps) || !empty($nxtEpsId)) {
+                    $isSeries = true;
+                }
+                
+                // Check title patterns for series indicators
+                $videoTitle = $preview['video_title'] ?? '';
+                $titleLower = strtolower($videoTitle);
+                if (strpos($titleLower, 'episode') !== false || 
+                    strpos($titleLower, 'season') !== false ||
+                    strpos($titleLower, 'part') !== false ||
+                    preg_match('/s\d+e\d+/i', $videoTitle) || // S01E01 pattern
+                    preg_match('/\d+x\d+/', $videoTitle)) {   // 1x01 pattern
                     $isSeries = true;
                 }
             }
