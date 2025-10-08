@@ -193,25 +193,44 @@ class MunowatchMovieCategory extends Model
      */
     public function determineBestAPIEndpoint()
     {
-        // Based on Flutter app analysis, different categories use different endpoints
+        // Based on testing, only certain endpoints work:
+        // - shows/g/{categoryId}/{userId}/{lastId} works for TV shows (category 5)
+        // - search/{query}/{userId}/{lastId} works for search
+        // - browse and list endpoints return 500 errors
+        
         $categoryId = $this->munowatch_category_id;
         
-        // Special handling for known category types
-        if (in_array($categoryId, [5])) {
-            // TV Shows category uses shows endpoint
+        if ($categoryId == 5) {
+            // TV Shows/Action category uses shows endpoint (confirmed working)
             $this->api_endpoint_type = self::ENDPOINT_SHOWS;
             $this->pagination_endpoint = "shows/g/{$categoryId}/{uid}/{lid}";
             $this->has_pagination = true;
-        } elseif (in_array($categoryId, [1, 2, 3, 4, 6, 7, 8, 9, 10])) {
-            // Movie categories use browse endpoint  
-            $this->api_endpoint_type = self::ENDPOINT_BROWSE;
-            $this->pagination_endpoint = "browse/{$categoryId}";
-            $this->has_pagination = true;
         } else {
-            // Other categories may use list endpoint
-            $this->api_endpoint_type = self::ENDPOINT_LIST;
-            $this->pagination_endpoint = "list/1/{$categoryId}/{uid}/{lid}";
+            // For other categories, use search with category-specific terms
+            $this->api_endpoint_type = 'search';
+            
+            // Map category names to search terms
+            $searchTerms = [
+                1 => 'latest',        // My List
+                3 => 'romance',       // Romance
+                4 => 'latest',        // Latest on Munowatch
+                6 => 'popular',       // You may also like
+                8 => 'drama',         // Drama
+                9 => 'sci-fi',        // Sci Fi
+                10 => 'horror',       // Horror
+                17 => 'latest',       // Continue watching
+                18 => 'latest',       // Latest Uploads
+                20 => 'popular',      // Favourites
+                22 => 'popular',      // Most Liked
+                23 => 'episodes',     // Last watched episodes
+            ];
+            
+            $searchTerm = $searchTerms[$categoryId] ?? 'latest';
+            $this->pagination_endpoint = "search/{$searchTerm}/{uid}/{lid}";
             $this->has_pagination = true;
+            
+            // Store search term for URL generation
+            $this->api_parameters = ['search_term' => $searchTerm];
         }
 
         $this->save();
@@ -223,20 +242,27 @@ class MunowatchMovieCategory extends Model
     public function getMoviesFetchURL($page = 1, $userId = '169464')
     {
         $baseUrl = 'https://munowatch.org/api/';
+        $lastId = ($page - 1) * 20; // Assume 20 items per page, use lastId for pagination
         
         switch ($this->api_endpoint_type) {
             case self::ENDPOINT_SHOWS:
-                return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $page], $this->pagination_endpoint);
+                return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $lastId], $this->pagination_endpoint);
+                
+            case 'search':
+                $searchTerm = $this->api_parameters['search_term'] ?? 'latest';
+                return $baseUrl . "search/{$searchTerm}/{$userId}/{$lastId}";
                 
             case self::ENDPOINT_BROWSE:
+                // Keep for fallback, though it doesn't work
                 return $baseUrl . $this->pagination_endpoint;
                 
             case self::ENDPOINT_LIST:
-                return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $page], $this->pagination_endpoint);
+                // Keep for fallback, though it doesn't work
+                return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $lastId], $this->pagination_endpoint);
                 
             default:
-                // Fallback to browse endpoint
-                return $baseUrl . "browse/{$this->munowatch_category_id}";
+                // Fallback to search
+                return $baseUrl . "search/latest/{$userId}/{$lastId}";
         }
     }
 
@@ -266,8 +292,21 @@ class MunowatchMovieCategory extends Model
             $moviesData = json_decode($response, true);
             
             if (!$moviesData) {
-                throw new \Exception('Invalid movies response for category');
+                throw new \Exception('Invalid JSON response for category: ' . substr($response, 0, 200));
             }
+            
+            // Validate response structure
+            if (!is_array($moviesData)) {
+                throw new \Exception('Response is not an array: ' . gettype($moviesData));
+            }
+            
+            // Log the successful response structure for debugging
+            Log::info('Category movies fetched successfully', [
+                'category_id' => $this->munowatch_category_id,
+                'category_name' => $this->category_name,
+                'movies_count' => count($moviesData),
+                'response_sample' => array_slice($moviesData, 0, 2) // First 2 items for structure
+            ]);
 
             // Update fetch statistics
             $this->update([
