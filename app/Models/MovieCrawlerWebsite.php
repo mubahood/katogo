@@ -137,64 +137,57 @@ class MovieCrawlerWebsite extends Model
     }
     
     /**
-     * Handle Munowatch specific page link generation using category management system
+     * Handle Munowatch specific page link generation using dynamic categories from dashboard API
      * 
-     * Now uses MunowatchCategory model for proper category rotation and management.
-     * Categories are fetched from database with their own crawling status and parameters.
+     * Now uses MunowatchMovieCategory model for proper category rotation and management.
+     * Categories are fetched dynamically from munowatch dashboard API with real category IDs.
      * 
      * @return string Next page URL
      * @throws \Exception When no categories available or API structure invalid
      */
     private function handleMunowatchPageLink()
     {
-        // Get the next category for crawling using the new category system
-        $category = MunowatchCategory::getNextForCrawling();
+        // Ensure we have fresh dynamic categories from munowatch dashboard
+        if (MunowatchMovieCategory::needsDashboardRefresh()) {
+            try {
+                MunowatchMovieCategory::fetchCategoriesFromDashboard();
+                Log::info('Refreshed munowatch categories from dashboard');
+            } catch (\Exception $e) {
+                Log::warning('Failed to refresh munowatch categories', ['error' => $e->getMessage()]);
+            }
+        }
+
+        // Get the next category to fetch movies from
+        $category = MunowatchMovieCategory::getNextForMovieFetching();
         
         if (!$category) {
-            throw new \Exception('No munowatch categories available for crawling. Please seed categories first.');
+            Log::warning('No munowatch categories available for fetching movies');
+            // Fallback to a default page if no categories are available
+            return 'https://munowatch.org/api/browse/1';
         }
+
+        // Mark category as being fetched
+        $category->startFetching();
         
-        // Start crawling this category if not already in progress
-        if ($category->crawl_status !== MunowatchCategory::CRAWL_IN_PROGRESS) {
-            $category->startCrawling();
-        }
+        // Store reference to current category for tracking
+        $this->update(['current_munowatch_category_id' => $category->id]);
         
-        // Get next page for this category
-        $nextPage = $category->nextPage();
-        $userId = $this->email; // User ID stored in email field (169464)
+        // Get the API URL for fetching movies from this category
+        $url = $category->getMoviesFetchURL();
         
-        // Generate API URL using the category's method
-        $this->last_page_url = $category->getApiUrl($nextPage, $userId);
-        $this->page_number = $nextPage;
+        // Store URL for tracking
+        $this->last_page_url = $url;
+        $this->page_number = 1; // Start with page 1 for each category
         
-        // Check if category has reached page limit (20 pages per category)
-        if ($nextPage >= 20) {
-            // Complete this category and reset for next crawling cycle
-            $category->completeCrawling($category->new_videos_last_crawl);
-            $category->resetCrawling();
-            
-            Log::info('Munowatch category completed, moving to next', [
-                'website_id' => $this->id,
-                'completed_category' => $category->name,
-                'completed_category_id' => $category->munowatch_id,
-                'pages_crawled' => $nextPage,
-                'next_category_ready' => MunowatchCategory::getNextForCrawling()?->name ?? 'None'
-            ]);
-        }
-        
-        // Store current category info for tracking
-        $this->setAttribute('current_munowatch_category_id', $category->id);
-        
-        Log::debug('Munowatch page generation with category system', [
-            'website_id' => $this->id,
-            'category_name' => $category->name,
-            'category_id' => $category->munowatch_id,
-            'page' => $nextPage,
-            'url' => $this->last_page_url,
-            'crawl_status' => $category->crawl_status
+        Log::info('Selected munowatch category for crawling', [
+            'category_id' => $category->munowatch_category_id,
+            'category_name' => $category->category_name,
+            'endpoint_type' => $category->api_endpoint_type,
+            'url' => $url,
+            'total_movies' => $category->total_movies_in_category
         ]);
-        
-        return $this->last_page_url;
+
+        return $url;
     }
 
 
