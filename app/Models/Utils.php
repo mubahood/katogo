@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 include_once('simple_html_dom.php');
@@ -5983,6 +5984,356 @@ class Utils
                 'success' => false,
                 'error' => 'Failed to delete file: ' . $e->getMessage()
             ];
+        }
+    }
+
+    /**
+     * Dynamic HTTP client for munowatch API with authentication headers
+     * Enhanced with comprehensive error handling and stability features
+     * 
+     * @param string $url The URL to fetch
+     * @param array $headers Custom headers including authentication
+     * @param string $method HTTP method (GET, POST, etc.)
+     * @param array $data Request data for POST requests
+     * @param int $maxRetries Maximum retry attempts for failed requests
+     * @return string Response body
+     * @throws \Exception On HTTP errors after all retries exhausted
+     */
+    public static function get_url_with_auth($url, $headers = [], $method = 'GET', $data = [], $maxRetries = 3)
+    {
+        // Input validation
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException("Invalid URL provided: " . ($url ?? 'null'));
+        }
+        
+        if (!is_array($headers)) {
+            throw new \InvalidArgumentException("Headers must be an array");
+        }
+        
+        if (!in_array(strtoupper($method), ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])) {
+            throw new \InvalidArgumentException("Unsupported HTTP method: $method");
+        }
+        
+        if (!is_array($data)) {
+            throw new \InvalidArgumentException("Data must be an array");
+        }
+        
+        $attempt = 0;
+        $lastException = null;
+        
+        while ($attempt < $maxRetries) {
+            $attempt++;
+            
+            try {
+                // Default headers for munowatch API
+                $defaultHeaders = [
+                    'User-Agent' => 'Katogo-Crawler/1.0 (Laravel)',
+                    'Accept' => 'application/json, text/html, */*',
+                    'Content-Type' => 'application/json',
+                    'Cache-Control' => 'no-cache',
+                    'Pragma' => 'no-cache',
+                    'Connection' => 'keep-alive',
+                ];
+
+                // Merge with custom headers (custom headers override defaults)
+                $allHeaders = array_merge($defaultHeaders, $headers);
+
+                // Create Guzzle client with enhanced security and timeout settings
+                $client = new \GuzzleHttp\Client([
+                    'allow_redirects' => [
+                        'max' => 5,
+                        'strict' => true,
+                        'referer' => true,
+                        'protocols' => ['http', 'https'],
+                        'track_redirects' => true
+                    ],
+                    'verify' => false, // Disable SSL verification for development
+                    'timeout' => 120, // Increased timeout for API calls
+                    'connect_timeout' => 30,
+                    'read_timeout' => 90,
+                    'headers' => $allHeaders,
+                    'http_errors' => false, // Don't throw exceptions for HTTP errors
+                    'cookies' => true, // Enable cookie jar
+                    'decode_content' => true,
+                ]);
+
+                // Prepare request options
+                $options = [
+                    'stream' => false,
+                    'on_headers' => function (\Psr\Http\Message\ResponseInterface $response) {
+                        $contentLength = $response->getHeaderLine('Content-Length');
+                        if ($contentLength && $contentLength > 50 * 1024 * 1024) { // 50MB limit
+                            throw new \Exception('Response too large: ' . $contentLength . ' bytes');
+                        }
+                    }
+                ];
+                
+                if (strtoupper($method) === 'POST' && !empty($data)) {
+                    $options['json'] = $data;
+                }
+
+                // Make the HTTP request
+                $response = $client->request($method, $url, $options);
+
+                // Check response status
+                $statusCode = $response->getStatusCode();
+                $reasonPhrase = $response->getReasonPhrase();
+                
+                if ($statusCode >= 500) {
+                    throw new \Exception("Server Error $statusCode: $reasonPhrase (attempt $attempt/$maxRetries)");
+                }
+                
+                if ($statusCode >= 400) {
+                    $responseBody = (string) $response->getBody();
+                    $errorDetail = strlen($responseBody) > 0 ? substr($responseBody, 0, 200) : $reasonPhrase;
+                    throw new \Exception("Client Error $statusCode: $errorDetail");
+                }
+
+                // Get response body with size validation
+                $body = (string) $response->getBody();
+                
+                if (strlen($body) === 0 && $statusCode === 200) {
+                    Log::warning('Empty response received from munowatch API', [
+                        'url' => $url,
+                        'method' => $method,
+                        'status_code' => $statusCode,
+                        'attempt' => $attempt
+                    ]);
+                }
+
+                // Validate JSON response if Content-Type indicates JSON
+                $contentType = $response->getHeaderLine('Content-Type');
+                if (strpos($contentType, 'application/json') !== false && !empty($body)) {
+                    $jsonDecoded = json_decode($body, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        Log::warning('Invalid JSON response from munowatch API', [
+                            'url' => $url,
+                            'json_error' => json_last_error_msg(),
+                            'body_preview' => substr($body, 0, 200)
+                        ]);
+                    }
+                }
+
+                // Log successful API call for monitoring
+                Log::info('Munowatch API call successful', [
+                    'url' => $url,
+                    'method' => $method,
+                    'status_code' => $statusCode,
+                    'response_length' => strlen($body),
+                    'content_type' => $contentType,
+                    'has_auth_header' => isset($headers['Authorization']),
+                    'has_api_key' => isset($headers['X-Api-Key']),
+                    'attempt' => $attempt,
+                    'response_time' => microtime(true)
+                ]);
+
+                return $body;
+
+            } catch (\GuzzleHttp\Exception\ConnectException $e) {
+                $errorMessage = "Connection Error: " . $e->getMessage();
+                $lastException = new \Exception($errorMessage . " (attempt $attempt/$maxRetries)");
+                
+                Log::warning('Munowatch connection error - retrying', [
+                    'url' => $url,
+                    'attempt' => $attempt,
+                    'max_retries' => $maxRetries,
+                    'error' => $e->getMessage()
+                ]);
+                
+                if ($attempt < $maxRetries) {
+                    sleep(min(2 ** $attempt, 10)); // Exponential backoff with max 10 seconds
+                    continue;
+                }
+                
+            } catch (\GuzzleHttp\Exception\RequestException $e) {
+                $errorMessage = 'Guzzle Request Error: ' . $e->getMessage();
+                
+                if ($e->hasResponse()) {
+                    $response = $e->getResponse();
+                    $statusCode = $response->getStatusCode();
+                    $responseBody = (string) $response->getBody();
+                    $errorMessage .= " (Status: $statusCode, Body: " . substr($responseBody, 0, 200) . ")";
+                    
+                    // Don't retry on client errors (4xx)
+                    if ($statusCode >= 400 && $statusCode < 500) {
+                        Log::error('Munowatch client error - not retrying', [
+                            'url' => $url,
+                            'status_code' => $statusCode,
+                            'error' => $errorMessage
+                        ]);
+                        throw new \Exception($errorMessage);
+                    }
+                }
+
+                $lastException = new \Exception($errorMessage . " (attempt $attempt/$maxRetries)");
+                
+                Log::warning('Munowatch request error - retrying', [
+                    'url' => $url,
+                    'attempt' => $attempt,
+                    'max_retries' => $maxRetries,
+                    'error' => $errorMessage
+                ]);
+                
+                if ($attempt < $maxRetries) {
+                    sleep(min(2 ** $attempt, 10)); // Exponential backoff
+                    continue;
+                }
+
+            } catch (\Exception $e) {
+                $errorMessage = 'HTTP Client Error: ' . $e->getMessage();
+                $lastException = new \Exception($errorMessage . " (attempt $attempt/$maxRetries)");
+                
+                Log::warning('Munowatch general error - retrying', [
+                    'url' => $url,
+                    'attempt' => $attempt,
+                    'max_retries' => $maxRetries,
+                    'error' => $errorMessage
+                ]);
+                
+                if ($attempt < $maxRetries) {
+                    sleep(min(2 ** $attempt, 10)); // Exponential backoff
+                    continue;
+                }
+            }
+        }
+
+        // All retries exhausted - log final failure and throw
+        Log::error('Munowatch API call failed after all retries', [
+            'url' => $url,
+            'method' => $method,
+            'total_attempts' => $maxRetries,
+            'final_error' => $lastException ? $lastException->getMessage() : 'Unknown error'
+        ]);
+
+        throw $lastException ?? new \Exception("HTTP request failed after $maxRetries attempts");
+    }
+
+    /**
+     * Helper method to create munowatch authentication headers
+     * Enhanced with input validation and security checks
+     * 
+     * @param string $bearerToken Bearer token for Authorization header
+     * @param string $apiKey API key for X-Api-Key header
+     * @return array Headers array
+     * @throws \InvalidArgumentException When input parameters are invalid
+     */
+    public static function get_munowatch_headers($bearerToken, $apiKey)
+    {
+        // Input validation
+        if (empty($bearerToken) || !is_string($bearerToken)) {
+            throw new \InvalidArgumentException('Bearer token must be a non-empty string');
+        }
+        
+        if (empty($apiKey) || !is_string($apiKey)) {
+            throw new \InvalidArgumentException('API key must be a non-empty string');
+        }
+        
+        // Security validation - check for suspicious patterns
+        if (strlen($bearerToken) < 3 || strlen($bearerToken) > 512) {
+            throw new \InvalidArgumentException('Bearer token length is invalid (must be 3-512 characters)');
+        }
+        
+        if (strlen($apiKey) < 3 || strlen($apiKey) > 512) {
+            throw new \InvalidArgumentException('API key length is invalid (must be 3-512 characters)');
+        }
+        
+        // Check for potentially dangerous characters
+        if (preg_match('/[<>"\'\r\n\t]/', $bearerToken) || preg_match('/[<>"\'\r\n\t]/', $apiKey)) {
+            throw new \InvalidArgumentException('Bearer token or API key contains invalid characters');
+        }
+        
+        return [
+            'Authorization' => 'Bearer ' . trim($bearerToken),
+            'X-Api-Key' => trim($apiKey),
+        ];
+    }
+
+    /**
+     * Specific method for munowatch API calls with automatic authentication
+     * Enhanced with validation, retry logic, and comprehensive error handling
+     * 
+     * @param string $url API endpoint URL
+     * @param string $bearerToken Bearer token
+     * @param string $apiKey API key
+     * @param string $method HTTP method
+     * @param array $data Request data
+     * @param int $maxRetries Maximum retry attempts
+     * @return string JSON response
+     * @throws \InvalidArgumentException When input parameters are invalid
+     * @throws \Exception When API call fails after all retries
+     */
+    public static function call_munowatch_api($url, $bearerToken, $apiKey, $method = 'GET', $data = [], $maxRetries = 3)
+    {
+        // Validate inputs
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException("Invalid API URL provided: " . ($url ?? 'null'));
+        }
+        
+        if (empty($bearerToken) || !is_string($bearerToken)) {
+            throw new \InvalidArgumentException('Bearer token must be a non-empty string');
+        }
+        
+        if (empty($apiKey) || !is_string($apiKey)) {
+            throw new \InvalidArgumentException('API key must be a non-empty string');
+        }
+        
+        // Check if URL is munowatch domain for security
+        $parsedUrl = parse_url($url);
+        if (!$parsedUrl || !isset($parsedUrl['host'])) {
+            throw new \InvalidArgumentException('Invalid URL format');
+        }
+        
+        $allowedDomains = ['munowatch.com', 'www.munowatch.com', 'api.munowatch.com'];
+        if (!in_array(strtolower($parsedUrl['host']), $allowedDomains)) {
+            Log::warning('Munowatch API call to non-standard domain', [
+                'url' => $url,
+                'domain' => $parsedUrl['host']
+            ]);
+        }
+        
+        try {
+            // Generate authenticated headers with validation
+            $headers = self::get_munowatch_headers($bearerToken, $apiKey);
+            
+            // Add munowatch-specific headers for better compatibility
+            $headers['Referer'] = 'https://munowatch.com';
+            $headers['Origin'] = 'https://munowatch.com';
+            
+            // Call the enhanced HTTP client
+            $response = self::get_url_with_auth($url, $headers, $method, $data, $maxRetries);
+            
+            // Additional validation for munowatch responses
+            if (empty($response)) {
+                throw new \Exception('Empty response received from munowatch API');
+            }
+            
+            // Log successful munowatch API call
+            Log::info('Munowatch authenticated API call successful', [
+                'url' => $url,
+                'method' => $method,
+                'response_length' => strlen($response),
+                'bearer_token_prefix' => substr($bearerToken, 0, 8) . '...',
+                'api_key_prefix' => substr($apiKey, 0, 8) . '...'
+            ]);
+            
+            return $response;
+            
+        } catch (\InvalidArgumentException $e) {
+            // Re-throw validation errors without retry
+            throw $e;
+            
+        } catch (\Exception $e) {
+            // Log the final failure with context
+            Log::error('Munowatch authenticated API call failed', [
+                'url' => $url,
+                'method' => $method,
+                'error' => $e->getMessage(),
+                'bearer_token_prefix' => substr($bearerToken, 0, 8) . '...',
+                'api_key_prefix' => substr($apiKey, 0, 8) . '...'
+            ]);
+            
+            // Re-throw with additional context
+            throw new \Exception('Munowatch API call failed: ' . $e->getMessage());
         }
     }
 }

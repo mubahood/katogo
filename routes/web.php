@@ -26,6 +26,41 @@ use Symfony\Component\Process\Process;
 | Authentication Routes
 |--------------------------------------------------------------------------
 */
+/* 
+
+- here are more informationf for you to understand how we clone records 
+- we basically have and enpint in web router called (crawler), this is visited once to fetch all pages from the movie site
+- we have 3 main levels of fetching movies records 
+- 1. Registering a MovieCrawlerWebsite and give it all basic details like url, name, logo, base domain etc. you can check in the database and understand more. this how we shall create one for munowatch and document very well. make sure you save all information that we shall need
+- 2. get_next_page_content function gets content of each page and saves in movie_crawler_pages table . so, since our munowatch is an api based site with json ... you have to keep that in mind
+- get_next_page_content calls process_pages that processes each page and saves all movie links in movie_models table
+- 3. fetch_pages_content function fetches each movie link from movie_models table and get all details of the movie and saves in movie_models table
+- so basically you have to make sure all these 3 levels are working well for munowatch and document very well
+- I might have not explained everything properly, scan the entire codebase and understand very well. 
+- document everything very well. focus on how we shall implement the crawler for munowatch
+- do this very very carefully because this is the most important part of the entire project and make sure you understand everything very well
+- focus only on the crawler part, ignore everything else for now.
+
+- here are some important points to note
+- first read the above implementation plan document everything very well
+- now go ahead and plan very well and start implementing the crawler for munowatch
+- register the website first, do the next strategic tasks on this very important task
+- make sure you document everything very well, every step you take
+- make sure you dont skip a thing
+- test each and everything that you make and make sure it actually works and saves in database
+- for things that need modification, make sure you modify very well and test. for example our http client has some static based things like header, you can make a new dynmic one for munowatch.
+- be very caretive, make sure you dont skip anything, 
+- make sure you understand the meaning of a movie and the meaning of a series and how we handle them in the system 
+- make sure for series are handled very well, because they are a bit complex. 
+- avoide duplicates at all cost, for movies that are not active dont conside them as duplicates
+- by default, make munowatch movies as active, because they are all active on the site. do this process very well.
+- make sure the crawler works very well and fetches all movies and series very well
+- and make sure it saves in the database very well and will be continue fetching new movies and series as they are added on the site
+- make sure the crawler is efficient and not suspecious to the site
+- make sure you document everything very well
+- make sure you dont skip any command that i have given you here
+- make sure you understand everything very well
+*/
 
 Route::get('crawler', function () {
 
