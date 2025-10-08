@@ -70,3 +70,10 @@ Route::get('/test-account-apis', function () {
 Route::get('/test-frontend', function () {
     return view('account');
 });
+
+// Test route for munowatch series crawler
+Route::get('/munowatch-series-crawler', function () {
+    // Run our series detection test directly
+    require_once app_path('test_series_detection.php');
+    return response()->json(['message' => 'Series detection test completed successfully']);
+});
