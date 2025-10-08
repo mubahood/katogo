@@ -23,6 +23,12 @@ class MovieCrawlerWebsite extends Model
         });
     }
 
+    protected $fillable = [
+        'name', 'base_url', 'current_page', 'last_page_url', 'fetch_status', 
+        'last_fetched_at', 'next_fetch_at', 'response_data', 'error_message', 
+        'status', 'current_munowatch_category_id'
+    ];
+
     //constant for fetch status
     const MY_VJ = 'my-vj';
     const MUNOWATCH = 'munowatch';
@@ -171,8 +177,8 @@ class MovieCrawlerWebsite extends Model
 
         if (!$category) {
             Log::warning('No munowatch categories available for fetching movies');
-            // Fallback to a default page if no categories are available
-            return 'https://munowatch.org/api/browse/1';
+            // Fallback to dashboard endpoint (safe and always works)
+            return 'https://munowatch.org/api/dashboard/v2/169464';
         }
 
         // Mark category as being fetched
@@ -371,25 +377,41 @@ class MovieCrawlerWebsite extends Model
             throw new \Exception('Failed to decode JSON response - null result');
         }
 
-        if (!isset($jsonObject['data']) || $jsonObject['data'] === null) {
-            throw new \Exception('No data found in JSON response');
+        // Handle both dashboard and list/browse response formats
+        $moviesData = null;
+        if (isset($jsonObject['dashboard']) && is_array($jsonObject['dashboard'])) {
+            // Dashboard response format - extract movies from all categories
+            $moviesData = [];
+            foreach ($jsonObject['dashboard'] as $category) {
+                if (isset($category['movies']) && is_array($category['movies'])) {
+                    $moviesData = array_merge($moviesData, $category['movies']);
+                }
+            }
+        } elseif (isset($jsonObject['data']) && is_array($jsonObject['data'])) {
+            // List/browse response format
+            $moviesData = $jsonObject['data'];
+        } else {
+            throw new \Exception('No valid data found in JSON response - expected dashboard or data key');
         }
 
-        if (!is_array($jsonObject['data'])) {
-            throw new \Exception('Data is not an array in JSON response');
+        if (empty($moviesData)) {
+            throw new \Exception('No movies found in response');
         }
 
-        foreach ($jsonObject['data'] as $key => $movieObject) {
+        foreach ($moviesData as $key => $movieObject) {
             try {
                 $movieObject = (object) $movieObject; // Convert array to object for compatibility
 
-                if (empty($movieObject->slug)) {
-                    Log::warning('Munowatch movie missing slug', ['key' => $key, 'title' => $movieObject->title ?? 'Unknown']);
+                // Dashboard response uses 'vid' instead of 'slug'
+                $movieId = $movieObject->vid ?? $movieObject->id ?? null;
+                if (empty($movieId)) {
+                    Log::warning('Munowatch movie missing ID/VID', ['key' => $key, 'title' => $movieObject->title ?? 'Unknown']);
                     continue;
                 }
 
-                // Create URL based on munowatch structure
-                $url = 'https://munowatch.com/movie/' . $movieObject->slug;
+                // Create URL based on munowatch structure - use vid for dashboard responses
+                $slug = $movieObject->slug ?? $movieId; // Use slug if available, otherwise use vid
+                $url = 'https://munowatch.org/movie/' . $slug;
 
                 // Check if page already exists
                 $existingPage = MovieCrawlerPage::where('url', $url)->first();
@@ -403,7 +425,7 @@ class MovieCrawlerWebsite extends Model
                 $page->movie_crawler_website_id = $this->id;
                 $page->title = $movieObject->title ?? 'Unknown Title';
                 $page->status = 'pending';
-                $page->slug = $movieObject->slug;
+                $page->slug = $slug;
                 $page->movie_id = null;
                 $page->page_content = null;
                 $page->error_message = null;
