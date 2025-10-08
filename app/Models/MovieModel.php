@@ -138,7 +138,7 @@ class MovieModel extends Model
 
         //encode the url
         $value = $url;
-        $value = rawurlencode($value);
+        $value = str_replace(' ', '%20', $value); 
         return $value;
     }
 
