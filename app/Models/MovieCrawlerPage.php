@@ -18,7 +18,26 @@ class MovieCrawlerPage extends Model
         $data = null;
         $this->status = 'pending';
         try {
-            $data = Utils::get_url($this->url);
+            // Check if this is a munowatch API URL that needs authentication
+            if (strpos($this->url, 'munowatch.org/api/') !== false) {
+                // Get the munowatch website to access its token
+                $munowatchWebsite = $this->movie_crawler_website;
+                if ($munowatchWebsite && $munowatchWebsite->slug == 'munowatch') {
+                    // Use the same authentication headers as the main crawler (both Authorization and X-Api-Key)
+                    $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+                    $headers = [
+                        'Authorization' => 'Bearer ' . $baseToken,
+                        'X-Api-Key' => $baseToken,
+                        'User-Agent' => 'okhttp/4.9.0'
+                    ];
+                    $data = Utils::get_url($this->url, $headers);
+                } else {
+                    throw new \Exception('Munowatch authentication token not found');
+                }
+            } else {
+                // Regular URL fetching for non-munowatch URLs
+                $data = Utils::get_url($this->url);
+            }
         } catch (\Throwable $th) {
             $this->error_message = $th->getMessage();
             $this->status = 'error';
@@ -46,6 +65,8 @@ class MovieCrawlerPage extends Model
         }
         if ($this->movie_crawler_website->slug == MovieCrawlerWebsite::MY_VJ) {
             $this->process_my_vj();
+        } elseif ($this->movie_crawler_website->slug == MovieCrawlerWebsite::MUNOWATCH) {
+            $this->process_munowatch();
         } else {
             $this->status = 'error';
             $this->error_message = "Slug not found When processing page content";
@@ -305,6 +326,117 @@ class MovieCrawlerPage extends Model
         } catch (\Throwable $th) {
             $this->status = 'error';
             $this->error_message = 'Error processing movie data: ' . $th->getMessage();
+            $this->save();
+            throw $th;
+        }
+    }
+
+    public function process_munowatch()
+    {
+        try {
+            // Check if movie already exists to avoid duplicates
+            $existing_post = MovieModel::where('external_url', $this->url)->first();
+            if ($existing_post != null) {
+                $this->error_message = 'Movie already exists with this external URL';
+                $this->status = 'error';
+                $this->save();
+                return;
+            }
+
+            // Parse JSON response from munowatch API
+            $jsonData = json_decode($this->page_content, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
+            }
+
+            if (!isset($jsonData['preview']) || !is_array($jsonData['preview'])) {
+                throw new \Exception('Invalid munowatch response structure - missing preview data');
+            }
+
+            $preview = $jsonData['preview'];
+
+            // Extract movie details from the preview data
+            $title = $preview['video_title'] ?? 'Unknown Title';
+            $description = $preview['video_description'] ?? '';
+            $genre = $preview['genre'] ?? '';
+            $duration = $preview['duration'] ?? '';
+            $poster = $preview['poster_url'] ?? '';
+            $videoId = $preview['id'] ?? '';
+
+            // Extract video URLs (key part for video links!)
+            $playingUrl = $preview['playingUrl'] ?? '';
+            $embedUrl = $preview['embedurl'] ?? '';
+            $openloadUrl = $preview['openload'] ?? '';
+            $nextEpisodeUrl = $preview['nxt_playing_url'] ?? '';
+
+            // Determine the primary video URL (priority: playingUrl > embedUrl > openloadUrl)
+            $primaryVideoUrl = '';
+            if (!empty($playingUrl)) {
+                $primaryVideoUrl = $playingUrl;
+            } elseif (!empty($embedUrl)) {
+                $primaryVideoUrl = $embedUrl;
+            } elseif (!empty($openloadUrl)) {
+                $primaryVideoUrl = $openloadUrl;
+            }
+
+            // Check for existing movie by title to avoid duplicates
+            $existing_post = MovieModel::where('title', $title)
+                ->where('status', 'Active')
+                ->first();
+            if ($existing_post != null) {
+                $this->error_message = 'Movie already exists with this title: ' . $title;
+                $this->status = 'error';
+                $this->save();
+                return;
+            }
+
+            // Create new movie record
+            $movie = new MovieModel();
+            $movie->title = $title;
+            $movie->description = $description;
+            $movie->genre = $genre;
+            $movie->duration = $duration;
+            $movie->external_url = $this->url; // API endpoint URL
+            $movie->page_source_url = $this->url;
+            $movie->poster_url = $poster;
+            $movie->type = $this->type ?? 'Movie';
+            $movie->vj = $this->vj ?? 'Munowatch API';
+            $movie->status = 'Active';
+            $movie->external_id = $videoId;
+
+            // Store video URLs (this is the key fix!)
+            $movie->url = $primaryVideoUrl; // Main video URL for playback
+            
+            // Store additional video URLs in description or notes for reference
+            $videoUrls = [];
+            if (!empty($playingUrl)) $videoUrls['playing'] = $playingUrl;
+            if (!empty($embedUrl)) $videoUrls['embed'] = $embedUrl;
+            if (!empty($openloadUrl)) $videoUrls['openload'] = $openloadUrl;
+            if (!empty($nextEpisodeUrl)) $videoUrls['next_episode'] = $nextEpisodeUrl;
+            
+            // Append video URLs info to description
+            if (!empty($videoUrls)) {
+                $movie->description .= "\n\nVideo URLs: " . json_encode($videoUrls, JSON_PRETTY_PRINT);
+            }
+            
+            // Set category based on genre or type
+            if (!empty($genre)) {
+                $movie->category = $genre;
+            } else {
+                $movie->category = $this->type ?? 'Movie';
+            }
+
+            $movie->save();
+
+            // Link the movie to this crawler page
+            $this->movie_id = $movie->id;
+            $this->status = 'success';
+            $this->error_message = null;
+            $this->save();
+
+        } catch (\Throwable $th) {
+            $this->status = 'error';
+            $this->error_message = 'Error processing munowatch movie data: ' . $th->getMessage();
             $this->save();
             throw $th;
         }
