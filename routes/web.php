@@ -1284,32 +1284,37 @@ Route::get('fix-munowatch-series', function (Request $request) {
         // ===== PHASE 1: FETCH MUNOWATCH API DATA =====
         echo '<h3>📥 Phase 1: Fetching Munowatch API Data</h3>';
         
-        // Extract user ID from external URL pattern
-        // URL format: https://munowatch.org/user/android-tv/1 or similar
-        $userId = 'android-tv'; // Default working user from our tests
-        if (preg_match('/user\/([^\/]+)/i', $series->external_url, $matches)) {
+        // Extract videoId and userId from external URL pattern
+        // URL format: https://munowatch.org/api/preview/v2/userId/videoId
+        $userId = null;
+        $videoId = null;
+        
+        if (preg_match('/preview\/v2\/(\d+)\/(\d+)/', $series->external_url, $matches)) {
             $userId = $matches[1];
-        } elseif ($series->external_id) {
-            $userId = $series->external_id;
+            $videoId = $matches[2];
+            echo '<p>✅ Extracted from URL - User ID: ' . $userId . ', Video ID: ' . $videoId . '</p>';
+        } else {
+            echo '<p style="color: red;">❌ Could not extract user ID and video ID from URL</p>';
+            echo '<p>Expected format: https://munowatch.org/api/preview/v2/userId/videoId</p>';
+            echo '<p>Actual URL: ' . htmlspecialchars($series->external_url) . '</p>';
+            return;
         }
         
-        echo '<p>✅ Using user ID: ' . htmlspecialchars($userId) . '</p>';
+        // Fetch movie/show details using Flutter app pattern: preview/v2/{videoId}/{userId}
+        $previewUrl = "https://munowatch.org/api/preview/v2/{$videoId}/{$userId}";
+        echo '<p>📡 Preview API URL: ' . $previewUrl . '</p>';
         
-        // Fetch dashboard data using our working API pattern
-        $dashboardUrl = "https://munowatch.org/api/dashboard/{$userId}";
-        echo '<p>📡 API URL: ' . $dashboardUrl . '</p>';
-        
-        $jwtToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+        $apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
         
         $headers = [
-            'Authorization: Bearer ' . $jwtToken,
+            'X-Api-Key: ' . $apiKey,
+            'User-Agent: okhttp/4.9.0',
             'Accept: application/json',
-            'Content-Type: application/json',
-            'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            'Content-Type: application/json'
         ];
         
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $dashboardUrl);
+        curl_setopt($ch, CURLOPT_URL, $previewUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
@@ -1321,71 +1326,54 @@ Route::get('fix-munowatch-series', function (Request $request) {
         curl_close($ch);
         
         if ($httpCode !== 200 || !$apiResponse) {
-            echo '<p style="color: red;">❌ API request failed. HTTP Code: ' . $httpCode . '</p>';
+            echo '<p style="color: red;">❌ Preview API request failed. HTTP Code: ' . $httpCode . '</p>';
             return;
         }
         
-        echo '<p>✅ API data received successfully</p>';
+        echo '<p>✅ Preview API data received successfully</p>';
         
-        // ===== PHASE 2: PROCESS API RESPONSE =====
-        echo '<h3>🔍 Phase 2: Processing API Response</h3>';
+        // ===== PHASE 2: PROCESS PREVIEW API RESPONSE =====
+        echo '<h3>🔍 Phase 2: Processing Preview API Response</h3>';
         
-        $jsonData = json_decode($apiResponse, true);
+        $previewData = json_decode($apiResponse, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            echo '<p style="color: red;">❌ Failed to parse JSON response</p>';
+            echo '<p style="color: red;">❌ Failed to parse preview JSON response</p>';
             return;
         }
         
-        // Find series data in the response using our existing extraction logic
-        $movieData = null;
-        $categoryData = $jsonData['data']['content'] ?? [];
-        
-        foreach ($categoryData as $category) {
-            if (isset($category['content'])) {
-                foreach ($category['content'] as $item) {
-                    // Match by title or ID
-                    if (
-                        (isset($item['name']) && stripos($item['name'], $series->title) !== false) ||
-                        (isset($item['id']) && $item['id'] == $series->external_id)
-                    ) {
-                        $movieData = $item;
-                        echo '<p>✅ Found series data: ' . htmlspecialchars($item['name'] ?? 'Unknown') . '</p>';
-                        break 2;
-                    }
-                }
-            }
-        }
-        
-        if (!$movieData) {
-            echo '<p style="color: orange;">⚠️ Series not found in current dashboard data</p>';
-            echo '<p>Available series in response:</p>';
-            echo '<ul>';
-            foreach ($categoryData as $category) {
-                if (isset($category['content'])) {
-                    foreach ($category['content'] as $item) {
-                        echo '<li>' . htmlspecialchars($item['name'] ?? 'Unknown') . ' (ID: ' . ($item['id'] ?? 'N/A') . ')</li>';
-                    }
-                }
-            }
-            echo '</ul>';
+        // Extract preview data following Flutter app pattern
+        $movieDetail = null;
+        if (isset($previewData['preview'])) {
+            $movieDetail = $previewData['preview'];
+            echo '<p>✅ Found preview data</p>';
+        } else {
+            echo '<p style="color: red;">❌ No preview data found in response</p>';
+            echo '<p>Available keys: ' . implode(', ', array_keys($previewData)) . '</p>';
             return;
         }
         
-        // ===== PHASE 3: VALIDATE SERIES WITH EPISODES API =====
-        echo '<h3>📺 Phase 3: Fetching Episodes Data</h3>';
+        // Extract series code (critical for episodes API)
+        $seriesCode = $movieDetail['series_code'] ?? '';
+        $showTitle = $movieDetail['video_title'] ?? $series->title;
         
-        $showId = $movieData['id'];
-        $seriesCode = $movieData['series_code'] ?? '';
-        
-        echo '<p>Show ID: ' . $showId . '</p>';
-        echo '<p>Series Code: ' . htmlspecialchars($seriesCode) . '</p>';
+        echo '<p>📺 Show Title: ' . htmlspecialchars($showTitle) . '</p>';
+        echo '<p>🔖 Series Code: ' . htmlspecialchars($seriesCode) . '</p>';
         
         if (empty($seriesCode)) {
             echo '<p style="color: red;">❌ No series code found - this might not be a series</p>';
             return;
         }
         
-        // Fetch episodes using the Flutter app pattern
+        // ===== PHASE 3: FETCH EPISODES USING FLUTTER APP PATTERN =====
+        echo '<h3>📺 Phase 3: Fetching Episodes Data</h3>';
+        
+        // Use the videoId from URL as showId for episodes API
+        $showId = $videoId;
+        
+        echo '<p>🎥 Show ID: ' . $showId . '</p>';
+        echo '<p>🔖 Series Code: ' . htmlspecialchars($seriesCode) . '</p>';
+        
+        // Fetch episodes using the exact Flutter app pattern: episodes/range/{showId}/{seriesCode}/{seasonNumber}
         $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/1";
         echo '<p>📡 Episodes API URL: ' . $episodesUrl . '</p>';
         
@@ -1412,14 +1400,85 @@ Route::get('fix-munowatch-series', function (Request $request) {
             return;
         }
         
-        $episodes = $episodesData['data']['episodes'] ?? [];
-        
-        if (empty($episodes)) {
-            echo '<p style="color: red;">❌ No episodes found - this might not be a series</p>';
+        // Check if API returned error (following Flutter app pattern)
+        if (is_array($episodesData) && isset($episodesData['error']) && $episodesData['error'] === true) {
+            echo '<p style="color: red;">❌ Episodes API returned error: ' . ($episodesData['msg'] ?? 'Unknown error') . '</p>';
             return;
         }
         
-        echo '<p>✅ Found ' . count($episodes) . ' episodes</p>';
+        // Episodes data should be an array of episode ranges
+        $episodeRanges = [];
+        if (is_array($episodesData)) {
+            $episodeRanges = $episodesData;
+        }
+        
+        if (empty($episodeRanges)) {
+            echo '<p style="color: red;">❌ No episode ranges found - this might not be a series</p>';
+            return;
+        }
+        
+        echo '<p>✅ Found ' . count($episodeRanges) . ' episode ranges</p>';
+        
+        // Expand episode ranges into individual episodes (following Flutter app logic)
+        $episodes = [];
+        foreach ($episodeRanges as $rangeData) {
+            echo '<div style="margin: 10px 0; padding: 5px; border: 1px solid #ddd;">';
+            echo '<p>📼 Range: ' . htmlspecialchars($rangeData['eps'] ?? 'Unknown') . ' (' . htmlspecialchars($rangeData['eps_range'] ?? 'No range') . ')</p>';
+            
+            // Parse episode range following Flutter app EpisodeRange.expand() logic
+            $epsRange = $rangeData['eps_range'] ?? '';
+            $rangeEpisodes = [];
+            
+            if (!empty($epsRange)) {
+                // Parse range like "1-10" or "1,2,3" or single number "5"
+                if (strpos($epsRange, '-') !== false) {
+                    // Handle range like "1-10"
+                    $parts = explode('-', $epsRange);
+                    if (count($parts) === 2) {
+                        $start = (int)trim($parts[0]);
+                        $end = (int)trim($parts[1]);
+                        for ($i = $start; $i <= $end; $i++) {
+                            $rangeEpisodes[] = $i;
+                        }
+                    }
+                } elseif (strpos($epsRange, ',') !== false) {
+                    // Handle comma-separated like "1,2,3"
+                    $parts = explode(',', $epsRange);
+                    foreach ($parts as $part) {
+                        $episodeNum = (int)trim($part);
+                        if ($episodeNum > 0) {
+                            $rangeEpisodes[] = $episodeNum;
+                        }
+                    }
+                } else {
+                    // Single episode number
+                    $episodeNum = (int)trim($epsRange);
+                    if ($episodeNum > 0) {
+                        $rangeEpisodes[] = $episodeNum;
+                    }
+                }
+            }
+            
+            echo '<p>→ Expanded to episodes: ' . implode(', ', $rangeEpisodes) . '</p>';
+            
+            // Create episode data for each number in the range
+            foreach ($rangeEpisodes as $episodeNumber) {
+                $episodes[] = [
+                    'number' => $episodeNumber,
+                    'title' => ($rangeData['eps'] ?? 'Episode') . ' ' . $episodeNumber,
+                    'description' => $rangeData['description'] ?? $movieDetail['description'] ?? '',
+                    'thumbnail' => $rangeData['thumbnail'] ?? $movieDetail['image_url'] ?? '',
+                    'duration' => $rangeData['duration'] ?? $movieDetail['duration'] ?? '',
+                    'playing_url' => $rangeData['playing_url'] ?? '',
+                    'embed_url' => $rangeData['embed_url'] ?? '',
+                    'openload_url' => $rangeData['openload_url'] ?? '',
+                    'stream_url' => $rangeData['stream_url'] ?? '',
+                    'range_data' => $rangeData // Keep original range data for reference
+                ];
+            }
+            
+            echo '</div>';
+        }
         
         // ===== PHASE 4: PROCESS AND SAVE EPISODES =====
         echo '<h3>💾 Phase 4: Processing Episodes</h3>';

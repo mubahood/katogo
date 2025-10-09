@@ -37,6 +37,10 @@ class MovieModel extends Model
                     $model->type = 'Movie';
                 }
             }
+            //check if url contains munowatch
+            if (strpos($model->url, 'munowatch') !== false) {
+                $model->status = 'Inactive'; //if yes, set to yes
+            }
         });
 
         static::updating(function ($model) {
@@ -67,6 +71,10 @@ class MovieModel extends Model
                 } else {
                     $model->type = 'Movie';
                 }
+            }
+
+            if (strpos($model->url, 'munowatch') !== false) {
+                $model->status = 'Inactive'; //if yes, set to yes
             }
             return $model;
         });
