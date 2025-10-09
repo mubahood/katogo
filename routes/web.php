@@ -1647,82 +1647,71 @@ Route::get('fix-munowatch-series', function (Request $request) {
 
                 echo '<p>🎬 Video URL: ' . htmlspecialchars($primaryEpisodeUrl) . '</p>';
 
-                // Check for existing episode
-                $existingEpisode = \App\Models\MovieModel::where('category_id', $series->id)
-                    ->where('episode_number', $episodeNumber)
+                // Check for existing episode as MovieCrawlerPage
+                $existingEpisodePage = \App\Models\MovieCrawlerPage::where('url', 'like', "%preview/v2/{$episodeData['number']}/%")
                     ->where('type', 'Series')
                     ->first();
 
-                if (!$existingEpisode && !empty($episodeId)) {
-                    $existingEpisode = \App\Models\MovieModel::where('external_id', $episodeId)->first();
-                }
-
-                $isNew = ($existingEpisode === null);
-
-                if ($isNew) {
-                    $episode = new \App\Models\MovieModel();
-                    echo '<p style="color: green;">✅ Creating new episode</p>';
-                } else {
-                    $episode = $existingEpisode;
-                    echo '<p style="color: blue;">🔄 Updating existing episode (ID: ' . $episode->id . ')</p>';
-                }
-
-                // Set episode data following the existing pattern
-                $episode->title = $series->title . ' - ' . $episodeTitle;
-                $episode->description = $episodeDescription;
-                $episode->external_url = "https://munowatch.com/episode/{$episodeId}";
-                $episode->external_id = $episodeId;
-                $episode->page_source_url = $series->external_url;
-
-                // Critical relationship linking
-                $episode->category_id = $series->id;
-                $episode->category = $series->title;
-                $episode->type = 'Series';
-                $episode->episode_number = $episodeNumber;
-                $episode->season_number = 1; // Default to season 1
-
-                // Video and media information
-                $episode->url = $primaryEpisodeUrl;
-                $episode->thumbnail_url = $episodeData['thumbnail'] ?? $series->thumbnail;
-                $episode->image_url = $episodeData['thumbnail'] ?? $series->thumbnail;
-                $episode->poster_url = $episodeData['thumbnail'] ?? $series->thumbnail;
-                $episode->duration = $episodeData['duration'] ?? '';
-
-                // Inherit series metadata
-                $episode->genre = $series->Category;
-                $episode->year = $series->year;
-                $episode->language = $series->language ?? 'English';
-                $episode->country = $series->country ?? 'Uganda';
-                $episode->rating = $series->rating ?? '';
-                $episode->vj = $series->vj ?? '';
-
-                // Technical metadata
-                $episode->content_type = 'video/mp4';
-                $episode->content_is_video = 'Yes';
-                $episode->content_type_processed = 'No';
-
-                // Status and access
-                $episode->status = 'Active';
-                $episode->temp_status = 'Active';
-                $episode->is_premium = 'No';
-
-                // Size handling if available
-                if (!empty($episodeData['size'])) {
-                    preg_match('/(\d+\.?\d*)\s*(MB|GB)/i', $episodeData['size'], $matches);
-                    if (isset($matches[1]) && isset($matches[2])) {
-                        $sizeValue = (float)$matches[1];
-                        if (strtoupper($matches[2]) === 'GB') {
-                            $sizeValue *= 1024; // Convert GB to MB
-                        }
-                        $episode->size = $sizeValue;
+                if (!$existingEpisodePage) {
+                    // Try by munowatch_id if number is available
+                    $episodeNumber = $episodeData['number'] ?? '';
+                    if (!empty($episodeNumber)) {
+                        $existingEpisodePage = \App\Models\MovieCrawlerPage::where('munowatch_id', $episodeNumber)
+                            ->where('type', 'Series')
+                            ->first();
                     }
                 }
 
-                // Save episode (MovieModel boot() will automatically set is_first_episode)
-                $episode->save();
+                $isNew = ($existingEpisodePage === null);
 
-                echo '<p>✅ Episode saved successfully (ID: ' . $episode->id . ')</p>';
-                echo '<p>🏷️ First Episode: ' . ($episode->is_first_episode === 'Yes' ? 'YES' : 'No') . '</p>';
+                if ($isNew) {
+                    $episodePage = new \App\Models\MovieCrawlerPage();
+                    echo '<p style="color: green;">✅ Creating new episode crawler page</p>';
+                } else {
+                    $episodePage = $existingEpisodePage;
+                    echo '<p style="color: blue;">🔄 Updating existing episode page (ID: ' . $episodePage->id . ')</p>';
+                }
+
+                // Create proper munowatch episode URL using the episode number
+                $episodeVideoId = $episodeData['number'] ?? '';
+                $episodeUrl = "https://munowatch.org/api/preview/v2/{$episodeVideoId}/{$videoId}";
+                
+                // Get the munowatch website for proper relationship
+                $munowatchWebsite = \App\Models\MovieCrawlerWebsite::where('slug', 'munowatch')->first();
+                if (!$munowatchWebsite) {
+                    throw new \Exception('Munowatch website not found in crawler websites');
+                }
+
+                // Set episode page data following munowatch pattern
+                $episodePage->url = $episodeUrl;
+                $episodePage->movie_crawler_website_id = $munowatchWebsite->id;
+                $episodePage->title = $series->title . ' - Episode ' . $episodeNumber;
+                $episodePage->status = 'pending'; // Will be processed later
+                $episodePage->slug = (string)$episodeVideoId;
+                $episodePage->type = 'Series'; // Mark as Series episode
+                
+                // Set series relationship
+                $episodePage->series_id = $series->id;
+                $episodePage->row_id = $episodeVideoId;
+                
+                // Set munowatch identification fields
+                $episodePage->is_muno = 'Yes';
+                $episodePage->muno_processed = 'No';
+                $episodePage->munowatch_id = $episodeVideoId;
+                
+                // Set VJ information
+                $episodePage->vj = 'Munowatch API';
+                
+                // Additional metadata
+                $episodePage->notes = "Episode {$episodeNumber} of series: {$series->title}";
+
+                // Save episode page
+                $episodePage->save();
+
+                echo '<p>✅ Episode crawler page saved successfully (ID: ' . $episodePage->id . ')</p>';
+                echo '<p>🔗 Episode URL: ' . $episodeUrl . '</p>';
+                echo '<p>📺 Series ID: ' . $series->id . '</p>';
+                echo '<p>🎬 Munowatch ID: ' . $episodeVideoId . '</p>';
 
                 $processedCount++;
                 echo '</div>';
