@@ -50,7 +50,7 @@ echo "3. process_munowatch() should extract video URLs from response\n";
 echo "4. Store in MovieModel for the application to use\n\n";
 
 echo "Test URL Pattern:\n";
-echo "https://munowatch.org/api/preview/v2/{videoId}/{userId}\n";
+echo "https://munowatch.org/api/preview/v2/{userId}/{videoId}\n";
 echo "Example: https://munowatch.org/api/preview/v2/35547/169464\n\n";
 
 echo "🎯 Video link generation analysis complete!\n";

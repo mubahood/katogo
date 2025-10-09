@@ -13,7 +13,7 @@ echo "✅ FLUTTER APP PATTERN IMPLEMENTATION COMPLETE!\n\n";
 
 echo "📱 FLUTTER APP ANALYSIS:\n";
 echo "- Base URL: https://munowatch.org/api/\n";
-echo "- Preview Endpoint: preview/v2/{videoId}/{userId}\n";
+echo "- Preview Endpoint: preview/v2/{userId}/{videoId}\n";
 echo "- Episodes Endpoint: episodes/range/{showId}/{seriesCode}/{seasonNumber}\n";
 echo "- Authentication: Both Authorization Bearer + X-Api-Key headers\n";
 echo "- Episode Processing: Expands episode ranges into individual episodes\n\n";
@@ -34,7 +34,7 @@ echo "- Single X-Api-Key authentication\n";
 echo "- Basic episode processing\n\n";
 
 echo "AFTER (Learning from Flutter app):\n";
-echo "- Uses preview/v2/{videoId}/{userId} endpoint (correct)\n";
+echo "- Uses preview/v2/{userId}/{videoId} endpoint (correct)\n";
 echo "- Extracts series_code directly from preview data\n";
 echo "- Dual authentication headers (Authorization + X-Api-Key)\n";
 echo "- Episode range expansion with proper range parsing\n";
@@ -78,7 +78,7 @@ echo "   https://munowatch.org/api/preview/v2/{userId}/{videoId}\n";
 echo "2. Click the green 'Munowatch Fix' button in admin panel\n";
 echo "3. The system will:\n";
 echo "   - Extract userId and videoId from the URL\n";
-echo "   - Call preview/v2/{videoId}/{userId} to get series details\n";
+echo "   - Call preview/v2/{userId}/{videoId} to get series details\n";
 echo "   - Extract series_code from the preview response\n";
 echo "   - Call episodes/range/{videoId}/{seriesCode}/1 to get episodes\n";
 echo "   - Expand episode ranges into individual episodes\n";

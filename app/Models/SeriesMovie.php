@@ -26,6 +26,7 @@ class SeriesMovie extends Model
                     'status' => 'Inactive',
                 ]);
             }
+            $model->is_active = 'No';
         });
 
         static::updated(function ($model) {
@@ -41,7 +42,7 @@ class SeriesMovie extends Model
             }
             $count_tot_episodes = MovieModel::where('category_id', $model->id)->count();
             $sql = "UPDATE series_movies SET total_episodes = $count_tot_episodes WHERE id = $model->id";
-            DB::update($sql); 
+            DB::update($sql);
         });
     }
 

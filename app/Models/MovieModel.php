@@ -74,7 +74,7 @@ class MovieModel extends Model
             }
 
             if (strpos($model->url, 'munowatch') !== false) {
-                $model->status = 'Inactive'; //if yes, set to yes
+                // $model->status = 'Inactive'; //if yes, set to yes 
             }
             return $model;
         });

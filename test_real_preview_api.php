@@ -13,7 +13,7 @@ echo "=== TESTING REAL MUNOWATCH PREVIEW API ===\n\n";
 // Test with a real movie ID from the dashboard
 $videoId = '35547';
 $userId = '169464';
-$testUrl = "https://munowatch.org/api/preview/v2/{$videoId}/{$userId}";
+$testUrl = "https://munowatch.org/api/preview/v2/{$userId}/{$videoId}";
 
 // Get the real token from database
 $website = \App\Models\MovieCrawlerWebsite::where('slug', 'munowatch')->first();

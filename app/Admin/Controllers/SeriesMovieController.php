@@ -34,6 +34,7 @@ class SeriesMovieController extends AdminController
 
 
         $grid->quickSearch('title')->placeholder('Search by title');
+        $grid->model()->orderBy('id', 'desc');
         //add some filters
         $grid->filter(function ($filter) {
             // Remove the default id filter
@@ -45,7 +46,7 @@ class SeriesMovieController extends AdminController
         });
 
         $grid->column('thumbnail', __('Thumbnail'))->image('', 50, 50)->sortable();
-        $grid->column('id', __('Id'))->sortable()->hide();
+        $grid->column('id', __('Id'))->sortable();
         $grid->column('title', __('Title'))->sortable();
         $grid->column('Category', __('Category'))->sortable();
         $grid->column('description', __('Description'))->hide();
@@ -92,7 +93,7 @@ class SeriesMovieController extends AdminController
 
         //fix-munowatch-series - specialized for munowatch series
         $grid->column('fix_munowatch', __('Munowatch Fix'))
-            ->display(function () {
+            ->display(function ($created_at) {
                 $ur = url('fix-munowatch-series?id=' . $this->id);
                 //open new tab
                 return '<a href="' . $ur . '" target="_blank" style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 3px; text-decoration: none;">Munowatch Fix</a>';

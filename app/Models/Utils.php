@@ -6249,8 +6249,8 @@ class Utils
     }
 
     /**
-     * Specific method for munowatch API calls with automatic authentication
-     * Enhanced with validation, retry logic, and comprehensive error handling
+     * Specific method for munowatch API calls with automatic authentication and token refresh
+     * Enhanced with validation, retry logic, automatic token refresh, and comprehensive error handling
      * 
      * @param string $url API endpoint URL
      * @param string $bearerToken Bearer token
@@ -6258,11 +6258,12 @@ class Utils
      * @param string $method HTTP method
      * @param array $data Request data
      * @param int $maxRetries Maximum retry attempts
+     * @param bool $autoRefreshToken Whether to automatically refresh token on expiration (default: true)
      * @return string JSON response
      * @throws \InvalidArgumentException When input parameters are invalid
      * @throws \Exception When API call fails after all retries
      */
-    public static function call_munowatch_api($url, $bearerToken, $apiKey, $method = 'GET', $data = [], $maxRetries = 3)
+    public static function call_munowatch_api($url, $bearerToken, $apiKey, $method = 'GET', $data = [], $maxRetries = 3, $autoRefreshToken = true)
     {
         // Validate inputs
         if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
@@ -6307,6 +6308,37 @@ class Utils
                 throw new \Exception('Empty response received from munowatch API');
             }
             
+            // Check if response indicates token expiration
+            if (self::is_token_expired_response($response)) {
+                if ($autoRefreshToken) {
+                    Log::info('Token expired detected, attempting automatic refresh', [
+                        'url' => $url,
+                        'bearer_token_prefix' => substr($bearerToken, 0, 8) . '...'
+                    ]);
+                    
+                    // Attempt to refresh the token
+                    $refreshResult = self::refresh_munowatch_token();
+                    
+                    if ($refreshResult['success']) {
+                        Log::info('Token refresh successful, retrying API call', [
+                            'url' => $url,
+                            'new_token_prefix' => substr($refreshResult['token'], 0, 8) . '...'
+                        ]);
+                        
+                        // Retry the API call with the new token
+                        return self::call_munowatch_api($url, $refreshResult['token'], $apiKey, $method, $data, $maxRetries, false);
+                    } else {
+                        Log::error('Token refresh failed', [
+                            'url' => $url,
+                            'refresh_error' => $refreshResult['error']
+                        ]);
+                        throw new \Exception('Token expired and refresh failed: ' . $refreshResult['error']);
+                    }
+                } else {
+                    throw new \Exception('Token expired and auto-refresh is disabled');
+                }
+            }
+            
             // Log successful munowatch API call
             Log::info('Munowatch authenticated API call successful', [
                 'url' => $url,
@@ -6334,6 +6366,326 @@ class Utils
             
             // Re-throw with additional context
             throw new \Exception('Munowatch API call failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Check if API response indicates token expiration
+     * 
+     * @param string $response API response
+     * @return bool True if token is expired
+     */
+    private static function is_token_expired_response($response)
+    {
+        // Check for common token expiration indicators
+        if (empty($response)) {
+            return false;
+        }
+        
+        // Try to decode as JSON first
+        $data = json_decode($response, true);
+        
+        if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
+            // Check for specific error messages indicating token expiration
+            $expiredMessages = [
+                'token expired',
+                'token has expired',
+                'jwt expired',
+                'jwt token expired',
+                'unauthorized',
+                'authentication failed',
+                'invalid token',
+                'access denied'
+            ];
+            
+            // Check error field
+            if (isset($data['error'])) {
+                $errorMsg = strtolower(trim($data['error']));
+                foreach ($expiredMessages as $expiredMessage) {
+                    if (strpos($errorMsg, $expiredMessage) !== false) {
+                        return true;
+                    }
+                }
+            }
+            
+            // Check message field
+            if (isset($data['message'])) {
+                $message = strtolower(trim($data['message']));
+                foreach ($expiredMessages as $expiredMessage) {
+                    if (strpos($message, $expiredMessage) !== false) {
+                        return true;
+                    }
+                }
+            }
+            
+            // Check status codes that typically indicate authentication issues
+            if (isset($data['status'])) {
+                $statusCodes = [401, 403];
+                if (in_array($data['status'], $statusCodes)) {
+                    return true;
+                }
+            }
+        }
+        
+        // Check for HTTP error patterns in raw response
+        $lowerResponse = strtolower($response);
+        $httpErrorPatterns = [
+            'http/1.1 401',
+            'http/1.1 403',
+            'unauthorized',
+            'forbidden'
+        ];
+        
+        foreach ($httpErrorPatterns as $pattern) {
+            if (strpos($lowerResponse, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+            
+            // Call the enhanced HTTP client
+            $response = self::get_url_with_auth($url, $headers, $method, $data, $maxRetries);
+            
+            // Additional validation for munowatch responses
+            if (empty($response)) {
+                throw new \Exception('Empty response received from munowatch API');
+            }
+            
+            // Log successful munowatch API call
+            Log::info('Munowatch authenticated API call successful', [
+                'url' => $url,
+                'method' => $method,
+                'response_length' => strlen($response),
+                'bearer_token_prefix' => substr($bearerToken, 0, 8) . '...',
+                'api_key_prefix' => substr($apiKey, 0, 8) . '...'
+            ]);
+            
+            return $response;
+            
+        } catch (\InvalidArgumentException $e) {
+            // Re-throw validation errors without retry
+            throw $e;
+            
+        } catch (\Exception $e) {
+            // Log the final failure with context
+            Log::error('Munowatch authenticated API call failed', [
+                'url' => $url,
+                'method' => $method,
+                'error' => $e->getMessage(),
+                'bearer_token_prefix' => substr($bearerToken, 0, 8) . '...',
+                'api_key_prefix' => substr($apiKey, 0, 8) . '...'
+            ]);
+            
+            // Re-throw with additional context
+            throw new \Exception('Munowatch API call failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Login to munowatch and get fresh JWT token
+     * This function can be used to automatically refresh expired tokens
+     * 
+     * @return array Array containing 'success' (bool), 'token' (string), 'api_key' (string), 'error' (string)
+     */
+    public static function munowatch_login()
+    {
+        try {
+            // Munowatch login credentials
+            $email = 'Jumaperejunior@gmail.com';
+            $password = 'uganda7766';
+            $version = '3.4.0';
+            $deviceInfo = 'Laravel Katogo Crawler';
+            $device = 'server';
+            
+            // Login endpoint
+            $loginUrl = 'https://munowatch.org/api/users/login/v2';
+            
+            // Prepare POST data
+            $postData = [
+                'email' => $email,
+                'password' => $password,
+                'version' => $version,
+                'deviceinfo' => $deviceInfo,
+                'device' => $device
+            ];
+            
+            // Initialize cURL
+            $ch = curl_init();
+            
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $loginUrl,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => http_build_query($postData),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'User-Agent: Laravel Katogo v3.4',
+                    'Accept: application/json'
+                ],
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_FOLLOWLOCATION => true
+            ]);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            
+            curl_close($ch);
+            
+            if ($error) {
+                Log::error('Munowatch login cURL error', ['error' => $error]);
+                return [
+                    'success' => false,
+                    'token' => null,
+                    'api_key' => null,
+                    'error' => 'Network error: ' . $error
+                ];
+            }
+            
+            if ($httpCode !== 200) {
+                Log::error('Munowatch login HTTP error', [
+                    'http_code' => $httpCode,
+                    'response' => $response
+                ]);
+                return [
+                    'success' => false,
+                    'token' => null,
+                    'api_key' => null,
+                    'error' => "HTTP error: $httpCode"
+                ];
+            }
+            
+            // Parse JSON response
+            $data = json_decode($response, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error('Munowatch login JSON decode error', [
+                    'json_error' => json_last_error_msg(),
+                    'response' => $response
+                ]);
+                return [
+                    'success' => false,
+                    'token' => null,
+                    'api_key' => null,
+                    'error' => 'Invalid JSON response'
+                ];
+            }
+            
+            // Check if login was successful and extract token
+            if (isset($data['data']['token'])) {
+                $token = $data['data']['token'];
+                
+                // Standard API key for munowatch
+                $apiKey = 'Api-munowatch-2024';
+                
+                Log::info('Munowatch login successful', [
+                    'token_prefix' => substr($token, 0, 8) . '...',
+                    'token_length' => strlen($token)
+                ]);
+                
+                return [
+                    'success' => true,
+                    'token' => $token,
+                    'api_key' => $apiKey,
+                    'error' => null
+                ];
+                
+            } else {
+                $errorMsg = isset($data['error']) ? $data['error'] : 'Unknown login error';
+                
+                Log::error('Munowatch login failed', [
+                    'error_message' => $errorMsg,
+                    'response_data' => $data
+                ]);
+                
+                return [
+                    'success' => false,
+                    'token' => null,
+                    'api_key' => null,
+                    'error' => $errorMsg
+                ];
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Munowatch login exception', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return [
+                'success' => false,
+                'token' => null,
+                'api_key' => null,
+                'error' => 'Login exception: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Automatically refresh munowatch token and update website configuration
+     * 
+     * @param string $websiteSlug The slug of the MovieCrawlerWebsite to update (default: 'munowatch')
+     * @return array Array containing 'success' (bool), 'token' (string), 'error' (string)
+     */
+    public static function refresh_munowatch_token($websiteSlug = 'munowatch')
+    {
+        try {
+            // Get fresh login credentials
+            $loginResult = self::munowatch_login();
+            
+            if (!$loginResult['success']) {
+                return [
+                    'success' => false,
+                    'token' => null,
+                    'error' => 'Login failed: ' . $loginResult['error']
+                ];
+            }
+            
+            // Find the munowatch website record
+            $website = \App\Models\MovieCrawlerWebsite::where('slug', $websiteSlug)->first();
+            
+            if (!$website) {
+                Log::error('Munowatch website record not found', ['slug' => $websiteSlug]);
+                return [
+                    'success' => false,
+                    'token' => null,
+                    'error' => "Website record not found for slug: $websiteSlug"
+                ];
+            }
+            
+            // Update the token and API key
+            $website->token = $loginResult['token'];
+            $website->email = $loginResult['api_key']; // API key stored in email field
+            $website->updated_at = now();
+            $website->save();
+            
+            Log::info('Munowatch token refreshed successfully', [
+                'website_id' => $website->id,
+                'website_slug' => $websiteSlug,
+                'token_prefix' => substr($loginResult['token'], 0, 8) . '...'
+            ]);
+            
+            return [
+                'success' => true,
+                'token' => $loginResult['token'],
+                'error' => null
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Munowatch token refresh failed', [
+                'website_slug' => $websiteSlug,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return [
+                'success' => false,
+                'token' => null,
+                'error' => 'Token refresh failed: ' . $e->getMessage()
+            ];
         }
     }
 }
