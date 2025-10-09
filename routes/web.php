@@ -1307,6 +1307,7 @@ Route::get('fix-munowatch-series', function (Request $request) {
         $apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
         
         $headers = [
+            'Authorization: Bearer ' . $apiKey,
             'X-Api-Key: ' . $apiKey,
             'User-Agent: okhttp/4.9.0',
             'Accept: application/json',
