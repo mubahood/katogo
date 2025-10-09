@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 
 include_once('simple_html_dom.php');
 
@@ -354,38 +355,98 @@ class MovieCrawlerPage extends Model
                 throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
             }
 
-            // ===== FLUTTER APP PATTERN SERIES DETECTION =====
-            // Following exact Flutter app logic: bool get isSeries => episodes.isNotEmpty;
+            // ===== ENHANCED SERIES DETECTION USING MULTIPLE SIGNALS =====
             
             $isSeries = false;
             $seriesCode = null;
             $showId = null;
+            $detectionSignals = [];
             
             // Extract movie data from various possible structures
             $movieData = $this->extractMovieDataFromResponse($jsonData);
             
             if ($movieData) {
-                // Extract series identification data
+                // ===== SIGNAL 1: SERIES_CODE PRESENCE =====
                 $seriesCode = $movieData['series_code'] ?? $movieData['seriesCode'] ?? '';
                 $showId = $movieData['id'] ?? $movieData['vid'] ?? null;
                 
-                // Flutter pattern: If seriesCode exists, check if episodes can be fetched
-                if (!empty($seriesCode) && !empty($showId)) {
-                    $isSeries = $this->checkEpisodesExist($showId, $seriesCode);
+                if (!empty($seriesCode)) {
+                    $detectionSignals[] = "series_code_present";
+                }
+                
+                // ===== SIGNAL 2: EPISODE COUNT INDICATORS =====
+                $episodeCount = $movieData['episodes'] ?? $movieData['episode_count'] ?? 0;
+                if ($episodeCount > 1) {
+                    $detectionSignals[] = "multi_episode_count";
+                    $isSeries = true;
+                }
+                
+                // ===== SIGNAL 3: NEXT EPISODE INDICATORS =====
+                $nextEpisodeUrl = $movieData['nxt_playing_url'] ?? '';
+                $nextEpisodeId = $movieData['nxt_eps_id'] ?? 0;
+                if (!empty($nextEpisodeUrl) || $nextEpisodeId > 0) {
+                    $detectionSignals[] = "next_episode_indicators";
+                    $isSeries = true;
+                }
+                
+                // ===== SIGNAL 4: SERIES-SPECIFIC FIELDS =====
+                $episodeState = $movieData['episode_state'] ?? '';
+                $nextEpisodeTitle = $movieData['nxt_eps_title'] ?? '';
+                if (!empty($episodeState) || !empty($nextEpisodeTitle)) {
+                    $detectionSignals[] = "series_metadata_fields";
+                    $isSeries = true;
+                }
+                
+                // ===== SIGNAL 5: CATEGORY-BASED HINTS =====
+                $categoryId = $movieData['category_id'] ?? '';
+                // Category 2 = series, but verify with other signals
+                if ($categoryId == '2') {
+                    $detectionSignals[] = "series_category";
+                }
+                
+                // ===== SIGNAL 6: LIVE EPISODES API VERIFICATION =====
+                // Only check episodes API if we have strong signals to avoid unnecessary calls
+                if (!empty($seriesCode) && !empty($showId) && (count($detectionSignals) >= 2 || $isSeries)) {
+                    if ($this->checkEpisodesExist($showId, $seriesCode)) {
+                        $detectionSignals[] = "episodes_api_confirmed";
+                        $isSeries = true;
+                    }
                 }
             }
 
-            // ===== ROUTE TO APPROPRIATE PROCESSOR =====
+            // ===== INTELLIGENT ROUTING DECISION =====
             
-            if ($isSeries) {
-                // Route to INDEPENDENT series processor (doesn't affect movie processing)
-                $this->notes = "Detected series content (seriesCode: $seriesCode, showId: $showId) - routing to independent series processor";
+            $detectionSummary = implode(', ', $detectionSignals);
+            
+            if ($isSeries && count($detectionSignals) >= 2) {
+                // Strong series signals - route to series processor
+                $this->type = 'Series'; // Update the type field
+                $this->notes = "SERIES DETECTED: $detectionSummary (seriesCode: $seriesCode, showId: $showId)";
                 $this->save();
+                
+                Log::info('Munowatch series detected', [
+                    'page_id' => $this->id,
+                    'url' => $this->url,
+                    'title' => $this->title,
+                    'series_code' => $seriesCode,
+                    'show_id' => $showId,
+                    'detection_signals' => $detectionSignals
+                ]);
+                
                 return $this->process_munowatch_series_independent();
             } else {
-                // Route to standard movie processor (unchanged)
-                $this->notes = "Detected movie content - routing to movie processor";
+                // Movie or weak series signals - route to movie processor
+                $this->type = 'Movie'; // Update the type field
+                $this->notes = "MOVIE DETECTED: $detectionSummary (treating as standalone movie)";
                 $this->save();
+                
+                Log::info('Munowatch movie detected', [
+                    'page_id' => $this->id,
+                    'url' => $this->url,
+                    'title' => $this->title,
+                    'detection_signals' => $detectionSignals
+                ]);
+                
                 return $this->process_munowatch();
             }
 

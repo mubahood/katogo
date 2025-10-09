@@ -10,7 +10,7 @@ php artisan db:seed --class=App\\Models\\php artisan admin:make MunowatchMovieCa
 
 (base) mac@Macs-MacBook-Pro katogo % php artisan admin:make MunowatchMovieCategoryController --model=App\\Models\\MunowatchMovieCategory
 
-php artisan make:migration change_duration_to_movie_models --table=movie_models
+php artisan make:migration add_is_muno_to_movie_models --table=movie_models
 
 
 php artisan migrate
