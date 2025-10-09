@@ -319,6 +319,7 @@ class MovieModelController extends AdminController
                 'Active' => 'Active',
                 'Inactive' => 'Inactive',
             ])->sortable()
+            ->hide()
             ->editable('select', [
                 'Active' => 'Active',
                 'Inactive' => 'Inactive',
@@ -340,85 +341,102 @@ class MovieModelController extends AdminController
                 $url = url('play?id=' . $this->id);
                 return '<a href="' . $url . '" target="_blank">' . 'PLAY ' . $new_server_path . '</a>';
             })
+            ->hide()
             ->hide();
 
         $grid->column('video_url_tested_by_curl', __('Video URL Tested by Curl'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('video_url_tested_by_curl_works', __('Video URL Curl Works'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('video_url_tested_by_human', __('Video URL Tested by Human'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('video_url_tested_by_human_works', __('Video URL Human Works'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_transfer_attempted', __('Firebase Transfer Attempted'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_transfer_transfer_in_progress', __('Firebase Transfer In Progress'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_transfer_successful', __('Firebase Transfer Successful'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_transfer_failure_reason', __('Firebase Transfer Failure Reason'))
             ->editable('text')
+            ->hide()
             ->sortable()
             ->filter('like');
 
         $grid->column('firebase_transfer_path', __('Firebase Transfer Path'))
             ->editable('text')
             ->sortable()
+            ->hide()
             ->filter('like');
 
         $grid->column('firebase_video_url', __('Firebase Video URL'))
             ->editable('text')
             ->sortable()
+            ->hide()
             ->filter('like');
 
         $grid->column('firebase_video_url_expires_at', __('Firebase Video URL Expires At'))
             ->sortable()
+            ->hide()
             ->filter('range', 'datetime');
 
         $grid->column('firebase_video_tested_by_curl', __('Firebase Video Tested by Curl'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_video_tested_by_curl_works', __('Firebase Video Curl Works'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_video_tested_by_human', __('Firebase Video Tested by Human'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_video_tested_by_human_works', __('Firebase Video Human Works'))
             ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
+            ->hide()
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('old_video_url', __('Old Video URL'))
             ->editable('text')
             ->sortable()
+            ->hide()
             ->filter('like');
 
         return $grid;

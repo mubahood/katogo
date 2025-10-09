@@ -641,8 +641,13 @@ class MovieCrawlerPage extends Model
                 }
             }
             
-            // Status
-            $movie->status = 'Active';
+            // Status (Set to Inactive for munowatch content)
+            $movie->status = 'Inactive';
+            
+            // Munowatch identification fields
+            $movie->is_muno = 'Yes';
+            $movie->muno_processed = 'No';
+            $movie->munowatch_id = $videoId; // Use the video ID as munowatch ID
             
             // ===== STORE ADDITIONAL VIDEO URLS AND METADATA =====
             $additionalData = [];
@@ -811,6 +816,11 @@ class MovieCrawlerPage extends Model
             $series->is_premium = 'No';
             $series->total_views = 0;
             $series->total_rating = 0;
+            
+            // Set munowatch identification fields
+            $series->is_muno = 'Yes';
+            $series->muno_processed = 'No';
+            $series->munowatch_id = $seriesId;
 
             // Save series record
             $series->save();
@@ -1079,6 +1089,11 @@ class MovieCrawlerPage extends Model
             $series->is_active = 'Yes';
             $series->is_premium = 'No';
             $series->vj = 'Munowatch API';
+            
+            // Set munowatch identification fields
+            $series->is_muno = 'Yes';
+            $series->muno_processed = 'No';
+            $series->munowatch_id = $showId;
 
             $series->save();
 

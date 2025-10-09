@@ -468,6 +468,11 @@ class MovieCrawlerWebsite extends Model
                 $page->bunny_file_name = $movieObject->video_url ?? null;
                 $page->tmdb_poster_path = $movieObject->poster_path ?? null;
                 $page->vj = 'Munowatch API';
+                
+                // Set munowatch identification fields
+                $page->is_muno = 'Yes';
+                $page->muno_processed = 'No';
+                $page->munowatch_id = $movieObject->id ?? null;
 
                 $page->save();
                 $jobLinksNew[] = $url;
