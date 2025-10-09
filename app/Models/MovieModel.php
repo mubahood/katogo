@@ -13,6 +13,15 @@ class MovieModel extends Model
 {
     use HasFactory;
 
+    //process_munowatch
+    public static function process_munowatch($movie)
+    {
+        //write sql that checks if external_url contains munowatch and mark it as Inactive and is_munowatch = Yes
+        $sql = "UPDATE movie_models SET status = 'Inactive', is_muno = 'Yes' WHERE id > 21308 AND (external_url LIKE '%munowatch%' OR url LIKE '%munowatch%')";
+        DB::statement($sql);
+        dd($movie);
+    }
+
     //boot
     protected static function boot()
     {

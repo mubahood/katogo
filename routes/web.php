@@ -66,6 +66,17 @@ use Symfony\Component\Process\Process;
 /**
  * Main crawler endpoint - handles all website crawling including munowatch series
  */
+Route::get('process-muno-movies', function () {
+    $latestMovies = MovieModel::where('muno_processed', 'No')
+        ->where('id', '>', 21308)
+        ->orderBy('id', 'asc')
+        ->limit(5)
+        ->get();
+    foreach ($latestMovies as $movie) {
+        MovieModel::process_munowatch($movie);
+        dd("done with " . $movie->id);
+    }
+});
 Route::get('crawler', function () {
     //set unlimited time
     set_time_limit(600); // 10 minutes
