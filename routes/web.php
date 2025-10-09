@@ -1312,6 +1312,26 @@ Route::get('fix-munowatch-series', function (Request $request) {
         return;
     }
 
+    // ===== CHECK IF THIS IS A MUNOWATCH SERIES =====
+    if ($series->is_muno !== 'Yes' || !$series->external_url || strpos($series->external_url, 'munowatch.org') === false) {
+        echo '<h1>🎬 MUNOWATCH SERIES EPISODE FIXER 🎬</h1>';
+        echo '<h2>❌ ERROR: Not a Munowatch Series</h2>';
+        echo '<p><strong>Series:</strong> ' . htmlspecialchars($series->title) . '</p>';
+        echo '<p><strong>Series ID:</strong> ' . $series->id . '</p>';
+        echo '<p><strong>External URL:</strong> ' . htmlspecialchars($series->external_url) . '</p>';
+        echo '<p><strong>Is Muno:</strong> ' . ($series->is_muno ?? 'NULL') . '</p>';
+        echo '<p><strong>Munowatch ID:</strong> ' . ($series->munowatch_id ?? 'NULL') . '</p>';
+        echo '<hr>';
+        echo '<p style="color: red; font-weight: bold;">This fixer only works with series that have:</p>';
+        echo '<ul>';
+        echo '<li>is_muno = "Yes"</li>';
+        echo '<li>external_url containing "munowatch.org"</li>';
+        echo '<li>Proper munowatch API URL format</li>';
+        echo '</ul>';
+        echo '<p><strong>Suggestion:</strong> Use the regular series processor for non-munowatch content.</p>';
+        return;
+    }
+
     echo '<h1>🎬 MUNOWATCH SERIES EPISODE FIXER 🎬</h1>';
     echo '<h2>Processing: ' . htmlspecialchars($series->title) . '</h2>';
     echo '<p>Series ID: ' . $series->id . '</p>';
