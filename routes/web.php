@@ -1328,6 +1328,35 @@ Route::get('fix-munowatch-series', function (Request $request) {
         
         if ($httpCode !== 200 || !$apiResponse) {
             echo '<p style="color: red;">❌ Preview API request failed. HTTP Code: ' . $httpCode . '</p>';
+            
+            // Handle specific error cases
+            if ($httpCode === 404) {
+                echo '<div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+                echo '<h4>🔍 Video Not Found (404 Error)</h4>';
+                echo '<p><strong>Issue:</strong> Video ID ' . $videoId . ' does not exist in the munowatch database.</p>';
+                echo '<p><strong>Possible Solutions:</strong></p>';
+                echo '<ol>';
+                echo '<li><strong>Check the Video ID:</strong> Verify that the video ID ' . $videoId . ' is correct</li>';
+                echo '<li><strong>Find Valid Video ID:</strong> Browse munowatch.org to find a valid series and copy its video ID</li>';
+                echo '<li><strong>Test with Known Working ID:</strong> Try with a different video ID from an existing series</li>';
+                echo '</ol>';
+                echo '<p><strong>URL Format Expected:</strong> https://munowatch.org/api/preview/v2/{userId}/{videoId}</p>';
+                echo '<p><strong>Current URL:</strong> ' . htmlspecialchars($series->external_url) . '</p>';
+                echo '</div>';
+                
+                // Try to suggest alternative approach
+                echo '<div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+                echo '<h4>💡 Alternative Approach</h4>';
+                echo '<p>Since this video ID doesn\'t exist, you could:</p>';
+                echo '<ol>';
+                echo '<li>Update the external_url field with a valid munowatch preview URL</li>';
+                echo '<li>Or find the correct video ID for this series</li>';
+                echo '</ol>';
+                echo '<p><strong>To find valid video IDs:</strong> Visit munowatch.org, browse series, and check the URLs</p>';
+                echo '</div>';
+            } else {
+                echo '<p>Please check the URL format and try again.</p>';
+            }
             return;
         }
         
@@ -1339,6 +1368,25 @@ Route::get('fix-munowatch-series', function (Request $request) {
         $previewData = json_decode($apiResponse, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             echo '<p style="color: red;">❌ Failed to parse preview JSON response</p>';
+            return;
+        }
+        
+        // Check if API returned an error message (even with 200 status)
+        if (isset($previewData['msg']) && strpos($previewData['msg'], 'not found') !== false) {
+            echo '<div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+            echo '<h4>❌ Video Not Found in Database</h4>';
+            echo '<p><strong>API Message:</strong> ' . htmlspecialchars($previewData['msg']) . '</p>';
+            echo '<p><strong>Video ID:</strong> ' . $videoId . '</p>';
+            echo '<p><strong>User ID:</strong> ' . $userId . '</p>';
+            echo '<br>';
+            echo '<p><strong>What this means:</strong> The video ID doesn\'t exist in munowatch\'s database.</p>';
+            echo '<p><strong>How to fix:</strong></p>';
+            echo '<ol>';
+            echo '<li>Find a valid series on munowatch.org</li>';
+            echo '<li>Copy the correct video ID from its URL</li>';
+            echo '<li>Update this series\' external_url with the correct video ID</li>';
+            echo '</ol>';
+            echo '</div>';
             return;
         }
         
@@ -1424,58 +1472,58 @@ Route::get('fix-munowatch-series', function (Request $request) {
         $episodes = [];
         foreach ($episodeRanges as $rangeData) {
             echo '<div style="margin: 10px 0; padding: 5px; border: 1px solid #ddd;">';
-            echo '<p>📼 Range: ' . htmlspecialchars($rangeData['eps'] ?? 'Unknown') . ' (' . htmlspecialchars($rangeData['eps_range'] ?? 'No range') . ')</p>';
+            echo '<p>📼 Range: ' . htmlspecialchars($rangeData['eps'] ?? 'Unknown') . ' (Video IDs: ' . htmlspecialchars($rangeData['eps_range'] ?? 'No range') . ')</p>';
             
             // Parse episode range following Flutter app EpisodeRange.expand() logic
+            $eps = trim($rangeData['eps'] ?? '');
             $epsRange = $rangeData['eps_range'] ?? '';
-            $rangeEpisodes = [];
             
-            if (!empty($epsRange)) {
-                // Parse range like "1-10" or "1,2,3" or single number "5"
-                if (strpos($epsRange, '-') !== false) {
-                    // Handle range like "1-10"
-                    $parts = explode('-', $epsRange);
-                    if (count($parts) === 2) {
-                        $start = (int)trim($parts[0]);
-                        $end = (int)trim($parts[1]);
-                        for ($i = $start; $i <= $end; $i++) {
-                            $rangeEpisodes[] = $i;
+            if (!empty($eps) && !empty($epsRange)) {
+                // Parse episode numbers (e.g., "1- 20" or " 21- 23")
+                $epsParts = array_map('trim', explode('-', $eps));
+                
+                if (count($epsParts) === 2) {
+                    $startEp = (int)$epsParts[0];
+                    $endEp = (int)$epsParts[1];
+                    
+                    // Parse video IDs (e.g., "59705__59724")
+                    $rangeParts = explode('__', $epsRange);
+                    
+                    if (count($rangeParts) === 2) {
+                        $startId = (int)$rangeParts[0];
+                        $endId = (int)$rangeParts[1];
+                        
+                        // Calculate counts
+                        $episodeCount = $endEp - $startEp + 1;
+                        
+                        echo '<p>→ Episodes: ' . $startEp . ' to ' . $endEp . ' (' . $episodeCount . ' episodes)</p>';
+                        echo '<p>→ Video IDs: ' . $startId . ' to ' . $endId . '</p>';
+                        
+                        // Generate individual episodes following Flutter app pattern
+                        for ($i = 0; $i < $episodeCount; $i++) {
+                            $episodeNumber = $startEp + $i;
+                            $videoId = $startId + $i;
+                            
+                            $episodes[] = [
+                                'number' => $episodeNumber,
+                                'video_id' => $videoId,
+                                'title' => 'Episode ' . $episodeNumber,
+                                'description' => $rangeData['description'] ?? '',
+                                'thumbnail' => $rangeData['thumbnail'] ?? '',
+                                'duration' => $rangeData['duration'] ?? '',
+                                'range_data' => $rangeData // Keep original range data for reference
+                            ];
                         }
-                    }
-                } elseif (strpos($epsRange, ',') !== false) {
-                    // Handle comma-separated like "1,2,3"
-                    $parts = explode(',', $epsRange);
-                    foreach ($parts as $part) {
-                        $episodeNum = (int)trim($part);
-                        if ($episodeNum > 0) {
-                            $rangeEpisodes[] = $episodeNum;
-                        }
+                        
+                        echo '<p>→ Generated ' . $episodeCount . ' episodes</p>';
+                    } else {
+                        echo '<p style="color: orange;">⚠️ Invalid video ID range format: ' . htmlspecialchars($epsRange) . '</p>';
                     }
                 } else {
-                    // Single episode number
-                    $episodeNum = (int)trim($epsRange);
-                    if ($episodeNum > 0) {
-                        $rangeEpisodes[] = $episodeNum;
-                    }
+                    echo '<p style="color: orange;">⚠️ Invalid episode number format: ' . htmlspecialchars($eps) . '</p>';
                 }
-            }
-            
-            echo '<p>→ Expanded to episodes: ' . implode(', ', $rangeEpisodes) . '</p>';
-            
-            // Create episode data for each number in the range
-            foreach ($rangeEpisodes as $episodeNumber) {
-                $episodes[] = [
-                    'number' => $episodeNumber,
-                    'title' => ($rangeData['eps'] ?? 'Episode') . ' ' . $episodeNumber,
-                    'description' => $rangeData['description'] ?? $movieDetail['description'] ?? '',
-                    'thumbnail' => $rangeData['thumbnail'] ?? $movieDetail['image_url'] ?? '',
-                    'duration' => $rangeData['duration'] ?? $movieDetail['duration'] ?? '',
-                    'playing_url' => $rangeData['playing_url'] ?? '',
-                    'embed_url' => $rangeData['embed_url'] ?? '',
-                    'openload_url' => $rangeData['openload_url'] ?? '',
-                    'stream_url' => $rangeData['stream_url'] ?? '',
-                    'range_data' => $rangeData // Keep original range data for reference
-                ];
+            } else {
+                echo '<p style="color: orange;">⚠️ Missing episode or video ID range data</p>';
             }
             
             echo '</div>';
@@ -1490,43 +1538,29 @@ Route::get('fix-munowatch-series', function (Request $request) {
         $errorCount = 0;
         
         foreach ($episodes as $index => $episodeData) {
-            $episodeNumber = $index + 1; // 1-based numbering
+            $episodeNumber = $episodeData['number'];
+            $videoId = $episodeData['video_id']; // Use the video ID from range expansion
             
             try {
                 echo '<div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd;">';
-                echo '<h4>Episode ' . $episodeNumber . ': ' . htmlspecialchars($episodeData['name'] ?? 'Unknown') . '</h4>';
+                echo '<h4>Episode ' . $episodeNumber . ': ' . htmlspecialchars($episodeData['title']) . '</h4>';
+                echo '<p>🎥 Video ID: ' . $videoId . '</p>';
                 
-                // Extract episode URLs using our munowatch pattern
-                $episodeId = $episodeData['id'] ?? '';
-                $episodeTitle = $episodeData['name'] ?? 'Episode ' . $episodeNumber;
-                $episodeDescription = $episodeData['description'] ?? $series->description;
+                // For munowatch, we need to construct the episode URL using the video ID
+                // Following Flutter app pattern, each episode is a separate video
+                $episodeTitle = $episodeData['title'];
+                $episodeDescription = $episodeData['description'] ?: $movieDetail['description'] ?? '';
                 
-                // Get video URLs from episode data
-                $episodePlayingUrl = $episodeData['playing_url'] ?? '';
-                $episodeEmbedUrl = $episodeData['embed_url'] ?? '';
-                $episodeOpenloadUrl = $episodeData['openload_url'] ?? '';
-                $episodeStreamUrl = $episodeData['stream_url'] ?? '';
+                // Create episode URL - this would be the preview URL for this specific video
+                $episodePreviewUrl = "https://munowatch.org/api/preview/v2/{$videoId}/{$userId}";
                 
-                // Determine primary video URL
-                $primaryEpisodeUrl = '';
-                if (!empty($episodePlayingUrl)) {
-                    $primaryEpisodeUrl = $episodePlayingUrl;
-                } elseif (!empty($episodeEmbedUrl)) {
-                    $primaryEpisodeUrl = $episodeEmbedUrl;
-                } elseif (!empty($episodeOpenloadUrl)) {
-                    $primaryEpisodeUrl = $episodeOpenloadUrl;
-                } elseif (!empty($episodeStreamUrl)) {
-                    $primaryEpisodeUrl = $episodeStreamUrl;
-                }
+                echo '<p>🔗 Episode Preview URL: ' . htmlspecialchars($episodePreviewUrl) . '</p>';
                 
-                if (empty($primaryEpisodeUrl)) {
-                    echo '<p style="color: orange;">⚠️ No video URL found - skipping</p>';
-                    $skippedCount++;
-                    echo '</div>';
-                    continue;
-                }
+                // For now, we'll use the episode preview URL as the primary URL
+                // In a real implementation, you might want to fetch the actual video URL
+                $primaryEpisodeUrl = $episodePreviewUrl;
                 
-                echo '<p>🎬 Video URL: ' . htmlspecialchars($primaryEpisodeUrl) . '</p>';
+                echo '<p>🎬 Primary URL: ' . htmlspecialchars($primaryEpisodeUrl) . '</p>';
                 
                 // Check for existing episode
                 $existingEpisode = \App\Models\MovieModel::where('category_id', $series->id)
@@ -1534,7 +1568,10 @@ Route::get('fix-munowatch-series', function (Request $request) {
                                            ->where('type', 'Series')
                                            ->first();
                 
-                if (!$existingEpisode && !empty($episodeId)) {
+                // Generate episode external ID using video ID
+                $episodeId = (string)$videoId;
+                
+                if (!$existingEpisode) {
                     $existingEpisode = \App\Models\MovieModel::where('external_id', $episodeId)->first();
                 }
                 
@@ -1549,25 +1586,25 @@ Route::get('fix-munowatch-series', function (Request $request) {
                 }
                 
                 // Set episode data following the existing pattern
-                $episode->title = $series->title . ' - ' . $episodeTitle;
+                $episode->title = $showTitle . ' - ' . $episodeTitle;
                 $episode->description = $episodeDescription;
-                $episode->external_url = "https://munowatch.com/episode/{$episodeId}";
+                $episode->external_url = $episodePreviewUrl;
                 $episode->external_id = $episodeId;
                 $episode->page_source_url = $series->external_url;
                 
                 // Critical relationship linking
                 $episode->category_id = $series->id;
-                $episode->category = $series->title;
+                $episode->category = $showTitle;
                 $episode->type = 'Series';
                 $episode->episode_number = $episodeNumber;
                 $episode->season_number = 1; // Default to season 1
                 
                 // Video and media information
                 $episode->url = $primaryEpisodeUrl;
-                $episode->thumbnail_url = $episodeData['thumbnail'] ?? $series->thumbnail;
-                $episode->image_url = $episodeData['thumbnail'] ?? $series->thumbnail;
-                $episode->poster_url = $episodeData['thumbnail'] ?? $series->thumbnail;
-                $episode->duration = $episodeData['duration'] ?? '';
+                $episode->thumbnail_url = $episodeData['thumbnail'] ?: $movieDetail['image_url'] ?? $series->thumbnail;
+                $episode->image_url = $episodeData['thumbnail'] ?: $movieDetail['image_url'] ?? $series->thumbnail;
+                $episode->poster_url = $episodeData['thumbnail'] ?: $movieDetail['image_url'] ?? $series->thumbnail;
+                $episode->duration = $episodeData['duration'] ?: $movieDetail['duration'] ?? '';
                 
                 // Inherit series metadata
                 $episode->genre = $series->Category;
@@ -1586,18 +1623,6 @@ Route::get('fix-munowatch-series', function (Request $request) {
                 $episode->status = 'Active';
                 $episode->temp_status = 'Active';
                 $episode->is_premium = 'No';
-                
-                // Size handling if available
-                if (!empty($episodeData['size'])) {
-                    preg_match('/(\d+\.?\d*)\s*(MB|GB)/i', $episodeData['size'], $matches);
-                    if (isset($matches[1]) && isset($matches[2])) {
-                        $sizeValue = (float)$matches[1];
-                        if (strtoupper($matches[2]) === 'GB') {
-                            $sizeValue *= 1024; // Convert GB to MB
-                        }
-                        $episode->size = $sizeValue;
-                    }
-                }
                 
                 // Save episode (MovieModel boot() will automatically set is_first_episode)
                 $episode->save();
