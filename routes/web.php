@@ -1752,23 +1752,24 @@ Route::get('fix-munowatch-series', function (Request $request) {
         echo '</div>';
 
         echo '<hr>';
-        echo '<h3>🎬 Episodes Created:</h3>';
+        echo '<h3>🎬 Episode Pages Created:</h3>';
 
-        $createdEpisodes = \App\Models\MovieModel::where('category_id', $series->id)
+        $createdEpisodePages = \App\Models\MovieCrawlerPage::where('series_id', $series->id)
             ->where('type', 'Series')
-            ->orderBy('episode_number', 'asc')
+            ->where('is_muno', 'Yes')
+            ->orderBy('created_at', 'asc')
             ->get();
 
         echo '<table border="1" cellpadding="5" style="border-collapse: collapse; width: 100%;">';
-        echo '<tr><th>Episode #</th><th>Title</th><th>First Episode</th><th>Status</th><th>Video URL</th></tr>';
+        echo '<tr><th>Page ID</th><th>Title</th><th>Status</th><th>Munowatch ID</th><th>Episode URL</th></tr>';
 
-        foreach ($createdEpisodes as $ep) {
+        foreach ($createdEpisodePages as $ep) {
             echo '<tr>';
-            echo '<td>' . $ep->episode_number . '</td>';
+            echo '<td>' . $ep->id . '</td>';
             echo '<td>' . htmlspecialchars($ep->title) . '</td>';
-            echo '<td>' . ($ep->is_first_episode === 'Yes' ? '✅ YES' : '❌ No') . '</td>';
-            echo '<td>' . $ep->status . '</td>';
-            echo '<td><a href="' . htmlspecialchars($ep->url) . '" target="_blank">Watch</a></td>';
+            echo '<td>' . ucfirst($ep->status) . '</td>';
+            echo '<td>' . htmlspecialchars($ep->munowatch_id ?? 'N/A') . '</td>';
+            echo '<td><a href="' . htmlspecialchars($ep->url) . '" target="_blank">View API</a></td>';
             echo '</tr>';
         }
 
