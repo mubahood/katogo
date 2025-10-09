@@ -1777,9 +1777,14 @@ Route::get('fix-munowatch-series', function (Request $request) {
 
         echo '<hr>';
         echo '<div style="background-color: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0;">';
-        echo '<h3>✅ Munowatch Series Fix Completed Successfully!</h3>';
-        echo '<p>All episodes have been processed and saved with proper relationships and episode numbering.</p>';
-        echo '<p><strong>Note:</strong> The first episode has been automatically flagged with is_first_episode = "Yes"</p>';
+        echo '<h3>✅ Munowatch Series Episode Pages Created Successfully!</h3>';
+        echo '<p>All episode pages have been created as MovieCrawlerPage records and are ready for individual processing.</p>';
+        echo '<p><strong>Next Steps:</strong></p>';
+        echo '<ul>';
+        echo '<li>Episode pages are marked as "pending" and will be processed by the main crawler</li>';
+        echo '<li>Each page has the correct munowatch API URL for individual fetching</li>';
+        echo '<li>Pages are marked with is_muno="Yes" and proper series relationships</li>';
+        echo '</ul>';
         echo '</div>';
     } catch (\Exception $e) {
         echo '<div style="background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">';
