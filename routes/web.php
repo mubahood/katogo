@@ -78,6 +78,7 @@ Route::get('process-muno-movies', function () {
         ->get();
     //    $latestMovies = MovieModel::where('id', 21344)->get();
     foreach ($latestMovies as $movie) {
+        // continue;
         try {
             MovieModel::process_munowatch($movie);
             // $movie->muno_success = 'Yes';
@@ -89,7 +90,28 @@ Route::get('process-muno-movies', function () {
             Log::error("Failed to process movie {$movie->id} because " . $th->getMessage());
         }
     }
+
+    echo "<hr>All done<hr>";
+    //now pages aboive 1899
+    $crawlerPages = MovieCrawlerPage::where('status', 'success')
+        ->where('muno_processed', 'No')
+        ->where('id', '>', 1899)
+        ->orderBy('id', 'asc')
+        ->limit(30)
+        ->get();
+
+    foreach ($crawlerPages as $page) {
+        try {
+            $page->process_page_content();
+            echo "Page {$page->id}. {$page->title} - successfully<br>";
+        } catch (\Throwable $th) {
+            echo "Failed to process page {$page->id} because " . $th->getMessage() . "<br>";
+            Log::error("Failed to process page {$page->id} because " . $th->getMessage());
+        }
+    }
 });
+
+
 Route::get('crawler', function () {
     //set unlimited time
     set_time_limit(600); // 10 minutes
