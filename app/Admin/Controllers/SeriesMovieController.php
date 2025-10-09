@@ -90,6 +90,14 @@ class SeriesMovieController extends AdminController
                 return '<a href="' . $ur . '" target="_blank">Fix</a>';
             });
 
+        //fix-munowatch-series - specialized for munowatch series
+        $grid->column('fix_munowatch', __('Munowatch Fix'))
+            ->display(function () {
+                $ur = url('fix-munowatch-series?id=' . $this->id);
+                //open new tab
+                return '<a href="' . $ur . '" target="_blank" style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 3px; text-decoration: none;">Munowatch Fix</a>';
+            });
+
         //increase  $grid per page options to 500 and 1k
         $grid->perPages([10, 20, 50, 100, 200, 500, 1000]);
 

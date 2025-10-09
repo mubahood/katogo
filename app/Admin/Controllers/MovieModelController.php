@@ -162,7 +162,7 @@ class MovieModelController extends AdminController
             ->filter([
                 'Yes' => 'Yes',
                 'No' => 'No',
-            ])->hide();
+            ]);
 
 
 

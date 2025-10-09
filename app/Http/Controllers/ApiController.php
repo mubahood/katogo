@@ -1174,6 +1174,24 @@ class ApiController extends BaseController
 
         if ($u && $u->id) {
             try {
+                // CHECKPOINT 1: Auto-assign free trial if user is eligible
+                try {
+                    $freeTrialResult = $u->autoAssignFreeTrial();
+                    if ($freeTrialResult['success']) {
+                        \Log::info('Free trial auto-assigned via manifest endpoint', [
+                            'user_id' => $u->id,
+                            'endpoint' => 'manifest',
+                            'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Failed to auto-assign free trial in manifest endpoint', [
+                        'user_id' => $u->id,
+                        'error' => $e->getMessage(),
+                        'endpoint' => 'manifest',
+                    ]);
+                }
+
                 $subscription_status = $u->getSubscriptionStatus();
                 
                 // CRITICAL: Validate subscription data consistency
