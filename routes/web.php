@@ -1624,8 +1624,7 @@ Route::get('fix-munowatch-series', function (Request $request) {
                 }
 
                 if (empty($primaryEpisodeUrl)) {
-                    echo '<p style="color: orange;">⚠️ No video URL found - skipping</p>';
-                    $skippedCount++;
+                    echo '<p style="color: orange;">⚠️ No video URL found - will create crawler page for individual fetching</p>';
                     //DUMP IT
                     echo '<div style="background-color: #f8d7da; padding: 10px; border-radius: 5px; margin-top: 10px;">';
                     echo '<h4>Debug Info:</h4>';
@@ -1642,10 +1641,9 @@ Route::get('fix-munowatch-series', function (Request $request) {
                     echo '<li>Stream URL: ' . htmlspecialchars($episodeStreamUrl) . '</li>';
                     echo '</ul>';
                     echo '</div>';
-                    continue;
+                } else {
+                    echo '<p>🎬 Video URL: ' . htmlspecialchars($primaryEpisodeUrl) . '</p>';
                 }
-
-                echo '<p>🎬 Video URL: ' . htmlspecialchars($primaryEpisodeUrl) . '</p>';
 
                 // Check for existing episode as MovieCrawlerPage
                 $existingEpisodePage = \App\Models\MovieCrawlerPage::where('url', 'like', "%preview/v2/{$episodeData['number']}/%")
