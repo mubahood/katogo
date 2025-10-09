@@ -1633,8 +1633,8 @@ Route::get('fix-munowatch-series', function (Request $request) {
         echo '<div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">';
         echo '<h4>📈 Processing Results:</h4>';
         echo '<ul>';
-        echo '<li><strong>Series:</strong> ' . htmlspecialchars($series->title) . '</li>';
-        echo '<li><strong>Episodes Found:</strong> ' . count($episodes) . '</li>';
+        echo '<li><strong>Series:</strong> ' . htmlspecialchars($showTitle) . '</li>';
+        echo '<li><strong>Episode Ranges Found:</strong> ' . count($episodeRanges) . '</li>';
         echo '<li><strong>Episodes Processed:</strong> ' . $processedCount . '</li>';
         echo '<li><strong>Episodes Skipped:</strong> ' . $skippedCount . '</li>';
         echo '<li><strong>Episodes Errors:</strong> ' . $errorCount . '</li>';
