@@ -95,60 +95,60 @@ Route::get('crawler', function () {
 Route::get('munowatch-series-crawler', function () {
     set_time_limit(600); // 10 minutes
     ini_set('memory_limit', '512M'); // 512 MB
-    
+
     try {
         // Get munowatch website configuration
         $munowatchWebsite = MovieCrawlerWebsite::where('slug', MovieCrawlerWebsite::MUNOWATCH)->first();
         if (!$munowatchWebsite || $munowatchWebsite->status !== 'Active') {
             throw new Exception('Munowatch website not configured or inactive');
         }
-        
+
         echo "🚀 Starting Munowatch Series Crawler...\n";
         echo "=====================================\n\n";
-        
+
         // Show current configuration
         $currentCategory = \App\Models\MunowatchMovieCategory::find($munowatchWebsite->current_munowatch_category_id);
         echo "📋 Current Category: " . ($currentCategory ? $currentCategory->category_name : 'Unknown') . "\n";
         echo "📋 API Endpoint Type: " . ($currentCategory ? $currentCategory->api_endpoint_type : 'Unknown') . "\n\n";
-        
+
         // Step 1: Fetch pages (Level 1 - Website → Pages)
         echo "📥 Level 1: Fetching series pages...\n";
         $munowatchWebsite->get_next_page_content();
         echo "✅ Pages fetched successfully\n\n";
-        
+
         // Step 2: Process page content (Level 2 - Pages → Content)  
         echo "🔍 Level 2: Processing page content...\n";
         Utils::fetch_pages_content();
         echo "✅ Content processed successfully\n\n";
-        
+
         // Step 3: Report detailed results
         echo "📊 Crawler Results:\n";
         echo "==================\n";
-        
+
         $pendingPages = MovieCrawlerPage::where('movie_crawler_website_id', $munowatchWebsite->id)
-                                       ->where('status', 'pending')
-                                       ->count();
-        
+            ->where('status', 'pending')
+            ->count();
+
         $successPages = MovieCrawlerPage::where('movie_crawler_website_id', $munowatchWebsite->id)
-                                       ->where('status', 'success')
-                                       ->count();
-        
+            ->where('status', 'success')
+            ->count();
+
         $recentSeries = SeriesMovie::where('created_at', '>=', Carbon::now()->subHour())
-                                 ->count();
-        
+            ->count();
+
         $recentMovies = \App\Models\MovieModel::where('created_at', '>=', Carbon::now()->subHour())
-                                             ->count();
-        
+            ->count();
+
         $recentSeriesEpisodes = \App\Models\MovieModel::where('type', 'Series')
-                                                      ->where('created_at', '>=', Carbon::now()->subHour())
-                                                      ->count();
-        
+            ->where('created_at', '>=', Carbon::now()->subHour())
+            ->count();
+
         echo "Pending Pages: $pendingPages\n";
-        echo "Processed Pages: $successPages\n";  
+        echo "Processed Pages: $successPages\n";
         echo "New Series Created: $recentSeries\n";
         echo "New Movies Created: $recentMovies\n";
         echo "New Series Episodes: $recentSeriesEpisodes\n\n";
-        
+
         // Debug information if no series found
         if ($recentSeries == 0 && $recentSeriesEpisodes == 0 && $recentMovies > 0) {
             echo "⚠️  DEBUG INFO: Only movies detected, no series\n";
@@ -156,22 +156,21 @@ Route::get('munowatch-series-crawler', function () {
             echo "   - Current category contains mostly movies\n";
             echo "   - Series detection logic needs refinement\n";
             echo "   - API response format has changed\n\n";
-            
+
             // Show sample of recent content
             $recentContent = \App\Models\MovieModel::where('created_at', '>=', Carbon::now()->subHour())
-                                                   ->orderBy('id', 'desc')
-                                                   ->limit(3)
-                                                   ->get(['id', 'title', 'type']);
-            
+                ->orderBy('id', 'desc')
+                ->limit(3)
+                ->get(['id', 'title', 'type']);
+
             echo "📋 Recent Content Sample:\n";
             foreach ($recentContent as $item) {
                 echo "  - ID: {$item->id} | Type: {$item->type} | Title: " . substr($item->title, 0, 50) . "...\n";
             }
             echo "\n";
         }
-        
+
         echo "🎯 Munowatch Series Crawler Completed Successfully!\n";
-        
     } catch (Exception $e) {
         echo "❌ Error: " . $e->getMessage() . "\n";
         Log::error('Munowatch series crawler failed', [
@@ -517,7 +516,7 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
             ->limit($limit);
 
         //override
-       /*  $movies = MovieModel::where([
+        /*  $movies = MovieModel::where([
             'firebase_transfer_attempted' => 'No',
             'stars' => 'MyVj', 
         ])->orderBy('id', 'asc')
@@ -1252,43 +1251,43 @@ Route::get('fix-munowatch-series', function (Request $request) {
     ini_set('max_input_time', '600');
     ini_set('upload_max_filesize', '100M');
     ini_set('post_max_size', '100M');
-    
+
     // Get series ID from request
     if (!isset($_GET['id'])) {
         echo '<h1>Error: No series ID provided</h1>';
         return;
     }
-    
+
     $seriesId = $request->get('id');
     $series = \App\Models\SeriesMovie::find($seriesId);
-    
+
     if (!$series) {
         echo '<h1>Error: Series not found with ID: ' . $seriesId . '</h1>';
         return;
     }
-    
+
     echo '<h1>🎬 MUNOWATCH SERIES EPISODE FIXER 🎬</h1>';
     echo '<h2>Processing: ' . htmlspecialchars($series->title) . '</h2>';
     echo '<p>Series ID: ' . $series->id . '</p>';
     echo '<p>External URL: ' . htmlspecialchars($series->external_url) . '</p>';
     echo '<hr>';
-    
+
     try {
         // Create a MovieCrawlerPage instance to use our existing munowatch logic
         require_once app_path('Models/MovieCrawlerPage.php');
-        
+
         $crawler = new \App\Models\MovieCrawlerPage();
         $crawler->url = $series->external_url;
         $crawler->page_content = ''; // Will be fetched by our method
-        
+
         // ===== PHASE 1: FETCH MUNOWATCH API DATA =====
         echo '<h3>📥 Phase 1: Fetching Munowatch API Data</h3>';
-        
+
         // Extract videoId and userId from external URL pattern
         // URL format: https://munowatch.org/api/preview/v2/userId/videoId
         $userId = null;
         $videoId = null;
-        
+
         if (preg_match('/preview\/v2\/(\d+)\/(\d+)/', $series->external_url, $matches)) {
             $userId = $matches[1];
             $videoId = $matches[2];
@@ -1299,36 +1298,38 @@ Route::get('fix-munowatch-series', function (Request $request) {
             echo '<p>Actual URL: ' . htmlspecialchars($series->external_url) . '</p>';
             return;
         }
-        
+
         // Fetch movie/show details using Flutter app pattern: preview/v2/{userId}/{videoId}
         $previewUrl = "https://munowatch.org/api/preview/v2/{$userId}/{$videoId}";
         echo '<p>📡 Preview API URL: ' . $previewUrl . '</p>';
-        
-        $apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
-        
-        $headers = [
-            'Authorization: Bearer ' . $apiKey,
-            'X-Api-Key: ' . $apiKey,
-            'User-Agent: okhttp/4.9.0',
-            'Accept: application/json',
-            'Content-Type: application/json'
-        ];
-        
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $previewUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        
-        $apiResponse = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
+
+        try {
+            // Use MunowatchAuthService for automatic token refresh
+            $apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+            $xApiKey = 'Api-munowatch-2024';
+
+            echo '<p>🔑 Using automatic token refresh authentication...</p>';
+
+            $apiResponse = \App\Services\MunowatchAuthService::callApiWithAutoRefresh(
+                $previewUrl,
+                $apiKey,
+                $xApiKey,
+                'GET',
+                [],
+                3
+            );
+
+            $httpCode = 200; // If we get here, the call was successful
+            echo '<p>✅ API call successful with auto-refresh support</p>';
+        } catch (Exception $e) {
+            echo '<p style="color: red;">❌ Preview API request failed with auto-refresh: ' . $e->getMessage() . '</p>';
+            $apiResponse = false;
+            $httpCode = 0;
+        }
+
         if ($httpCode !== 200 || !$apiResponse) {
             echo '<p style="color: red;">❌ Preview API request failed. HTTP Code: ' . $httpCode . '</p>';
-            
+
             // Handle specific error cases
             if ($httpCode === 404) {
                 echo '<div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 10px 0;">';
@@ -1343,7 +1344,7 @@ Route::get('fix-munowatch-series', function (Request $request) {
                 echo '<p><strong>URL Format Expected:</strong> https://munowatch.org/api/preview/v2/{userId}/{videoId}</p>';
                 echo '<p><strong>Current URL:</strong> ' . htmlspecialchars($series->external_url) . '</p>';
                 echo '</div>';
-                
+
                 // Try to suggest alternative approach
                 echo '<div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
                 echo '<h4>💡 Alternative Approach</h4>';
@@ -1359,18 +1360,18 @@ Route::get('fix-munowatch-series', function (Request $request) {
             }
             return;
         }
-        
+
         echo '<p>✅ Preview API data received successfully</p>';
-        
+
         // ===== PHASE 2: PROCESS PREVIEW API RESPONSE =====
         echo '<h3>🔍 Phase 2: Processing Preview API Response</h3>';
-        
+
         $previewData = json_decode($apiResponse, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             echo '<p style="color: red;">❌ Failed to parse preview JSON response</p>';
             return;
         }
-        
+
         // Extract preview data following Flutter app pattern
         $movieDetail = null;
         if (isset($previewData['preview'])) {
@@ -1381,84 +1382,92 @@ Route::get('fix-munowatch-series', function (Request $request) {
             echo '<p>Available keys: ' . implode(', ', array_keys($previewData)) . '</p>';
             return;
         }
-        
+
         // Extract series code (critical for episodes API)
         $seriesCode = $movieDetail['series_code'] ?? '';
         $showTitle = $movieDetail['video_title'] ?? $series->title;
-        
+
         echo '<p>📺 Show Title: ' . htmlspecialchars($showTitle) . '</p>';
         echo '<p>🔖 Series Code: ' . htmlspecialchars($seriesCode) . '</p>';
-        
+
         if (empty($seriesCode)) {
             echo '<p style="color: red;">❌ No series code found - this might not be a series</p>';
             return;
         }
-        
+
         // ===== PHASE 3: FETCH EPISODES USING FLUTTER APP PATTERN =====
         echo '<h3>📺 Phase 3: Fetching Episodes Data</h3>';
-        
+
         // Use the videoId from URL as showId for episodes API
         $showId = $videoId;
-        
+
         echo '<p>🎥 Show ID: ' . $showId . '</p>';
         echo '<p>🔖 Series Code: ' . htmlspecialchars($seriesCode) . '</p>';
-        
+
         // Fetch episodes using the exact Flutter app pattern: episodes/range/{showId}/{seriesCode}/{seasonNumber}
         $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/1";
         echo '<p>📡 Episodes API URL: ' . $episodesUrl . '</p>';
-        
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $episodesUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        
-        $episodesResponse = curl_exec($ch);
-        $episodesHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
+
+        try {
+            echo '<p>🔑 Fetching episodes with auto-refresh authentication...</p>';
+
+            $episodesResponse = \App\Services\MunowatchAuthService::callApiWithAutoRefresh(
+                $episodesUrl,
+                $apiKey,
+                $xApiKey,
+                'GET',
+                [],
+                3
+            );
+
+            $episodesHttpCode = 200; // If we get here, the call was successful
+            echo '<p>✅ Episodes API call successful</p>';
+        } catch (Exception $e) {
+            echo '<p style="color: red;">❌ Episodes API request failed with auto-refresh: ' . $e->getMessage() . '</p>';
+            $episodesResponse = false;
+            $episodesHttpCode = 0;
+        }
+
         if ($episodesHttpCode !== 200 || !$episodesResponse) {
             echo '<p style="color: red;">❌ Episodes API request failed. HTTP Code: ' . $episodesHttpCode . '</p>';
             return;
         }
-        
+
         $episodesData = json_decode($episodesResponse, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             echo '<p style="color: red;">❌ Failed to parse episodes JSON response</p>';
             return;
         }
-        
+
         // Check if API returned error (following Flutter app pattern)
         if (is_array($episodesData) && isset($episodesData['error']) && $episodesData['error'] === true) {
             echo '<p style="color: red;">❌ Episodes API returned error: ' . ($episodesData['msg'] ?? 'Unknown error') . '</p>';
             return;
         }
-        
+
         // Episodes data should be an array of episode ranges
         $episodeRanges = [];
         if (is_array($episodesData)) {
             $episodeRanges = $episodesData;
         }
-        
+
         if (empty($episodeRanges)) {
             echo '<p style="color: red;">❌ No episode ranges found - this might not be a series</p>';
             return;
         }
-        
+
         echo '<p>✅ Found ' . count($episodeRanges) . ' episode ranges</p>';
-        
+
         // Expand episode ranges into individual episodes (following Flutter app logic)
         $episodes = [];
         foreach ($episodeRanges as $rangeData) {
             echo '<div style="margin: 10px 0; padding: 5px; border: 1px solid #ddd;">';
             echo '<p>📼 Range: ' . htmlspecialchars($rangeData['eps'] ?? 'Unknown') . ' (' . htmlspecialchars($rangeData['eps_range'] ?? 'No range') . ')</p>';
-            
+
             // Parse episode range following Flutter app EpisodeRange.expand() logic
             $epsRange = $rangeData['eps_range'] ?? '';
             $rangeEpisodes = [];
-            
+
             if (!empty($epsRange)) {
                 // Parse range like "1-10" or "1,2,3" or single number "5"
                 if (strpos($epsRange, '-') !== false) {
@@ -1488,9 +1497,9 @@ Route::get('fix-munowatch-series', function (Request $request) {
                     }
                 }
             }
-            
+
             echo '<p>→ Expanded to episodes: ' . implode(', ', $rangeEpisodes) . '</p>';
-            
+
             // Create episode data for each number in the range
             foreach ($rangeEpisodes as $episodeNumber) {
                 $episodes[] = [
@@ -1506,36 +1515,36 @@ Route::get('fix-munowatch-series', function (Request $request) {
                     'range_data' => $rangeData // Keep original range data for reference
                 ];
             }
-            
+
             echo '</div>';
         }
-        
+
         // ===== PHASE 4: PROCESS AND SAVE EPISODES =====
         echo '<h3>💾 Phase 4: Processing Episodes</h3>';
         echo '<hr>';
-        
+
         $processedCount = 0;
         $skippedCount = 0;
         $errorCount = 0;
-        
+
         foreach ($episodes as $index => $episodeData) {
             $episodeNumber = $index + 1; // 1-based numbering
-            
+
             try {
                 echo '<div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd;">';
                 echo '<h4>Episode ' . $episodeNumber . ': ' . htmlspecialchars($episodeData['name'] ?? 'Unknown') . '</h4>';
-                
+
                 // Extract episode URLs using our munowatch pattern
                 $episodeId = $episodeData['id'] ?? '';
                 $episodeTitle = $episodeData['name'] ?? 'Episode ' . $episodeNumber;
                 $episodeDescription = $episodeData['description'] ?? $series->description;
-                
+
                 // Get video URLs from episode data
                 $episodePlayingUrl = $episodeData['playing_url'] ?? '';
                 $episodeEmbedUrl = $episodeData['embed_url'] ?? '';
                 $episodeOpenloadUrl = $episodeData['openload_url'] ?? '';
                 $episodeStreamUrl = $episodeData['stream_url'] ?? '';
-                
+
                 // Determine primary video URL
                 $primaryEpisodeUrl = '';
                 if (!empty($episodePlayingUrl)) {
@@ -1547,28 +1556,43 @@ Route::get('fix-munowatch-series', function (Request $request) {
                 } elseif (!empty($episodeStreamUrl)) {
                     $primaryEpisodeUrl = $episodeStreamUrl;
                 }
-                
+
                 if (empty($primaryEpisodeUrl)) {
                     echo '<p style="color: orange;">⚠️ No video URL found - skipping</p>';
                     $skippedCount++;
+                    //DUMP IT
+                    echo '<div style="background-color: #f8d7da; padding: 10px; border-radius: 5px; margin-top: 10px;">';
+                    echo '<h4>Debug Info:</h4>';
+                    echo '<pre>' . htmlspecialchars(print_r($episodeData, true)) . '</pre>';
+                    echo '<p><strong>Episode Number:</strong> ' . $episodeNumber . '</p>';
+                    echo '<p><strong>Episode Title:</strong> ' . htmlspecialchars($episodeTitle) . '</p>';
+                    echo '<p><strong>Episode Description:</strong> ' . htmlspecialchars($episodeDescription) . '</p>';
+                    echo '<p><strong>Episode ID:</strong> ' . htmlspecialchars($episodeId) . '</p>';
+                    echo '<p><strong>All URLs:</strong></p>';
+                    echo '<ul>';
+                    echo '<li>Playing URL: ' . htmlspecialchars($episodePlayingUrl) . '</li>';
+                    echo '<li>Embed URL: ' . htmlspecialchars($episodeEmbedUrl) . '</li>';
+                    echo '<li>Openload URL: ' . htmlspecialchars($episodeOpenloadUrl) . '</li>';
+                    echo '<li>Stream URL: ' . htmlspecialchars($episodeStreamUrl) . '</li>';
+                    echo '</ul>';
                     echo '</div>';
                     continue;
                 }
-                
+
                 echo '<p>🎬 Video URL: ' . htmlspecialchars($primaryEpisodeUrl) . '</p>';
-                
+
                 // Check for existing episode
                 $existingEpisode = \App\Models\MovieModel::where('category_id', $series->id)
-                                           ->where('episode_number', $episodeNumber)
-                                           ->where('type', 'Series')
-                                           ->first();
-                
+                    ->where('episode_number', $episodeNumber)
+                    ->where('type', 'Series')
+                    ->first();
+
                 if (!$existingEpisode && !empty($episodeId)) {
                     $existingEpisode = \App\Models\MovieModel::where('external_id', $episodeId)->first();
                 }
-                
+
                 $isNew = ($existingEpisode === null);
-                
+
                 if ($isNew) {
                     $episode = new \App\Models\MovieModel();
                     echo '<p style="color: green;">✅ Creating new episode</p>';
@@ -1576,28 +1600,28 @@ Route::get('fix-munowatch-series', function (Request $request) {
                     $episode = $existingEpisode;
                     echo '<p style="color: blue;">🔄 Updating existing episode (ID: ' . $episode->id . ')</p>';
                 }
-                
+
                 // Set episode data following the existing pattern
                 $episode->title = $series->title . ' - ' . $episodeTitle;
                 $episode->description = $episodeDescription;
                 $episode->external_url = "https://munowatch.com/episode/{$episodeId}";
                 $episode->external_id = $episodeId;
                 $episode->page_source_url = $series->external_url;
-                
+
                 // Critical relationship linking
                 $episode->category_id = $series->id;
                 $episode->category = $series->title;
                 $episode->type = 'Series';
                 $episode->episode_number = $episodeNumber;
                 $episode->season_number = 1; // Default to season 1
-                
+
                 // Video and media information
                 $episode->url = $primaryEpisodeUrl;
                 $episode->thumbnail_url = $episodeData['thumbnail'] ?? $series->thumbnail;
                 $episode->image_url = $episodeData['thumbnail'] ?? $series->thumbnail;
                 $episode->poster_url = $episodeData['thumbnail'] ?? $series->thumbnail;
                 $episode->duration = $episodeData['duration'] ?? '';
-                
+
                 // Inherit series metadata
                 $episode->genre = $series->Category;
                 $episode->year = $series->year;
@@ -1605,17 +1629,17 @@ Route::get('fix-munowatch-series', function (Request $request) {
                 $episode->country = $series->country ?? 'Uganda';
                 $episode->rating = $series->rating ?? '';
                 $episode->vj = $series->vj ?? '';
-                
+
                 // Technical metadata
                 $episode->content_type = 'video/mp4';
                 $episode->content_is_video = 'Yes';
                 $episode->content_type_processed = 'No';
-                
+
                 // Status and access
                 $episode->status = 'Active';
                 $episode->temp_status = 'Active';
                 $episode->is_premium = 'No';
-                
+
                 // Size handling if available
                 if (!empty($episodeData['size'])) {
                     preg_match('/(\d+\.?\d*)\s*(MB|GB)/i', $episodeData['size'], $matches);
@@ -1627,16 +1651,15 @@ Route::get('fix-munowatch-series', function (Request $request) {
                         $episode->size = $sizeValue;
                     }
                 }
-                
+
                 // Save episode (MovieModel boot() will automatically set is_first_episode)
                 $episode->save();
-                
+
                 echo '<p>✅ Episode saved successfully (ID: ' . $episode->id . ')</p>';
                 echo '<p>🏷️ First Episode: ' . ($episode->is_first_episode === 'Yes' ? 'YES' : 'No') . '</p>';
-                
+
                 $processedCount++;
                 echo '</div>';
-                
             } catch (\Exception $e) {
                 echo '<p style="color: red;">❌ Error: ' . htmlspecialchars($e->getMessage()) . '</p>';
                 echo '</div>';
@@ -1644,22 +1667,22 @@ Route::get('fix-munowatch-series', function (Request $request) {
                 continue;
             }
         }
-        
+
         // ===== PHASE 5: UPDATE SERIES WITH FINAL STATS =====
         echo '<hr>';
         echo '<h3>📊 Final Summary</h3>';
-        
+
         // Count actual episodes created
         $finalEpisodeCount = \App\Models\MovieModel::where('category_id', $series->id)
-                                     ->where('type', 'Series')
-                                     ->count();
-        
+            ->where('type', 'Series')
+            ->count();
+
         // Update series with episode count
         $series->total_episodes = $finalEpisodeCount;
         $series->is_active = 'Yes';
         $series->description .= " - Episodes processed on " . date('Y-m-d H:i:s');
         $series->save();
-        
+
         echo '<div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">';
         echo '<h4>📈 Processing Results:</h4>';
         echo '<ul>';
@@ -1671,18 +1694,18 @@ Route::get('fix-munowatch-series', function (Request $request) {
         echo '<li><strong>Final Episode Count:</strong> ' . $finalEpisodeCount . '</li>';
         echo '</ul>';
         echo '</div>';
-        
+
         echo '<hr>';
         echo '<h3>🎬 Episodes Created:</h3>';
-        
+
         $createdEpisodes = \App\Models\MovieModel::where('category_id', $series->id)
-                                   ->where('type', 'Series')
-                                   ->orderBy('episode_number', 'asc')
-                                   ->get();
-        
+            ->where('type', 'Series')
+            ->orderBy('episode_number', 'asc')
+            ->get();
+
         echo '<table border="1" cellpadding="5" style="border-collapse: collapse; width: 100%;">';
         echo '<tr><th>Episode #</th><th>Title</th><th>First Episode</th><th>Status</th><th>Video URL</th></tr>';
-        
+
         foreach ($createdEpisodes as $ep) {
             echo '<tr>';
             echo '<td>' . $ep->episode_number . '</td>';
@@ -1692,16 +1715,15 @@ Route::get('fix-munowatch-series', function (Request $request) {
             echo '<td><a href="' . htmlspecialchars($ep->url) . '" target="_blank">Watch</a></td>';
             echo '</tr>';
         }
-        
+
         echo '</table>';
-        
+
         echo '<hr>';
         echo '<div style="background-color: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0;">';
         echo '<h3>✅ Munowatch Series Fix Completed Successfully!</h3>';
         echo '<p>All episodes have been processed and saved with proper relationships and episode numbering.</p>';
         echo '<p><strong>Note:</strong> The first episode has been automatically flagged with is_first_episode = "Yes"</p>';
         echo '</div>';
-        
     } catch (\Exception $e) {
         echo '<div style="background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">';
         echo '<h3>❌ Error Processing Series</h3>';

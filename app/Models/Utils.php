@@ -6444,44 +6444,6 @@ class Utils
         
         return false;
     }
-            
-            // Call the enhanced HTTP client
-            $response = self::get_url_with_auth($url, $headers, $method, $data, $maxRetries);
-            
-            // Additional validation for munowatch responses
-            if (empty($response)) {
-                throw new \Exception('Empty response received from munowatch API');
-            }
-            
-            // Log successful munowatch API call
-            Log::info('Munowatch authenticated API call successful', [
-                'url' => $url,
-                'method' => $method,
-                'response_length' => strlen($response),
-                'bearer_token_prefix' => substr($bearerToken, 0, 8) . '...',
-                'api_key_prefix' => substr($apiKey, 0, 8) . '...'
-            ]);
-            
-            return $response;
-            
-        } catch (\InvalidArgumentException $e) {
-            // Re-throw validation errors without retry
-            throw $e;
-            
-        } catch (\Exception $e) {
-            // Log the final failure with context
-            Log::error('Munowatch authenticated API call failed', [
-                'url' => $url,
-                'method' => $method,
-                'error' => $e->getMessage(),
-                'bearer_token_prefix' => substr($bearerToken, 0, 8) . '...',
-                'api_key_prefix' => substr($apiKey, 0, 8) . '...'
-            ]);
-            
-            // Re-throw with additional context
-            throw new \Exception('Munowatch API call failed: ' . $e->getMessage());
-        }
-    }
 
     /**
      * Login to munowatch and get fresh JWT token
