@@ -27,7 +27,7 @@ class MovieCrawlerPageController extends AdminController
         $grid = new Grid(new MovieCrawlerPage());
 
         $grid->model()->orderBy('id', 'desc');
-        $grid->quickSearch('title', 'slug', 'url', 'movie_id', 'page_content', 'error_message', 'status'); 
+        $grid->quickSearch('title', 'slug', 'url', 'movie_id', 'page_content', 'error_message', 'status');
         $grid->column('id', __('Id'))->sortable();
         $grid->column('created_at', __('Created'))
             ->sortable()
@@ -36,18 +36,18 @@ class MovieCrawlerPageController extends AdminController
             });
 
         $grid->column('movie_crawler_website_id', __('Movie crawler website id'))->hide();
-        $grid->column('title', __('Title'))->sortable(); 
+        $grid->column('title', __('Title'))->sortable();
         $grid->column('slug', __('Slug'))->sortable();
         $grid->column('url', __('Url'))->sortable();
         $grid->column('movie_id', __('Movie id'))->hide();
         $grid->column('page_content', __('Page content'))->hide();
         $grid->column('error_message', __('Error message'))->sortable();
         $grid->column('status', __('Status'))->sortable()
-        ->filter([
-            'pending' => 'Pending',
-            'success' => 'Success',
-            'error' => 'Error',
-        ]);
+            ->filter([
+                'pending' => 'Pending',
+                'success' => 'Success',
+                'error' => 'Error',
+            ]);
         $grid->column('last_fetched_at', __('Last fetched at'))->sortable();
         $grid->column('type', __('Type'))->sortable();
         $grid->column('row_id', __('Row id'))->hide();
@@ -55,6 +55,21 @@ class MovieCrawlerPageController extends AdminController
         $grid->column('bunny_file_name', __('Bunny file name'))->hide();
         $grid->column('tmdb_poster_path', __('Tmdb poster path'))->hide();
         $grid->column('vj', __('Vj'))->sortable();
+
+        //muno_processed
+        $grid->column('muno_processed', __('Muno Processed'))->sortable()
+            ->filter([
+                'Yes' => 'Yes',
+                'No' => 'No',
+            ])->sortable();
+        $grid->column('muno_success', __('Muno Success'))->sortable()
+            ->filter([
+                'Yes' => 'Yes',
+                'No' => 'No',
+            ])->sortable();
+        //muno_message
+        $grid->column('muno_message', __('Muno Message'))->sortable()->filter('like');
+
 
         return $grid;
     }
