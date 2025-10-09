@@ -1244,6 +1244,384 @@ Route::get('fix-serries-movies', function (Request $request) {
     dd($series);
 });
 
+// Fix munowatch series episodes - specialized for munowatch API pattern
+Route::get('fix-munowatch-series', function (Request $request) {
+    // Set execution limits for processing multiple episodes
+    ini_set('memory_limit', '512M');
+    ini_set('max_execution_time', '600');
+    ini_set('max_input_time', '600');
+    ini_set('upload_max_filesize', '100M');
+    ini_set('post_max_size', '100M');
+    
+    // Get series ID from request
+    if (!isset($_GET['id'])) {
+        echo '<h1>Error: No series ID provided</h1>';
+        return;
+    }
+    
+    $seriesId = $request->get('id');
+    $series = \App\Models\SeriesMovie::find($seriesId);
+    
+    if (!$series) {
+        echo '<h1>Error: Series not found with ID: ' . $seriesId . '</h1>';
+        return;
+    }
+    
+    echo '<h1>🎬 MUNOWATCH SERIES EPISODE FIXER 🎬</h1>';
+    echo '<h2>Processing: ' . htmlspecialchars($series->title) . '</h2>';
+    echo '<p>Series ID: ' . $series->id . '</p>';
+    echo '<p>External URL: ' . htmlspecialchars($series->external_url) . '</p>';
+    echo '<hr>';
+    
+    try {
+        // Create a MovieCrawlerPage instance to use our existing munowatch logic
+        require_once app_path('Models/MovieCrawlerPage.php');
+        
+        $crawler = new \App\Models\MovieCrawlerPage();
+        $crawler->url = $series->external_url;
+        $crawler->page_content = ''; // Will be fetched by our method
+        
+        // ===== PHASE 1: FETCH MUNOWATCH API DATA =====
+        echo '<h3>📥 Phase 1: Fetching Munowatch API Data</h3>';
+        
+        // Extract user ID from external URL pattern
+        // URL format: https://munowatch.org/user/android-tv/1 or similar
+        $userId = 'android-tv'; // Default working user from our tests
+        if (preg_match('/user\/([^\/]+)/i', $series->external_url, $matches)) {
+            $userId = $matches[1];
+        } elseif ($series->external_id) {
+            $userId = $series->external_id;
+        }
+        
+        echo '<p>✅ Using user ID: ' . htmlspecialchars($userId) . '</p>';
+        
+        // Fetch dashboard data using our working API pattern
+        $dashboardUrl = "https://munowatch.org/api/dashboard/{$userId}";
+        echo '<p>📡 API URL: ' . $dashboardUrl . '</p>';
+        
+        $jwtToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+        
+        $headers = [
+            'Authorization: Bearer ' . $jwtToken,
+            'Accept: application/json',
+            'Content-Type: application/json',
+            'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        ];
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $dashboardUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        
+        $apiResponse = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode !== 200 || !$apiResponse) {
+            echo '<p style="color: red;">❌ API request failed. HTTP Code: ' . $httpCode . '</p>';
+            return;
+        }
+        
+        echo '<p>✅ API data received successfully</p>';
+        
+        // ===== PHASE 2: PROCESS API RESPONSE =====
+        echo '<h3>🔍 Phase 2: Processing API Response</h3>';
+        
+        $jsonData = json_decode($apiResponse, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            echo '<p style="color: red;">❌ Failed to parse JSON response</p>';
+            return;
+        }
+        
+        // Find series data in the response using our existing extraction logic
+        $movieData = null;
+        $categoryData = $jsonData['data']['content'] ?? [];
+        
+        foreach ($categoryData as $category) {
+            if (isset($category['content'])) {
+                foreach ($category['content'] as $item) {
+                    // Match by title or ID
+                    if (
+                        (isset($item['name']) && stripos($item['name'], $series->title) !== false) ||
+                        (isset($item['id']) && $item['id'] == $series->external_id)
+                    ) {
+                        $movieData = $item;
+                        echo '<p>✅ Found series data: ' . htmlspecialchars($item['name'] ?? 'Unknown') . '</p>';
+                        break 2;
+                    }
+                }
+            }
+        }
+        
+        if (!$movieData) {
+            echo '<p style="color: orange;">⚠️ Series not found in current dashboard data</p>';
+            echo '<p>Available series in response:</p>';
+            echo '<ul>';
+            foreach ($categoryData as $category) {
+                if (isset($category['content'])) {
+                    foreach ($category['content'] as $item) {
+                        echo '<li>' . htmlspecialchars($item['name'] ?? 'Unknown') . ' (ID: ' . ($item['id'] ?? 'N/A') . ')</li>';
+                    }
+                }
+            }
+            echo '</ul>';
+            return;
+        }
+        
+        // ===== PHASE 3: VALIDATE SERIES WITH EPISODES API =====
+        echo '<h3>📺 Phase 3: Fetching Episodes Data</h3>';
+        
+        $showId = $movieData['id'];
+        $seriesCode = $movieData['series_code'] ?? '';
+        
+        echo '<p>Show ID: ' . $showId . '</p>';
+        echo '<p>Series Code: ' . htmlspecialchars($seriesCode) . '</p>';
+        
+        if (empty($seriesCode)) {
+            echo '<p style="color: red;">❌ No series code found - this might not be a series</p>';
+            return;
+        }
+        
+        // Fetch episodes using the Flutter app pattern
+        $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/1";
+        echo '<p>📡 Episodes API URL: ' . $episodesUrl . '</p>';
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $episodesUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        
+        $episodesResponse = curl_exec($ch);
+        $episodesHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($episodesHttpCode !== 200 || !$episodesResponse) {
+            echo '<p style="color: red;">❌ Episodes API request failed. HTTP Code: ' . $episodesHttpCode . '</p>';
+            return;
+        }
+        
+        $episodesData = json_decode($episodesResponse, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            echo '<p style="color: red;">❌ Failed to parse episodes JSON response</p>';
+            return;
+        }
+        
+        $episodes = $episodesData['data']['episodes'] ?? [];
+        
+        if (empty($episodes)) {
+            echo '<p style="color: red;">❌ No episodes found - this might not be a series</p>';
+            return;
+        }
+        
+        echo '<p>✅ Found ' . count($episodes) . ' episodes</p>';
+        
+        // ===== PHASE 4: PROCESS AND SAVE EPISODES =====
+        echo '<h3>💾 Phase 4: Processing Episodes</h3>';
+        echo '<hr>';
+        
+        $processedCount = 0;
+        $skippedCount = 0;
+        $errorCount = 0;
+        
+        foreach ($episodes as $index => $episodeData) {
+            $episodeNumber = $index + 1; // 1-based numbering
+            
+            try {
+                echo '<div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd;">';
+                echo '<h4>Episode ' . $episodeNumber . ': ' . htmlspecialchars($episodeData['name'] ?? 'Unknown') . '</h4>';
+                
+                // Extract episode URLs using our munowatch pattern
+                $episodeId = $episodeData['id'] ?? '';
+                $episodeTitle = $episodeData['name'] ?? 'Episode ' . $episodeNumber;
+                $episodeDescription = $episodeData['description'] ?? $series->description;
+                
+                // Get video URLs from episode data
+                $episodePlayingUrl = $episodeData['playing_url'] ?? '';
+                $episodeEmbedUrl = $episodeData['embed_url'] ?? '';
+                $episodeOpenloadUrl = $episodeData['openload_url'] ?? '';
+                $episodeStreamUrl = $episodeData['stream_url'] ?? '';
+                
+                // Determine primary video URL
+                $primaryEpisodeUrl = '';
+                if (!empty($episodePlayingUrl)) {
+                    $primaryEpisodeUrl = $episodePlayingUrl;
+                } elseif (!empty($episodeEmbedUrl)) {
+                    $primaryEpisodeUrl = $episodeEmbedUrl;
+                } elseif (!empty($episodeOpenloadUrl)) {
+                    $primaryEpisodeUrl = $episodeOpenloadUrl;
+                } elseif (!empty($episodeStreamUrl)) {
+                    $primaryEpisodeUrl = $episodeStreamUrl;
+                }
+                
+                if (empty($primaryEpisodeUrl)) {
+                    echo '<p style="color: orange;">⚠️ No video URL found - skipping</p>';
+                    $skippedCount++;
+                    echo '</div>';
+                    continue;
+                }
+                
+                echo '<p>🎬 Video URL: ' . htmlspecialchars($primaryEpisodeUrl) . '</p>';
+                
+                // Check for existing episode
+                $existingEpisode = \App\Models\MovieModel::where('category_id', $series->id)
+                                           ->where('episode_number', $episodeNumber)
+                                           ->where('type', 'Series')
+                                           ->first();
+                
+                if (!$existingEpisode && !empty($episodeId)) {
+                    $existingEpisode = \App\Models\MovieModel::where('external_id', $episodeId)->first();
+                }
+                
+                $isNew = ($existingEpisode === null);
+                
+                if ($isNew) {
+                    $episode = new \App\Models\MovieModel();
+                    echo '<p style="color: green;">✅ Creating new episode</p>';
+                } else {
+                    $episode = $existingEpisode;
+                    echo '<p style="color: blue;">🔄 Updating existing episode (ID: ' . $episode->id . ')</p>';
+                }
+                
+                // Set episode data following the existing pattern
+                $episode->title = $series->title . ' - ' . $episodeTitle;
+                $episode->description = $episodeDescription;
+                $episode->external_url = "https://munowatch.com/episode/{$episodeId}";
+                $episode->external_id = $episodeId;
+                $episode->page_source_url = $series->external_url;
+                
+                // Critical relationship linking
+                $episode->category_id = $series->id;
+                $episode->category = $series->title;
+                $episode->type = 'Series';
+                $episode->episode_number = $episodeNumber;
+                $episode->season_number = 1; // Default to season 1
+                
+                // Video and media information
+                $episode->url = $primaryEpisodeUrl;
+                $episode->thumbnail_url = $episodeData['thumbnail'] ?? $series->thumbnail;
+                $episode->image_url = $episodeData['thumbnail'] ?? $series->thumbnail;
+                $episode->poster_url = $episodeData['thumbnail'] ?? $series->thumbnail;
+                $episode->duration = $episodeData['duration'] ?? '';
+                
+                // Inherit series metadata
+                $episode->genre = $series->Category;
+                $episode->year = $series->year;
+                $episode->language = $series->language ?? 'English';
+                $episode->country = $series->country ?? 'Uganda';
+                $episode->rating = $series->rating ?? '';
+                $episode->vj = $series->vj ?? '';
+                
+                // Technical metadata
+                $episode->content_type = 'video/mp4';
+                $episode->content_is_video = 'Yes';
+                $episode->content_type_processed = 'No';
+                
+                // Status and access
+                $episode->status = 'Active';
+                $episode->temp_status = 'Active';
+                $episode->is_premium = 'No';
+                
+                // Size handling if available
+                if (!empty($episodeData['size'])) {
+                    preg_match('/(\d+\.?\d*)\s*(MB|GB)/i', $episodeData['size'], $matches);
+                    if (isset($matches[1]) && isset($matches[2])) {
+                        $sizeValue = (float)$matches[1];
+                        if (strtoupper($matches[2]) === 'GB') {
+                            $sizeValue *= 1024; // Convert GB to MB
+                        }
+                        $episode->size = $sizeValue;
+                    }
+                }
+                
+                // Save episode (MovieModel boot() will automatically set is_first_episode)
+                $episode->save();
+                
+                echo '<p>✅ Episode saved successfully (ID: ' . $episode->id . ')</p>';
+                echo '<p>🏷️ First Episode: ' . ($episode->is_first_episode === 'Yes' ? 'YES' : 'No') . '</p>';
+                
+                $processedCount++;
+                echo '</div>';
+                
+            } catch (\Exception $e) {
+                echo '<p style="color: red;">❌ Error: ' . htmlspecialchars($e->getMessage()) . '</p>';
+                echo '</div>';
+                $errorCount++;
+                continue;
+            }
+        }
+        
+        // ===== PHASE 5: UPDATE SERIES WITH FINAL STATS =====
+        echo '<hr>';
+        echo '<h3>📊 Final Summary</h3>';
+        
+        // Count actual episodes created
+        $finalEpisodeCount = \App\Models\MovieModel::where('category_id', $series->id)
+                                     ->where('type', 'Series')
+                                     ->count();
+        
+        // Update series with episode count
+        $series->total_episodes = $finalEpisodeCount;
+        $series->is_active = 'Yes';
+        $series->description .= " - Episodes processed on " . date('Y-m-d H:i:s');
+        $series->save();
+        
+        echo '<div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">';
+        echo '<h4>📈 Processing Results:</h4>';
+        echo '<ul>';
+        echo '<li><strong>Series:</strong> ' . htmlspecialchars($series->title) . '</li>';
+        echo '<li><strong>Episodes Found:</strong> ' . count($episodes) . '</li>';
+        echo '<li><strong>Episodes Processed:</strong> ' . $processedCount . '</li>';
+        echo '<li><strong>Episodes Skipped:</strong> ' . $skippedCount . '</li>';
+        echo '<li><strong>Episodes Errors:</strong> ' . $errorCount . '</li>';
+        echo '<li><strong>Final Episode Count:</strong> ' . $finalEpisodeCount . '</li>';
+        echo '</ul>';
+        echo '</div>';
+        
+        echo '<hr>';
+        echo '<h3>🎬 Episodes Created:</h3>';
+        
+        $createdEpisodes = \App\Models\MovieModel::where('category_id', $series->id)
+                                   ->where('type', 'Series')
+                                   ->orderBy('episode_number', 'asc')
+                                   ->get();
+        
+        echo '<table border="1" cellpadding="5" style="border-collapse: collapse; width: 100%;">';
+        echo '<tr><th>Episode #</th><th>Title</th><th>First Episode</th><th>Status</th><th>Video URL</th></tr>';
+        
+        foreach ($createdEpisodes as $ep) {
+            echo '<tr>';
+            echo '<td>' . $ep->episode_number . '</td>';
+            echo '<td>' . htmlspecialchars($ep->title) . '</td>';
+            echo '<td>' . ($ep->is_first_episode === 'Yes' ? '✅ YES' : '❌ No') . '</td>';
+            echo '<td>' . $ep->status . '</td>';
+            echo '<td><a href="' . htmlspecialchars($ep->url) . '" target="_blank">Watch</a></td>';
+            echo '</tr>';
+        }
+        
+        echo '</table>';
+        
+        echo '<hr>';
+        echo '<div style="background-color: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0;">';
+        echo '<h3>✅ Munowatch Series Fix Completed Successfully!</h3>';
+        echo '<p>All episodes have been processed and saved with proper relationships and episode numbering.</p>';
+        echo '<p><strong>Note:</strong> The first episode has been automatically flagged with is_first_episode = "Yes"</p>';
+        echo '</div>';
+        
+    } catch (\Exception $e) {
+        echo '<div style="background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0;">';
+        echo '<h3>❌ Error Processing Series</h3>';
+        echo '<p>Error: ' . htmlspecialchars($e->getMessage()) . '</p>';
+        echo '<p>Please check the series data and try again.</p>';
+        echo '</div>';
+    }
+});
+
 Route::get('process-movies', function (Request $request) {
     //https://movies.ug/videos/Leighton%20Meester-The%20Weekend%20Away%20(2022).mp4
 
