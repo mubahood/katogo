@@ -17,9 +17,53 @@ class MovieModel extends Model
     public static function process_munowatch($movie)
     {
         //write sql that checks if external_url contains munowatch and mark it as Inactive and is_munowatch = Yes
-        $sql = "UPDATE movie_models SET status = 'Inactive', is_muno = 'Yes' WHERE id > 21308 AND (external_url LIKE '%munowatch%' OR url LIKE '%munowatch%')";
-        DB::statement($sql);
-        dd($movie);
+        // $sql = "UPDATE movie_models SET status = 'Inactive', is_muno = 'Yes' WHERE id > 21308 AND (external_url LIKE '%munowatch%' OR url LIKE '%munowatch%')";
+        // DB::statement($sql);
+        $crawler = MovieCrawlerPage::where('url', $movie->page_source_url)->first();
+        if ($crawler == null) {
+            $crawler = MovieCrawlerPage::where('url', $movie->external_url)->first();
+        }
+
+        $page_source_url = null;
+        if ($movie->page_source_url != null && strlen($movie->page_source_url) > 5) {
+            $page_source_url = $movie->page_source_url;
+        } elseif ($movie->external_url != null && strlen($movie->external_url) > 5) {
+            $page_source_url = $movie->external_url;
+        }
+        if ($page_source_url == null) {
+            $movie->muno_processed = 'Yes';
+            $movie->status = 'Inactive';
+            $movie->muno_success = 'External URL not found';
+            $movie->save();
+            throw new \Exception('External URL not found');
+            return;
+        }
+
+        if ($crawler == null) {
+            //create the crawler
+            $crawler = new MovieCrawlerPage();
+            $crawler->url = $movie->page_source_url;
+            $crawler->movie_crawler_website_id = 2; //munowatch
+            $crawler->title = $movie->title;
+            $crawler->slug = $movie->page_source_url;
+            $crawler->url = $movie->page_source_url;
+            $crawler->vj = 'Munowatch API';
+            $crawler->is_muno = 'Yes';
+            $crawler->save();
+        }
+
+        if (strtolower(trim($crawler->status)) != 'success') {
+            try {
+                $crawler->fetch_page_content();
+            } catch (\Throwable $th) {
+                $movie->muno_processed = 'Yes';
+                $movie->status = 'Inactive';
+                $movie->muno_success = 'Failed to fetch page content: ' . $th->getMessage();
+                $movie->save();
+                throw $th;
+            }
+        }
+        $crawler->process_munowatch_intelligent();
     }
 
     //boot

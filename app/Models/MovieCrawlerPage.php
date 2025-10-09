@@ -349,64 +349,167 @@ class MovieCrawlerPage extends Model
     public function process_munowatch_intelligent()
     {
         try {
+            $jsonData = null;
             // Parse JSON response to determine content type
-            $jsonData = json_decode($this->page_content, true);
+            try {
+                $jsonData = json_decode($this->page_content, true);
+            } catch (\Throwable $th) {
+                throw new \Exception('Failed to parse JSON response: ' . $th->getMessage());
+            }
+
             if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
             }
 
             // ===== ENHANCED SERIES DETECTION USING MULTIPLE SIGNALS =====
-            
+
             $isSeries = false;
             $seriesCode = null;
             $showId = null;
             $detectionSignals = [];
-            
+
             // Extract movie data from various possible structures
             $movieData = $this->extractMovieDataFromResponse($jsonData);
-            
+            /* 
+array:54 [▼ // app/Models/MovieCrawlerPage.php:375
+  "id" => 59707
+  "video_title" => "Foundation 3"
+  "description" => "A complex saga of humans scattered on planets throughout the galaxy all living under the rule of the Galactic Empire."
+  "video_name" => "FOUNDATION S01.E03.VJ SOUL.2025.mp4"
+  "filehistory" => ""
+  "openload" => "0"
+  "embedurl" => ""
+  "serverhost" => "75"
+  "allow_openload" => "0"
+  "full_video_name" => ""
+  "duration" => "49h 39m"
+  "thumbnail" => "https://munoapp.org/munowatch-api/laba/yo/naki/o2gUFhcSnk7468.jpg"
+  "tfilehistory" => ""
+  "category_id" => 5
+  "language_id" => 1
+  "recording_date" => "2025-10-07"
+  "age_id" => "18 +"
+  "location" => 1
+  "tab_category_id" => 5
+  "series_code" => "83589"
+  "access" => "1"
+  "paid_for" => "1"
+  "new_movie" => "1"
+  "priority" => "No"
+  "size" => "397.4 MB"
+  "create_date" => "2025-10-07 15:10:11"
+  "schedule_date" => "07.10.2025 03:37:15 PM"
+  "user_id" => 169464
+  "vj_id" => 57
+  "video_status_id" => 0
+  "network_id" => "45.221.10.185"
+  "user_access" => "deny"
+  "notification" => ""
+  "secduration" => "178740.000000"
+  "issubscriber" => true
+  "download" => "0"
+  "genre" => "Series"
+  "vjname" => "Vj Soul"
+  "episodes" => 23
+  "episode_state" => "NEXT"
+  "nxt_eps" => "EPS  4"
+  "nxt_eps_id" => 59708
+  "nxt_eps_title" => "Foundation 4"
+  "nxt_ldur" => 0
+  "nxt_playing_url" => "http://munoserver64.club/kabalasi/kabalasi42/FOUNDATION S01.E04.VJ SOUL.2025.mp4"
+  "playingUrl" => "http://munoserver64.club/kabalasi/kabalasi42/FOUNDATION S01.E03.VJ SOUL.2025.mp4"
+  "ldur" => 2938
+  "session_id" => "2185d39f13ef2eb0256147bbcf769f6d"
+  "device" => ""
+  "lang_name" => "English to Luganda"
+  "vjrelease" => "1 day ago"
+  "mstatus" => false
+  "kstatus" => ""
+  "substatus" => "FAILED"
+]
+
+
+array:54 [▼ // app/Models/MovieCrawlerPage.php:432
+  "id" => 52804
+  "video_title" => "Girl Haunts Boy"
+  "description" => " A young boy befriends the spirit of a 1920s girl lingering in his new home, forming an unlikely yet profound bond across decades."
+  "video_name" => "Girl.Haunts.Boy.2024.1080p.MX.mp4"
+  "filehistory" => ""
+  "openload" => "0"
+  "embedurl" => "No"
+  "serverhost" => "67"
+  "allow_openload" => "0"
+  "full_video_name" => ""
+  "duration" => "01h 35m"
+  "thumbnail" => "https://munoapp.org/munowatch-api/laba/yo/naki/xC7AxlR0D91997.jpg"
+  "tfilehistory" => ""
+  "category_id" => 15
+  "language_id" => 1
+  "recording_date" => "2024-10-26"
+  "age_id" => "13 +"
+  "location" => 1
+  "tab_category_id" => 15
+  "series_code" => "52804"
+  "access" => "1"
+  "paid_for" => "1"
+  "new_movie" => "1"
+  "priority" => "No"
+  "size" => "843.79 MB"
+  "create_date" => "2024-10-26 12:10:08"
+  "schedule_date" => "26.10.2024 07:15:49 PM"
+  "user_id" => 169464
+  "vj_id" => 1
+  "video_status_id" => 0
+  "network_id" => "45.221.8.174"
+  "user_access" => ""
+  "notification" => "No"
+  "secduration" => "5726.000000"
+  "issubscriber" => true
+  "download" => "0"
+  "genre" => "Romance"
+  "vjname" => "Vj Junior"
+  "episodes" => 0
+  "episode_state" => ""
+  "nxt_eps" => ""
+  "nxt_eps_id" => 0
+  "nxt_eps_title" => ""
+  "nxt_ldur" => 0
+  "nxt_playing_url" => "https://munowatch.co/clips/ELI.mp4"
+  "playingUrl" => "http://munoserver56.club/coco/coco22/Girl.Haunts.Boy.2024.1080p.MX.mp4"
+  "ldur" => 0
+  "session_id" => "2185d39f13ef2eb0256147bbcf769f6d"
+  "device" => ""
+  "lang_name" => "English to Luganda"
+  "vjrelease" => "11 months ago"
+  "mstatus" => false
+  "kstatus" => ""
+  "substatus" => "FAILED"
+]
+*/
             if ($movieData) {
+                // dd($movieData);
                 // ===== SIGNAL 1: SERIES_CODE PRESENCE =====
                 $seriesCode = $movieData['series_code'] ?? $movieData['seriesCode'] ?? '';
                 $showId = $movieData['id'] ?? $movieData['vid'] ?? null;
-                
-                if (!empty($seriesCode)) {
-                    $detectionSignals[] = "series_code_present";
+
+                //base on genre to be Series
+                $genre = strtolower($movieData['genre'] ?? '');
+                if (strpos($genre, 'series') !== false) {
+                    $detectionSignals[] = "genre_series";
+                    $isSeries = true;
                 }
-                
+
                 // ===== SIGNAL 2: EPISODE COUNT INDICATORS =====
-                $episodeCount = $movieData['episodes'] ?? $movieData['episode_count'] ?? 0;
+                $episodeCount = $movieData['episodes'] ?? 0;
                 if ($episodeCount > 1) {
                     $detectionSignals[] = "multi_episode_count";
                     $isSeries = true;
                 }
-                
-                // ===== SIGNAL 3: NEXT EPISODE INDICATORS =====
-                $nextEpisodeUrl = $movieData['nxt_playing_url'] ?? '';
-                $nextEpisodeId = $movieData['nxt_eps_id'] ?? 0;
-                if (!empty($nextEpisodeUrl) || $nextEpisodeId > 0) {
-                    $detectionSignals[] = "next_episode_indicators";
-                    $isSeries = true;
-                }
-                
-                // ===== SIGNAL 4: SERIES-SPECIFIC FIELDS =====
-                $episodeState = $movieData['episode_state'] ?? '';
-                $nextEpisodeTitle = $movieData['nxt_eps_title'] ?? '';
-                if (!empty($episodeState) || !empty($nextEpisodeTitle)) {
-                    $detectionSignals[] = "series_metadata_fields";
-                    $isSeries = true;
-                }
-                
-                // ===== SIGNAL 5: CATEGORY-BASED HINTS =====
-                $categoryId = $movieData['category_id'] ?? '';
-                // Category 2 = series, but verify with other signals
-                if ($categoryId == '2') {
-                    $detectionSignals[] = "series_category";
-                }
-                
+
+
                 // ===== SIGNAL 6: LIVE EPISODES API VERIFICATION =====
                 // Only check episodes API if we have strong signals to avoid unnecessary calls
-                if (!empty($seriesCode) && !empty($showId) && (count($detectionSignals) >= 2 || $isSeries)) {
+                if (!empty($seriesCode) && !empty($showId) && ($isSeries || $episodeCount > 0)) {
                     if ($this->checkEpisodesExist($showId, $seriesCode)) {
                         $detectionSignals[] = "episodes_api_confirmed";
                         $isSeries = true;
@@ -414,16 +517,37 @@ class MovieCrawlerPage extends Model
                 }
             }
 
+
+
             // ===== INTELLIGENT ROUTING DECISION =====
-            
+
             $detectionSummary = implode(', ', $detectionSignals);
-            
+
             if ($isSeries && count($detectionSignals) >= 2) {
                 // Strong series signals - route to series processor
                 $this->type = 'Series'; // Update the type field
                 $this->notes = "SERIES DETECTED: $detectionSummary (seriesCode: $seriesCode, showId: $showId)";
+                $this->muno_processed = 'Yes';
+                $this->muno_success = 'No';
+                $this->muno_message = 'Series detected, pending processing';
+
+                //get movie with this external url
+                $existing_post = MovieModel::where('external_url', $this->url)->first();
+                if ($existing_post != null) {
+                    if ($existing_post->muno_processed != 'Yes') {
+                        $existing_post->error_message = 'Series for muno are on pending processing';
+                        $existing_post->status = 'error';
+                        $existing_post->muno_processed = 'Yes';
+                        $existing_post->muno_success = 'No';
+                        $existing_post->muno_message = 'Series detected, pending processing';
+                        $existing_post->save();
+                    }
+                }
                 $this->save();
-                
+                dd($existing_post);
+                return;
+
+
                 Log::info('Munowatch series detected', [
                     'page_id' => $this->id,
                     'url' => $this->url,
@@ -432,29 +556,27 @@ class MovieCrawlerPage extends Model
                     'show_id' => $showId,
                     'detection_signals' => $detectionSignals
                 ]);
-                
-                return $this->process_munowatch_series_independent();
+
+                // return $this->process_munowatch_series_independent();
             } else {
                 // Movie or weak series signals - route to movie processor
                 $this->type = 'Movie'; // Update the type field
                 $this->notes = "MOVIE DETECTED: $detectionSummary (treating as standalone movie)";
                 $this->save();
-                
                 Log::info('Munowatch movie detected', [
                     'page_id' => $this->id,
                     'url' => $this->url,
                     'title' => $this->title,
                     'detection_signals' => $detectionSignals
                 ]);
-                
+
                 return $this->process_munowatch();
             }
-
         } catch (\Throwable $th) {
             $this->status = 'error';
             $this->error_message = 'Error in intelligent content detection: ' . $th->getMessage();
             $this->save();
-            
+
             // Fallback to standard movie processor
             try {
                 return $this->process_munowatch();
@@ -465,7 +587,7 @@ class MovieCrawlerPage extends Model
             }
         }
     }
-                
+
 
     public function process_munowatch()
     {
@@ -473,58 +595,66 @@ class MovieCrawlerPage extends Model
             // Check if movie already exists to avoid duplicates
             $existing_post = MovieModel::where('external_url', $this->url)->first();
             if ($existing_post != null) {
-                $this->error_message = 'Movie already exists with this external URL';
-                $this->status = 'error';
-                $this->save();
-                return;
+                if ($existing_post->muno_processed == 'Yes') {
+                    $this->error_message = 'Movie already exists and processed with this external URL';
+                    $this->status = 'error';
+                    $this->save();
+                    return;
+                }
             }
-
             // Parse JSON response from munowatch API
             $jsonData = json_decode($this->page_content, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
+                $this->error_message = 'Failed to parse JSON response: ' . json_last_error_msg();
+                $this->status = 'error';
+                $this->save();
                 throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
             }
 
             if (!isset($jsonData['preview']) || !is_array($jsonData['preview'])) {
+                $this->error_message = 'Invalid munowatch response structure - missing preview data';
+                $this->status = 'error';
+                $this->save();
                 throw new \Exception('Invalid munowatch response structure - missing preview data');
             }
 
             $preview = $jsonData['preview'];
 
+
             // ===== EXTRACT ALL AVAILABLE DATA FROM MUNOWATCH API =====
-            
+
             // Basic movie information
             $title = $preview['video_title'] ?? 'Unknown Title';
             $description = $preview['description'] ?? '';
             $videoName = $preview['video_name'] ?? '';
             $fullVideoName = $preview['full_video_name'] ?? '';
-            
+
             // Genre and categorization  
             $genre = $preview['genre'] ?? '';
             $categoryId = $preview['category_id'] ?? '';
             $tabCategoryId = $preview['tab_category_id'] ?? '';
-            
+
             // Duration and technical details
             $duration = $preview['duration'] ?? ''; // Format: "01h 28m"
             $secondsDuration = $preview['secduration'] ?? 0; // Seconds
             $ldur = $preview['ldur'] ?? 0; // Another duration field
             $size = $preview['size'] ?? ''; // Format: "592.9 MB"
-            
+
             // URLs and thumbnails (FOCUS ON THUMBNAIL_URL!)
             $thumbnail = $preview['thumbnail'] ?? '';
             $posterUrl = ''; // Not available in this API response
-            
+
             // Video URLs (priority: playingUrl > embedUrl > openload)
             $playingUrl = $preview['playingUrl'] ?? '';
             $embedUrl = $preview['embedurl'] ?? '';
             $openloadUrl = $preview['openload'] ?? '';
             $nextEpisodeUrl = $preview['nxt_playing_url'] ?? '';
-            
+
             // VJ Information (FOCUS ON VJ EXTRACTION!)
             $vjName = $preview['vjname'] ?? '';
             $vjId = $preview['vj_id'] ?? '';
             $vjRelease = $preview['vjrelease'] ?? '';
-            
+
             // Movie metadata
             $recordingDate = $preview['recording_date'] ?? ''; // Format: "2003-03-06"
             $year = '';
@@ -533,14 +663,14 @@ class MovieCrawlerPage extends Model
             }
             $language = $preview['lang_name'] ?? '';
             $ageRating = $preview['age_id'] ?? '';
-            
+
             // Episode and series information
             $seriesCode = $preview['series_code'] ?? '';
             $episodes = $preview['episodes'] ?? 0;
             $episodeState = $preview['episode_state'] ?? '';
             $nextEpisodeId = $preview['nxt_eps_id'] ?? 0;
             $nextEpisodeTitle = $preview['nxt_eps_title'] ?? '';
-            
+
             // Status and access information
             $access = $preview['access'] ?? '';
             $paidFor = $preview['paid_for'] ?? '';
@@ -549,7 +679,7 @@ class MovieCrawlerPage extends Model
             $userAccess = $preview['user_access'] ?? '';
             $isSubscriber = $preview['issubscriber'] ?? '';
             $download = $preview['download'] ?? '';
-            
+
             // Additional metadata
             $videoId = $preview['id'] ?? '';
             $createDate = $preview['create_date'] ?? '';
@@ -558,7 +688,7 @@ class MovieCrawlerPage extends Model
             $videoStatusId = $preview['video_status_id'] ?? '';
             $networkId = $preview['network_id'] ?? '';
             $notification = $preview['notification'] ?? '';
-            
+
             // ===== DETERMINE PRIMARY VIDEO URL =====
             $primaryVideoUrl = '';
             if (!empty($playingUrl)) {
@@ -570,48 +700,48 @@ class MovieCrawlerPage extends Model
             }
 
             // ===== CHECK FOR EXISTING MOVIE TO AVOID DUPLICATES =====
-            $existing_post = MovieModel::where('title', $title)
-                ->where('status', 'Active')
-                ->first();
-            if ($existing_post != null) {
-                $this->error_message = 'Movie already exists with this title: ' . $title;
-                $this->status = 'error';
-                $this->save();
-                return;
+
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('title', $title)
+                    ->first();
             }
 
-            // ===== CREATE NEW MOVIE RECORD WITH ALL EXTRACTED DATA =====
-            $movie = new MovieModel();
-            
+            if ($existing_post != null) {
+                $movie = $existing_post;
+            } else {
+                $movie = new MovieModel();
+            }
+
+
             // Basic information
             $movie->title = $title;
             $movie->description = $description;
             $movie->external_url = $this->url; // API endpoint URL
             $movie->page_source_url = $this->url;
             $movie->external_id = $videoId;
-            
+
             // Video URL (main field for playback)
             $movie->url = $primaryVideoUrl;
-            
+
             // Image URLs (FOCUS: THUMBNAIL_URL PROPERLY SET!)
             $movie->thumbnail_url = $thumbnail;
             $movie->image_url = $thumbnail; // Use same for both fields
             $movie->poster_url = $thumbnail; // Use thumbnail as poster since no separate poster
-            
+
             // Genre and category
             $movie->genre = $genre;
             $movie->category = $genre; // Use genre as category
             $movie->category_id = $categoryId;
-            
+
             // Duration (convert to consistent format)
             $movie->duration = $duration; // Keep original format like "01h 28m"
-            
+
             // Movie metadata
             $movie->year = $year;
             $movie->language = $language;
             $movie->country = ''; // Not available in API
             $movie->rating = $ageRating;
-            
+
             // Size (convert to float if possible)
             if (!empty($size)) {
                 preg_match('/(\d+\.?\d*)\s*(MB|GB)/i', $size, $matches);
@@ -623,32 +753,63 @@ class MovieCrawlerPage extends Model
                     $movie->size = $sizeValue;
                 }
             }
-            
+
             // VJ Information (FOCUS: PROPER VJ EXTRACTION!)
             if (!empty($vjName)) {
                 $movie->vj = $vjName;
             } else {
                 $movie->vj = 'Munowatch API';
             }
-            
+
+
             // Type determination (Movie vs Series vs Episode)
-            $movie->type = 'Movie'; // Default
-            if ($episodes > 0 || !empty($episodeState) || !empty($seriesCode)) {
-                if ($episodes > 1) {
-                    $movie->type = 'Series';
-                } elseif (!empty($episodeState)) {
-                    $movie->type = 'Episode';
-                }
+            $movie->type = $this->type ?? 'Movie'; // Default to Movie, can be overridden
+
+            //check if $genre is series
+            if (strtolower($genre) === 'series') {
+                $movie->type = 'Series';
             }
-            
+            $types = ['movie', 'series'];
+            //if not in types make type movie
+            if (!in_array(strtolower($movie->type), $types)) {
+                $movie->type = 'Movie';
+            }
             // Status (Set to Inactive for munowatch content)
-            $movie->status = 'Inactive';
-            
+            $movie->status = 'Active';
+
             // Munowatch identification fields
             $movie->is_muno = 'Yes';
-            $movie->muno_processed = 'No';
+            $movie->muno_processed = 'Yes';
             $movie->munowatch_id = $videoId; // Use the video ID as munowatch ID
-            
+            $movie->muno_message = '';
+            $movie->muno_success = 'No';
+
+            //check if $movie->url does not contain extension mp4 or mkv or avi or flv or wmv or mov or webm
+            $file_extension = pathinfo(parse_url($movie->url, PHP_URL_PATH), PATHINFO_EXTENSION);
+            $file_extension = strtolower($file_extension);
+            $file_name = pathinfo(parse_url($movie->url, PHP_URL_PATH), PATHINFO_FILENAME);
+            $isMovieFile = true;
+            //check if $file_extension is not in array
+            $validVideoExtensions = ['mp4', 'mkv', 'avi', 'flv', 'wmv', 'mov', 'webm', 'mpeg', 'mpg', 'm4v', '3gp', '3g2', 'f4v', 'f4p', 'f4a', 'f4b', 'ts', 'vob', 'ogv', 'ogg', 'rm', 'rmvb', 'asf', 'divx', 'xvid'];
+            if (!in_array($file_extension, $validVideoExtensions)) {
+                $isMovieFile = false;
+            }
+
+            /// if is not $isMovieFile, the mark it as error and save
+            if (!$isMovieFile) {
+                $this->status = 'error';
+                $this->error_message = 'Invalid or unsupported video file extension: ' . $file_extension;
+                $this->save();
+
+                //mark movie as muno processed but not active and reason
+                $movie->muno_processed = 'No'; 
+                $movie->status = 'Inactive';
+                $movie->muno_message = 'Invalid or unsupported video file extension: ' . $file_extension;
+                $movie->save();
+                throw new \Exception('Invalid or unsupported video file extension: ' . $file_extension . ' in URL: ' . $movie->url);
+            }
+
+
             // ===== STORE ADDITIONAL VIDEO URLS AND METADATA =====
             $additionalData = [];
             if (!empty($playingUrl)) $additionalData['playing_url'] = $playingUrl;
@@ -663,12 +824,14 @@ class MovieCrawlerPage extends Model
             if (!empty($access)) $additionalData['access_level'] = $access;
             if (!empty($paidFor)) $additionalData['paid_content'] = $paidFor;
             if (!empty($priority)) $additionalData['priority'] = $priority;
-            
+
             // Append additional data to description for reference
             if (!empty($additionalData)) {
                 // $movie->description .= "\n\nAdditional Metadata:\n" . json_encode($additionalData, JSON_PRETTY_PRINT);
             }
 
+
+            $movie->muno_success = 'Yes';
             // ===== SAVE MOVIE TO DATABASE =====
             $movie->save();
 
@@ -677,7 +840,6 @@ class MovieCrawlerPage extends Model
             $this->status = 'success';
             $this->error_message = null;
             $this->save();
-
         } catch (\Throwable $th) {
             $this->status = 'error';
             $this->error_message = 'Error processing munowatch movie data: ' . $th->getMessage();
@@ -733,29 +895,29 @@ class MovieCrawlerPage extends Model
                     }
                 }
             }
-            
+
             if (!$movieData) {
                 throw new \Exception('No movie/series data found in API response');
             }
-            
+
             // ===== EXTRACT SERIES IDENTIFICATION =====
             $seriesCode = $movieData['series_code'] ?? $movieData['seriesCode'] ?? '';
             $showId = $movieData['id'] ?? $movieData['vid'] ?? null;
-            
+
             if (empty($seriesCode) || empty($showId)) {
                 throw new \Exception('Missing series_code or show ID - cannot process as series');
             }
-            
+
             // ===== EXTRACT COMPREHENSIVE SERIES METADATA =====
-            
+
             // Core series information
             $seriesTitle = $movieData['video_title'] ?? $movieData['title'] ?? 'Unknown Series';
             $seriesDescription = $movieData['description'] ?? $movieData['plot'] ?? '';
-            
+
             // Series imagery and visual assets
             $seriesThumbnail = $movieData['thumbnail'] ?? $movieData['poster'] ?? $movieData['cover_image'] ?? '';
             $seriesPoster = $movieData['poster'] ?? $movieData['banner'] ?? $seriesThumbnail;
-            
+
             // Series metadata
             $seriesGenre = $movieData['genre'] ?? $movieData['category'] ?? '';
             $seriesYear = $movieData['year'] ?? $movieData['release_year'] ?? '';
@@ -763,20 +925,20 @@ class MovieCrawlerPage extends Model
             $seriesCountry = $movieData['country'] ?? '';
             $seriesRating = $movieData['rating'] ?? $movieData['age_rating'] ?? '';
             $seriesStatus = $movieData['status'] ?? 'Active';
-            
+
             // Munowatch specific fields
             $seriesId = $movieData['id'] ?? $movieData['series_id'] ?? $showId;
-            
+
             // VJ and source information
             $vjName = $movieData['vjname'] ?? $movieData['vj_name'] ?? 'Munowatch API';
             $vjId = $movieData['vj_id'] ?? '';
-            
+
             // ===== FETCH EPISODES FROM API (Flutter app pattern) =====
-            
+
             $episodesData = $this->fetchEpisodesForSeries($showId, $seriesCode);
             $seriesTotalEpisodes = count($episodesData);
             $seriesTotalSeasons = 1; // Default to 1, could be updated based on episodes data
-            
+
             // ===== CHECK FOR EXISTING SERIES TO AVOID DUPLICATES =====
             $existingSeries = SeriesMovie::where('title', $seriesTitle)->first();
             if ($existingSeries == null && !empty($seriesId)) {
@@ -816,7 +978,7 @@ class MovieCrawlerPage extends Model
             $series->is_premium = 'No';
             $series->total_views = 0;
             $series->total_rating = 0;
-            
+
             // Set munowatch identification fields
             $series->is_muno = 'Yes';
             $series->muno_processed = 'No';
@@ -830,7 +992,7 @@ class MovieCrawlerPage extends Model
                 $processedEpisodes = count($episodesData);
                 $skippedEpisodes = 0;
                 $errorEpisodes = 0;
-                
+
                 // For now, just count episodes - detailed episode processing can be added later
                 // The important part is that series detection works and series records are created
             } else {
@@ -840,20 +1002,20 @@ class MovieCrawlerPage extends Model
             }
 
             // ===== FINALIZE SERIES PROCESSING =====
-            
+
             // Update page relationship info
             $this->movie_id = $series->id;
             $this->series_id = $series->id;
             $this->status = 'success';
             $this->error_message = null;
-            
+
             // Final episode count verification
             $actualEpisodeCount = $processedEpisodes;
             if ($actualEpisodeCount != $series->total_episodes) {
                 $series->total_episodes = $actualEpisodeCount;
                 $series->save();
             }
-            
+
             // Add processing summary to page notes
             $processingStats = [
                 'series_title' => $seriesTitle,
@@ -864,12 +1026,11 @@ class MovieCrawlerPage extends Model
                 'final_episode_count' => $actualEpisodeCount,
                 'is_new_series' => $isNewSeries
             ];
-            
+
             $this->notes = "Series processing completed successfully.\n" . json_encode($processingStats, JSON_PRETTY_PRINT);
             $this->save();
 
             return $series;
-
         } catch (\Throwable $th) {
             $this->status = 'error';
             $this->error_message = 'Error processing munowatch series data: ' . $th->getMessage();
@@ -890,10 +1051,10 @@ class MovieCrawlerPage extends Model
         try {
             $seasonNumber = 1; // Start with season 1 like Flutter app
             $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/{$seasonNumber}";
-            
+
             // Use the same authentication pattern as the crawler
             $jwtToken = config('munowatch.jwt_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0');
-            
+
             $headers = [
                 'Authorization: Bearer ' . $jwtToken,
                 'X-Api-Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
@@ -901,7 +1062,7 @@ class MovieCrawlerPage extends Model
                 'Content-Type: application/json',
                 'Accept: application/json'
             ];
-            
+
             $context = stream_context_create([
                 'http' => [
                     'method' => 'GET',
@@ -909,31 +1070,30 @@ class MovieCrawlerPage extends Model
                     'timeout' => 10
                 ]
             ]);
-            
+
             $response = @file_get_contents($episodesUrl, false, $context);
-            
+
             if ($response === false) {
                 return [];
             }
-            
+
             $episodesData = json_decode($response, true);
-            
+
             if (json_last_error() !== JSON_ERROR_NONE) {
                 return [];
             }
-            
+
             // Check if response contains error
             if (isset($episodesData['error']) && $episodesData['error'] === true) {
                 return [];
             }
-            
+
             // Return episodes array
             if (is_array($episodesData)) {
                 return $episodesData;
             }
-            
+
             return [];
-            
         } catch (\Throwable $th) {
             return [];
         }
@@ -956,10 +1116,10 @@ class MovieCrawlerPage extends Model
         try {
             $seasonNumber = 1; // Start with season 1 like Flutter app
             $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/{$seasonNumber}";
-            
+
             // Use the same authentication pattern as the crawler
             $jwtToken = config('munowatch.jwt_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0');
-            
+
             $headers = [
                 'Authorization: Bearer ' . $jwtToken,
                 'X-Api-Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
@@ -967,7 +1127,7 @@ class MovieCrawlerPage extends Model
                 'Content-Type: application/json',
                 'Accept: application/json'
             ];
-            
+
             $context = stream_context_create([
                 'http' => [
                     'method' => 'GET',
@@ -975,36 +1135,35 @@ class MovieCrawlerPage extends Model
                     'timeout' => 10
                 ]
             ]);
-            
+
             $response = @file_get_contents($episodesUrl, false, $context);
-            
+
             if ($response === false) {
                 // Unable to fetch - assume it's not a series
                 return false;
             }
-            
+
             $episodesData = json_decode($response, true);
-            
+
             if (json_last_error() !== JSON_ERROR_NONE) {
                 // Invalid JSON response - assume it's not a series
                 return false;
             }
-            
+
             // Check if response contains error
             if (isset($episodesData['error']) && $episodesData['error'] === true) {
                 // API returned error - not a series
                 return false;
             }
-            
+
             // Check if we have episodes array
             if (is_array($episodesData) && !empty($episodesData)) {
                 // Episodes exist - this is a series!
                 return true;
             }
-            
+
             // No episodes found - this is a movie
             return false;
-            
         } catch (\Throwable $th) {
             // Error occurred - assume it's not a series to be safe
             return false;
@@ -1037,34 +1196,31 @@ class MovieCrawlerPage extends Model
             if (!$movieData) {
                 throw new \Exception('No movie/series data found in API response');
             }
-            
+
             // Extract series identification data
             $seriesCode = $movieData['series_code'] ?? $movieData['seriesCode'] ?? '';
             $showId = $movieData['id'] ?? $movieData['vid'] ?? null;
-            
+
             if (empty($seriesCode) || empty($showId)) {
                 throw new \Exception('Missing series_code or show ID - cannot process as series');
             }
-            
+
             // Verify this is actually a series by checking episodes
             $episodesData = $this->fetchEpisodesForSeries($showId, $seriesCode);
             if (empty($episodesData)) {
                 throw new \Exception('No episodes found - not a series');
             }
-            
+
             // Extract series metadata
             $seriesTitle = $movieData['video_title'] ?? $movieData['title'] ?? 'Unknown Series';
             $seriesDescription = $movieData['description'] ?? $movieData['plot'] ?? '';
             $seriesThumbnail = $movieData['thumbnail'] ?? $movieData['poster'] ?? '';
             $seriesGenre = $movieData['genre'] ?? $movieData['category'] ?? '';
             $seriesYear = $movieData['year'] ?? $movieData['release_year'] ?? '';
-            
-            // Check for existing series
-            $existingSeries = SeriesMovie::where('title', $seriesTitle)->first();
-            if (!$existingSeries && !empty($showId)) {
-                $existingSeries = SeriesMovie::where('external_id', $showId)->first();
-            }
-            
+
+            // Check for existing series 
+            $existingSeries = SeriesMovie::where('external_id', $showId)->first();
+
             // Create or update series
             if (!$existingSeries) {
                 $series = new SeriesMovie();
@@ -1082,18 +1238,13 @@ class MovieCrawlerPage extends Model
             $series->Category = $seriesGenre;
             $series->thumbnail = $seriesThumbnail;
             $series->total_episodes = count($episodesData);
-            $series->total_seasons = 1; // Default, can be updated
+            $series->total_seasons = 0; // Default, can be updated
             $series->year = $seriesYear;
             $series->genre = $seriesGenre;
             $series->status = 'Active';
             $series->is_active = 'Yes';
             $series->is_premium = 'No';
             $series->vj = 'Munowatch API';
-            
-            // Set munowatch identification fields
-            $series->is_muno = 'Yes';
-            $series->muno_processed = 'No';
-            $series->munowatch_id = $showId;
 
             $series->save();
 
@@ -1101,12 +1252,12 @@ class MovieCrawlerPage extends Model
             $this->movie_id = $series->id;
             $this->series_id = $series->id;
             $this->status = 'success';
+            $this->muno_processed = 'Yes';
             $this->error_message = null;
             $this->notes = "Series processed successfully: {$seriesTitle} ({$series->total_episodes} episodes)";
             $this->save();
 
             return $series;
-
         } catch (\Throwable $th) {
             $this->status = 'error';
             $this->error_message = 'Error processing munowatch series: ' . $th->getMessage();
@@ -1124,17 +1275,17 @@ class MovieCrawlerPage extends Model
         if (isset($jsonData['preview'])) {
             return $jsonData['preview'];
         }
-        
+
         // Try direct movie structure
         if (isset($jsonData['movie'])) {
             return $jsonData['movie'];
         }
-        
+
         // Try data structure
         if (isset($jsonData['data'])) {
             return $jsonData['data'];
         }
-        
+
         // Try dashboard structure
         if (isset($jsonData['dashboard']) && is_array($jsonData['dashboard'])) {
             foreach ($jsonData['dashboard'] as $category) {
@@ -1143,7 +1294,7 @@ class MovieCrawlerPage extends Model
                 }
             }
         }
-        
+
         return null;
     }
 }
