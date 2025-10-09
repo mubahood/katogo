@@ -54,7 +54,30 @@ class MovieModelController extends AdminController
 
         $grid->column('stars', __('FROM MY VJ'))
             ->sortable()
+            ->hide()
             ->filter();
+        //is_muno
+        $grid->column('is_muno', __('FROM MUNO'))
+            ->sortable() 
+            ->filter(
+                [
+                    'Yes' => 'Yes',
+                    'No' => 'No',
+                    '' => 'Empty',
+                    null => 'N/A',
+                ]
+            );
+        //muno_processed
+        $grid->column('muno_processed', __('Muno Processed'))
+            ->sortable()
+            ->filter(
+                [
+                    'Yes' => 'Yes',
+                    'No' => 'No',
+                    '' => 'Empty',
+                    null => 'N/A',
+                ]
+            );
 
         //add filters including filter by category
         //add MovieStatusChange batch\
@@ -76,6 +99,7 @@ class MovieModelController extends AdminController
             ->lightbox(['width' => 50, 'height' => 100])
             ->sortable();
         $grid->column('views_time_count', 'View Time')
+            ->hide()
             ->display(function ($views_time_count) {
                 if ($views_time_count == null || $views_time_count == '') {
                     return '0 hours';
@@ -100,7 +124,9 @@ class MovieModelController extends AdminController
                     return '0';
                 }
                 return $downloads_count;
-            })->sortable();
+            })->sortable()
+            ->hide()
+        ;
 
         //platform_type grid 
         $grid->column('platform_type', __('Platform type'))
@@ -110,6 +136,7 @@ class MovieModelController extends AdminController
                 }
                 return $platform_type;
             })->sortable()
+            ->hide()
             ->filter([
                 'all' => 'All',
                 'android' => 'Android',
