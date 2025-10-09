@@ -1727,15 +1727,16 @@ Route::get('fix-munowatch-series', function (Request $request) {
         echo '<hr>';
         echo '<h3>📊 Final Summary</h3>';
 
-        // Count actual episodes created
-        $finalEpisodeCount = \App\Models\MovieModel::where('category_id', $series->id)
+        // Count actual episode pages created
+        $finalEpisodeCount = \App\Models\MovieCrawlerPage::where('series_id', $series->id)
             ->where('type', 'Series')
+            ->where('is_muno', 'Yes')
             ->count();
 
         // Update series with episode count
         $series->total_episodes = $finalEpisodeCount;
         $series->is_active = 'Yes';
-        $series->description .= " - Episodes processed on " . date('Y-m-d H:i:s');
+        $series->description .= " - Episode pages created on " . date('Y-m-d H:i:s');
         $series->save();
 
         echo '<div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px;">';
