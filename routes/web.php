@@ -31,190 +31,39 @@ Route::get('fix-pics', function () {
     //set timer
     set_time_limit(999300); // 5 minutes for extensive processing
     ini_set('memory_limit', '512M'); // 512 MB
-    $crawlerPages = MovieCrawlerPage::where([])
+    $movies = MovieModel::where([])
         ->orderBy('id', 'desc')
         ->limit(20)
         ->get();
 
-    foreach ($crawlerPages as $key => $page) {
+    foreach ($movies as $movie) {
+        $page = MovieCrawlerPage::where('url', $movie->external_url)->first();
+        
+        if ($page == null) {
+            echo "No crawler page found for movie {$movie->id} - {$movie->title}<br>";
+            continue;
+        }
+        
         $data = json_decode($page->page_content);
         if ($data == null) {
+            echo "No page content for movie {$movie->id} - {$movie->title}<br>";
             continue;
         }
-        if (!isset($data->preview)) {
+        
+        if (!isset($data->preview) || $data->preview == null) {
+            echo "No preview data for movie {$movie->id} - {$movie->title}<br>";
             continue;
         }
-        if ($data->preview == null) {
-            continue;
+        
+        //if thumb is not the same as in the api, update it 
+        if ($movie->thumbnail_url != $data->preview->thumbnail) {
+            $movie->thumbnail_url = $data->preview->thumbnail;
+            $movie->image_url = $data->preview->poster_url;
+            $movie->save();
+            echo "Updated movie {$movie->id} - {$movie->title}<br>";
+        } else {
+            echo "No update needed for movie {$movie->id} - {$movie->title}<br>";
         }
-        $movies = MovieModel::where('external_url', $page->url)->get();
-
-        foreach ($movies as $movie) {
-            //if thumb is not the same as in the api, update it 
-            if ($movie->thumbnail_url != $data->preview->thumbnail) {
-                $movie->thumbnail_url = $data->preview->thumbnail;
-                $movie->image_url = $data->preview->poster_url;
-                $movie->save();
-                echo "Updated movie {$movie->id} - {$movie->title}<br>";
-            }else {
-                echo "No update needed for movie {$movie->id} - {$movie->title}<br>";
-            }
-        }
-        continue;
-
-        dd($movies);
-        /* 
-                "id" => 21571
-        "created_at" => "2025-10-09 21:56:18"
-        "updated_at" => "2025-10-09 21:56:18"
-        "title" => "Assassins"
-        "external_url" => "https://munowatch.org/api/preview/v2/17757/169464"
-        "url" => "http://munoserver3.club/d06f6/171/Assassins1080VJ Jr.mp4"
-        "image_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/123031817735.jpg"
-        "thumbnail_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/123031817735.jpg"
-        "description" => " Professional hitman Robert Rath seeks to retire peacefully. However, he teams up with hacker Electra when Bain, another killer, wants to murder him."
-        "year" => "1996"
-        "rating" => "18 +"
-        "duration" => "02h 07m"
-        "size" => 907.7
-        "genre" => "Action"
-        "director" => null
-        "stars" => null
-        "country" => ""
-        "language" => "English to Luganda"
-        "imdb_url" => null
-        "imdb_rating" => null
-        "imdb_votes" => null
-        "imdb_id" => null
-        "type" => "Movie"
-        "status" => "Active"
-        "error" => null
-        "error_message" => null
-        "downloads_count" => null
-        "views_count" => null
-        "likes_count" => null
-        "dislikes_count" => null
-        "comments_count" => null
-        "comments" => null
-        "video_is_downloaded_to_server" => "no"
-        "video_downloaded_to_server_start_time" => null
-        "video_downloaded_to_server_end_time" => null
-        "video_downloaded_to_server_duration" => null
-        "video_is_downloaded_to_server_status" => null
-        "video_is_downloaded_to_server_error_message" => null
-        "category" => "Action"
-        "category_id" => "1"
-        "is_processed" => null
-        "downloaded_from_google" => "No"
-        "uploaded_to_from_google" => "No"
-        "local_video_link" => null
-        "plays_on_google" => "No"
-        "downloaded_to_new_server" => "No"
-        "new_server_path" => null
-        "server_fail_reason" => null
-        "actor" => null
-        "vj" => "Vj Junior"
-        "content_type" => null
-        "content_is_video" => "No"
-        "content_type_processed" => "No"
-        "content_type_processed_time" => null
-        "is_premium" => "No"
-        "episode_number" => null
-        "is_first_episode" => "No"
-        "last_listing_date" => null
-        "views_time_count" => 0
-        "is_trending" => "No"
-        "trending_time" => null
-        "trending_id" => null
-        "platform_type" => "all"
-        "temp_status" => "Inactive"
-        "video_url_tested_by_curl" => "No"
-        "video_url_tested_by_curl_works" => "No"
-        "video_url_tested_by_human" => "No"
-        "video_url_tested_by_human_works" => "No"
-        "firebase_transfer_attempted" => "No"
-        "firebase_transfer_transfer_in_progress" => "No"
-        "firebase_transfer_successful" => "No"
-        "firebase_transfer_failure_reason" => null
-        "firebase_transfer_path" => null
-        "firebase_video_url" => null
-        "firebase_video_url_expires_at" => null
-        "firebase_video_tested_by_curl" => "No"
-        "firebase_video_tested_by_curl_works" => "No"
-        "firebase_video_tested_by_human" => "No"
-        "firebase_video_tested_by_human_works" => "No"
-        "old_video_url" => null
-        "page_source_url" => "https://munowatch.org/api/preview/v2/17757/169464"
-        "poster_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/123031817735.jpg"
-        "external_id" => "17757"
-        "season_number" => 1
-        "series_title" => null
-        "episode_title" => null
-        "is_muno" => "Yes"
-        "muno_processed" => "Yes"
-        "munowatch_id" => "17757"
-        "muno_success" => "Yes"
-        "muno_message" => ""
-         */
-
-        /* 
-          +"id": 17757
-  +"video_title": "Assassins"
-  +"description": " Professional hitman Robert Rath seeks to retire peacefully. However, he teams up with hacker Electra when Bain, another killer, wants to murder him."
-  +"video_name": "Assassins1080VJ Jr.mp4"
-  +"filehistory": ""
-  +"openload": "0"
-  +"embedurl": ""
-  +"serverhost": "31"
-  +"allow_openload": "0"
-  +"full_video_name": ""
-  +"duration": "02h 07m"
-  +"thumbnail": "https://munoapp.org/munowatch-api/laba/yo/naki/123031817735.jpg"
-  +"tfilehistory": ""
-  +"category_id": 1
-  +"language_id": 1
-  +"recording_date": "1996-08-02"
-  +"age_id": "18 +"
-  +"location": 1
-  +"tab_category_id": 1
-  +"series_code": "17757"
-  +"access": "1"
-  +"paid_for": "1"
-  +"new_movie": "1"
-  +"priority": "No"
-  +"size": "907.7 MB"
-  +"create_date": "2021-08-27 12:37:23"
-  +"schedule_date": null
-  +"user_id": 169464
-  +"vj_id": 1
-  +"video_status_id": 0
-  +"network_id": "45.221.8.174"
-  +"user_access": "deny"
-  +"notification": "No"
-  +"secduration": "7631.000000"
-  +"issubscriber": true
-  +"download": "0"
-  +"genre": "Action"
-  +"vjname": "Vj Junior"
-  +"episodes": 0
-  +"episode_state": ""
-  +"nxt_eps": ""
-  +"nxt_eps_id": 0
-  +"nxt_eps_title": ""
-  +"nxt_ldur": 0
-  +"nxt_playing_url": "https://munowatch.co/clips/ELI.mp4"
-  +"playingUrl": "http://munoserver3.club/d06f6/171/Assassins1080VJ Jr.mp4"
-  +"ldur": 5196
-  +"session_id": "a8f0579d11dce924ef71ebe045ee8030"
-  +"device": "ios"
-  +"lang_name": "English to Luganda"
-  +"vjrelease": "4 years ago"
-  +"mstatus": false
-  +"kstatus": ""
-  +"substatus": "FAILED"
-        */
-
-        dd($data->preview);
     }
 });
 
