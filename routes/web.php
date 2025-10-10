@@ -33,7 +33,7 @@ Route::get('fix-pics', function () {
     ini_set('memory_limit', '512M'); // 512 MB
     $movies = MovieModel::where([])
         ->orderBy('id', 'desc')
-        ->limit(200)
+        ->limit(2000)
         ->get();
 
     foreach ($movies as $movie) {
@@ -64,8 +64,8 @@ Route::get('fix-pics', function () {
         } else {
             echo "No update needed for movie {$movie->id} - {$movie->title}<br>";
             //curem img url
-            echo "PHOTO: {$movie->image_url}<br>";
-            echo '<img src="' . $movie->image_url . '" width="100" /><hr>';
+            //echo "PHOTO: {$movie->image_url}<br>";
+            //echo '<img src="' . $movie->image_url . '" width="100" /><hr>';
         }
     }
 });
