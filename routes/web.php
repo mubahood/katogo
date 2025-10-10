@@ -33,7 +33,7 @@ Route::get('fix-pics', function () {
     ini_set('memory_limit', '512M'); // 512 MB
     $crawlerPages = MovieCrawlerPage::where([])
         ->orderBy('id', 'desc')
-        ->limit(2000)
+        ->limit(20)
         ->get();
 
     foreach ($crawlerPages as $key => $page) {
@@ -56,6 +56,8 @@ Route::get('fix-pics', function () {
                 $movie->image_url = $data->preview->poster_url;
                 $movie->save();
                 echo "Updated movie {$movie->id} - {$movie->title}<br>";
+            }else {
+                echo "No update needed for movie {$movie->id} - {$movie->title}<br>";
             }
         }
         continue;
