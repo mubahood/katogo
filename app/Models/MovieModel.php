@@ -94,6 +94,15 @@ class MovieModel extends Model
             if (strpos($model->url, 'munowatch') !== false) {
                 $model->status = 'Inactive'; //if yes, set to yes
             }
+            if ($model->type == 'Movie') {
+                //get same movie with external_url
+                $existing = MovieModel::where('external_url', $model->external_url)
+                    ->where('type', $model->type)
+                    ->first();
+                if ($existing != null) {
+                    return false;
+                }
+            }
         });
 
         static::updating(function ($model) {
