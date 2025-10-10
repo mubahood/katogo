@@ -924,6 +924,7 @@ class ApiController extends BaseController
             $trending_movies = MovieModel::whereNotIn('id', $note_include_ids)
                 ->where('status', 'Active')
                 ->where('type', 'Movie')
+                ->where('is_muno', 'Yes')
                 ->orderBy('downloads_count', 'desc')
                 ->limit(30)
                 ->get($take_only);
@@ -937,6 +938,7 @@ class ApiController extends BaseController
                 //get top 10 of that platform
                 $trending_movies = MovieModel::where('status', 'Active')
                     ->where('type', 'Movie')
+                    ->where('is_muno', 'Yes')
                     ->orderBy('downloads_count', 'desc')
                     ->limit(10)
                     ->get($take_only);
