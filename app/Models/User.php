@@ -163,6 +163,8 @@ class User extends Administrator implements JWTSubject
         'name',
         'email',
         'password',
+        'google_id',
+        'avatar',
     ];
 
     /**

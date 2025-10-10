@@ -1199,15 +1199,7 @@ class ApiController extends BaseController
                 $days_remaining = $subscription_status['days_remaining'] ?? 0;
                 $status = $subscription_status['status'] ?? 'No Active Subscription';
                 
-                // Log subscription status for debugging
-                \Log::info('📊 Manifest: Building subscription info', [
-                    'user_id' => $u->id,
-                    'has_active_subscription' => $has_active,
-                    'days_remaining' => $days_remaining,
-                    'hours_remaining' => $subscription_status['hours_remaining'] ?? 0,
-                    'status' => $status,
-                    'is_in_grace_period' => $subscription_status['is_in_grace_period'] ?? false,
-                ]);
+               
                 
                 // VALIDATION: If days_remaining > 0 or status is Active, has_active_subscription MUST be true
                 if (($days_remaining > 0 || $status === 'Active') && !$has_active) {
@@ -1685,6 +1677,193 @@ class ApiController extends BaseController
             'user' => $user_data,
             'company' => $company,
         ], "Login successful.");
+    }
+
+    /**
+     * Google OAuth Authentication
+     * Verifies Google ID token and returns JWT token
+     */
+    public function googleAuth(Request $r)
+    {
+        // Validate input
+        if (!$r->id_token) {
+            return $this->error('Google ID token is required.');
+        }
+
+        try {
+            // Verify Google ID token
+            $google_user = $this->verifyGoogleToken($r->id_token);
+            
+            if (!$google_user) {
+                return $this->error('Invalid Google token.');
+            }
+
+            // Check if user exists by email, username, or phone number
+            $user = User::where('email', $google_user['email'])
+                       ->orWhere('username', $google_user['email'])
+                       ->orWhere('phone_number', $google_user['email'])
+                       ->first();
+            
+            if (!$user) {
+                // Create new user if doesn't exist
+                $user = new User();
+                $user->name = $google_user['name'];
+                $user->email = $google_user['email'];
+                $user->email_verified_at = now(); // Google accounts are pre-verified
+                $user->google_id = $google_user['sub'];
+                $user->avatar = $google_user['picture'] ?? null;
+                
+                // Set a random password (user will use Google auth)
+                $user->password = password_hash(uniqid(), PASSWORD_DEFAULT);
+                
+                // Set username (required field)
+                $user->username = $google_user['email'];
+                
+                // Set default company (adjust as needed)
+                $company = Company::first();
+                if ($company) {
+                    $user->company_id = $company->id;
+                } else {
+                    return $this->error('No company found. Please contact support.');
+                }
+
+                try {
+                    $user->save();
+                    \Illuminate\Support\Facades\Log::info('New user created via Google OAuth', [
+                        'user_id' => $user->id,
+                        'email' => $user->email,
+                        'google_id' => $user->google_id
+                    ]);
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error('Failed to create Google OAuth user', [
+                        'error' => $e->getMessage(),
+                        'email' => $google_user['email']
+                    ]);
+                    return $this->error('Failed to create user account: ' . $e->getMessage());
+                }
+            } else {
+                // User exists - update Google info and log them in
+                \Illuminate\Support\Facades\Log::info('Existing user logging in via Google OAuth', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'had_google_id' => !empty($user->google_id)
+                ]);
+
+                // Update existing user's Google info if needed
+                $updated = false;
+                if (!$user->google_id) {
+                    $user->google_id = $google_user['sub'];
+                    $updated = true;
+                }
+                if (!$user->avatar && isset($google_user['picture'])) {
+                    $user->avatar = $google_user['picture'];
+                    $updated = true;
+                }
+                if (!$user->email_verified_at) {
+                    $user->email_verified_at = now();
+                    $updated = true;
+                }
+                
+                if ($updated) {
+                    $user->save();
+                }
+            }
+
+            // Generate JWT token
+            try {
+                // Try to set TTL for long-lasting token (5 years)
+                $token = auth('api')->attempt(['email' => $user->email], true);
+                if (!$token) {
+                    // If attempt fails, try direct login
+                    $token = auth('api')->login($user);
+                }
+            } catch (\Exception $e) {
+                $token = auth('api')->login($user);
+            }
+
+            if (!$token) {
+                return $this->error('Failed to generate authentication token.');
+            }
+
+            // Auto-assign free trial if applicable
+            try {
+                $freeTrialResult = $user->autoAssignFreeTrial();
+                if ($freeTrialResult['success']) {
+                    \Illuminate\Support\Facades\Log::info('Free trial auto-assigned on Google login', [
+                        'user_id' => $user->id,
+                        'endpoint' => 'google_auth',
+                        'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to auto-assign free trial on Google login', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                    'endpoint' => 'google_auth',
+                ]);
+            }
+
+            // Prepare response data
+            $user_data = $user->toArray();
+            $user_data['token'] = $token;
+            $user_data['remember_token'] = $token;
+
+            $company = Company::find($user->company_id);
+            if (!$company) {
+                return $this->error("Company not found.");
+            }
+
+            return $this->success([
+                'user' => $user_data,
+                'company' => $company,
+            ], "Google login successful.");
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Google auth error: ' . $e->getMessage());
+            return $this->error('Google authentication failed. Please try again.');
+        }
+    }
+
+    /**
+     * Verify Google ID token
+     */
+    private function verifyGoogleToken($id_token)
+    {
+        try {
+            // Use Google's tokeninfo endpoint to verify the token
+            $url = "https://oauth2.googleapis.com/tokeninfo?id_token=" . $id_token;
+            
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            
+            $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($http_code !== 200) {
+                return false;
+            }
+            
+            $token_data = json_decode($response, true);
+            
+            // Verify token is valid and audience matches (you should set your Google Client ID)
+            if (!isset($token_data['email']) || !isset($token_data['email_verified'])) {
+                return false;
+            }
+            
+            // Optional: Verify audience (aud) matches your Google Client ID
+            // if ($token_data['aud'] !== 'YOUR_GOOGLE_CLIENT_ID') {
+            //     return false;
+            // }
+            
+            return $token_data;
+            
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Google token verification error: ' . $e->getMessage());
+            return false;
+        }
     }
 
 

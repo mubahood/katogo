@@ -383,8 +383,8 @@ class SubscriptionApiController extends Controller
                 ]);
             }
 
-            $limit = $request->get('limit', 10);
-            $history = $user->subscriptionHistory($limit);
+            // $limit = $request->get('limit', 10);
+            $history = $user->subscriptions;
 
             $data = $history->map(function ($subscription) {
                 return $subscription->toApiArray();

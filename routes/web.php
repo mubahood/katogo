@@ -10,6 +10,7 @@ use App\Models\MovieModel;
 use App\Models\MovieView;
 use App\Models\SeriesMovie;
 use App\Models\TrendingNotification;
+use App\Models\User;
 use App\Models\Utils;
 use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
@@ -22,7 +23,57 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Process\Process;
 
+Route::get('test-subs', function () {
+    $user = User::find(1);
+    // dd($user);
+    foreach ($user->subscriptions as $key => $val) {
+        echo $val->id." - ".$val->plan->name." - days: ".$val->days." - ends at: ".$val->ends_at."<br>";
+        // dd($val->plan->name);
+        // dd($val->plan);
+        // dd($val);
+        // echo $val->name . " - " . $val->pivot->ends_at . "<br>";
+    }
+    dd($user->subscriptions);
+});
+Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'index']);
+
 /*
+
+  #attributes: array:32 [▼
+    "id" => 8
+    "created_at" => "2025-10-05 14:15:04"
+    "updated_at" => "2025-10-05 14:40:10"
+    "user_id" => 1
+    "plan_id" => 2
+    "days" => 14
+    "start_date_time" => "2025-10-05 06:15:04"
+    "end_date_time" => "2025-10-19 06:15:04"
+    "grace_period_end" => "2025-10-22 06:15:04"
+    "status" => "Cancelled"
+    "auto_renew" => 0
+    "payment_method" => "pesapal"
+    "payment_status" => "Failed"
+    "pesapal_transaction_id" => null
+    "pesapal_tracking_id" => "bd6cb769-05cf-4407-bf19-db3f9e6909e2"
+    "pesapal_merchant_reference" => "SUB-1-1759634104"
+    "pesapal_signature" => null
+    "pesapal_response" => "{"error": null, "status": "200", "redirect_url": "https://pay.pesapal.com/iframe/PesapalIframe3/Index?OrderTrackingId=bd6cb769-05cf-4407-bf19-db3f9e6909e2", "or ▶"
+    "payment_url" => "https://pay.pesapal.com/iframe/PesapalIframe3/Index?OrderTrackingId=bd6cb769-05cf-4407-bf19-db3f9e6909e2"
+    "payment_confirmed_at" => null
+    "failed_at" => null
+    "amount_paid" => "5000.00"
+    "currency" => "UGX"
+    "is_extension" => 0
+    "extended_from_id" => null
+    "cancelled_at" => "2025-10-05 06:40:10"
+    "cancelled_reason" => "User cancelled pending subscription"
+    "cancelled_by" => null
+    "ip_address" => "129.222.167.180"
+    "user_agent" => "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+    "expiry_notification_sent" => 0
+    "expiry_notification_at" => null
+  ]
+
 |--------------------------------------------------------------------------
 | Authentication Routes
 |--------------------------------------------------------------------------
