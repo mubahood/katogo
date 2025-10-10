@@ -434,10 +434,10 @@ class ApiController extends BaseController
         if (!$chat_head) {
             return $this->error('Chat head not found');
         }
-        
+
         $customer = User::find($chat_head->customer_id);
         $product_owner = User::find($chat_head->product_owner_id);
-        
+
         return $this->success([
             'chat_head' => $chat_head,
             'customer' => $customer,
@@ -450,7 +450,7 @@ class ApiController extends BaseController
     public function chat_heads(Request $r)
     {
         $u = Utils::get_user($r);
-        
+
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
@@ -461,25 +461,25 @@ class ApiController extends BaseController
         if ($u == null) {
             return $this->error('User not found.');
         }
-        
+
         // Get all chat heads where user is either customer or product owner
         // Use proper query with where conditions
-        $chat_heads = ChatHead::where(function($query) use ($u) {
-                $query->where('product_owner_id', $u->id)
-                      ->orWhere('customer_id', $u->id);
-            })
+        $chat_heads = ChatHead::where(function ($query) use ($u) {
+            $query->where('product_owner_id', $u->id)
+                ->orWhere('customer_id', $u->id);
+        })
             ->orderBy('updated_at', 'desc')
             ->get();
 
         $heads = [];
         $me = $u;
-        
+
         foreach ($chat_heads as $head) {
             try {
                 // Determine the other participant
                 $their_id = null;
                 $is_customer = ($me->id == $head->customer_id);
-                
+
                 if ($is_customer) {
                     $their_id = $head->product_owner_id;
                 } else {
@@ -493,80 +493,80 @@ class ApiController extends BaseController
                     continue;
                 }
 
-            // Get the last message for this chat head
-            $lastMesg = ChatMessage::where('chat_head_id', $head->id)
-                                  ->orderBy('created_at', 'desc')
-                                  ->first();
+                // Get the last message for this chat head
+                $lastMesg = ChatMessage::where('chat_head_id', $head->id)
+                    ->orderBy('created_at', 'desc')
+                    ->first();
 
-            // Calculate unread message counts for the current user
-            $my_unread_count = ChatMessage::where('chat_head_id', $head->id)
-                ->where('receiver_id', $me->id)
-                ->where('status', '!=', 'read')
-                ->count();
-            
-            // Set unread count in the appropriate field based on role
-            if ($is_customer) {
-                $head->customer_unread_messages_count = $my_unread_count;
-                $head->product_owner_unread_messages_count = 0;
-                $head->unread_count = $my_unread_count; // Add convenient field
-            } else {
-                $head->product_owner_unread_messages_count = $my_unread_count;
-                $head->customer_unread_messages_count = 0;
-                $head->unread_count = $my_unread_count; // Add convenient field
-            }
-            
-            // Set the other person's information consistently
-            if ($is_customer) {
-                // I am the customer, they are the product owner
-                $head->product_owner_name = $them->name ?? 'Unknown';
-                $head->product_owner_photo = $them->avatar ?? 'no_image.png';
-                $head->product_owner_last_seen = $them->last_online_at ?? 'offline';
-                
-                // Ensure my info is set
-                $head->customer_name = $me->name;
-                $head->customer_photo = $me->avatar ?? 'no_image.png';
-                $head->customer_last_seen = 'online';
-                
-                // Convenience fields for frontend
-                $head->other_user_id = $them->id;
-                $head->other_user_name = $them->name ?? 'Unknown';
-                $head->other_user_photo = $them->avatar ?? 'no_image.png';
-                $head->other_user_last_seen = $them->last_online_at ?? 'offline';
-            } else {
-                // I am the product owner, they are the customer
-                $head->customer_name = $them->name ?? 'Unknown';
-                $head->customer_photo = $them->avatar ?? 'no_image.png';
-                $head->customer_last_seen = $them->last_online_at ?? 'offline';
-                
-                // Ensure my info is set
-                $head->product_owner_name = $me->name;
-                $head->product_owner_photo = $me->avatar ?? 'no_image.png';
-                $head->product_owner_last_seen = 'online';
-                
-                // Convenience fields for frontend
-                $head->other_user_id = $them->id;
-                $head->other_user_name = $them->name ?? 'Unknown';
-                $head->other_user_photo = $them->avatar ?? 'no_image.png';
-                $head->other_user_last_seen = $them->last_online_at ?? 'offline';
-            }
-            
-            // Set last message info
-            if ($lastMesg != null) {
-                $head->last_message_body = $lastMesg->body;
-                $head->last_message_time = $lastMesg->created_at->toDateTimeString();
-                $head->last_message_status = $lastMesg->status;
-                $head->last_message_sender_id = $lastMesg->sender_id;
-                $head->is_last_message_mine = ($lastMesg->sender_id == $me->id);
-            } else {
-                // Default values for new chats without messages
-                $head->last_message_body = 'Chat started';
-                $head->last_message_time = $head->created_at->toDateTimeString();
-                $head->last_message_status = 'new';
-                $head->last_message_sender_id = null;
-                $head->is_last_message_mine = false;
-            }
+                // Calculate unread message counts for the current user
+                $my_unread_count = ChatMessage::where('chat_head_id', $head->id)
+                    ->where('receiver_id', $me->id)
+                    ->where('status', '!=', 'read')
+                    ->count();
 
-            $heads[] = $head;
+                // Set unread count in the appropriate field based on role
+                if ($is_customer) {
+                    $head->customer_unread_messages_count = $my_unread_count;
+                    $head->product_owner_unread_messages_count = 0;
+                    $head->unread_count = $my_unread_count; // Add convenient field
+                } else {
+                    $head->product_owner_unread_messages_count = $my_unread_count;
+                    $head->customer_unread_messages_count = 0;
+                    $head->unread_count = $my_unread_count; // Add convenient field
+                }
+
+                // Set the other person's information consistently
+                if ($is_customer) {
+                    // I am the customer, they are the product owner
+                    $head->product_owner_name = $them->name ?? 'Unknown';
+                    $head->product_owner_photo = $them->avatar ?? 'no_image.png';
+                    $head->product_owner_last_seen = $them->last_online_at ?? 'offline';
+
+                    // Ensure my info is set
+                    $head->customer_name = $me->name;
+                    $head->customer_photo = $me->avatar ?? 'no_image.png';
+                    $head->customer_last_seen = 'online';
+
+                    // Convenience fields for frontend
+                    $head->other_user_id = $them->id;
+                    $head->other_user_name = $them->name ?? 'Unknown';
+                    $head->other_user_photo = $them->avatar ?? 'no_image.png';
+                    $head->other_user_last_seen = $them->last_online_at ?? 'offline';
+                } else {
+                    // I am the product owner, they are the customer
+                    $head->customer_name = $them->name ?? 'Unknown';
+                    $head->customer_photo = $them->avatar ?? 'no_image.png';
+                    $head->customer_last_seen = $them->last_online_at ?? 'offline';
+
+                    // Ensure my info is set
+                    $head->product_owner_name = $me->name;
+                    $head->product_owner_photo = $me->avatar ?? 'no_image.png';
+                    $head->product_owner_last_seen = 'online';
+
+                    // Convenience fields for frontend
+                    $head->other_user_id = $them->id;
+                    $head->other_user_name = $them->name ?? 'Unknown';
+                    $head->other_user_photo = $them->avatar ?? 'no_image.png';
+                    $head->other_user_last_seen = $them->last_online_at ?? 'offline';
+                }
+
+                // Set last message info
+                if ($lastMesg != null) {
+                    $head->last_message_body = $lastMesg->body;
+                    $head->last_message_time = $lastMesg->created_at->toDateTimeString();
+                    $head->last_message_status = $lastMesg->status;
+                    $head->last_message_sender_id = $lastMesg->sender_id;
+                    $head->is_last_message_mine = ($lastMesg->sender_id == $me->id);
+                } else {
+                    // Default values for new chats without messages
+                    $head->last_message_body = 'Chat started';
+                    $head->last_message_time = $head->created_at->toDateTimeString();
+                    $head->last_message_status = 'new';
+                    $head->last_message_sender_id = null;
+                    $head->is_last_message_mine = false;
+                }
+
+                $heads[] = $head;
             } catch (\Exception $e) {
                 continue;
             }
@@ -749,7 +749,7 @@ class ApiController extends BaseController
         $oldest_listed_movies = MovieModel::where([
             'status' => 'Active',
             'type' => 'Movie',
-        ]) 
+        ])
             ->whereNotNull('last_listing_date')
             ->where('is_muno', 'Yes')
             ->whereBetween('last_listing_date', [$min_time, $max_time])
@@ -826,7 +826,7 @@ class ApiController extends BaseController
         $lists = [];
         $movies = $oldest_listed_movies;
         $my_view_ids = [];
-        
+
         // Safely get user's viewed movies
         if ($u && $u->id) {
             $my_view_ids = MovieView::where('user_id', $u->id)
@@ -844,7 +844,7 @@ class ApiController extends BaseController
             ->get($take_only);
         $lists[] = $my_list;
 
-        
+
 
         //watched_movies continue watching
         $watched_movies = collect();
@@ -854,10 +854,10 @@ class ApiController extends BaseController
                 ->limit(50)
                 ->get();
         }
-        
+
         $my_list = [];
         $my_list['title'] = "Continue Watching";
-        
+
         if ($watched_movies->count() > 0) {
             $my_list['movies'] = $watched_movies->take(50)->map(function ($view) {
                 return MovieModel::find($view->movie_model_id);
@@ -867,10 +867,10 @@ class ApiController extends BaseController
         } else {
             $my_list['movies'] = [];
         }
-        
+
         $lists[] = $my_list;
 
-                //top movies
+        //top movies
         if (count($movies) > 10) {
 
             //top movies 
@@ -878,6 +878,7 @@ class ApiController extends BaseController
             $top_movies = MovieModel::whereNotIn('id', $my_view_ids)
                 ->where('status', 'Active')
                 ->where('type', 'Movie')
+                ->where('is_muno', 'Yes')
                 ->orderBy('views_time_count', 'desc')
                 ->limit(20)
                 ->get($take_only);
@@ -1155,7 +1156,7 @@ class ApiController extends BaseController
             $iosMovies = $iosMovies->shuffle();
             $item['movies'] = $iosMovies;
             $lists[] = $item;
-            
+
             $iosMovies = $iosMovies->shuffle();
             if ($iosMovies->count() > 0) {
                 $topMovie = $iosMovies->first();
@@ -1193,14 +1194,14 @@ class ApiController extends BaseController
                 }
 
                 $subscription_status = $u->getSubscriptionStatus();
-                
+
                 // CRITICAL: Validate subscription data consistency
                 $has_active = $subscription_status['has_active_subscription'] ?? false;
                 $days_remaining = $subscription_status['days_remaining'] ?? 0;
                 $status = $subscription_status['status'] ?? 'No Active Subscription';
-                
-               
-                
+
+
+
                 // VALIDATION: If days_remaining > 0 or status is Active, has_active_subscription MUST be true
                 if (($days_remaining > 0 || $status === 'Active') && !$has_active) {
                     \Log::error('🚨 CRITICAL: Subscription data inconsistency detected!', [
@@ -1210,12 +1211,12 @@ class ApiController extends BaseController
                         'status' => $status,
                         'ERROR' => 'has_active_subscription is false but subscription appears active',
                     ]);
-                    
+
                     // FIX IT: Force has_active_subscription to true if logic indicates active
                     $has_active = true;
                     \Log::info('✅ FIXED: Corrected has_active_subscription to true');
                 }
-                
+
                 $subscription_info = [
                     'has_active_subscription' => $has_active,
                     'days_remaining' => $days_remaining,
@@ -1225,12 +1226,11 @@ class ApiController extends BaseController
                     'end_date' => $subscription_status['end_date'] ?? null,
                     'require_subscription' => !$has_active,
                 ];
-                
+
                 \Log::info('✅ Manifest: Subscription info built successfully', [
                     'user_id' => $u->id,
                     'final_data' => $subscription_info,
                 ]);
-                
             } catch (\Exception $e) {
                 // If subscription check fails, use default values
                 \Log::error('💥 Failed to get subscription status in manifest', [
@@ -1273,17 +1273,16 @@ class ApiController extends BaseController
                 $sent_count = \App\Models\ChatMessage::where('sender_id', $u->id)
                     ->distinct('receiver_id')
                     ->count('receiver_id');
-                
+
                 // Count active chats (messages received by user)
                 $received_count = \App\Models\ChatMessage::where('receiver_id', $u->id)
                     ->distinct('sender_id')
                     ->count('sender_id');
-                
+
                 $dashboard_stats['active_chats_count'] = $sent_count + $received_count;
 
                 // Orders count - set to 0 for now (Order model doesn't exist yet)
                 $dashboard_stats['total_orders_count'] = 0;
-
             } catch (\Exception $e) {
                 // If stats collection fails, use default values (already set above)
             }
@@ -1311,7 +1310,7 @@ class ApiController extends BaseController
         if ($u == null) {
             Utils::error("Unauthonticated.");
         } */
-        
+
         // Map lowercase/incorrect model names to actual model classes
         $modelMapping = [
             'movies' => 'MovieModel',
@@ -1329,11 +1328,11 @@ class ApiController extends BaseController
             'subscriptionplans' => 'SubscriptionPlan',
             'subscriptionplan' => 'SubscriptionPlan',
         ];
-        
+
         // Use mapped name if exists, otherwise use the provided model name
         $modelName = $modelMapping[strtolower($model)] ?? $model;
         $model = "App\Models\\" . $modelName;
-        
+
         $data = $model::where([])->limit(1000000)->get();
         Utils::success($data, "Listed successfully. " . $model);
     }
@@ -1465,14 +1464,14 @@ class ApiController extends BaseController
             if (in_array($key, $except)) {
                 continue;
             }
-            
+
             // Clean and validate numeric fields
             if (in_array($key, $numericFields)) {
                 // Skip if value is empty
                 if (empty($value) || !is_numeric($value)) {
                     continue;
                 }
-                
+
                 // Validate and sanitize based on field type
                 switch ($key) {
                     case 'latitude':
@@ -1528,26 +1527,26 @@ class ApiController extends BaseController
                     if (!$file->isValid()) {
                         Utils::error("Invalid file upload.");
                     }
-                    
+
                     // Validate file type (images only)
                     $allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
                     if (!in_array($file->getMimeType(), $allowedMimes)) {
                         Utils::error("Invalid file type. Only images are allowed (JPEG, PNG, GIF, WebP).");
                     }
-                    
+
                     // Validate file size (max 5MB)
                     $maxSize = 5 * 1024 * 1024; // 5MB in bytes
                     if ($file->getSize() > $maxSize) {
                         Utils::error("File too large. Maximum size is 5MB.");
                     }
-                    
+
                     $path = "";
                     try {
                         $path = Utils::file_upload($file);
                     } catch (\Exception $e) {
                         Utils::error("Failed to upload file: " . $e->getMessage());
                     }
-                    
+
                     if (strlen($path) > 3) {
                         $field_name = $r->temp_file_field;
                         // Save the uploaded file path to the specified field
@@ -1644,7 +1643,7 @@ class ApiController extends BaseController
         if ($token == null) {
             return $this->error('Wrong credentials.');
         }
-        
+
         // CHECKPOINT 4: Auto-assign free trial on successful login
         try {
             $freeTrialResult = $user->autoAssignFreeTrial();
@@ -1662,7 +1661,7 @@ class ApiController extends BaseController
                 'endpoint' => 'login',
             ]);
         }
-        
+
         // Add token to user object for API response (don't save to DB)
         $user_data = $user->toArray();
         $user_data['token'] = $token;
@@ -1693,17 +1692,17 @@ class ApiController extends BaseController
         try {
             // Verify Google ID token
             $google_user = $this->verifyGoogleToken($r->id_token);
-            
+
             if (!$google_user) {
                 return $this->error('Invalid Google token.');
             }
 
             // Check if user exists by email, username, or phone number
             $user = User::where('email', $google_user['email'])
-                       ->orWhere('username', $google_user['email'])
-                       ->orWhere('phone_number', $google_user['email'])
-                       ->first();
-            
+                ->orWhere('username', $google_user['email'])
+                ->orWhere('phone_number', $google_user['email'])
+                ->first();
+
             if (!$user) {
                 // Create new user if doesn't exist
                 $user = new User();
@@ -1712,13 +1711,13 @@ class ApiController extends BaseController
                 $user->email_verified_at = now(); // Google accounts are pre-verified
                 $user->google_id = $google_user['sub'];
                 $user->avatar = $google_user['picture'] ?? null;
-                
+
                 // Set a random password (user will use Google auth)
                 $user->password = password_hash(uniqid(), PASSWORD_DEFAULT);
-                
+
                 // Set username (required field)
                 $user->username = $google_user['email'];
-                
+
                 // Set default company (adjust as needed)
                 $company = Company::first();
                 if ($company) {
@@ -1763,7 +1762,7 @@ class ApiController extends BaseController
                     $user->email_verified_at = now();
                     $updated = true;
                 }
-                
+
                 if ($updated) {
                     $user->save();
                 }
@@ -1817,7 +1816,6 @@ class ApiController extends BaseController
                 'user' => $user_data,
                 'company' => $company,
             ], "Google login successful.");
-
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Google auth error: ' . $e->getMessage());
             return $this->error('Google authentication failed. Please try again.');
@@ -1832,34 +1830,33 @@ class ApiController extends BaseController
         try {
             // Use Google's tokeninfo endpoint to verify the token
             $url = "https://oauth2.googleapis.com/tokeninfo?id_token=" . $id_token;
-            
+
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-            
+
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
-            
+
             if ($http_code !== 200) {
                 return false;
             }
-            
+
             $token_data = json_decode($response, true);
-            
+
             // Verify token is valid and audience matches (you should set your Google Client ID)
             if (!isset($token_data['email']) || !isset($token_data['email_verified'])) {
                 return false;
             }
-            
+
             // Optional: Verify audience (aud) matches your Google Client ID
             // if ($token_data['aud'] !== 'YOUR_GOOGLE_CLIENT_ID') {
             //     return false;
             // }
-            
+
             return $token_data;
-            
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Google token verification error: ' . $e->getMessage());
             return false;
