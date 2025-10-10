@@ -108,7 +108,7 @@ class MovieModel extends Model
                 $model->url = $model->firebase_video_url;
             }
 
-            /*if ($model->type == 'Series') {
+            /*if ($model->type == 'Series') { 
                 $series = SeriesMovie::find($model->category_id);
                 if ($series != null) {
                     $model->category = $series->title;
