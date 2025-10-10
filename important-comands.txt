@@ -8,7 +8,7 @@ php artisan admin:make SubscriptionController --model=App\Models\SubscriptionCon
 php artisan db:seed --class=App\\Models\\php artisan admin:make SubscriptionController --model=App\Models\Subscription
 
 
-php artisan admin:make SubscriptionController --model=App\\Models\\Subscription
+php artisan admin:make SubscriptionTransactionController --model=App\\Models\\SubscriptionTransaction
 
 php artisan make:migration add_is_muno_success_to_movie_crawler_pages --table=movie_crawler_pages
 

@@ -18,6 +18,7 @@ Route::group([
     $router->resource('munowatch-categories', MunowatchCategoryController::class);
 
 
+    $router->resource('subscription-transactions', SubscriptionTransactionController::class);
     $router->resource('subscriptions', SubscriptionController::class);
     $router->resource('subscription-plans', SubscriptionPlanController::class);
     $router->resource('scraper-models', ScraperModelController::class);
