@@ -73,7 +73,7 @@ class MovieModel extends Model
 
         static::creating(function ($model) {
             //check if type is series
-            if ($model->type == 'Series') {
+            /*if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
                 if ($series != null) {
                     $model->category = $series->title;
@@ -89,7 +89,7 @@ class MovieModel extends Model
                 } else {
                     $model->type = 'Movie';
                 }
-            }
+            }*/
             //check if url contains munowatch
             if (strpos($model->url, 'munowatch') !== false) {
                 $model->status = 'Inactive'; //if yes, set to yes
@@ -108,12 +108,12 @@ class MovieModel extends Model
                 $model->url = $model->firebase_video_url;
             }
 
-            if ($model->type == 'Series') {
+            /*if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
                 if ($series != null) {
                     $model->category = $series->title;
                     if ($model->thumbnail_url == null || $model->thumbnail_url == '') {
-                        $model->thumbnail_url = $series->thumbnail;
+                        // $model->thumbnail_url = $series->thumbnail; 
                     }
                     //episode_number
                     if ($model->episode_number == 1) {
@@ -124,7 +124,7 @@ class MovieModel extends Model
                 } else {
                     $model->type = 'Movie';
                 }
-            }
+            }*/
 
             if (strpos($model->url, 'munowatch') !== false) {
                 // $model->status = 'Inactive'; //if yes, set to yes 
