@@ -35,7 +35,7 @@ class DynamicCrudController extends Controller
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-                
+
                 // CHECKPOINT 1: Auto-assign free trial if user is eligible
                 try {
                     $freeTrialResult = $u->autoAssignFreeTrial();
@@ -353,7 +353,7 @@ class DynamicCrudController extends Controller
             $data = $item->toArray();
             return $fields ? collect($data)->only($fields)->toArray() : $data;
         });
-        
+
         //if movies,look and encode the url
         if ($modelName == 'MovieModel') {
             $items = $items->map(function ($item) {
@@ -1676,7 +1676,11 @@ class DynamicCrudController extends Controller
     {
         try {
             // Get authenticated user only (no guest fallback)
-            $user = auth('api')->user();
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+
 
             if (!$user) {
                 \Log::warning('Like attempt without authentication');
@@ -1812,7 +1816,10 @@ class DynamicCrudController extends Controller
     {
         try {
             // Get authenticated user only (no guest fallback)
-            $user = auth('api')->user();
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
 
             if (!$user) {
                 \Log::warning('Wishlist attempt without authentication');
@@ -1894,8 +1901,11 @@ class DynamicCrudController extends Controller
     public function get_wishlisted_movies(Request $request)
     {
         try {
-            $user = auth('api')->user();
-
+            $user = Utils::get_user($request);
+            if (!$user) {
+                return $this->error('Authentication required', 401);
+            }
+            
             if (!$user) {
                 return $this->error('Authentication required', 401);
             }
