@@ -63,6 +63,9 @@ Route::get('fix-pics', function () {
             echo "Updated movie {$movie->id} - {$movie->title}<br>";
         } else {
             echo "No update needed for movie {$movie->id} - {$movie->title}<br>";
+            //curem img url
+            echo "PHOTO: {$movie->image_url}<br>";
+            echo '<img src="' . $movie->image_url . '" width="100" /><hr>';
         }
     }
 });
