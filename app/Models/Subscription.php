@@ -155,6 +155,17 @@ class Subscription extends Model
         return $query->where('status', 'Active')
             ->where('end_date_time', '>', now());
     }
+    //statusgetter
+    public function getStatusAttribute($value)
+    {
+        $endDate = Carbon::parse($this->end_date_time);
+        $now = now();
+        if ($value === 'Active' && $now->gt($endDate)) {
+            $sql = "UPDATE subscriptions SET status = 'Expired' WHERE id = {$this->id}";
+            return 'Expired';
+        }
+        return $value;
+    }
 
     public function scopePending($query)
     {
@@ -338,7 +349,7 @@ class Subscription extends Model
     {
         $this->status = 'Active';
         $this->payment_status = 'Completed';
-        
+
         if (!$this->start_date_time) {
             $this->start_date_time = now();
         }
@@ -375,7 +386,7 @@ class Subscription extends Model
     {
         $this->status = 'Failed';
         $this->payment_status = 'Failed';
-        
+
         if ($reason) {
             $this->cancelled_reason = $reason;
         }
@@ -449,7 +460,7 @@ class Subscription extends Model
      */
     public function getStatusColor()
     {
-        return match($this->status) {
+        return match ($this->status) {
             'Active' => 'success',
             'Pending' => 'warning',
             'Expired' => 'danger',
