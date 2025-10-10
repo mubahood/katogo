@@ -113,6 +113,8 @@ class SubscriptionController extends AdminController
         // Filters
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
+            $filter->equal('user_id', 'Subscriber');
+
 
             $filter->equal('status', 'Status')->select([
                 'Pending' => 'Pending',
@@ -154,7 +156,7 @@ class SubscriptionController extends AdminController
 
         $grid->column('plan.name', __('Plan'))
             ->display(function ($planName) {
-                $model = $this; 
+                $model = $this;
                 if ($model->plan) {
                     return "<strong>{$model->plan->name}</strong><br><small>{$model->plan->duration_days} days</small>";
                 }
@@ -309,7 +311,7 @@ class SubscriptionController extends AdminController
             ->rules('required');
 
         $form->datetime('start_date_time', __('Start Date'));
-        $form->datetime('end_date_time', __('End Date')); 
+        $form->datetime('end_date_time', __('End Date'));
 
         return $form;
     }
