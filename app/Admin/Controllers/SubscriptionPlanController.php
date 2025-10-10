@@ -41,45 +41,38 @@ class SubscriptionPlanController extends AdminController
         $grid->model()->orderBy('sort_order', 'asc');
 
         // Filters
-        $grid->filter(function($filter) {
+        $grid->filter(function ($filter) {
             $filter->disableIdFilter();
-            
+
             $filter->equal('status', 'Status')->select([
                 'Active' => 'Active',
                 'Inactive' => 'Inactive',
             ]);
-            
+
             $filter->equal('is_trial', 'Trial Plan')->select([
                 1 => 'Yes',
                 0 => 'No',
             ]);
-            
+
             $filter->equal('is_featured', 'Featured')->select([
                 1 => 'Yes',
                 0 => 'No',
             ]);
-            
+
             $filter->between('price', 'Price Range');
             $filter->between('duration_days', 'Duration Range (Days)');
         });
 
         // Columns
         $grid->column('id', __('ID'))->sortable();
-        
+
         $grid->column('name', __('Plan Name'))
-            ->display(function ($name, $model) {
-                $badges = '';
-                if ($model->is_trial) {
-                    $badges .= ' <span class="badge badge-info">Trial</span>';
-                }
-                if ($model->is_featured) {
-                    $badges .= ' <span class="badge badge-warning">Featured</span>';
-                }
-                return "<strong>{$name}</strong>{$badges}";
-            })->sortable();
+
+            ->sortable();
 
         $grid->column('price', __('Price'))
-            ->display(function ($price, $model) {
+            ->display(function ($price) {
+                $model = $this;
                 if ($price == 0) {
                     return '<span class="badge badge-success">FREE</span>';
                 }
@@ -100,8 +93,8 @@ class SubscriptionPlanController extends AdminController
             })->sortable();
 
         $grid->column('subscribers_count', __('Subscribers'))
-            ->display(function ($value, $model) {
-                $count = Subscription::where('plan_id', $model->id)
+            ->display(function ($value) {
+                $count = Subscription::where('plan_id', $this->id)
                     ->where('status', 'Active')
                     ->count();
                 return "<span class='badge badge-success'>{$count} Active</span>";
@@ -183,30 +176,30 @@ class SubscriptionPlanController extends AdminController
         $form->text('name', __('Plan Name'))->rules('required');
         $form->text('name_luganda', __('Name (Luganda)'));
         $form->text('name_swahili', __('Name (Swahili)'));
-        $form->text('slug', __('Slug'))->rules('required|unique:subscription_plans,slug');
-        
+        $form->text('slug', __('Slug'));
+
         $form->textarea('description', __('Description'))->rules('required');
         $form->textarea('description_luganda', __('Description (Luganda)'));
         $form->textarea('description_swahili', __('Description (Swahili)'));
-        
+
         $form->decimal('price', __('Price'))->rules('required|numeric|min:0')->default(0);
         $form->text('currency', __('Currency'))->default('UGX')->rules('required');
         $form->number('duration_days', __('Duration (Days)'))->rules('required|integer|min:1')->default(30);
-        
-        $form->textarea('features', __('Features (JSON)'))->help('Enter features as JSON array');
-        $form->textarea('features_luganda', __('Features (Luganda - JSON)'));
-        $form->textarea('features_swahili', __('Features (Swahili - JSON)'));
-        
-        $form->select('status', __('Status'))->options([
+
+        $form->quill('features', __('Features (JSON)'))->help('Enter features as JSON array');
+        $form->quill('features_luganda', __('Features (Luganda - JSON)'));
+        $form->quill('features_swahili', __('Features (Swahili - JSON)'));
+
+        $form->radio('status', __('Status'))->options([
             'Active' => 'Active',
             'Inactive' => 'Inactive',
         ])->default('Active')->rules('required');
-        
+
         $form->switch('is_featured', __('Featured Plan'))->default(0);
         $form->switch('is_trial', __('Trial Plan'))->default(0);
         $form->number('sort_order', __('Sort Order'))->default(0);
         $form->number('discount_percentage', __('Discount %'))->min(0)->max(100)->default(0);
-        
+
         $form->number('max_downloads', __('Max Downloads'))->help('-1 for unlimited')->default(-1);
         $form->number('max_watchlist', __('Max Watchlist Items'))->help('-1 for unlimited')->default(-1);
         $form->switch('ad_free', __('Ad Free'))->default(1);
