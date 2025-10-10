@@ -4685,11 +4685,12 @@ class Utils
                     $u->autoAssignFreeTrial();
                 } catch (\Throwable $th) {
                     //throw $th;
-                }
-                return $u;
-            }
-            return $u;
+                } 
+            } 
+        }else {
+           return $u;
         }
+
 
         $logged_in_user_id = $r->header('logged_in_user_id');
         $u = User::find($logged_in_user_id);
@@ -4701,10 +4702,12 @@ class Utils
                     $u->autoAssignFreeTrial();
                 } catch (\Throwable $th) {
                     //throw $th;
-                }
-                return $u;
+                } 
             }
+        }else {
+           return $u;
         }
+
 
         if ($u == null) {
             $u = self::get_guest_user();
@@ -4715,9 +4718,9 @@ class Utils
                 } catch (\Throwable $th) {
                     //throw $th;
                 }
-            }
-
-            return $u;
+            } 
+        }else {
+           return $u;
         }
 
         if ($u != null) {
