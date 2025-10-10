@@ -22,7 +22,8 @@ class NotificationService
     {
         $today = Carbon::today();
         
-        // Check if user has notification preferences disabled
+        // Check if user has notification preferences explicitly disabled
+        // NULL or 'Yes' = enabled, only 'No' = disabled
         if ($user->push_notifications === 'No' || $user->notification_preferences === 'No') {
             return false;
         }
@@ -30,13 +31,24 @@ class NotificationService
         // Reset daily counters if it's a new day
         if (!$user->last_trending_notification_date || 
             !Carbon::parse($user->last_trending_notification_date)->isSameDay($today)) {
+            
+            // Use direct DB update to avoid model validation issues
+            DB::table('admin_users')
+                ->where('id', $user->id)
+                ->update([
+                    'trending_notifications_today' => 0,
+                    'last_trending_notification_date' => $today->format('Y-m-d'),
+                    'updated_at' => Carbon::now()
+                ]);
+                
+            // Refresh the model with updated values
             $user->trending_notifications_today = 0;
-            $user->last_trending_notification_date = $today;
-            $user->save();
+            $user->last_trending_notification_date = $today->format('Y-m-d');
         }
         
-        // Check if user has reached daily limit
-        if ($user->trending_notifications_today >= $user->max_trending_notifications_per_day) {
+        // Check if user has reached daily limit (default is 4)
+        $maxDaily = $user->max_trending_notifications_per_day ?? 4;
+        if ($user->trending_notifications_today >= $maxDaily) {
             return false;
         }
         
@@ -115,12 +127,16 @@ class NotificationService
                     // Send individual notification
                     Utils::sendNotificationToUser($user, $notificationData);
                     
-                    // Update user's notification tracking
-                    $user->last_trending_notification_sent = Carbon::now();
-                    $user->last_trending_notification_period = $dayTime;
-                    $user->last_trending_notification_date = Carbon::today();
-                    $user->trending_notifications_today = ($user->trending_notifications_today ?? 0) + 1;
-                    $user->save();
+                    // Update user's notification tracking using direct DB update
+                    DB::table('admin_users')
+                        ->where('id', $user->id)
+                        ->update([
+                            'last_trending_notification_sent' => Carbon::now(),
+                            'last_trending_notification_period' => $dayTime,
+                            'last_trending_notification_date' => Carbon::today()->format('Y-m-d'),
+                            'trending_notifications_today' => DB::raw('COALESCE(trending_notifications_today, 0) + 1'),
+                            'updated_at' => Carbon::now()
+                        ]);
                     
                     $results['notifications_sent']++;
                     
@@ -228,11 +244,14 @@ class NotificationService
         return [
             'total_users' => User::count(),
             'users_with_notifications_enabled' => User::where(function($query) {
-                $query->where('push_notifications', 'Yes')
-                      ->orWhereNull('push_notifications');
-            })->where(function($query) {
-                $query->where('notification_preferences', 'Yes')
-                      ->orWhereNull('notification_preferences');
+                // NULL or not 'No' = enabled, only 'No' = disabled
+                $query->where(function($subQuery) {
+                    $subQuery->where('push_notifications', '!=', 'No')
+                             ->orWhereNull('push_notifications');
+                })->where(function($subQuery) {
+                    $subQuery->where('notification_preferences', '!=', 'No')
+                             ->orWhereNull('notification_preferences');
+                });
             })->count(),
             'users_notified_today' => User::whereDate('last_trending_notification_date', $today)
                 ->where('trending_notifications_today', '>', 0)
@@ -240,8 +259,10 @@ class NotificationService
             'total_notifications_sent_today' => User::whereDate('last_trending_notification_date', $today)
                 ->sum('trending_notifications_today'),
             'users_at_daily_limit' => User::whereDate('last_trending_notification_date', $today)
-                ->whereRaw('trending_notifications_today >= max_trending_notifications_per_day')
+                ->whereRaw('trending_notifications_today >= COALESCE(max_trending_notifications_per_day, 4)')
                 ->count(),
+            'users_with_push_disabled' => User::where('push_notifications', 'No')->count(),
+            'users_with_preferences_disabled' => User::where('notification_preferences', 'No')->count(),
         ];
     }
 }

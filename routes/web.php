@@ -1135,31 +1135,493 @@ Route::get('process-views', function (Request $request) {
 
     die();
 });
+/**
+ * IMPROVED NOTIFICATION ENDPOINT 📱
+ * 
+ * Enhanced notification system with proper rate limiting and user feedback.
+ * Prevents spam notifications by implementing time-based controls and user preferences.
+ */
 Route::get('send-notifications', function (Request $request) {
-
+    // Set proper execution limits
+    set_time_limit(300); // 5 minutes max
+    ini_set('memory_limit', '256M');
+    
+    $startTime = \Carbon\Carbon::now();
+    $results = [
+        'success' => false,
+        'message' => '',
+        'start_time' => $startTime->toISOString(),
+        'trending_data' => null,
+        'notification_results' => null,
+        'statistics' => null,
+        'errors' => []
+    ];
+    
     try {
-        $trending =  TrendingNotification::getTendingMovie();
+        echo '<h1>🔔 UGFLIX Notification System</h1>';
+        echo '<h2>📊 Trending Movie Notification Process</h2>';
+        echo '<p><strong>Started:</strong> ' . $startTime->format('Y-m-d H:i:s') . '</p>';
+        echo '<hr>';
+        
+        // Step 1: Get notification statistics before sending
+        echo '<h3>📈 Pre-Send Statistics</h3>';
+        $preStats = \App\Services\NotificationService::getNotificationStats();
+        echo '<ul>';
+        echo '<li><strong>Total Users:</strong> ' . $preStats['total_users'] . '</li>';
+        echo '<li><strong>Users with Notifications Enabled:</strong> ' . $preStats['users_with_notifications_enabled'] . '</li>';
+        echo '<li><strong>Users Already Notified Today:</strong> ' . $preStats['users_notified_today'] . '</li>';
+        echo '<li><strong>Total Notifications Sent Today:</strong> ' . $preStats['total_notifications_sent_today'] . '</li>';
+        echo '<li><strong>Users at Daily Limit:</strong> ' . $preStats['users_at_daily_limit'] . '</li>';
+        echo '</ul>';
+        echo '<hr>';
+        
+        // Step 2: Get trending movie
+        echo '<h3>🎬 Finding Trending Movie</h3>';
+        $trending = \App\Models\TrendingNotification::getTendingMovie();
+        
+        if ($trending == null) {
+            $results['success'] = false;
+            $results['message'] = 'No trending movie found';
+            $results['errors'][] = 'No suitable movie available for trending notification';
+            
+            echo '<div style="color: red; font-weight: bold;">❌ No trending movie found</div>';
+            echo '<p>This could be because:</p>';
+            echo '<ul>';
+            echo '<li>No active movies in the database</li>';
+            echo '<li>All movies have already been marked as trending</li>';
+            echo '<li>No movies meet the minimum view time criteria</li>';
+            echo '</ul>';
+            
+            \Illuminate\Support\Facades\Log::warning('No trending movie found for notification', [
+                'timestamp' => $startTime->toISOString(),
+                'statistics' => $preStats
+            ]);
+            
+            return response()->json($results, 404);
+        }
+        
+        $results['trending_data'] = [
+            'id' => $trending->id,
+            'title' => $trending->title,
+            'type' => $trending->type,
+            'url' => $trending->url,
+            'thumbnail_url' => $trending->thumbnail_url,
+            'views_count' => $trending->views_count,
+            'views_time_count' => $trending->views_time_count
+        ];
+        
+        echo '<div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+        echo '<h4>✅ Trending Movie Found</h4>';
+        echo '<p><strong>ID:</strong> ' . $trending->id . '</p>';
+        echo '<p><strong>Title:</strong> ' . htmlspecialchars($trending->title) . '</p>';
+        echo '<p><strong>Type:</strong> ' . $trending->type . '</p>';
+        echo '<p><strong>Views:</strong> ' . number_format($trending->views_count ?? 0) . '</p>';
+        echo '<p><strong>Watch Time:</strong> ' . gmdate("H:i:s", $trending->views_time_count ?? 0) . '</p>';
+        echo '<p><strong>URL:</strong> <a href="' . htmlspecialchars($trending->url) . '" target="_blank">' . htmlspecialchars($trending->url) . '</a></p>';
+        
+        if ($trending->thumbnail_url) {
+            echo '<p><strong>Thumbnail:</strong></p>';
+            echo '<img src="' . htmlspecialchars($trending->thumbnail_url) . '" width="200" height="150" style="border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);" alt="Movie Thumbnail">';
+        }
+        echo '</div>';
+        
+        // Step 3: Get post-send statistics  
+        echo '<h3>📊 Post-Process Statistics</h3>';
+        $postStats = \App\Services\NotificationService::getNotificationStats();
+        echo '<ul>';
+        echo '<li><strong>Total Users:</strong> ' . $postStats['total_users'] . '</li>';
+        echo '<li><strong>Users with Notifications Enabled:</strong> ' . $postStats['users_with_notifications_enabled'] . '</li>';
+        echo '<li><strong>Users Notified Today:</strong> ' . $postStats['users_notified_today'] . '</li>';
+        echo '<li><strong>Total Notifications Sent Today:</strong> ' . $postStats['total_notifications_sent_today'] . '</li>';
+        echo '<li><strong>Users at Daily Limit:</strong> ' . $postStats['users_at_daily_limit'] . '</li>';
+        echo '</ul>';
+        
+        $results['statistics'] = [
+            'pre_send' => $preStats,
+            'post_send' => $postStats,
+            'notifications_sent_this_run' => $postStats['total_notifications_sent_today'] - $preStats['total_notifications_sent_today']
+        ];
+        
+        // Step 4: Summary
+        $endTime = \Carbon\Carbon::now();
+        $duration = $startTime->diffInSeconds($endTime);
+        
+        echo '<hr>';
+        echo '<h3>✅ Process Complete</h3>';
+        echo '<div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+        echo '<p><strong>Duration:</strong> ' . $duration . ' seconds</p>';
+        echo '<p><strong>Notifications Sent This Run:</strong> ' . $results['statistics']['notifications_sent_this_run'] . '</p>';
+        echo '<p><strong>Movie:</strong> ' . htmlspecialchars($trending->title) . '</p>';
+        echo '<p><strong>Status:</strong> Notification process completed successfully</p>';
+        echo '</div>';
+        
+        $results['success'] = true;
+        $results['message'] = 'Notification process completed successfully';
+        $results['end_time'] = $endTime->toISOString();
+        $results['duration_seconds'] = $duration;
+        
+        \Illuminate\Support\Facades\Log::info('Trending notification process completed', [
+            'trending_movie_id' => $trending->id,
+            'trending_movie_title' => $trending->title,
+            'duration_seconds' => $duration,
+            'statistics' => $results['statistics']
+        ]);
+        
+        // Return JSON for API consumers
+        if ($request->expectsJson()) {
+            return response()->json($results);
+        }
+        
     } catch (\Throwable $th) {
-        //throw $th;
-        echo $th->getMessage();
-        die();
+        $endTime = \Carbon\Carbon::now();
+        $duration = $startTime->diffInSeconds($endTime);
+        
+        $results['success'] = false;
+        $results['message'] = 'Notification process failed: ' . $th->getMessage();
+        $results['end_time'] = $endTime->toISOString();
+        $results['duration_seconds'] = $duration;
+        $results['errors'][] = $th->getMessage();
+        
+        echo '<hr>';
+        echo '<div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+        echo '<h3 style="color: #721c24;">❌ Error Occurred</h3>';
+        echo '<p><strong>Error:</strong> ' . htmlspecialchars($th->getMessage()) . '</p>';
+        echo '<p><strong>Duration:</strong> ' . $duration . ' seconds</p>';
+        echo '<p><strong>Time:</strong> ' . $endTime->format('Y-m-d H:i:s') . '</p>';
+        echo '</div>';
+        
+        \Illuminate\Support\Facades\Log::error('Trending notification process failed', [
+            'error' => $th->getMessage(),
+            'trace' => $th->getTraceAsString(),
+            'duration_seconds' => $duration
+        ]);
+        
+        if ($request->expectsJson()) {
+            return response()->json($results, 500);
+        }
     }
-    if ($trending == null) {
-        echo 'No trending movie found';
-        die();
-    }
-    $movie = $trending;
-    if ($movie == null) {
-        echo 'No movie found';
-        die();
-    }
-    echo 'Movie found<br>';
-    echo $movie->id . ' - ' . $movie->title . '<br>';
-    echo $movie->url . '<br>';
-    echo '<img src="' . $movie->thumbnail_url . '" width="100" height="100" alt=""><br>';
-    echo 'Sending notification...<br>';
-    die();
 });
+
+/**
+ * NOTIFICATION STATISTICS ENDPOINT 📊
+ * 
+ * Get detailed statistics about the notification system for monitoring and debugging.
+ */
+Route::get('notification-stats', function (Request $request) {
+    try {
+        $stats = \App\Services\NotificationService::getNotificationStats();
+        
+        // Get current day time using a simple method since we can't make the method public easily
+        $now = \Carbon\Carbon::now();
+        if ($now->hour >= 6 && $now->hour < 12) {
+            $currentDayTime = 'morning';
+        } elseif ($now->hour >= 12 && $now->hour < 18) {
+            $currentDayTime = 'afternoon';
+        } elseif ($now->hour >= 18 && $now->hour < 24) {
+            $currentDayTime = 'evening';
+        } else {
+            $currentDayTime = 'night';
+        }
+        
+        // Get recent trending notifications
+        $recentTrending = \App\Models\TrendingNotification::with('movie')
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get()
+            ->map(function($trending) {
+                return [
+                    'id' => $trending->id,
+                    'day_time' => $trending->day_time,
+                    'title' => $trending->title,
+                    'is_sent' => $trending->is_sent,
+                    'sent_time' => $trending->sent_time,
+                    'created_at' => $trending->created_at,
+                    'movie_id' => $trending->movie_model_id
+                ];
+            });
+        
+        // Get users who received notifications today
+        $today = \Carbon\Carbon::today();
+        $notifiedUsers = \App\Models\User::whereDate('last_trending_notification_date', $today)
+            ->where('trending_notifications_today', '>', 0)
+            ->orderBy('last_trending_notification_sent', 'desc')
+            ->limit(10)
+            ->get(['id', 'email', 'name', 'last_trending_notification_sent', 'last_trending_notification_period', 'trending_notifications_today'])
+            ->map(function($user) {
+                return [
+                    'id' => $user->id,
+                    'email' => $user->email,
+                    'name' => $user->name,
+                    'last_notification_sent' => $user->last_trending_notification_sent,
+                    'last_notification_period' => $user->last_trending_notification_period,
+                    'notifications_today' => $user->trending_notifications_today
+                ];
+            });
+            
+        $response = [
+            'success' => true,
+            'current_time' => \Carbon\Carbon::now()->toISOString(),
+            'current_day_time' => $currentDayTime,
+            'statistics' => $stats,
+            'recent_trending_notifications' => $recentTrending,
+            'recent_notified_users' => $notifiedUsers,
+            'notification_periods' => [
+                'morning' => '06:00 - 11:59',
+                'afternoon' => '12:00 - 17:59', 
+                'evening' => '18:00 - 23:59',
+                'night' => '00:00 - 05:59'
+            ]
+        ];
+        
+        if ($request->expectsJson()) {
+            return response()->json($response);
+        }
+        
+        // HTML output for browser viewing
+        echo '<h1>📊 UGFLIX Notification System Statistics</h1>';
+        echo '<p><strong>Current Time:</strong> ' . \Carbon\Carbon::now()->format('Y-m-d H:i:s') . '</p>';
+        echo '<p><strong>Current Period:</strong> ' . ucfirst($currentDayTime) . '</p>';
+        echo '<hr>';
+        
+        echo '<h2>📈 System Statistics</h2>';
+        echo '<ul>';
+        foreach ($stats as $key => $value) {
+            $label = ucwords(str_replace('_', ' ', $key));
+            echo '<li><strong>' . $label . ':</strong> ' . number_format($value) . '</li>';
+        }
+        echo '</ul>';
+        
+        echo '<h2>🎬 Recent Trending Notifications</h2>';
+        echo '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">';
+        echo '<tr style="background-color: #f8f9fa;">';
+        echo '<th style="padding: 10px;">ID</th><th style="padding: 10px;">Period</th><th style="padding: 10px;">Title</th><th style="padding: 10px;">Sent</th><th style="padding: 10px;">Sent Time</th>';
+        echo '</tr>';
+        foreach ($recentTrending as $trending) {
+            echo '<tr>';
+            echo '<td style="padding: 8px;">' . $trending['id'] . '</td>';
+            echo '<td style="padding: 8px;">' . ucfirst($trending['day_time']) . '</td>';
+            echo '<td style="padding: 8px;">' . htmlspecialchars($trending['title'] ?? 'N/A') . '</td>';
+            echo '<td style="padding: 8px;">' . ($trending['is_sent'] === 'Yes' ? '✅' : '❌') . '</td>';
+            echo '<td style="padding: 8px;">' . ($trending['sent_time'] ? \Carbon\Carbon::parse($trending['sent_time'])->format('M j H:i') : 'Not sent') . '</td>';
+            echo '</tr>';
+        }
+        echo '</table>';
+        
+        echo '<h2>👥 Recently Notified Users</h2>';
+        echo '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">';
+        echo '<tr style="background-color: #f8f9fa;">';
+        echo '<th style="padding: 10px;">Email</th><th style="padding: 10px;">Last Period</th><th style="padding: 10px;">Today Count</th><th style="padding: 10px;">Last Notification</th>';
+        echo '</tr>';
+        foreach ($notifiedUsers as $user) {
+            echo '<tr>';
+            echo '<td style="padding: 8px;">' . htmlspecialchars($user['email']) . '</td>';
+            echo '<td style="padding: 8px;">' . ucfirst($user['last_notification_period'] ?? 'N/A') . '</td>';
+            echo '<td style="padding: 8px;">' . $user['notifications_today'] . '</td>';
+            echo '<td style="padding: 8px;">' . ($user['last_notification_sent'] ? \Carbon\Carbon::parse($user['last_notification_sent'])->format('M j H:i') : 'Never') . '</td>';
+            echo '</tr>';
+        }
+        echo '</table>';
+        
+        return;
+        
+    } catch (\Exception $e) {
+        $error = [
+            'success' => false,
+            'error' => $e->getMessage()
+        ];
+        
+        if ($request->expectsJson()) {
+            return response()->json($error, 500);
+        }
+        
+        echo '<h1 style="color: red;">❌ Error</h1>';
+        echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
+    }
+});
+
+/**
+ * DEBUG NOTIFICATION SYSTEM 🐛
+ * 
+ * Debug the notification system step by step
+ */
+Route::get('debug-notifications', function (Request $request) {
+    echo '<h1>🐛 Notification Debug</h1>';
+    
+    try {
+        $now = \Carbon\Carbon::now();
+        $dayTime = $now->hour >= 6 && $now->hour < 12 ? 'morning' : 
+                  ($now->hour >= 12 && $now->hour < 18 ? 'afternoon' : 
+                  ($now->hour >= 18 && $now->hour < 24 ? 'evening' : 'night'));
+        
+        echo "<p><strong>Current Time:</strong> {$now}</p>";
+        echo "<p><strong>Day Time:</strong> {$dayTime}</p>";
+        echo "<hr>";
+        
+        // Check if notification already sent for this period
+        $existingTrending = \App\Models\TrendingNotification::whereDate('created_at', \Carbon\Carbon::today())
+            ->where('day_time', $dayTime)
+            ->where('is_sent', 'Yes')
+            ->first();
+            
+        echo "<h3>Step 1: Check if already sent</h3>";
+        echo "<p>Existing sent notification: " . ($existingTrending ? "YES (ID: {$existingTrending->id})" : "NO") . "</p>";
+        
+        if ($existingTrending) {
+            echo "<p><strong>Movie:</strong> {$existingTrending->title}</p>";
+            echo "<p><strong>Sent at:</strong> {$existingTrending->sent_time}</p>";
+            echo "<hr>";
+            echo "<h3>✅ Notification already sent for this period</h3>";
+            return;
+        }
+        
+        // Get or create trending record
+        $trending = \App\Models\TrendingNotification::whereDate('created_at', \Carbon\Carbon::today())
+            ->where('day_time', $dayTime)
+            ->first();
+            
+        echo "<h3>Step 2: Get/Create trending record</h3>";
+        echo "<p>Trending record exists: " . ($trending ? "YES (ID: {$trending->id})" : "NO") . "</p>";
+        
+        if (!$trending) {
+            echo "<p>Creating new trending record...</p>";
+            $trending = new \App\Models\TrendingNotification();
+            $trending->day_time = $dayTime;
+            $trending->created_at = $now;
+            $trending->updated_at = $now;
+            $trending->is_sent = 'No';
+            $trending->save();
+            echo "<p>Created with ID: {$trending->id}</p>";
+        }
+        
+        echo "<p><strong>Movie assigned:</strong> " . ($trending->movie_model_id ? "YES (ID: {$trending->movie_model_id})" : "NO") . "</p>";
+        echo "<p><strong>Is sent:</strong> {$trending->is_sent}</p>";
+        
+        // Test notification eligibility for a few users
+        echo "<h3>Step 3: Check user eligibility</h3>";
+        $users = \App\Models\User::limit(5)->get();
+        
+        foreach ($users as $user) {
+            $canReceive = \App\Services\NotificationService::canReceiveTrendingNotification($user, $dayTime);
+            echo "<p><strong>User {$user->id} ({$user->email}):</strong> " . ($canReceive ? "✅ ELIGIBLE" : "❌ NOT ELIGIBLE") . "</p>";
+            
+            if (!$canReceive) {
+                // Get reason
+                if ($user->push_notifications === 'No') {
+                    echo "  - Reason: Push notifications disabled<br>";
+                } elseif ($user->notification_preferences === 'No') {
+                    echo "  - Reason: Notification preferences disabled<br>";
+                } elseif ($user->trending_notifications_today >= ($user->max_trending_notifications_per_day ?? 4)) {
+                    echo "  - Reason: Daily limit reached ({$user->trending_notifications_today}/{$user->max_trending_notifications_per_day})<br>";
+                } elseif ($user->last_trending_notification_period === $dayTime && 
+                         $user->last_trending_notification_date && 
+                         \Carbon\Carbon::parse($user->last_trending_notification_date)->isSameDay(\Carbon\Carbon::today())) {
+                    echo "  - Reason: Already notified this period<br>";
+                } elseif ($user->last_trending_notification_sent) {
+                    $lastTime = \Carbon\Carbon::parse($user->last_trending_notification_sent);
+                    $hoursDiff = $lastTime->diffInHours(\Carbon\Carbon::now());
+                    if ($hoursDiff < 3) {
+                        echo "  - Reason: Minimum time gap not met ({$hoursDiff} hours < 3)<br>";
+                    }
+                }
+            }
+        }
+        
+        echo "<hr>";
+        echo "<h3>Step 4: Statistics</h3>";
+        $stats = \App\Services\NotificationService::getNotificationStats();
+        foreach ($stats as $key => $value) {
+            echo "<p><strong>" . ucwords(str_replace('_', ' ', $key)) . ":</strong> {$value}</p>";
+        }
+        
+    } catch (\Exception $e) {
+        echo "<h3 style='color: red;'>❌ Error: {$e->getMessage()}</h3>";
+        echo "<pre>{$e->getTraceAsString()}</pre>";
+    }
+});
+
+/**
+ * TEST SINGLE NOTIFICATION 🧪
+ * 
+ * Send notification to just one user for testing
+ */
+Route::get('test-single-notification', function (Request $request) {
+    try {
+        echo '<h1>🧪 Test Single Notification</h1>';
+        
+        // Get first user
+        $user = \App\Models\User::first();
+        if (!$user) {
+            echo '<p style="color: red;">❌ No users found</p>';
+            return;
+        }
+        
+        echo "<p><strong>Test User:</strong> {$user->email}</p>";
+        
+        $dayTime = 'night'; // Current time
+        
+        // Check eligibility
+        $canReceive = \App\Services\NotificationService::canReceiveTrendingNotification($user, $dayTime);
+        echo "<p><strong>Can Receive:</strong> " . ($canReceive ? "✅ YES" : "❌ NO") . "</p>";
+        
+        if (!$canReceive) {
+            echo '<p style="color: orange;">User is not eligible for notifications right now.</p>';
+            return;
+        }
+        
+        // Create test notification data
+        $notificationData = [
+            'title' => 'TEST: UGFLIX Night Trending Movie - Test Movie',
+            'body' => 'This is a test notification from the improved notification system.',
+            'image' => 'https://katogo.schooldynamics.ug/logo.png',
+            'url' => 'https://katogo.schooldynamics.ug',
+            'type' => 'Movie',
+            'movie_id' => 12345,
+            'is_trending' => 'Yes',
+            'data' => [
+                'movie_id' => 12345,
+                'is_trending' => 'Yes',
+                'type' => 'Movie',
+                'url' => 'https://katogo.schooldynamics.ug',
+                'image_url' => 'https://katogo.schooldynamics.ug/logo.png',
+            ],
+        ];
+        
+        echo '<h3>📤 Sending Test Notification</h3>';
+        
+        try {
+            // Send notification to single user
+            \App\Models\Utils::sendNotificationToUser($user, $notificationData);
+            
+            // Update user tracking manually for testing
+            \Illuminate\Support\Facades\DB::table('admin_users')
+                ->where('id', $user->id)
+                ->update([
+                    'last_trending_notification_sent' => \Carbon\Carbon::now(),
+                    'last_trending_notification_period' => $dayTime,
+                    'last_trending_notification_date' => \Carbon\Carbon::today()->format('Y-m-d'),
+                    'trending_notifications_today' => \Illuminate\Support\Facades\DB::raw('COALESCE(trending_notifications_today, 0) + 1'),
+                    'updated_at' => \Carbon\Carbon::now()
+                ]);
+            
+            echo '<div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+            echo '<h4>✅ Test Notification Sent Successfully</h4>';
+            echo '<p><strong>User:</strong> ' . $user->email . '</p>';
+            echo '<p><strong>Time:</strong> ' . \Carbon\Carbon::now()->format('Y-m-d H:i:s') . '</p>';
+            echo '<p><strong>Period:</strong> ' . $dayTime . '</p>';
+            echo '</div>';
+            
+        } catch (\Exception $e) {
+            echo '<div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+            echo '<h4 style="color: #721c24;">❌ Test Failed</h4>';
+            echo '<p><strong>Error:</strong> ' . htmlspecialchars($e->getMessage()) . '</p>';
+            echo '</div>';
+        }
+        
+    } catch (\Exception $e) {
+        echo '<h3 style="color: red;">❌ Test Error: ' . htmlspecialchars($e->getMessage()) . '</h3>';
+    }
+});
+
 Route::get('fix-serries-movies', function (Request $request) {
     //where url like namzentertainment
 
