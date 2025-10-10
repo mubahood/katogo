@@ -38,6 +38,8 @@ class SubscriptionApiController extends Controller
             $lang = $request->get('lang', 'en'); // en, lg, sw
 
             $plans = SubscriptionPlan::active()
+                ->where('is_trial', false) // FIXED: Exclude free trial plans from API
+                ->where('price', '>', 0) // FIXED: Exclude free plans (price = 0)
                 ->ordered()
                 ->get()
                 ->map(function ($plan) use ($lang) {
@@ -109,15 +111,28 @@ class SubscriptionApiController extends Controller
                 // Lock user row to prevent race conditions
                 $user->lockForUpdate();
 
-                // Check for pending/processing subscriptions
-                $pendingCount = $user->subscriptions()
+                // FIXED: Check for pending/processing subscriptions but allow cancellation
+                $pendingSubscriptions = $user->subscriptions()
                     ->whereIn('payment_status', ['Pending', 'Processing'])
                     ->where('status', 'Pending')
-                    ->where('created_at', '>', now()->subHours(1)) // Only check recent pending
-                    ->count();
+                    ->where('created_at', '>', now()->subHours(2)) // Extended to 2 hours
+                    ->get();
 
-                if ($pendingCount > 0) {
-                    throw new \Exception('You have a pending subscription payment. Please complete it or wait for it to expire.');
+                if ($pendingSubscriptions->count() > 0) {
+                    // SOLUTION: Cancel old pending subscriptions instead of blocking
+                    foreach ($pendingSubscriptions as $pendingSub) {
+                        Log::info('Cancelling old pending subscription to allow new one', [
+                            'old_subscription_id' => $pendingSub->id,
+                            'user_id' => $user->id,
+                        ]);
+                        
+                        // Cancel the old pending subscription
+                        $pendingSub->status = 'Cancelled';
+                        $pendingSub->payment_status = 'Failed';
+                        $pendingSub->cancelled_at = now();
+                        $pendingSub->cancelled_reason = 'Cancelled due to new subscription attempt';
+                        $pendingSub->save();
+                    }
                 }
 
                 // Get plan
