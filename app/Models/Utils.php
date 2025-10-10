@@ -4685,14 +4685,26 @@ class Utils
                     $u->autoAssignFreeTrial();
                 } catch (\Throwable $th) {
                     //throw $th;
-                } 
-            } 
-        }else {
-           return $u;
+                }
+            } else {
+                return $u;
+            }
+        } else {
+            return $u;
         }
 
 
         $logged_in_user_id = $r->header('logged_in_user_id');
+        if ($logged_in_user_id == null) {
+            $logged_in_user_id = $r->get('logged_in_user_id');
+        }
+        if ($logged_in_user_id == null) {
+            $logged_in_user_id = $r->input('logged_in_user_id');
+        }
+        if ($logged_in_user_id == null) {
+            $logged_in_user_id = $r->logged_in_user_id;
+        }
+
         $u = User::find($logged_in_user_id);
         if ($u == null) {
             $logged_in_user_id = $r->get('logged_in_user_id');
@@ -4702,10 +4714,10 @@ class Utils
                     $u->autoAssignFreeTrial();
                 } catch (\Throwable $th) {
                     //throw $th;
-                } 
+                }
             }
-        }else {
-           return $u;
+        } else {
+            return $u;
         }
 
 
@@ -4718,9 +4730,9 @@ class Utils
                 } catch (\Throwable $th) {
                     //throw $th;
                 }
-            } 
-        }else {
-           return $u;
+            }
+        } else {
+            return $u;
         }
 
         if ($u != null) {
