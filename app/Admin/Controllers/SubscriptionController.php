@@ -80,19 +80,12 @@ class SubscriptionController extends AdminController
         $grid->column('grace_period_end', __('Grace period end'))->sortable()->hide();
         $grid->column('status', __('Status'))
             ->sortable()
-            ->display(function ($status) {
-                $color = 'gray';
-                if (strtolower($status) == 'active') {
-                    $color = 'green';
-                } elseif (strtolower($status) == 'expired') {
-                    $color = 'red';
-                } elseif (strtolower($status) == 'cancelled') {
-                    $color = 'orange';
-                } elseif (strtolower($status) == 'pending') {
-                    $color = 'blue';
-                }
-                return "<span style='color:{$color};font-weight:bold;'>{$status}</span>";
-            })->filter([
+            ->filter([
+                'Active' => 'Active',
+                'Expired' => 'Expired',
+                'Cancelled' => 'Cancelled',
+                'Pending' => 'Pending',
+            ])->editable('select', [
                 'Active' => 'Active',
                 'Expired' => 'Expired',
                 'Cancelled' => 'Cancelled',
@@ -178,8 +171,8 @@ class SubscriptionController extends AdminController
     protected function form()
     {
         $form = new Form(new Subscription());
-
-        $form->number('user_id', __('User id'));
+        
+        // $form->number('user_id', __('User id'));
         $form->number('plan_id', __('Plan id'));
         $form->number('days', __('Days'));
         $form->datetime('start_date_time', __('Start date time'))->default(date('Y-m-d H:i:s'));
@@ -193,14 +186,15 @@ class SubscriptionController extends AdminController
         $form->text('pesapal_tracking_id', __('Pesapal tracking id'));
         $form->text('pesapal_merchant_reference', __('Pesapal merchant reference'));
         $form->textarea('pesapal_signature', __('Pesapal signature'));
-        $form->text('pesapal_response', __('Pesapal response'));
+        // $form->text('pesapal_response', __('Pesapal response'));
+        // return $form;
         $form->textarea('payment_url', __('Payment url'));
         $form->datetime('payment_confirmed_at', __('Payment confirmed at'))->default(date('Y-m-d H:i:s'));
         $form->datetime('failed_at', __('Failed at'))->default(date('Y-m-d H:i:s'));
         $form->decimal('amount_paid', __('Amount paid'));
         $form->text('currency', __('Currency'))->default('UGX');
         $form->switch('is_extension', __('Is extension'));
-        $form->number('extended_from_id', __('Extended from id'));
+        $form->text('extended_from_id', __('Extended from id'));
         $form->datetime('cancelled_at', __('Cancelled at'))->default(date('Y-m-d H:i:s'));
         $form->textarea('cancelled_reason', __('Cancelled reason'));
         $form->number('cancelled_by', __('Cancelled by'));
