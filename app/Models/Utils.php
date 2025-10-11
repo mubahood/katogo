@@ -4683,14 +4683,22 @@ class Utils
             if ($u != null) {
                 try {
                     $u->autoAssignFreeTrial();
+                    return $u;
                 } catch (\Throwable $th) {
                     //throw $th;
                 }
-            } else {
-                return $u;
             }
         } else {
             return $u;
+        }
+
+        if ($u != null) {
+            try {
+                $u->autoAssignFreeTrial();
+                return $u;
+            } catch (\Throwable $th) {
+                //throw $th;
+            }
         }
 
 
