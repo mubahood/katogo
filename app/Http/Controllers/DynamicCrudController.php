@@ -197,10 +197,11 @@ class DynamicCrudController extends Controller
                 $u->save();
             }
         }
-        if ($u == null) return $this->error("User not authenticated.");
+        $logged_in_user_id = $request->header('logged_in_user_id');
+        if ($u == null) return $this->error("User not authenticated. id: $logged_in_user_id");
 
         $u = Administrator::find($u->id);
-        if ($u == null) return $this->error("User not authenticated.");
+        if ($u == null) return $this->error("User not authenticated. id: $logged_in_user_id");
 
         if ($u != null) {
             $u = User::find($u->id);
@@ -1905,7 +1906,7 @@ class DynamicCrudController extends Controller
             if (!$user) {
                 return $this->error('Authentication required', 401);
             }
-            
+
             if (!$user) {
                 return $this->error('Authentication required', 401);
             }
