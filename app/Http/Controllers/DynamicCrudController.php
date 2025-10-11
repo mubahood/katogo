@@ -190,17 +190,17 @@ class DynamicCrudController extends Controller
             $u = auth('api')->user();
         }
 
-        if ($u != null) {
+        if ($u == null) {
             $u = User::find($u->id);
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
             }
         }
-        if ($u == null) return $this->error("User not authenticated.");
+        if ($u == null) return $this->error("User not authenticated 1.");
 
         $u = Administrator::find($u->id);
-        if ($u == null) return $this->error("User not authenticated.");
+        if ($u == null) return $this->error("User not authenticated 2.");
 
         if ($u != null) {
             $u = User::find($u->id);
@@ -1905,7 +1905,7 @@ class DynamicCrudController extends Controller
             if (!$user) {
                 return $this->error('Authentication required', 401);
             }
-            
+
             if (!$user) {
                 return $this->error('Authentication required', 401);
             }
