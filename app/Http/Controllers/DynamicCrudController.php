@@ -186,9 +186,7 @@ class DynamicCrudController extends Controller
     {
         $u = Utils::get_user($request);
 
-        if ($u == null) {
-            $u = auth('api')->user();
-        }
+ 
 
         if ($u != null) {
             $u = User::find($u->id);
@@ -200,7 +198,7 @@ class DynamicCrudController extends Controller
         
         $logged_in_user_id = $request->header('logged_in_user_id');
  
-        // if ($logged_in_user_id && !$u) $u = User::find($logged_in_user_id);
+        if ($logged_in_user_id && !$u) $u = User::find($logged_in_user_id);
 
 
         if ($u == null) return $this->error("User not authenticated. id: $logged_in_user_id");
