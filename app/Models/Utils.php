@@ -4677,6 +4677,13 @@ class Utils
     }
     public static function get_user(Request $r)
     {
+
+        $logged_in_user_id = $r->header('logged_in_user_id');
+        if ($logged_in_user_id) $u = User::find($logged_in_user_id);
+        if ($u != null) {
+            return $u;
+        }
+
         $u = auth('api')->user();
         if ($u != null) {
             $u = User::find($u->id);
