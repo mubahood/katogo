@@ -727,12 +727,12 @@ class ApiController extends BaseController
 
 
         $APP_VERSION = 19;
-        $UPDATE_NOTES = "- We fixed the error that caused downloads to disappear.
-    - Added subscription management with free trial support.
-    - Google Sign-In authentication now available.
-    - Added dashboard statistics for watchlist and favorites.
-    - Improved movie discovery with personalized recommendations.
-    - Fixed issues with profile photo uploads.";
+        $UPDATE_NOTES = "- Fixed download disappearance bug
+        - Added subscription management with free trial
+        - Google Sign-In now available
+        - Dashboard statistics for watchlist and favorites
+        - Improved movie recommendations
+        - Fixed profile photo upload issues";
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";
         $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
         $date = Carbon::parse('2020-01-01 00:00:00');
