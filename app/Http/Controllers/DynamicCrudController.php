@@ -479,7 +479,12 @@ class DynamicCrudController extends Controller
 
         // ENHANCED INTELLIGENT SEARCH ENGINE or title_like
         if ($request->filled('search') || $request->filled('title_like')) {
-            $searchTerm = trim($request->get('search'));
+
+            $searchTerm = null;
+            if ($request->filled('search')) {
+                $searchTerm = trim($request->get('search'));
+            }
+            
             if ($searchTerm == null || empty($searchTerm)) {
                 $searchTerm = trim($request->get('title_like'));
             }
