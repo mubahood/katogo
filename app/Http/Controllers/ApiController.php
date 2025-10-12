@@ -724,6 +724,10 @@ class ApiController extends BaseController
                 $u->save();
             }
         }
+        if ($u == null) {
+            return $this->error('User not found.');
+        }
+
         $u = User::find($u->id);
         $u->autoAssignFreeTrial();
 
@@ -744,6 +748,49 @@ class ApiController extends BaseController
         //maxk time now
         $max_time = Carbon::now();
 
+        //setting movies for today listing
+        $temp_movies = MovieModel::where([
+            'status' => 'Active',
+            'type' => 'Movie',
+        ])
+            ->whereNotNull('last_listing_date')
+            ->where('is_muno', 'Yes')
+            ->whereBetween('last_listing_date', [$min_time, $max_time])
+            ->orderBy('created_at', 'desc')
+            ->limit(200)
+            ->get($take_only);
+        //if temp_movies is less than 200, set last_listing_date to null for all movies
+        if (count($temp_movies) < 200) {
+            $latest_movies_with_listing_date_as_null = MovieModel::where([
+                'status' => 'Active',
+                'type' => 'Movie',
+            ])
+                ->whereNull('last_listing_date')
+                ->where('is_muno', 'Yes')
+                ->orderBy('created_at', 'desc')
+                ->limit(200)
+                ->get();
+            //check if latest_movies_with_listing_date_as_null is less than 200
+            if (count($latest_movies_with_listing_date_as_null) < 200) {
+                //get latest 2000 movies
+                $latest_movies_with_listing_date_as_null_ids = $latest_movies_with_listing_date_as_null->pluck('id')->toArray();
+                $latest_random_movies = MovieModel::where([
+                    'status' => 'Active',
+                    'type' => 'Movie',
+                ])
+                    ->whereNotIn('id', $latest_movies_with_listing_date_as_null_ids)
+                    ->orderBy('created_at', 'desc')
+                    ->limit(200 - count($latest_movies_with_listing_date_as_null))
+                    ->get();
+                $latest_movies_with_listing_date_as_null = $latest_movies_with_listing_date_as_null->merge($latest_random_movies);
+                //set $latest_movies_with_listing_date_as_null as today's listing (use sql)
+                $latest_movies_with_listing_date_as_null_ids = $latest_movies_with_listing_date_as_null->pluck('id')->toArray();
+                $six_am_today = Carbon::now()->startOfDay()->addHours(6);
+                DB::table('movie_models')
+                    ->whereIn('id', $latest_movies_with_listing_date_as_null_ids)
+                    ->update(['last_listing_date' => $six_am_today]);
+            }
+        }
 
         //movies with last_listing_date is between 12 hours ago and now
         $oldest_listed_movies = MovieModel::where([
@@ -765,52 +812,28 @@ class ApiController extends BaseController
                 'type' => 'Movie',
             ])
                 ->where('is_muno', 'Yes')
-                ->orderBy('last_listing_date', 'desc')
+                ->orderBy('created_at', 'desc')
                 ->limit(200)
                 ->get($take_only);
-            //shuffle $oldest_listed_movies
-            $oldest_listed_movies = $oldest_listed_movies->shuffle();
-            //set last_listing_date to now
-            foreach ($oldest_listed_movies as $key => $movie) {
-                $movie->last_listing_date = Carbon::now();
-                $movie->save();
-            }
         }
 
         // Early return if no movies are available
         if ($oldest_listed_movies->count() === 0) {
-            $manifest = [
-                'top_movie' => [],
-                'vj' => [],
-                'platform_type' => Utils::get_platform(),
-                'genres' => [],
-                'APP_VERSION' => $APP_VERSION ?? 18,
-                'lists' => [],
-                'UPDATE_NOTES' => $UPDATE_NOTES ?? '',
-                'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
-            ];
-            return Utils::success($manifest, "Listed successfully (no content available).");
+            $oldest_listed_movies = MovieModel::where([
+                'status' => 'Active',
+                'type' => 'Movie',
+            ])
+                ->orderBy('created_at', 'desc')
+                ->limit(200)
+                ->get($take_only);
         }
 
-
-
-        //shuffle $oldest_listed_movies
-        $oldest_listed_movies = $oldest_listed_movies->shuffle();
-        //shuffle $oldest_listed_movies
-        $oldest_listed_movies = $oldest_listed_movies->shuffle();
 
         $now = Carbon::now();
         $today = $now->format('d');
         $topMovie = null;
 
         // Safely get top movie with proper null checks
-        if ($oldest_listed_movies->count() > 0) {
-            if (isset($oldest_listed_movies[$today])) {
-                $topMovie = $oldest_listed_movies[$today];
-            } else {
-                $topMovie = $oldest_listed_movies->first();
-            }
-        }
 
         try {
             $trending =  TrendingNotification::getTendingMovie();
@@ -819,8 +842,7 @@ class ApiController extends BaseController
             }
         } catch (\Throwable $th) {
         }
-
-
+        
 
 
         $lists = [];

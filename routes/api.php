@@ -83,6 +83,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     // ===== SUBSCRIPTION-PROTECTED MOVIE ROUTES =====
     // These routes require an active subscription (allows grace period)
     Route::middleware(['subscription'])->group(function () {
+        Route::get('movies/{id}', [DynamicCrudController::class, 'movie']); // Alternative route for mobile app compatibility - must be before 'movies'
         Route::get('movies', [DynamicCrudController::class, 'movies']);
         Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
         
@@ -95,7 +96,6 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     
     Route::get('users-list', [DynamicCrudController::class, 'users_list']);
     Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
-    Route::get('/movies', [DynamicCrudController::class, 'movies']);
     Route::post('/dynamic-save', [DynamicCrudController::class, 'save']);
     Route::post('/dynamic-delete', [DynamicCrudController::class, 'delete']);
     Route::POST("consultation-card-payment", [DynamicCrudController::class, 'consultation_card_payment']);

@@ -39,6 +39,7 @@ class JwtMiddleware extends BaseMiddleware
             return $next($request);
         }
 
+
         //check if request is login or register
 
         if (
@@ -49,7 +50,7 @@ class JwtMiddleware extends BaseMiddleware
         ) {
             return $next($request);
         }
-
+        $tok = $request->header('Tok');
         // If request starts with api then we will check for token
         if (!$request->is('api/*')) {
             return $next($request);
