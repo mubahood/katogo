@@ -95,6 +95,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     
     Route::get('users-list', [DynamicCrudController::class, 'users_list']);
     Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
+    Route::get('/movies', [DynamicCrudController::class, 'movies']);
     Route::post('/dynamic-save', [DynamicCrudController::class, 'save']);
     Route::post('/dynamic-delete', [DynamicCrudController::class, 'delete']);
     Route::POST("consultation-card-payment", [DynamicCrudController::class, 'consultation_card_payment']);
