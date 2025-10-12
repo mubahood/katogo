@@ -186,7 +186,7 @@ class DynamicCrudController extends Controller
     {
         $u = Utils::get_user($request);
 
- 
+
 
         if ($u != null) {
             $u = User::find($u->id);
@@ -195,9 +195,9 @@ class DynamicCrudController extends Controller
                 $u->save();
             }
         }
-        
+
         $logged_in_user_id = $request->header('logged_in_user_id');
- 
+
         if ($logged_in_user_id && !$u) $u = User::find($logged_in_user_id);
 
 
@@ -477,9 +477,14 @@ class DynamicCrudController extends Controller
             $query->select(['id', 'title', 'url', 'thumbnail_url', 'description', 'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj', 'is_premium']);
         }
 
-        // ENHANCED INTELLIGENT SEARCH ENGINE
-        if ($request->filled('search')) {
+        // ENHANCED INTELLIGENT SEARCH ENGINE or title_like
+        if ($request->filled('search') || $request->filled('title_like')) {
             $searchTerm = trim($request->get('search'));
+            if ($searchTerm == null || empty($searchTerm)) {
+                $searchTerm = trim($request->get('title_like'));
+            }
+
+
             $isLiveSearch = $request->get('live_search', false); // Check if this is live search
             $perPage = $isLiveSearch ? 25 : $request->get('per_page', 21);
 
