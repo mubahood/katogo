@@ -15,7 +15,7 @@ class MovieCrawlerPageController extends AdminController
      *
      * @var string
      */
-    protected $title = 'MovieCrawlerPage';
+    protected $title = 'Movie Crawler Pages';
 
     /**
      * Make a grid builder.

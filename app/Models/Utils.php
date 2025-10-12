@@ -4679,10 +4679,12 @@ class Utils
     {
 
 
-        $u = auth('api')->user(); 
+        $u = auth('api')->user();
         $logged_in_user_id = $r->header('logged_in_user_id');
         if ($logged_in_user_id) $u = User::find($logged_in_user_id);
         if ($u != null) {
+            $u = User::find($u->id);
+            $u->autoAssignFreeTrial();
             return $u;
         }
 

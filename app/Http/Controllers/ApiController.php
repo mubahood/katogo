@@ -724,7 +724,8 @@ class ApiController extends BaseController
                 $u->save();
             }
         }
-
+        $u = User::find($u->id);
+        $u->autoAssignFreeTrial();
 
         $APP_VERSION = 19;
         $UPDATE_NOTES = "- Fixed download disappearance bug
