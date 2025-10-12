@@ -726,7 +726,7 @@ class ApiController extends BaseController
         }
 
 
-        $APP_VERSION = 18;
+        $APP_VERSION = 19;
         $UPDATE_NOTES = "- We fixed the error that caused downloads to disappear.
     - Added subscription management with free trial support.
     - Google Sign-In authentication now available.
