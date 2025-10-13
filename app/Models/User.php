@@ -621,6 +621,7 @@ class User extends Administrator implements JWTSubject
      */
     public function giveFreeSubscription($forceNew = false)
     {
+        return;
         try {
             // STEP 1: Check if user already has an active subscription
             if (!$forceNew) {

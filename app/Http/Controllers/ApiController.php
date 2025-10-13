@@ -1317,7 +1317,7 @@ class ApiController extends BaseController
             'vj' => $unique_vj ?? [],
             'platform_type' => Utils::get_platform(),
             'genres' => $unique_genres ?? [],
-            'APP_VERSION' => $APP_VERSION ?? 18,
+            'APP_VERSION' => $APP_VERSION ?? 19,
             'lists' => $lists ?? [],
             'UPDATE_NOTES' => $UPDATE_NOTES ?? '',
             'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
