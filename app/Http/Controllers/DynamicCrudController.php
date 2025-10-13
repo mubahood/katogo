@@ -243,6 +243,12 @@ class DynamicCrudController extends Controller
         // check if model is MovieModel , set status =active
         if ($modelName == 'MovieModel') {
 
+            if($u != null){
+                if(!$u->hasActiveSubscription()){
+                    return $this->error('Please subscribe.');
+                }
+            }
+
 
             //check if category_id is set and not empty
             if ($request->filled('category_id')) {
