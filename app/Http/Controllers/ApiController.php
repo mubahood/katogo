@@ -729,7 +729,7 @@ class ApiController extends BaseController
         }
 
         $u = User::find($u->id);
-        $u->autoAssignFreeTrial();
+        // $u->autoAssignFreeTrial();
 
         $APP_VERSION = 19;
         $UPDATE_NOTES = "- Fixed download disappearance bug
@@ -1199,24 +1199,7 @@ class ApiController extends BaseController
 
         if ($u && $u->id) {
             try {
-                // CHECKPOINT 1: Auto-assign free trial if user is eligible
-                try {
-                    $freeTrialResult = $u->autoAssignFreeTrial();
-                    if ($freeTrialResult['success']) {
-                        \Log::info('Free trial auto-assigned via manifest endpoint', [
-                            'user_id' => $u->id,
-                            'endpoint' => 'manifest',
-                            'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    \Log::error('Failed to auto-assign free trial in manifest endpoint', [
-                        'user_id' => $u->id,
-                        'error' => $e->getMessage(),
-                        'endpoint' => 'manifest',
-                    ]);
-                }
-
+                 
                 $subscription_status = $u->getSubscriptionStatus();
 
                 // CRITICAL: Validate subscription data consistency
@@ -1668,23 +1651,7 @@ class ApiController extends BaseController
             return $this->error('Wrong credentials.');
         }
 
-        // CHECKPOINT 4: Auto-assign free trial on successful login
-        try {
-            $freeTrialResult = $user->autoAssignFreeTrial();
-            if ($freeTrialResult['success']) {
-                \Illuminate\Support\Facades\Log::info('Free trial auto-assigned on login', [
-                    'user_id' => $user->id,
-                    'endpoint' => 'login',
-                    'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
-                ]);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to auto-assign free trial on login', [
-                'user_id' => $user->id,
-                'error' => $e->getMessage(),
-                'endpoint' => 'login',
-            ]);
-        }
+    
 
         // Add token to user object for API response (don't save to DB)
         $user_data = $user->toArray();
@@ -1809,22 +1776,7 @@ class ApiController extends BaseController
             }
 
             // Auto-assign free trial if applicable
-            try {
-                $freeTrialResult = $user->autoAssignFreeTrial();
-                if ($freeTrialResult['success']) {
-                    \Illuminate\Support\Facades\Log::info('Free trial auto-assigned on Google login', [
-                        'user_id' => $user->id,
-                        'endpoint' => 'google_auth',
-                        'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
-                    ]);
-                }
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to auto-assign free trial on Google login', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                    'endpoint' => 'google_auth',
-                ]);
-            }
+             
 
             // Prepare response data
             $user_data = $user->toArray();

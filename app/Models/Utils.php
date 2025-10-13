@@ -4684,7 +4684,7 @@ class Utils
         if ($logged_in_user_id) $u = User::find($logged_in_user_id);
         if ($u != null) {
             $u = User::find($u->id);
-            $u->autoAssignFreeTrial();
+            // $u->autoAssignFreeTrial();
             return $u;
         }
 
@@ -4693,7 +4693,7 @@ class Utils
             $u = User::find($u->id);
             if ($u != null) {
                 try {
-                    $u->autoAssignFreeTrial();
+                    // $u->autoAssignFreeTrial();
                     return $u;
                 } catch (\Throwable $th) {
                     //throw $th;
@@ -4705,7 +4705,7 @@ class Utils
 
         if ($u != null) {
             try {
-                $u->autoAssignFreeTrial();
+                // $u->autoAssignFreeTrial();
                 return $u;
             } catch (\Throwable $th) {
                 //throw $th;
@@ -4730,7 +4730,7 @@ class Utils
             $u = User::find($logged_in_user_id);
             if ($u != null) {
                 try {
-                    $u->autoAssignFreeTrial();
+                    // $u->autoAssignFreeTrial();
                 } catch (\Throwable $th) {
                     //throw $th;
                 }
@@ -4745,7 +4745,7 @@ class Utils
 
             if ($u != null) {
                 try {
-                    $u->autoAssignFreeTrial();
+                    // $u->autoAssignFreeTrial();
                 } catch (\Throwable $th) {
                     //throw $th;
                 }
@@ -4756,7 +4756,7 @@ class Utils
 
         if ($u != null) {
             try {
-                $u->autoAssignFreeTrial();
+                // $u->autoAssignFreeTrial();
             } catch (\Throwable $th) {
                 //throw $th;
             }
