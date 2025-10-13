@@ -244,9 +244,21 @@ class DynamicCrudController extends Controller
         // check if model is MovieModel , set status =active
         if ($modelName == 'MovieModel') {
 
-            if($u != null){
-                if(!$u->hasActiveSubscription()){
-                        throw new Exception("❌ Please subscribe to access movies. {$u->id}");
+            if ($u != null) {
+                if (!$u->hasActiveSubscription()) {
+                    $movies = MovieModel::where('id', '23829')->get();
+
+                    $responseData = [
+                        'items' => $movies,
+                        'pagination' => [
+                            'current_page' => 1,
+                            'per_page' => count($movies),
+                            'total' => count($movies),
+                            'last_page' => 1,
+                        ]
+                    ];
+                    return $this->success($responseData, "Data retrieved successfully.");
+                    // throw new Exception("❌ Please subscribe to access movies. {$u->id}");
                     return $this->error('Please subscribe.');
                 }
             }
