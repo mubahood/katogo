@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
 use Dotenv\Validator;
 use Encore\Admin\Auth\Database\Administrator;
+use Exception;
 use Illuminate\Support\Facades\DB;
 
 class DynamicCrudController extends Controller
@@ -245,6 +246,7 @@ class DynamicCrudController extends Controller
 
             if($u != null){
                 if(!$u->hasActiveSubscription()){
+                        throw new Exception("❌ Please subscribe to access movies. {$u->id}");
                     return $this->error('Please subscribe.');
                 }
             }
