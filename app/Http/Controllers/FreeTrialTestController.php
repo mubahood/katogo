@@ -19,6 +19,7 @@ class FreeTrialTestController extends Controller
      */
     public function testFreeTrial(Request $request, $userId = null)
     {
+        return;
         try {
             // Use provided user ID or get from request
             if (!$userId) {

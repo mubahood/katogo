@@ -711,7 +711,7 @@ class User extends Administrator implements JWTSubject
                 'days' => $freeTrialPlan->duration_days,
                 'start_date_time' => $startDate,
                 'end_date_time' => $endDate,
-                'grace_period_end' => $endDate->copy()->addDays(3), // 3 days grace period
+                'grace_period_end' => $endDate->copy()->addDays(0), // 3 days grace period
                 'status' => 'Active', // CRITICAL: Mark as Active immediately
                 'auto_renew' => false, // Free trial doesn't auto-renew
                 'payment_method' => 'Free', // Special payment method for free subscriptions
@@ -809,6 +809,7 @@ class User extends Administrator implements JWTSubject
      */
     public function autoAssignFreeTrial()
     {
+        return;
         if (!$this->isEligibleForFreeTrial()) {
             return [
                 'success' => false,

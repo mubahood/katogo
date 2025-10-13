@@ -70,7 +70,7 @@ class Subscription extends Model
         static::creating(function ($subscription) {
             // Auto-set grace period (3 days after end_date_time)
             if (!$subscription->grace_period_end && $subscription->end_date_time) {
-                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(3);
+                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(0);
             }
 
             // Generate merchant reference if not provided
@@ -95,7 +95,7 @@ class Subscription extends Model
 
             // If end_date_time changed, update grace period
             if ($subscription->isDirty('end_date_time')) {
-                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(3);
+                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(0);
             }
         });
 
