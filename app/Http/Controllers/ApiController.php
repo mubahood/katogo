@@ -731,7 +731,6 @@ class ApiController extends BaseController
         $u = User::find($u->id);
         // $u->autoAssignFreeTrial();
 
-        
         $APP_VERSION = 19;
         $UPDATE_NOTES = "- Fixed download disappearance bug
         - Added subscription management with free trial
@@ -1294,6 +1293,12 @@ class ApiController extends BaseController
             } catch (\Exception $e) {
                 // If stats collection fails, use default values (already set above)
             }
+        }
+
+
+        if(!$u->hasActiveSubscription()){
+            $lists = [];
+            $topMovie = [];
         }
 
         $manifest = [
