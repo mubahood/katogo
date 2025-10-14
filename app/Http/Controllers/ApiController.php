@@ -874,7 +874,6 @@ class ApiController extends BaseController
         if ($u && $u->id) {
             $watched_movies = MovieView::where('user_id', $u->id)
                 ->orderBy('updated_at', 'desc')
-                ->where('is_muno', 'Yes')
                 ->limit(50)
                 ->get();
         }
