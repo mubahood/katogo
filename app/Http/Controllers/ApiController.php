@@ -853,6 +853,7 @@ class ApiController extends BaseController
         if ($u && $u->id) {
             $my_view_ids = MovieView::where('user_id', $u->id)
                 ->pluck('movie_model_id')
+                ->where('is_muno', 'Yes')
                 ->toArray();
         }
 
@@ -861,6 +862,7 @@ class ApiController extends BaseController
         $my_list['title'] = "Latest Movies";
         $my_list['movies'] = MovieModel::where('status', 'Active')
             ->where('type', 'Movie')
+            ->where('is_muno', 'Yes')
             ->orderBy('created_at', 'desc')
             ->limit(20)
             ->get($take_only);
@@ -873,6 +875,7 @@ class ApiController extends BaseController
         if ($u && $u->id) {
             $watched_movies = MovieView::where('user_id', $u->id)
                 ->orderBy('updated_at', 'desc')
+                ->where('is_muno', 'Yes')
                 ->limit(50)
                 ->get();
         }

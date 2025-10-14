@@ -2856,6 +2856,7 @@ Route::get('/down', function () {
 
 // Test Firebase Storage connection
 Route::get('/test-firebase-connection', function () {
+    return;
     try {
         // Test Firebase connection
         $storage = app('firebase.storage');
@@ -2878,6 +2879,7 @@ Route::get('/test-firebase-connection', function () {
 
 // Test video upload to Firebase
 Route::get('/test-firebase-upload', function () {
+    return;
     try {
         // Test with a small sample video
         $result = \App\Models\Utils::uploadVideoToFirebase(
