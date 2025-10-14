@@ -26,7 +26,20 @@ class UserController extends AdminController
     {
         $grid = new Grid(new User());
         $grid->model()->orderBy('id', 'desc');
-        $grid->quickSearch('username', 'name', 'email', 'first_name', 'last_name', 'phone_number', 'city', 'country', 'bio', 'tagline')->placeholder('Search by username, name, email, city, country, bio, tagline');
+        $grid->filter(function($filter){
+            // Remove the default id filter
+            $filter->disableIdFilter();
+            $filter->like('username', 'Username');
+            $filter->like('name', 'Name');
+            $filter->like('email', 'Email');
+            $filter->equal('status', 'Status')->select([
+                'active' => 'Active',
+                'inactive' => 'Inactive',
+                'banned' => 'Banned',
+            ]);
+            $filter->between('created_at', 'Created At')->datetime();
+            $filter->between('updated_at', 'Updated At')->datetime();
+        }); 
 
         $grid->column('id', __('Id'));
         $grid->column('username', __('Username'));
