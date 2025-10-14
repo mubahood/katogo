@@ -29,6 +29,24 @@ class MovieViewController extends AdminController
         // $lastView = MovieView::orderBy('updated_at', 'desc')->first();
         // dd($lastView);
         $grid = new Grid(new MovieView());
+        $grid->filter(function($filter){
+            // Remove the default id filter
+            $filter->disableIdFilter();
+            $filter->like('ip_address', 'Ip Address');
+            $filter->like('device', 'Device');
+            $filter->like('platform', 'Platform');
+            $filter->like('browser', 'Browser');
+            $filter->like('country', 'Country');
+            $filter->like('city', 'City');
+            $filter->equal('status', 'Status')->select([
+                'Active' => 'Active',
+                'Inactive' => 'Inactive',
+            ]);
+            $filter->equal('movie_model_id', 'Movie ID');
+            $filter->equal('user_id', 'User ID');
+            $filter->between('created_at', 'Created At')->datetime();
+            $filter->between('updated_at', 'Updated At')->datetime();
+        });
         $grid->disableBatchActions();
         $grid->model()->orderBy('updated_at', 'desc');
         $grid->column('id', __('Id'))->width(40);

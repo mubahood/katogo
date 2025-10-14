@@ -34,6 +34,27 @@ class MovieDownloadController extends AdminController
             $value->save();
         } */ 
         $grid = new Grid(new MovieDownload());
+        $grid->filter(function($filter){
+            // Remove the default id filter
+            $filter->disableIdFilter();
+            $filter->like('title', 'Title');
+            $filter->like('url', 'Url');
+            $filter->like('description', 'Description');
+            $filter->equal('status', 'Status')->select([
+                'Pending' => 'Pending',
+                'In Progress' => 'In Progress',
+                'Completed' => 'Completed',
+                'Failed' => 'Failed',
+            ]);
+            $filter->equal('user_id', 'User ID');
+            $filter->equal('movie_model_id', 'Movie Model ID');
+            $filter->between('download_started_at', 'Download Started At')->datetime();
+            $filter->between('download_completed_at', 'Download Completed At')->datetime();
+            $filter->between('created_at', 'Created At')->datetime();
+            $filter->between('updated_at', 'Updated At')->datetime();
+        });
+
+
         $grid->model()->orderBy('created_at', 'desc');
         $grid->quickSearch('title', 'url', 'image_url', 'local_image_url', 'thumbnail_url', 'description', 'genre', 'vj', 'content_type', 'content_is_video', 'is_premium', 'episode_number', 'is_first_episode');
 

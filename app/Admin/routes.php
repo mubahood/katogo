@@ -78,7 +78,8 @@ Route::group([
     $router->get('moderation/blocks/{id}', 'ModerationAdminController@getBlock')->name('moderation.blocks.show');
     $router->get('moderation/logs/{id}', 'ModerationAdminController@getLog')->name('moderation.logs.show');
 
-
+    $router->resource('users', UserController::class);
+    
     // Action endpoints
     $router->put('moderation/reports/{id}/status', 'ModerationAdminController@updateReportStatus')->name('moderation.reports.status');
     $router->put('moderation/blocks/{id}/unblock', 'ModerationAdminController@unblockUser')->name('moderation.blocks.unblock');
