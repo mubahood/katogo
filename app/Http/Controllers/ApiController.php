@@ -852,8 +852,7 @@ class ApiController extends BaseController
         // Safely get user's viewed movies
         if ($u && $u->id) {
             $my_view_ids = MovieView::where('user_id', $u->id)
-                ->pluck('movie_model_id')
-                ->where('is_muno', 'Yes')
+                ->pluck('movie_model_id') 
                 ->toArray();
         }
 
