@@ -32,7 +32,7 @@ class SubscriptionTransactionController extends AdminController
             ->display(function ($created_at) {
                 return date('Y-m-d H:i:s', strtotime($created_at));
             });
-        $grid->column('subscription_id', __('Subscription id'))->hide();
+        $grid->column('subscription_id', __('Subscription id'))->sortable();
         $grid->column('user_id', __('User'))
             ->display(function ($user_id) {
                 $user = \App\Models\User::find($user_id);
@@ -43,7 +43,7 @@ class SubscriptionTransactionController extends AdminController
                 }
             })
             ->sortable();
-        $grid->column('transaction_type', __('Transaction type'))->hide();
+        $grid->column('transaction_type', __('Transaction type'))->sortable();
         $grid->column('amount', __('Amount'))->sortable();
         // $grid->column('currency', __('Currency'));
         $grid->column('status', __('Status'))
@@ -60,19 +60,19 @@ class SubscriptionTransactionController extends AdminController
                 'Failed' => 'Failed',
                 'Refunded' => 'Refunded',
             ]);
-        $grid->column('pesapal_tracking_id', __('Pesapal tracking id'))->hide();
-        $grid->column('merchant_reference', __('Merchant reference'))->hide();
-        $grid->column('payment_method', __('Payment method'))->hide();
-        $grid->column('confirmation_code', __('Confirmation code'))->hide();
-        $grid->column('payment_account', __('Payment account'))->hide();
-        $grid->column('request_payload', __('Request payload'))->hide();
-        $grid->column('response_payload', __('Response payload'))->hide();
-        $grid->column('error_message', __('Error message'))->sortable();  
-        $grid->column('ip_address', __('Ip address'))->hide();
-        $grid->column('user_agent', __('User agent'))->sortable()->hide();
-        $grid->column('refunded_by', __('Refunded by'))->hide();
-        $grid->column('refunded_at', __('Refunded at'))->hide();
-        $grid->column('refund_reason', __('Refund reason'))->hide();
+        $grid->column('pesapal_tracking_id', __('Pesapal tracking id'))->sortable();
+        $grid->column('merchant_reference', __('Merchant reference'))->sortable();
+        $grid->column('payment_method', __('Payment method'))->sortable();
+        $grid->column('confirmation_code', __('Confirmation code'))->sortable();
+        $grid->column('payment_account', __('Payment account'))->sortable();
+        $grid->column('request_payload', __('Request payload'))->sortable();
+        $grid->column('response_payload', __('Response payload'))->sortable();
+        $grid->column('error_message', __('Error message'))->sortable();
+        $grid->column('ip_address', __('Ip address'))->sortable();
+        $grid->column('user_agent', __('User agent'))->sortable()->sortable();
+        $grid->column('refunded_by', __('Refunded by'))->sortable();
+        $grid->column('refunded_at', __('Refunded at'))->sortable();
+        $grid->column('refund_reason', __('Refund reason'))->sortable();
 
         return $grid;
     }
@@ -142,6 +142,5 @@ class SubscriptionTransactionController extends AdminController
         // $form->datetime('refunded_at', __('Refunded at'))->default(date('Y-m-d H:i:s'));
         // $form->textarea('refund_reason', __('Refund reason'));
         return $form;
-
     }
 }

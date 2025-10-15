@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SubscriptionPesapalService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
@@ -153,7 +154,7 @@ class SubscriptionTransaction extends Model
     public function markAsCompleted($responseData = [])
     {
         $this->status = 'Completed';
-        
+
         if (!empty($responseData)) {
             $this->response_payload = array_merge($this->response_payload ?? [], $responseData);
         }
@@ -175,7 +176,7 @@ class SubscriptionTransaction extends Model
     public function markAsFailed($errorMessage = null)
     {
         $this->status = 'Failed';
-        
+
         if ($errorMessage) {
             $this->error_message = $errorMessage;
         }
@@ -225,7 +226,7 @@ class SubscriptionTransaction extends Model
      */
     public function getStatusColor()
     {
-        return match($this->status) {
+        return match ($this->status) {
             'Completed' => 'success',
             'Pending' => 'warning',
             'Processing' => 'info',
@@ -271,5 +272,41 @@ class SubscriptionTransaction extends Model
             'refund_reason' => $this->refund_reason,
             'created_at' => $this->created_at?->toISOString(),
         ];
+    }
+
+    public function check_payment_status()
+    {
+        $pay = $this;
+        $number_of_times_checked = (int) $pay->number_of_times_checked;
+        $pesapalService = new SubscriptionPesapalService();
+        $resp = $pesapalService->getTransactionStatus($pay->pesapal_tracking_id);
+        $is_paid = false;
+        if ($resp != null) {
+            if (isset($resp['data']) && isset($resp['data']['status_code'])) {
+                if (isset($resp['data']['payment_status_description'])) {
+                    $payment_status_description = strtolower($resp['data']['payment_status_description']);
+                    $payment_status_description = trim($payment_status_description);
+                    if ($payment_status_description == 'completed') {
+                        $payment_status_description = $resp['data']['payment_status_description'];
+                        $is_paid = true;
+                    }
+                }
+            }
+        }
+
+
+        if ($is_paid) {
+            $pay->status = 'Completed';
+            $pay->save();
+            if ($pay->subscription != null) {
+                if ($pay->subscription->status != 'Active') {
+                    $pay->subscription->activate();
+                }
+            }
+        }
+
+        $number_of_times_checked++;
+        $pay->number_of_times_checked = $number_of_times_checked;
+        $pay->save();
     }
 }

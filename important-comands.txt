@@ -10,7 +10,7 @@ php artisan db:seed --class=App\\Models\\php artisan admin:make SubscriptionCont
 
 php artisan admin:make UserController --model=App\\Models\\User
 
-php artisan make:migration add_is_muno_success_to_movie_crawler_pages --table=movie_crawler_pages
+php artisan make:migration add_is_number_of_times_to_subscription_transactions --table=subscription_transactions
 
 
 php artisan migrate
