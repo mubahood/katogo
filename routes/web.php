@@ -29,6 +29,53 @@ use Symfony\Component\Process\Process;
 Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'index']);
 
 
+Route::get('send-trendings', function () {
+
+    $now = Carbon::now();
+    //time of day
+    $hour = (int) $now->format('H');
+    $day_time = '';
+    if ($hour >= 5 && $hour < 12) {
+        $day_time = 'morning';
+    } elseif ($hour >= 12 && $hour < 17) {
+        $day_time = 'afternoon';
+    } elseif ($hour >= 17 && $hour < 21) {
+        $day_time = 'evening';
+    } else {
+        $day_time = 'night';
+    }
+
+
+
+    TrendingNotification::getTrendingMovie();
+    die("done");
+
+    $trendings = TrendingNotification::where([])
+        ->limit(10)
+        ->get();
+    $img = 'https://ugaflix.com/upload/images/MV5BNDBhNDJiMWEtOTg4Yi00NTYzLWEzOGMtMjNmNjAxNTBlMzY3XkEyXkFqcGdeQXVyNTIzOTk5ODM@._V1_SX300.jpg';
+    echo "<img src='{$img}' width='100' />";
+    dd($trendings);
+
+    /* 
+        "id" => 1
+        "created_at" => "2025-05-01 23:18:41"
+        "updated_at" => "2025-05-01 23:18:41"
+        "movie_model_id" => 10068
+        "title" => "X Men 3 The Last Stand - Vj Junior"
+        "type" => "Movie"
+        "image_url" => "https://ugaflix.com/upload/images/MV5BNDBhNDJiMWEtOTg4Yi00NTYzLWEzOGMtMjNmNjAxNTBlMzY3XkEyXkFqcGdeQXVyNTIzOTk5ODM@._V1_SX300.jpg"
+        "description" => "When a "cure" is created, which apparently can turn any mutant into a "normal" human being, there is outrage amongst the mutant community.</p>                   ▶"
+        "views_count" => 3
+        "views_time" => 20057
+        "url" => "https://namzentertainments.xyz/projects/relord2/x%20men/X%20-MEN%203.JR%5BJB%20HD%20movies%5D.mp4"
+        "trending_time" => "2025-05-01 15:18:41"
+        "day_time" => "afternoon"
+        "is_sent" => "Yes"
+        "sent_time" => "2025-05-01 15:18:41"
+      ]
+*/
+});
 Route::get('process-payments', function () {
     //set timer
     $startTime = microtime(true);
@@ -1227,7 +1274,7 @@ Route::get('send-notifications', function (Request $request) {
 
         // Step 2: Get trending movie
         echo '<h3>🎬 Finding Trending Movie</h3>';
-        $trending = \App\Models\TrendingNotification::getTendingMovie();
+        $trending = \App\Models\TrendingNotification::getTrendingMovie();
 
         if ($trending == null) {
             $results['success'] = false;
