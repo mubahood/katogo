@@ -32,6 +32,7 @@ Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'i
 Route::get('process-payments', function () {
     //set timer
     $startTime = microtime(true);
+    set_time_limit(900); // 15 minutes
     $pendingPayments = SubscriptionTransaction::whereNotIn('status', ['Completed',])
         ->where('created_at', '>=', Carbon::now()->subHours(24 * 3)) // only check last 72 hours
         ->orderBy('id', 'desc')

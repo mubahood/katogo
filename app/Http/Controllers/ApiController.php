@@ -11,9 +11,11 @@ use App\Models\MovieView;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\StockSubCategory;
+use App\Models\SubscriptionTransaction;
 use App\Models\TrendingNotification;
 use App\Models\User;
 use App\Models\Utils;
+use App\Services\SubscriptionPesapalService;
 use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
 use Encore\Admin\Auth\Database\Administrator;
@@ -729,6 +731,33 @@ class ApiController extends BaseController
         }
 
         $u = User::find($u->id);
+
+        $pendingPayments = SubscriptionTransaction::whereNotIn('status', ['Completed'])
+            ->where('created_at', '>=', Carbon::now()->subHours(24 * 3)) // only check last 72 hours
+            ->where('user_id', $u->id)
+            ->orderBy('id', 'desc')
+            ->limit(5)
+            ->get();
+        //set time limit
+        set_time_limit(900); // 15 minutes 
+        // $pendingPayments = SubscriptionTransaction::where('id', 82)->get();
+        foreach ($pendingPayments as $key => $pay) {
+            if ($pay->status == 'Completed') {
+                continue;
+            }
+            $number_of_times_checked = (int) $pay->number_of_times_checked;
+            if ($number_of_times_checked > 20) {
+                //mark as failed
+                $pay->status = 'Failed';
+                $pay->refund_reason = 'Payment not completed after multiple checks.';
+                $pay->save();
+                continue;
+            }
+            try {
+                $pay->check_payment_status();
+            } catch (\Throwable $th) {
+            }
+        }
         // $u->autoAssignFreeTrial();
 
         $APP_VERSION = 19;
@@ -842,7 +871,7 @@ class ApiController extends BaseController
             }
         } catch (\Throwable $th) {
         }
-        
+
 
 
         $lists = [];
@@ -852,7 +881,7 @@ class ApiController extends BaseController
         // Safely get user's viewed movies
         if ($u && $u->id) {
             $my_view_ids = MovieView::where('user_id', $u->id)
-                ->pluck('movie_model_id') 
+                ->pluck('movie_model_id')
                 ->toArray();
         }
 
@@ -1200,7 +1229,7 @@ class ApiController extends BaseController
 
         if ($u && $u->id) {
             try {
-                 
+
                 $subscription_status = $u->getSubscriptionStatus();
 
                 // CRITICAL: Validate subscription data consistency
@@ -1297,7 +1326,7 @@ class ApiController extends BaseController
         }
 
 
-        if(!$u->hasActiveSubscription()){
+        if (!$u->hasActiveSubscription()) {
             $lists = [];
             $topMovie = [];
         }
@@ -1658,7 +1687,7 @@ class ApiController extends BaseController
             return $this->error('Wrong credentials.');
         }
 
-    
+
 
         // Add token to user object for API response (don't save to DB)
         $user_data = $user->toArray();
@@ -1783,7 +1812,7 @@ class ApiController extends BaseController
             }
 
             // Auto-assign free trial if applicable
-             
+
 
             // Prepare response data
             $user_data = $user->toArray();
