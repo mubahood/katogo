@@ -44,7 +44,7 @@ class TrendingNotificationController extends AdminController
             ->sortable();
         $grid->column('type', __('Type'))->hide();
         $grid->column('image_url', __('Image url'))->lightbox(['width' => 50, 'height' => 50])->sortable();
-        $grid->column('description', __('Description'))->limit(50)->$grid->column('views_count', __('Views count'));
+        $grid->column('description', __('Description'))->limit(50)->sortable();
         $grid->column('views_time', __('Views time'))->sortable()
             ->display(function ($views_time) {
                 //minutes to hours
