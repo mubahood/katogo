@@ -49,32 +49,6 @@ Route::get('send-trendings', function () {
 
     TrendingNotification::getTrendingMovie();
     die("done");
-
-    $trendings = TrendingNotification::where([])
-        ->limit(10)
-        ->get();
-    $img = 'https://ugaflix.com/upload/images/MV5BNDBhNDJiMWEtOTg4Yi00NTYzLWEzOGMtMjNmNjAxNTBlMzY3XkEyXkFqcGdeQXVyNTIzOTk5ODM@._V1_SX300.jpg';
-    echo "<img src='{$img}' width='100' />";
-    dd($trendings);
-
-    /* 
-        "id" => 1
-        "created_at" => "2025-05-01 23:18:41"
-        "updated_at" => "2025-05-01 23:18:41"
-        "movie_model_id" => 10068
-        "title" => "X Men 3 The Last Stand - Vj Junior"
-        "type" => "Movie"
-        "image_url" => "https://ugaflix.com/upload/images/MV5BNDBhNDJiMWEtOTg4Yi00NTYzLWEzOGMtMjNmNjAxNTBlMzY3XkEyXkFqcGdeQXVyNTIzOTk5ODM@._V1_SX300.jpg"
-        "description" => "When a "cure" is created, which apparently can turn any mutant into a "normal" human being, there is outrage amongst the mutant community.</p>                   ▶"
-        "views_count" => 3
-        "views_time" => 20057
-        "url" => "https://namzentertainments.xyz/projects/relord2/x%20men/X%20-MEN%203.JR%5BJB%20HD%20movies%5D.mp4"
-        "trending_time" => "2025-05-01 15:18:41"
-        "day_time" => "afternoon"
-        "is_sent" => "Yes"
-        "sent_time" => "2025-05-01 15:18:41"
-      ]
-*/
 });
 Route::get('process-payments', function () {
     //set timer
