@@ -68,7 +68,6 @@ class ModerationController extends BaseController
             );
 
             return $this->success($filterResult, 'Content filtering completed');
-
         } catch (\Exception $e) {
             Log::error('Content filtering error: ' . $e->getMessage());
             return $this->error('Content filtering service temporarily unavailable', 500);
@@ -86,9 +85,7 @@ class ModerationController extends BaseController
                 return $this->error('User not authenticated.', 401);
             }
 
-            $request->validate([
-                
-            ]);
+            $request->validate([]);
 
             // Check if user has already reported this content
             $existingReport = ContentReport::where('reporter_id', $u->id)
@@ -143,7 +140,6 @@ class ModerationController extends BaseController
             }
 
             return $this->success($report, 'Content reported successfully. We will review this within 24 hours.');
-
         } catch (\Exception $e) {
             Log::error('Report content error: ' . $e->getMessage());
             return $this->error('Failed to submit because : ' . $e->getMessage(), 500);
@@ -181,7 +177,7 @@ class ModerationController extends BaseController
             if ($existingBlock) {
                 return $this->error('User is already blocked.', 400);
             }
-            
+
 
             $block = UserBlock::create([
                 'blocker_id' => $u->id,
@@ -214,7 +210,6 @@ class ModerationController extends BaseController
             );
 
             return $this->success($block, 'User blocked successfully.');
-
         } catch (\Exception $e) {
             Log::error('Block user error: ' . $e->getMessage());
             return $this->error('Failed to block user. Please try again.', 500);
@@ -265,7 +260,6 @@ class ModerationController extends BaseController
             );
 
             return $this->success(null, 'User unblocked successfully.');
-
         } catch (\Exception $e) {
             Log::error('Unblock user error: ' . $e->getMessage());
             return $this->error('Failed to unblock user. Please try again.', 500);
@@ -289,7 +283,6 @@ class ModerationController extends BaseController
                 ->get();
 
             return $this->success($blockedUsers, 'Blocked users retrieved successfully.');
-
         } catch (\Exception $e) {
             Log::error('Get blocked users error: ' . $e->getMessage());
             return $this->error('Failed to retrieve blocked users.', 500);
@@ -313,7 +306,6 @@ class ModerationController extends BaseController
                 ->get();
 
             return $this->success($reports, 'User reports retrieved successfully.');
-
         } catch (\Exception $e) {
             Log::error('Get user reports error: ' . $e->getMessage());
             return $this->error('Failed to retrieve user reports.', 500);
@@ -346,7 +338,7 @@ class ModerationController extends BaseController
             // Update legal consent fields
             $legalFields = [
                 'terms_of_service_accepted',
-                'privacy_policy_accepted', 
+                'privacy_policy_accepted',
                 'community_guidelines_accepted',
                 'marketing_emails_consent',
                 'data_processing_consent',
@@ -356,7 +348,7 @@ class ModerationController extends BaseController
             foreach ($legalFields as $field) {
                 if ($request->has($field)) {
                     $updateData[$field] = $request->input($field);
-                    
+
                     // Set acceptance date if accepting
                     if ($request->input($field) === 'Yes') {
                         $dateField = str_replace('_accepted', '_accepted_date', $field);
@@ -368,7 +360,7 @@ class ModerationController extends BaseController
 
             if (!empty($updateData)) {
                 $user->update($updateData);
-                
+
                 // Log the consent update
                 ContentModerationLog::logAction(
                     'user',
@@ -388,7 +380,6 @@ class ModerationController extends BaseController
 
             $updatedUser = User::find($u->id);
             return $this->success($updatedUser, 'Legal consent updated successfully.');
-
         } catch (\Exception $e) {
             Log::error('Update legal consent error: ' . $e->getMessage());
             return $this->error('Failed to update legal consent.', 500);
@@ -426,7 +417,6 @@ class ModerationController extends BaseController
                 'reports' => $pendingReports,
                 'stats' => $stats
             ], 'Moderation dashboard data retrieved successfully.');
-
         } catch (\Exception $e) {
             Log::error('Moderation dashboard error: ' . $e->getMessage());
             return $this->error('Failed to retrieve moderation dashboard.', 500);
@@ -451,9 +441,25 @@ class ModerationController extends BaseController
 
         // Check for profanity
         $profanityKeywords = [
-            'fuck', 'shit', 'bitch', 'damn', 'ass', 'bastard', 'crap',
-            'piss', 'dick', 'cock', 'pussy', 'whore', 'slut', 'faggot',
-            'nigger', 'cunt', 'motherfucker', 'asshole', 'bullshit'
+            'fuck',
+            'shit',
+            'bitch',
+            'damn',
+            'ass',
+            'bastard',
+            'crap',
+            'piss',
+            'dick',
+            'cock',
+            'pussy',
+            'whore',
+            'slut',
+            'faggot',
+            'nigger',
+            'cunt',
+            'motherfucker',
+            'asshole',
+            'bullshit'
         ];
 
         foreach ($profanityKeywords as $keyword) {
@@ -472,8 +478,14 @@ class ModerationController extends BaseController
 
         // Check for hate speech
         $hateSpeechPatterns = [
-            'kill yourself', 'you should die', 'hate all', 'genocide',
-            'terrorist', 'racial slur', 'go back to', 'inferior race'
+            'kill yourself',
+            'you should die',
+            'hate all',
+            'genocide',
+            'terrorist',
+            'racial slur',
+            'go back to',
+            'inferior race'
         ];
 
         foreach ($hateSpeechPatterns as $pattern) {
@@ -492,9 +504,20 @@ class ModerationController extends BaseController
 
         // Check for sexual content
         $sexualContentKeywords = [
-            'nude', 'naked', 'sex', 'porn', 'masturbate', 'orgasm',
-            'sexual', 'erotic', 'xxx', 'adult content', 'hookup',
-            'one night stand', 'sugar daddy', 'escort'
+            'nude',
+            'naked',
+            'sex',
+            'porn',
+            'masturbate',
+            'orgasm',
+            'sexual',
+            'erotic',
+            'xxx',
+            'adult content',
+            'hookup',
+            'one night stand',
+            'sugar daddy',
+            'escort'
         ];
 
         foreach ($sexualContentKeywords as $keyword) {
@@ -513,8 +536,18 @@ class ModerationController extends BaseController
 
         // Check for violence
         $violenceKeywords = [
-            'kill', 'murder', 'assault', 'beat up', 'stab', 'shoot',
-            'bomb', 'violence', 'hurt', 'pain', 'torture', 'abuse'
+            'kill',
+            'murder',
+            'assault',
+            'beat up',
+            'stab',
+            'shoot',
+            'bomb',
+            'violence',
+            'hurt',
+            'pain',
+            'torture',
+            'abuse'
         ];
 
         foreach ($violenceKeywords as $keyword) {
@@ -560,7 +593,7 @@ class ModerationController extends BaseController
     {
         $words = explode(' ', $content);
         $wordCount = [];
-        
+
         foreach ($words as $word) {
             $wordCount[$word] = ($wordCount[$word] ?? 0) + 1;
         }
@@ -626,5 +659,63 @@ class ModerationController extends BaseController
             ->first();
 
         return $resolved ? round($resolved->avg_hours, 2) : 0;
+    }
+
+    /**
+     * Get legal consent status for user
+     * Returns all consents as accepted automatically for mobile app compatibility
+     */
+    public function getLegalConsentStatus(Request $request)
+    {
+        try {
+            $u = Utils::get_user($request);
+            if ($u == null) {
+                return $this->error('User not authenticated.', 401);
+            }
+
+            // Current timestamp for all accepted dates
+            $currentDateTime = now()->toDateTimeString();
+
+            // Return all legal consents as automatically accepted
+            $legalConsentStatus = [
+                'user_id' => $u->id,
+                'terms_of_service_accepted' => 'Yes',
+                'terms_of_service_accepted_date' => $currentDateTime,
+                'privacy_policy_accepted' => 'Yes',
+                'privacy_policy_accepted_date' => $currentDateTime,
+                'community_guidelines_accepted' => 'Yes',
+                'community_guidelines_accepted_date' => $currentDateTime,
+                'marketing_emails_consent' => 'Yes',
+                'marketing_emails_consent_date' => $currentDateTime,
+                'data_processing_consent' => 'Yes',
+                'data_processing_consent_date' => $currentDateTime,
+                'content_moderation_consent' => 'Yes',
+                'content_moderation_consent_date' => $currentDateTime,
+                'all_consents_accepted' => true,
+                'last_updated' => $currentDateTime
+            ];
+
+            // Log the consent check for audit purposes
+            /*ContentModerationLog::logAction(
+                'user',
+                $u->id,
+                $u->id,
+                'legal_consent_checked',
+                [
+                    'automated' => true,
+                    'severity_level' => ContentModerationLog::SEVERITY_LOW,
+                    'metadata' => [
+                        'auto_accepted' => true,
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent()
+                    ]
+                ]
+            );*/
+
+            return $this->success($legalConsentStatus, 'Legal consent status retrieved successfully.');
+        } catch (\Exception $e) {
+            Log::error('Get legal consent status error: ' . $e->getMessage());
+            return $this->error('Failed to retrieve legal consent status.', 500);
+        }
     }
 }
