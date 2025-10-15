@@ -2,6 +2,7 @@
 
 namespace App\Admin\Controllers;
 
+use App\Models\MovieModel;
 use App\Models\TrendingNotification;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
@@ -34,7 +35,7 @@ class TrendingNotificationController extends AdminController
             });
         $grid->column('movie_model_id', __('Movie model'))
             ->display(function ($movie_model_id) {
-                $movie = \App\Models\Movie::find($movie_model_id);
+                $movie = MovieModel::find($movie_model_id);
                 if ($movie) {
                     return $movie->title . " (ID: {$movie->id})";
                 } else {
