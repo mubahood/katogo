@@ -55,6 +55,9 @@ Route::get('process-payments', function () {
             continue;
         }
         try {
+            $created_time_date = Carbon::parse($pay->created_at);
+            $time_diff_in_hours = $created_time_date->diffInHours(Carbon::now());
+            echo "DATE: {$created_time_date}, HOURS DIFF: {$time_diff_in_hours}<br>";
             $pay->check_payment_status();
             $statusColor = $pay->status == 'Completed' ? 'green' : ($pay->status == 'Failed' ? 'red' : 'orange');
             echo "<div style='padding: 10px; margin: 5px 0; border-left: 4px solid {$statusColor}; background-color: #f8f9fa;'>";
@@ -62,7 +65,7 @@ Route::get('process-payments', function () {
             echo "Status: <span style='color: {$statusColor}; font-weight: bold;'>{$pay->status}</span><br>";
             echo "Times Checked: {$pay->number_of_times_checked}<br>";
             echo "</div>";
-        } catch (\Throwable $th) { 
+        } catch (\Throwable $th) {
             echo "<div style='padding: 10px; margin: 5px 0; border-left: 4px solid red; background-color: #fff3cd;'>";
             echo "<strong style='color: red;'>Error checking payment #{$pay->id}:</strong><br>";
             echo htmlspecialchars($th->getMessage());
