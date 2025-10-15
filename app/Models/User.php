@@ -135,18 +135,18 @@ class User extends Administrator implements JWTSubject
             // Delete content reports where user is reporter or reported user
             \App\Models\ContentReport::where('reporter_id', $user->id)->delete();
             \App\Models\ContentReport::where('reported_user_id', $user->id)->delete();
-            
+
             // Delete user blocks where user is blocker or blocked
             \App\Models\UserBlock::where('blocker_id', $user->id)->delete();
             \App\Models\UserBlock::where('blocked_user_id', $user->id)->delete();
-            
+
             // Delete moderation logs for this user
             \App\Models\ContentModerationLog::where('user_id', $user->id)->delete();
-            
+
             // Set moderator_id to null for logs where this user was the moderator
             \App\Models\ContentModerationLog::where('moderator_id', $user->id)
                 ->update(['moderator_id' => null]);
-                
+
             // Set moderator_id to null for reports where this user was the moderator
             \App\Models\ContentReport::where('moderator_id', $user->id)
                 ->update(['moderator_id' => null]);
@@ -230,49 +230,49 @@ class User extends Administrator implements JWTSubject
     /**
      * Moderation-related relationships
      */
-    
+
     // Content reports made by this user
     public function contentReports()
     {
         return $this->hasMany(\App\Models\ContentReport::class, 'reporter_id');
     }
-    
+
     // Content reports about this user
     public function reportsAgainst()
     {
         return $this->hasMany(\App\Models\ContentReport::class, 'reported_user_id');
     }
-    
+
     // Reports moderated by this user (if admin/moderator)
     public function moderatedReports()
     {
         return $this->hasMany(\App\Models\ContentReport::class, 'moderator_id');
     }
-    
+
     // Users blocked by this user
     public function blockedUsers()
     {
         return $this->hasMany(\App\Models\UserBlock::class, 'blocker_id');
     }
-    
+
     // Users who blocked this user
     public function blockedBy()
     {
         return $this->hasMany(\App\Models\UserBlock::class, 'blocked_user_id');
     }
-    
+
     // Moderation logs for this user
     public function moderationLogs()
     {
         return $this->hasMany(\App\Models\ContentModerationLog::class, 'user_id');
     }
-    
+
     // Moderation actions taken by this user (if admin/moderator)
     public function moderationActions()
     {
         return $this->hasMany(\App\Models\ContentModerationLog::class, 'moderator_id');
     }
-    
+
     /**
      * Check if user is blocked by another user
      */
@@ -283,7 +283,7 @@ class User extends Administrator implements JWTSubject
             ->active()
             ->exists();
     }
-    
+
     /**
      * Check if user has blocked another user  
      */
@@ -621,168 +621,7 @@ class User extends Administrator implements JWTSubject
      */
     public function giveFreeSubscription($forceNew = false)
     {
-        return;
-        try {
-            // STEP 1: Check if user already has an active subscription
-            if (!$forceNew) {
-                $activeSubscription = $this->activeSubscription();
-                if ($activeSubscription) {
-                    Log::info('User already has active subscription', [
-                        'user_id' => $this->id,
-                        'subscription_id' => $activeSubscription->id,
-                        'plan_name' => $activeSubscription->plan->name ?? 'Unknown',
-                        'end_date' => $activeSubscription->end_date_time,
-                    ]);
-                    
-                    return [
-                        'success' => false,
-                        'already_has_subscription' => true,
-                        'message' => 'User already has an active subscription',
-                        'subscription' => $activeSubscription->toArray(),
-                        'user_id' => $this->id,
-                    ];
-                }
-            }
-
-            // STEP 2: Check if user already has a free trial subscription (completed or active)
-            if (!$forceNew) {
-                $existingFreeTrial = $this->subscriptions()
-                    ->whereHas('plan', function ($query) {
-                        $query->where('is_trial', true)
-                              ->orWhere('slug', 'free-trial-15-days')
-                              ->orWhere('name', 'Free Trial');
-                    })
-                    ->whereIn('status', ['Active', 'Expired', 'Completed'])
-                    ->whereIn('payment_status', ['Completed', 'Free'])
-                    ->first();
-
-                if ($existingFreeTrial) {
-                    Log::info('User already used free trial', [
-                        'user_id' => $this->id,
-                        'trial_subscription_id' => $existingFreeTrial->id,
-                        'trial_status' => $existingFreeTrial->status,
-                        'trial_end_date' => $existingFreeTrial->end_date_time,
-                    ]);
-                    
-                    return [
-                        'success' => false,
-                        'already_used_trial' => true,
-                        'message' => 'User has already used their free trial',
-                        'trial_subscription' => $existingFreeTrial->toArray(),
-                        'user_id' => $this->id,
-                    ];
-                }
-            }
-
-            // STEP 3: Get the free trial plan
-            $freeTrialPlan = \App\Models\SubscriptionPlan::where(function ($query) {
-                $query->where('slug', 'free-trial-15-days')
-                      ->orWhere('name', 'Free Trial')
-                      ->orWhere(function ($subQuery) {
-                          $subQuery->where('price', 0)
-                                   ->where('duration_days', 15)
-                                   ->where('is_trial', true);
-                      });
-            })
-            ->where('status', 'Active')
-            ->first();
-
-            if (!$freeTrialPlan) {
-                Log::error('Free trial plan not found', [
-                    'user_id' => $this->id,
-                    'action' => 'giveFreeSubscription',
-                ]);
-                
-                return [
-                    'success' => false,
-                    'plan_not_found' => true,
-                    'message' => 'Free trial plan not found in database',
-                    'user_id' => $this->id,
-                ];
-            }
-
-            // STEP 4: Create the free subscription
-            $startDate = now();
-            $endDate = $startDate->copy()->addDays($freeTrialPlan->duration_days);
-
-            $freeSubscription = new \App\Models\Subscription([
-                'user_id' => $this->id,
-                'plan_id' => $freeTrialPlan->id,
-                'days' => $freeTrialPlan->duration_days,
-                'start_date_time' => $startDate,
-                'end_date_time' => $endDate,
-                'grace_period_end' => $endDate->copy()->addDays(0), // 3 days grace period
-                'status' => 'Active', // CRITICAL: Mark as Active immediately
-                'auto_renew' => false, // Free trial doesn't auto-renew
-                'payment_method' => 'Free', // Special payment method for free subscriptions
-                'payment_status' => 'Completed', // CRITICAL: Mark as paid (free)
-                'pesapal_transaction_id' => null, // No payment transaction
-                'pesapal_tracking_id' => null,
-                'pesapal_merchant_reference' => 'FREE-TRIAL-' . $this->id . '-' . time(),
-                'pesapal_signature' => null,
-                'pesapal_response' => ['type' => 'free_trial', 'auto_assigned' => true],
-                'payment_url' => null,
-                'payment_confirmed_at' => now(), // CRITICAL: Mark as confirmed
-                'failed_at' => null,
-                'amount_paid' => 0.00, // Free trial costs nothing
-                'currency' => $freeTrialPlan->currency,
-                'is_extension' => false,
-                'extended_from_id' => null,
-                'cancelled_at' => null,
-                'cancelled_reason' => null,
-                'cancelled_by' => null,
-                'ip_address' => request() ? request()->ip() : null,
-                'user_agent' => request() ? request()->userAgent() : 'System Auto-Assignment',
-                'expiry_notification_sent' => false,
-                'expiry_notification_at' => null,
-            ]);
-
-            // STEP 5: Save the subscription
-            $freeSubscription->save();
-
-            // STEP 6: Log the successful creation
-            Log::info('Free subscription created successfully', [
-                'user_id' => $this->id,
-                'subscription_id' => $freeSubscription->id,
-                'plan_id' => $freeTrialPlan->id,
-                'plan_name' => $freeTrialPlan->name,
-                'start_date' => $startDate->toDateTimeString(),
-                'end_date' => $endDate->toDateTimeString(),
-                'duration_days' => $freeTrialPlan->duration_days,
-                'amount_paid' => $freeSubscription->amount_paid,
-                'status' => $freeSubscription->status,
-                'payment_status' => $freeSubscription->payment_status,
-            ]);
-
-            // STEP 7: Return success response
-            return [
-                'success' => true,
-                'message' => 'Free subscription created successfully',
-                'subscription' => $freeSubscription->toArray(),
-                'plan' => $freeTrialPlan->toArray(),
-                'user_id' => $this->id,
-                'start_date' => $startDate->toDateTimeString(),
-                'end_date' => $endDate->toDateTimeString(),
-                'days_granted' => $freeTrialPlan->duration_days,
-            ];
-
-        } catch (\Exception $e) {
-            // STEP 8: Handle any errors gracefully
-            Log::error('Failed to create free subscription', [
-                'user_id' => $this->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'force_new' => $forceNew,
-            ]);
-
-            return [
-                'success' => false,
-                'error' => true,
-                'message' => 'Failed to create free subscription: ' . $e->getMessage(),
-                'user_id' => $this->id,
-                'exception' => $e->getMessage(),
-            ];
-        }
+        return false;
     }
 
     /**
@@ -810,14 +649,7 @@ class User extends Administrator implements JWTSubject
     public function autoAssignFreeTrial()
     {
         return;
-        if (!$this->isEligibleForFreeTrial()) {
-            return [
-                'success' => false,
-                'already_has_subscription' => true,
-                'message' => 'User is not eligible for free trial',
-                'user_id' => $this->id,
-            ];
-        }
+
 
         return $this->giveFreeSubscription();
     }

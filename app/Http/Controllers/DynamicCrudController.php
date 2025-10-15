@@ -36,24 +36,6 @@ class DynamicCrudController extends Controller
             if ($u != null) {
                 $u->last_online_at = now();
                 $u->save();
-
-                // CHECKPOINT 1: Auto-assign free trial if user is eligible
-                try {
-                    $freeTrialResult = $u->autoAssignFreeTrial();
-                    if ($freeTrialResult['success']) {
-                        \Illuminate\Support\Facades\Log::info('Free trial auto-assigned via users_list', [
-                            'user_id' => $u->id,
-                            'endpoint' => 'users_list',
-                            'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::error('Failed to auto-assign free trial in users_list', [
-                        'user_id' => $u->id,
-                        'error' => $e->getMessage(),
-                        'endpoint' => 'users_list',
-                    ]);
-                }
             }
         }
 
