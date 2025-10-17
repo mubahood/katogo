@@ -29,6 +29,72 @@ use Symfony\Component\Process\Process;
 Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'index']);
 
 
+Route::get('process-muno-series', function (Request $r) {
+
+    $id = $r->get('id');
+    $id = (int) $id;
+
+    if ($id  > 0) {
+        //process serises
+        $pages = MovieCrawlerPage::where([ 
+            'id' => $id
+        ])
+            ->limit(5)
+            ->get();
+    } else {
+        //process serises
+        $pages = MovieCrawlerPage::where([
+            'type' => 'Series',
+            'muno_series_processed' => 'No',
+
+        ])
+            ->limit(5)
+            ->get();
+    }
+
+    //set time limit
+    set_time_limit(600); // 10 minutes
+    ini_set('memory_limit', '512M'); // 512 MB 
+
+    foreach ($pages as $key => $page) {
+        try {
+            $page_content = null;
+            $_title = '';
+            try {
+                if ($page->page_content != null && strlen($page->page_content) > 10) {
+                    $page_content = json_decode($page->page_content);
+                }
+                if ($page_content != null && $page_content->preview != null) {
+                    $_thumbnail = $page_content->preview->thumbnail;
+
+                    echo '<img src="' . $_thumbnail . '" /><br>';
+                    echo $page_content->preview->video_title;
+                    $_title = $page_content->preview->video_title;
+                    echo 'title: ' . $_title;
+                    echo '<br>';
+                }
+            } catch (\Throwable $th) {
+                //throw $th;
+            }
+
+            $page->process_munowatch_series();
+            echo "Page {$page->id}. {$page->title} - successfully<hr>";
+
+            $page->muno_series_processed = 'Yes';
+            $page->muno_series_success = 'Yes';
+            $page->save();
+            $series = SeriesMovie::where('title', $_title)->first();
+            if ($series != null) {
+                echo "Series found: {$series->id} - {$series->title}. total episodes: {$series->total_episodes}<br>";
+            }
+        } catch (\Throwable $th) {
+            $page->muno_series_success = 'No';
+            $page->save();
+            echo "Failed to process page {$page->id} because " . $th->getMessage() . "<br>";
+            Log::error("Failed to process page {$page->id} because " . $th->getMessage());
+        }
+    }
+});
 Route::get('send-trendings', function () {
 
     $now = Carbon::now();

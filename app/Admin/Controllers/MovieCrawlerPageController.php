@@ -69,6 +69,19 @@ class MovieCrawlerPageController extends AdminController
             ])->sortable();
         //muno_message
         $grid->column('muno_message', __('Muno Message'))->sortable()->filter('like');
+        $grid->column('muno_series_processed', __('Muno Series Processed'))->sortable()->filter('like');
+        $grid->column('muno_series_success', __('Muno Series Success'))
+            ->filter([
+                'Yes' => 'Yes',
+                'No' => 'No',
+            ])->sortable();
+
+        //fix
+        $grid->column('muno_series_group_id', __('FIX'))->sortable()->filter('like')
+            ->display(function ($muno_series_group_id) {
+                $url = url('process-muno-series?id=' . $this->id);
+                return "<a href='{$url}' target='_blank'>Process Series</a>";
+            });
 
 
         return $grid;

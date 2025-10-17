@@ -71,9 +71,31 @@ class MovieModel extends Model
     {
         parent::boot();
 
+        static::created(function ($model) {
+            //create//total_episodes
+            if ($model->type == 'Series') {
+                $series = SeriesMovie::find($model->category_id);
+                if ($series != null) {
+                    $count_tot_episodes = MovieModel::where('category_id', $series->id)->count();
+                    $sql = "UPDATE series_movies SET total_episodes = $count_tot_episodes WHERE id = $series->id";
+                    DB::update($sql);
+                }
+            }
+        });
+        static::updated(function ($model) {
+            //create//total_episodes
+            if ($model->type == 'Series') {
+                $series = SeriesMovie::find($model->category_id);
+                if ($series != null) {
+                    $count_tot_episodes = MovieModel::where('category_id', $series->id)->count();
+                    $sql = "UPDATE series_movies SET total_episodes = $count_tot_episodes WHERE id = $series->id";
+                    DB::update($sql);
+                }
+            }
+        });
         static::creating(function ($model) {
             //check if type is series
-            /*if ($model->type == 'Series') {
+            if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
                 if ($series != null) {
                     $model->category = $series->title;
@@ -89,7 +111,7 @@ class MovieModel extends Model
                 } else {
                     $model->type = 'Movie';
                 }
-            }*/
+            }
             //check if url contains munowatch
             if (strpos($model->url, 'munowatch') !== false) {
                 $model->status = 'Inactive'; //if yes, set to yes
@@ -98,6 +120,7 @@ class MovieModel extends Model
                 //get same movie with external_url
                 $existing = MovieModel::where('external_url', $model->external_url)
                     ->where('type', $model->type)
+                    ->status('Active')
                     ->first();
                 if ($existing != null) {
                     return false;
@@ -117,7 +140,7 @@ class MovieModel extends Model
                 $model->url = $model->firebase_video_url;
             }
 
-            /*if ($model->type == 'Series') { 
+            if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);
                 if ($series != null) {
                     $model->category = $series->title;
@@ -133,7 +156,7 @@ class MovieModel extends Model
                 } else {
                     $model->type = 'Movie';
                 }
-            }*/
+            }
 
             if (strpos($model->url, 'munowatch') !== false) {
                 // $model->status = 'Inactive'; //if yes, set to yes 
