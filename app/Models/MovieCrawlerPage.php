@@ -1128,7 +1128,6 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
                     if ($ep_title == $seriesMovie->title) {
                         $ep_title = $seriesMovie->title . ' - ' . $ep_number;
                     }
-                    $ep_number++;
                     $playingUrl = $item['playingurl'] ?? '';
                     $encodedPlayingUrl = str_replace(' ', '%20', $playingUrl);
                     $encodedPlayingUrl = str_replace('http://', 'https://', $encodedPlayingUrl);
