@@ -37,7 +37,8 @@ Route::get('process-muno-series', function (Request $r) {
     if ($id  > 0) {
         //process serises
         $pages = MovieCrawlerPage::where([
-            'id' => $id
+            'id' => $id,
+            'vj' => 'Munowatch API',
         ])
             ->limit(20)
             ->get();
@@ -46,6 +47,7 @@ Route::get('process-muno-series', function (Request $r) {
         $pages = MovieCrawlerPage::where([
             'type' => 'Series',
             'muno_series_processed' => 'No',
+            'vj' => 'Munowatch API',
 
         ])
             ->limit(10)
