@@ -40,6 +40,7 @@ Route::get('process-muno-series', function (Request $r) {
             'id' => $id,
             'vj' => 'Munowatch API',
         ])
+            ->orderBy('id', 'asc')
             ->limit(20)
             ->get();
     } else {
@@ -50,6 +51,7 @@ Route::get('process-muno-series', function (Request $r) {
             'vj' => 'Munowatch API',
 
         ])
+            ->orderBy('id', 'asc')
             ->limit(10)
             ->get();
     }
@@ -325,9 +327,10 @@ Route::get('process-muno-movies', function () {
 
     foreach ($crawlerPages as $page) {
         try {
-            $page->process_page_content();
+            $page->process_page_content(false);
             echo "Page {$page->id}. {$page->title} - successfully<br>";
         } catch (\Throwable $th) {
+            throw $th;
             echo "Failed to process page {$page->id} because " . $th->getMessage() . "<br>";
             Log::error("Failed to process page {$page->id} because " . $th->getMessage());
         }
@@ -372,27 +375,28 @@ Route::get('munowatch-series-crawler', function () {
             throw new Exception('Munowatch website not configured or inactive');
         }
 
-        echo "🚀 Starting Munowatch Series Crawler...\n";
-        echo "=====================================\n\n";
+        echo "🚀 Starting Munowatch Series Crawler...<br>";
+        echo "=====================================<br>";
+
 
         // Show current configuration
         $currentCategory = \App\Models\MunowatchMovieCategory::find($munowatchWebsite->current_munowatch_category_id);
-        echo "📋 Current Category: " . ($currentCategory ? $currentCategory->category_name : 'Unknown') . "\n";
-        echo "📋 API Endpoint Type: " . ($currentCategory ? $currentCategory->api_endpoint_type : 'Unknown') . "\n\n";
+        echo "📋 Current Category: " . ($currentCategory ? $currentCategory->category_name : 'Unknown') . "<br>";
+        echo "📋 API Endpoint Type: " . ($currentCategory ? $currentCategory->api_endpoint_type : 'Unknown') . "<br><br>";
 
         // Step 1: Fetch pages (Level 1 - Website → Pages)
-        echo "📥 Level 1: Fetching series pages...\n";
+        echo "📥 Level 1: Fetching series pages...<br>";
         $munowatchWebsite->get_next_page_content();
-        echo "✅ Pages fetched successfully\n\n";
+        echo "✅ Pages fetched successfully<br><br>";
 
         // Step 2: Process page content (Level 2 - Pages → Content)  
-        echo "🔍 Level 2: Processing page content...\n";
+        echo "🔍 Level 2: Processing page content...<br>";
         Utils::fetch_pages_content();
-        echo "✅ Content processed successfully\n\n";
+        echo "✅ Content processed successfully<br><br>";
 
         // Step 3: Report detailed results
-        echo "📊 Crawler Results:\n";
-        echo "==================\n";
+        echo "📊 Crawler Results:<br>";
+        echo "==================<br>";
 
         $pendingPages = MovieCrawlerPage::where('movie_crawler_website_id', $munowatchWebsite->id)
             ->where('status', 'pending')
@@ -412,19 +416,19 @@ Route::get('munowatch-series-crawler', function () {
             ->where('created_at', '>=', Carbon::now()->subHour())
             ->count();
 
-        echo "Pending Pages: $pendingPages\n";
-        echo "Processed Pages: $successPages\n";
-        echo "New Series Created: $recentSeries\n";
-        echo "New Movies Created: $recentMovies\n";
-        echo "New Series Episodes: $recentSeriesEpisodes\n\n";
+        echo "Pending Pages: $pendingPages<br>";
+        echo "Processed Pages: $successPages<br>";
+        echo "New Series Created: $recentSeries<br>";
+        echo "New Movies Created: $recentMovies<br>";
+        echo "New Series Episodes: $recentSeriesEpisodes<br><br>";
 
         // Debug information if no series found
         if ($recentSeries == 0 && $recentSeriesEpisodes == 0 && $recentMovies > 0) {
-            echo "⚠️  DEBUG INFO: Only movies detected, no series\n";
-            echo "💡 This may indicate:\n";
-            echo "   - Current category contains mostly movies\n";
-            echo "   - Series detection logic needs refinement\n";
-            echo "   - API response format has changed\n\n";
+            echo "⚠️  DEBUG INFO: Only movies detected, no series<br>";
+            echo "💡 This may indicate:<br>";
+            echo "   - Current category contains mostly movies<br>";
+            echo "   - Series detection logic needs refinement<br>";
+            echo "   - API response format has changed<br><br>";
 
             // Show sample of recent content
             $recentContent = \App\Models\MovieModel::where('created_at', '>=', Carbon::now()->subHour())
@@ -432,16 +436,17 @@ Route::get('munowatch-series-crawler', function () {
                 ->limit(3)
                 ->get(['id', 'title', 'type']);
 
-            echo "📋 Recent Content Sample:\n";
+            echo "📋 Recent Content Sample:<br>";
             foreach ($recentContent as $item) {
                 echo "  - ID: {$item->id} | Type: {$item->type} | Title: " . substr($item->title, 0, 50) . "...\n";
             }
             echo "\n";
         }
 
-        echo "🎯 Munowatch Series Crawler Completed Successfully!\n";
+        echo "🎯 Munowatch Series Crawler Completed Successfully!<br>";
     } catch (Exception $e) {
-        echo "❌ Error: " . $e->getMessage() . "\n";
+        throw $e;
+        echo "❌ Error: " . $e->getMessage() . "<br>";
         Log::error('Munowatch series crawler failed', [
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()

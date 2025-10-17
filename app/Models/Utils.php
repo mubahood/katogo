@@ -32,12 +32,12 @@ class Utils
                 $page->fetch_page_content();
                 // sleep(2);
             } catch (\Throwable $th) {
-                throw $th;
                 $page->status = 'failed';
                 $page->error_message = $th->getMessage();
                 $page->last_fetched_at = Carbon::now();
                 try {
                     $page->save();
+                    throw $th;
                 } catch (\Throwable $th) {
                     throw $th;
                 }

@@ -120,7 +120,7 @@ class MovieModel extends Model
                 //get same movie with external_url
                 $existing = MovieModel::where('external_url', $model->external_url)
                     ->where('type', $model->type)
-                    ->status('Active')
+                    ->where('status', 'Active')
                     ->first();
                 if ($existing != null) {
                     return false;
