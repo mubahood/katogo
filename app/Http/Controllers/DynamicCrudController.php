@@ -976,7 +976,9 @@ class DynamicCrudController extends Controller
         }
         if ($request->filled('is_first_episode')) {
             $query->where('is_first_episode', $request->get('is_first_episode'));
+            //   ->where('is_muno', 'Yes')
         }
+        $query->where('is_muno', 'Yes');
 
         $platform_type = Utils::get_platform();
 
