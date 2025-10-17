@@ -610,17 +610,20 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
                 $this->error_message = 'Failed to parse JSON response: ' . json_last_error_msg();
                 $this->status = 'error';
                 $this->save();
-                throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
+                // throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
             }
 
             if (!isset($jsonData['preview']) || !is_array($jsonData['preview'])) {
                 $this->error_message = 'Invalid munowatch response structure - missing preview data';
                 $this->status = 'error';
                 $this->save();
-                throw new \Exception('Invalid munowatch response structure - missing preview data');
+                // throw new \Exception('Invalid munowatch response structure - missing preview data');
             }
 
             $preview = $jsonData['preview'];
+
+            //check if is series
+
 
 
             // ===== EXTRACT ALL AVAILABLE DATA FROM MUNOWATCH API =====
@@ -769,6 +772,12 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
 
             //check if $genre is series
             if (strtolower($genre) === 'series') {
+                try {
+                    $this->process_munowatch_series();
+                } catch (\Throwable $th) {
+                    //throw $th;
+                }
+                return;
                 $movie->type = 'Series';
             }
             $types = ['movie', 'series'];
@@ -808,7 +817,6 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
                 $movie->status = 'Inactive';
                 $movie->muno_message = 'Invalid or unsupported video file extension: ' . $file_extension;
                 $movie->save();
-                throw new \Exception('Invalid or unsupported video file extension: ' . $file_extension . ' in URL: ' . $movie->url);
             }
 
 
