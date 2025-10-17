@@ -39,7 +39,7 @@ Route::get('process-muno-series', function (Request $r) {
         $pages = MovieCrawlerPage::where([ 
             'id' => $id
         ])
-            ->limit(5)
+            ->limit(20)
             ->get();
     } else {
         //process serises
@@ -48,12 +48,12 @@ Route::get('process-muno-series', function (Request $r) {
             'muno_series_processed' => 'No',
 
         ])
-            ->limit(5)
+            ->limit(30)
             ->get();
     }
 
     //set time limit
-    set_time_limit(600); // 10 minutes
+    set_time_limit(6000); // 10 minutes
     ini_set('memory_limit', '512M'); // 512 MB 
 
     foreach ($pages as $key => $page) {
