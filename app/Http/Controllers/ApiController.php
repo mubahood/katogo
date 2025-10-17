@@ -1215,6 +1215,11 @@ class ApiController extends BaseController
             if ($iosMovies->count() > 0) {
                 $topMovie = $iosMovies->first();
             }
+        }else {
+            // For non-iOS platforms, ensure topMovie is from the main movies list
+            if ($topMovie == null && $movies->count() > 0) {
+                $topMovie = $movies->first();
+            }
         }
         // Get subscription information for authenticated user
         $subscription_info = [
