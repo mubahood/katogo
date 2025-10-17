@@ -355,6 +355,7 @@ class DynamicCrudController extends Controller
                 // 2.1: Full search keyword in series titles
                 $fullMatchSeries = MovieModel::where('type', 'Series')
                     ->where('is_first_episode', 'Yes')
+                    ->where('is_muno', 'Yes')
                     ->where('title', 'LIKE', '%' . $searchTerm . '%')
                     ->pluck('id')->toArray();
                 foreach ($fullMatchSeries as $id) {
@@ -808,6 +809,7 @@ class DynamicCrudController extends Controller
             // 2.1: Full search keyword in series titles
             $fullMatchSeries = MovieModel::where('type', 'Series')
                 ->where('is_first_episode', 'Yes')
+                 ->where('is_muno', 'Yes')
                 ->where('title', 'LIKE', '%' . $searchTerm . '%')
                 ->pluck('id')->toArray();
             foreach ($fullMatchSeries as $id) {
@@ -831,6 +833,7 @@ class DynamicCrudController extends Controller
                     $searchPhrase = implode(' ', $validWords);
                     $matches = MovieModel::where('type', 'Series')
                         ->where('is_first_episode', 'Yes')
+                        ->where('is_muno', 'Yes')
                         ->where('title', 'LIKE', '%' . $searchPhrase . '%')
                         ->pluck('id')->toArray();
 
@@ -858,6 +861,7 @@ class DynamicCrudController extends Controller
                     $searchPhrase = implode(' ', $validWords);
                     $matches = MovieModel::where('type', 'Series')
                         ->where('is_first_episode', 'Yes')
+                        ->where('is_muno', 'Yes')
                         ->where('title', 'LIKE', '%' . $searchPhrase . '%')
                         ->pluck('id')->toArray();
 
