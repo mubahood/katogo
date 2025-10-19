@@ -23,6 +23,11 @@ class TransferProcessController extends Controller
      */
     public function start($id)
     {
+        // Increase memory and execution time limits for large video transfers
+        ini_set('memory_limit', '2048M'); // 2GB memory limit
+        ini_set('max_execution_time', '3600'); // 1 hour
+        set_time_limit(3600); // 1 hour
+        
         try {
             $transfer = VideoTransfer::findOrFail($id);
             

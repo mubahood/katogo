@@ -86,6 +86,11 @@ class VideoTransfer extends Model
      */
     public function processTransfer()
     {
+        // Increase memory limit and execution time for large video files
+        ini_set('memory_limit', '2048M'); // 2GB memory limit
+        ini_set('max_execution_time', '3600'); // 1 hour execution time
+        set_time_limit(3600); // 1 hour
+        
         try {
             $this->validateConfiguration();
             
@@ -137,6 +142,9 @@ class VideoTransfer extends Model
      */
     private function downloadVideoFromUrl()
     {
+        // Increase memory for this operation
+        ini_set('memory_limit', '2048M');
+        
         $startTime = microtime(true);
         
         // Create temporary directory if it doesn't exist
@@ -149,10 +157,12 @@ class VideoTransfer extends Model
         $filename = 'video_' . $this->id . '_' . time() . '.mp4';
         $localPath = $tempDir . '/' . $filename;
 
-        // Download video with progress tracking
+        // Download video with progress tracking using streaming to save memory
         $response = Http::timeout(3600) // 1 hour timeout
             ->withOptions([
-                'sink' => $localPath,
+                'sink' => $localPath, // Stream directly to file (no memory buffering)
+                'stream' => true, // Enable streaming
+                'verify' => false, // Disable SSL verification for compatibility
                 'progress' => function ($downloadTotal, $downloadedBytes, $uploadTotal, $uploadedBytes) {
                     if ($downloadTotal > 0) {
                         $progress = (int)(($downloadedBytes / $downloadTotal) * 50); // 0-50% for download
@@ -183,15 +193,19 @@ class VideoTransfer extends Model
     }
 
     /**
-     * Upload video file to Google Drive
+     * Upload video file to Google Drive using chunked upload (memory efficient)
      */
     private function uploadToGoogleDrive($localFilePath)
     {
+        // Increase memory for upload
+        ini_set('memory_limit', '2048M');
+        
         $accessToken = $this->getGoogleDriveAccessToken();
         
         // Prepare file metadata
         $fileName = $this->video_title ?? basename($localFilePath);
         $this->drive_file_name = $fileName;
+        $fileSize = filesize($localFilePath);
         
         $metadata = [
             'name' => $fileName,
@@ -204,22 +218,8 @@ class VideoTransfer extends Model
             $this->drive_folder_id = $folderId;
         }
 
-        // Upload using resumable upload for large files
-        $fileContent = file_get_contents($localFilePath);
-        $fileSize = strlen($fileContent);
-
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $accessToken,
-            'Content-Type' => 'multipart/related; boundary=foo_bar_baz',
-        ])->withBody($this->buildMultipartBody($metadata, $fileContent), 'multipart/related; boundary=foo_bar_baz')
-            ->post('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart');
-
-        if (!$response->successful()) {
-            throw new Exception("Failed to upload to Google Drive: " . $response->body());
-        }
-
-        $data = $response->json();
-        $fileId = $data['id'] ?? null;
+        // Use resumable upload for large files (memory efficient - chunked upload)
+        $fileId = $this->uploadToGoogleDriveChunked($accessToken, $localFilePath, $metadata, $fileSize);
 
         if (!$fileId) {
             throw new Exception("No file ID returned from Google Drive");
@@ -231,6 +231,64 @@ class VideoTransfer extends Model
         Log::info("Video uploaded to Google Drive", ['file_id' => $fileId]);
 
         return $fileId;
+    }
+    
+    /**
+     * Upload file to Google Drive using resumable upload (chunked - memory efficient)
+     */
+    private function uploadToGoogleDriveChunked($accessToken, $localFilePath, $metadata, $fileSize)
+    {
+        // Step 1: Initiate resumable upload session
+        $initResponse = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $accessToken,
+            'Content-Type' => 'application/json; charset=UTF-8',
+            'X-Upload-Content-Type' => 'video/mp4',
+            'X-Upload-Content-Length' => $fileSize,
+        ])->post('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', $metadata);
+
+        if (!$initResponse->successful()) {
+            throw new Exception("Failed to initiate Google Drive upload: " . $initResponse->body());
+        }
+
+        $uploadUrl = $initResponse->header('Location');
+        if (!$uploadUrl) {
+            throw new Exception("No upload URL returned from Google Drive");
+        }
+
+        // Step 2: Upload file in chunks (memory efficient)
+        $chunkSize = 5 * 1024 * 1024; // 5MB chunks (memory efficient)
+        $handle = fopen($localFilePath, 'rb');
+        $uploadedBytes = 0;
+
+        while (!feof($handle)) {
+            $chunk = fread($handle, $chunkSize);
+            $chunkLength = strlen($chunk);
+            
+            $rangeStart = $uploadedBytes;
+            $rangeEnd = $uploadedBytes + $chunkLength - 1;
+            
+            $response = Http::withHeaders([
+                'Content-Length' => $chunkLength,
+                'Content-Range' => "bytes {$rangeStart}-{$rangeEnd}/{$fileSize}",
+            ])->withBody($chunk, 'application/octet-stream')
+                ->put($uploadUrl);
+
+            $uploadedBytes += $chunkLength;
+            
+            // Update progress (50-100% for upload)
+            $progress = 50 + (int)(($uploadedBytes / $fileSize) * 50);
+            $this->updateProgress($progress, $uploadedBytes, $fileSize);
+
+            // Check if upload is complete
+            if ($response->status() === 200 || $response->status() === 201) {
+                $data = $response->json();
+                fclose($handle);
+                return $data['id'] ?? null;
+            }
+        }
+
+        fclose($handle);
+        throw new Exception("Upload completed but no file ID returned");
     }
 
     /**
