@@ -252,7 +252,7 @@ class VideoTransfer extends Model
         $duration = microtime(true) - $startTime;
         $speedMbps = $duration > 0 ? ($actualSize * 8 / $duration) / 1000000 : 0;
 
-        $this->uploaded_bytes = $actualSize;
+        $this->bytes_transferred = $actualSize;
         $this->average_speed_mbps = round($speedMbps, 2);
         $this->save();
 
