@@ -90,6 +90,11 @@ Route::group([
     $router->resource('movie-crawler-websites', MovieCrawlerWebsiteController::class);
     $router->resource('movie-crawler-pages', MovieCrawlerPageController::class);
 
+    // Video Transfer to Google Drive Routes
+    $router->resource('video-transfers', VideoTransferController::class);
+    $router->get('video-transfers/{id}/retry', 'VideoTransferController@retry')->name('video-transfers.retry');
+    $router->get('video-transfers/{id}/cancel', 'VideoTransferController@cancel')->name('video-transfers.cancel');
+
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound
     //https://omulimisa.org/api/v1/e-learning/events
 });
