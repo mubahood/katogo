@@ -230,8 +230,8 @@ class VideoTransfer extends Model
         
         Log::info("Video content fetched", ['size' => number_format($actualSize) . ' bytes']);
         
-        // Update progress
-        $this->updateProgress(50, 'uploading', 'Uploading to Google Drive...');
+        // Update status and progress
+        $this->updateStatus('uploading', 50);
 
         // Upload to Google Drive
         $uploadResponse = Http::withHeaders([
