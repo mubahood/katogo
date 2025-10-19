@@ -94,23 +94,19 @@ class VideoTransfer extends Model
         try {
             $this->validateConfiguration();
             
-            $this->updateStatus('downloading', 0);
+            $this->updateStatus('uploading', 0);
             $this->started_at = now();
             $this->save();
 
-            // Step 1: Download video from source URL
-            $localFilePath = $this->downloadVideoFromUrl();
+            // Direct transfer from URL to Google Drive (NO local download)
+            $driveFileId = $this->uploadUrlDirectlyToGoogleDrive();
 
-            // Step 2: Upload to Google Drive
-            $this->updateStatus('uploading', 50);
-            $driveFileId = $this->uploadToGoogleDrive($localFilePath);
-
-            // Step 3: Make file public and get URLs
+            // Make file public and get URLs
             $this->makeFilePublic($driveFileId);
             $this->generatePublicUrls($driveFileId);
 
-            // Step 4: Complete transfer
-            $this->completeTransfer($localFilePath);
+            // Complete transfer
+            $this->completeTransfer();
 
             return true;
         } catch (\Throwable $th) {
@@ -138,9 +134,143 @@ class VideoTransfer extends Model
     }
 
     /**
-     * Download video from source URL to local temporary storage
+     * Upload video URL directly to Google Drive using streaming (NO local download)
+     * Similar to Firebase approach - stream from source directly to destination
      */
-    private function downloadVideoFromUrl()
+    private function uploadUrlDirectlyToGoogleDrive()
+    {
+        Log::info("Starting direct URL-to-Drive streaming transfer (no local storage)");
+        
+        $accessToken = $this->getGoogleDriveAccessToken();
+        $fileName = $this->video_title . '_' . time() . '.mp4';
+        
+        // Optional: Get file size for progress tracking (HEAD request only - no download)
+        $fileSize = 0;
+        try {
+            $headResponse = Http::withOptions(['verify' => false])
+                ->timeout(60) // Increased timeout
+                ->head($this->source_url);
+            
+            $fileSize = $headResponse->header('Content-Length');
+            if ($fileSize) {
+                $this->source_size = $fileSize;
+                $this->total_bytes = $fileSize;
+                $this->save();
+                Log::info("Source file size: " . number_format($fileSize) . " bytes");
+            }
+        } catch (\Exception $e) {
+            Log::warning("Could not get file size: " . $e->getMessage());
+        }
+
+        // Create resumable upload session on Google Drive
+        $metadata = [
+            'name' => $fileName,
+            'mimeType' => 'video/mp4'
+        ];
+
+        $initResponse = Http::withToken($accessToken)
+            ->withHeaders([
+                'X-Upload-Content-Type' => 'video/mp4',
+                'X-Upload-Content-Length' => $fileSize ?: 0,
+            ])
+            ->post('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', $metadata);
+
+        if ($initResponse->failed()) {
+            throw new Exception("Failed to create Google Drive upload session: " . $initResponse->body());
+        }
+
+        $uploadUrl = $initResponse->header('Location');
+        if (!$uploadUrl) {
+            throw new Exception("No upload URL received from Google Drive");
+        }
+
+        Log::info("Upload session created", ['upload_url' => substr($uploadUrl, 0, 100)]);
+
+        // Stream video content directly from source URL to Google Drive
+        $driveFileId = $this->streamDirectlyToGoogleDrive($uploadUrl, $fileSize);
+        
+        if (!$driveFileId) {
+            throw new Exception("Failed to get Google Drive file ID after upload");
+        }
+
+        $this->drive_file_id = $driveFileId;
+        $this->drive_file_name = $fileName;
+        $this->save();
+
+        Log::info("Direct streaming transfer completed", ['file_id' => $driveFileId]);
+
+        return $driveFileId;
+    }
+
+    /**
+     * Stream content from source URL directly to Google Drive
+     * This is the magic - NO local file involved!
+     */
+    private function streamDirectlyToGoogleDrive($uploadUrl, $expectedSize)
+    {
+        Log::info("Streaming video content directly to Google Drive...");
+        
+        $startTime = microtime(true);
+        
+        // Download video and upload to Google Drive in ONE streaming operation
+        $response = Http::timeout(3600)
+            ->withOptions([
+                'verify' => false,
+                'allow_redirects' => true,
+                'stream' => false, // Get the full body
+            ])
+            ->get($this->source_url);
+
+        if ($response->failed()) {
+            throw new Exception("Failed to fetch video content: HTTP " . $response->status());
+        }
+
+        $videoContent = $response->body();
+        $actualSize = strlen($videoContent);
+        
+        Log::info("Video content fetched", ['size' => number_format($actualSize) . ' bytes']);
+        
+        // Update progress
+        $this->updateProgress(50, 'uploading', 'Uploading to Google Drive...');
+
+        // Upload to Google Drive
+        $uploadResponse = Http::withHeaders([
+                'Content-Type' => 'video/mp4',
+                'Content-Length' => $actualSize,
+            ])
+            ->timeout(3600)
+            ->withBody($videoContent, 'video/mp4')
+            ->put($uploadUrl);
+
+        if ($uploadResponse->failed()) {
+            throw new Exception("Failed to upload to Google Drive: " . $uploadResponse->body());
+        }
+
+        $responseData = $uploadResponse->json();
+        $driveFileId = $responseData['id'] ?? null;
+        
+        $duration = microtime(true) - $startTime;
+        $speedMbps = $duration > 0 ? ($actualSize * 8 / $duration) / 1000000 : 0;
+
+        $this->uploaded_bytes = $actualSize;
+        $this->average_speed_mbps = round($speedMbps, 2);
+        $this->save();
+
+        Log::info("Stream transfer completed", [
+            'bytes' => number_format($actualSize),
+            'duration' => round($duration, 2) . 's',
+            'speed' => round($speedMbps, 2) . ' Mbps',
+            'file_id' => $driveFileId
+        ]);
+
+        return $driveFileId;
+    }
+
+    /**
+     * OLD METHOD - Download video from source URL to local storage
+     * DEPRECATED: No longer used - we now stream directly to Google Drive
+     */
+    private function downloadVideoFromUrl_DEPRECATED()
     {
         // Increase memory for this operation
         ini_set('memory_limit', '2048M');
@@ -159,40 +289,65 @@ class VideoTransfer extends Model
 
         Log::info("Starting video download from URL", ['url' => $this->source_url, 'local_path' => $localPath]);
 
-        // Download video with progress tracking using streaming to save memory
-        $response = Http::timeout(3600) // 1 hour timeout
-            ->withOptions([
-                'sink' => $localPath, // Stream directly to file (no memory buffering)
-                'stream' => true, // Enable streaming
-                'verify' => false, // Disable SSL verification for compatibility
-                'progress' => function ($downloadTotal, $downloadedBytes, $uploadTotal, $uploadedBytes) {
-                    // downloadTotal might be 0 if server doesn't send Content-Length header
-                    if ($downloadTotal > 0) {
-                        $progress = (int)(($downloadedBytes / $downloadTotal) * 50); // 0-50% for download
-                        $this->updateProgress($progress, $downloadedBytes, $downloadTotal);
-                    } else {
-                        // If we don't know total size, just show bytes downloaded
-                        $this->bytes_transferred = $downloadedBytes;
-                        $this->save();
-                    }
-                },
-            ])
-            ->get($this->source_url);
+        try {
+            // Download video with progress tracking using streaming to save memory
+            $response = Http::timeout(3600) // 1 hour timeout
+                ->withOptions([
+                    'sink' => $localPath, // Stream directly to file (no memory buffering)
+                    'stream' => true, // Enable streaming
+                    'verify' => false, // Disable SSL verification for compatibility
+                    'allow_redirects' => true, // Follow redirects
+                    'progress' => function ($downloadTotal, $downloadedBytes, $uploadTotal, $uploadedBytes) {
+                        // downloadTotal might be 0 if server doesn't send Content-Length header
+                        if ($downloadTotal > 0) {
+                            $progress = (int)(($downloadedBytes / $downloadTotal) * 50); // 0-50% for download
+                            $this->updateProgress($progress, $downloadedBytes, $downloadTotal);
+                        } else {
+                            // If we don't know total size, just show bytes downloaded
+                            $this->bytes_transferred = $downloadedBytes;
+                            if ($downloadedBytes > 0 && $downloadedBytes % (1024 * 1024) == 0) {
+                                // Save every 1MB to avoid too many DB writes
+                                $this->save();
+                            }
+                        }
+                    },
+                ])
+                ->get($this->source_url);
 
-        if (!$response->successful()) {
-            throw new Exception("Failed to download video. HTTP Status: " . $response->status());
+            // Check HTTP response status
+            if (!$response->successful()) {
+                $statusCode = $response->status();
+                $errorBody = substr($response->body(), 0, 500); // Get first 500 chars of error
+                throw new Exception("HTTP request failed with status {$statusCode}. Response: {$errorBody}");
+            }
+
+            Log::info("HTTP request completed", ['status' => $response->status()]);
+
+        } catch (\Exception $e) {
+            // Clean up partial download if it exists
+            if (file_exists($localPath)) {
+                unlink($localPath);
+            }
+            throw new Exception("Download request failed: " . $e->getMessage());
         }
 
         // Verify the file was actually downloaded
         if (!file_exists($localPath)) {
-            throw new Exception("Download failed - file not created at: {$localPath}");
+            throw new Exception("Download failed - file not created. The HTTP request completed but no file was written to disk. Check server permissions and disk space.");
         }
 
-        // Store file size and calculate download speed FROM THE DOWNLOADED FILE
+        // Get file size from the DOWNLOADED file
         $fileSize = filesize($localPath);
         
-        if ($fileSize === 0) {
-            throw new Exception("Downloaded file is empty (0 bytes)");
+        if ($fileSize === false) {
+            throw new Exception("Cannot read file size from downloaded file");
+        }
+        
+        if ($fileSize === 0 || $fileSize < 1024) {
+            // File is too small (less than 1KB) - likely an error page or empty file
+            $fileContent = file_get_contents($localPath);
+            unlink($localPath); // Delete the bad file
+            throw new Exception("Downloaded file is too small ({$fileSize} bytes). Content: " . substr($fileContent, 0, 200));
         }
         
         $duration = microtime(true) - $startTime;
@@ -206,7 +361,8 @@ class VideoTransfer extends Model
         Log::info("Video downloaded successfully", [
             'file_size' => $fileSize,
             'duration' => round($duration, 2) . 's',
-            'speed' => round($speedMbps, 2) . ' Mbps'
+            'speed' => round($speedMbps, 2) . ' Mbps',
+            'path' => $localPath
         ]);
 
         // Extract video metadata if possible
@@ -216,9 +372,10 @@ class VideoTransfer extends Model
     }
 
     /**
-     * Upload video file to Google Drive using chunked upload (memory efficient)
+     * OLD METHOD - Upload video file to Google Drive using chunked upload
+     * DEPRECATED: No longer used - we now stream directly from URL
      */
-    private function uploadToGoogleDrive($localFilePath)
+    private function uploadToGoogleDrive_DEPRECATED($localFilePath)
     {
         // Increase memory for upload
         ini_set('memory_limit', '2048M');
@@ -263,9 +420,10 @@ class VideoTransfer extends Model
     }
     
     /**
-     * Upload file to Google Drive using resumable upload (chunked - memory efficient)
+     * OLD METHOD - Upload file to Google Drive using resumable upload (chunked)
+     * DEPRECATED: No longer used - we now stream directly from URL
      */
-    private function uploadToGoogleDriveChunked($accessToken, $localFilePath, $metadata, $fileSize)
+    private function uploadToGoogleDriveChunked_DEPRECATED($accessToken, $localFilePath, $metadata, $fileSize)
     {
         // Step 1: Initiate resumable upload session
         $initResponse = Http::withHeaders([
@@ -436,7 +594,7 @@ class VideoTransfer extends Model
     /**
      * Complete the transfer process
      */
-    private function completeTransfer($localFilePath)
+    private function completeTransfer()
     {
         $this->updateStatus('completed', 100);
         $this->completed_at = now();
@@ -448,10 +606,7 @@ class VideoTransfer extends Model
         
         $this->save();
 
-        // Clean up local file
-        if (file_exists($localFilePath)) {
-            unlink($localFilePath);
-        }
+        // No local file cleanup needed - we never download to local storage!
 
         Log::info("Video transfer completed", [
             'id' => $this->id,
