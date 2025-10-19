@@ -157,6 +157,8 @@ class VideoTransfer extends Model
         $filename = 'video_' . $this->id . '_' . time() . '.mp4';
         $localPath = $tempDir . '/' . $filename;
 
+        Log::info("Starting video download from URL", ['url' => $this->source_url, 'local_path' => $localPath]);
+
         // Download video with progress tracking using streaming to save memory
         $response = Http::timeout(3600) // 1 hour timeout
             ->withOptions([
@@ -164,9 +166,14 @@ class VideoTransfer extends Model
                 'stream' => true, // Enable streaming
                 'verify' => false, // Disable SSL verification for compatibility
                 'progress' => function ($downloadTotal, $downloadedBytes, $uploadTotal, $uploadedBytes) {
+                    // downloadTotal might be 0 if server doesn't send Content-Length header
                     if ($downloadTotal > 0) {
                         $progress = (int)(($downloadedBytes / $downloadTotal) * 50); // 0-50% for download
                         $this->updateProgress($progress, $downloadedBytes, $downloadTotal);
+                    } else {
+                        // If we don't know total size, just show bytes downloaded
+                        $this->bytes_transferred = $downloadedBytes;
+                        $this->save();
                     }
                 },
             ])
@@ -176,15 +183,31 @@ class VideoTransfer extends Model
             throw new Exception("Failed to download video. HTTP Status: " . $response->status());
         }
 
-        // Store file size and calculate download speed
+        // Verify the file was actually downloaded
+        if (!file_exists($localPath)) {
+            throw new Exception("Download failed - file not created at: {$localPath}");
+        }
+
+        // Store file size and calculate download speed FROM THE DOWNLOADED FILE
         $fileSize = filesize($localPath);
+        
+        if ($fileSize === 0) {
+            throw new Exception("Downloaded file is empty (0 bytes)");
+        }
+        
         $duration = microtime(true) - $startTime;
-        $speedMbps = ($fileSize * 8 / $duration) / 1000000; // Convert to Mbps
+        $speedMbps = $duration > 0 ? ($fileSize * 8 / $duration) / 1000000 : 0; // Convert to Mbps
 
         $this->source_size = $fileSize;
         $this->total_bytes = $fileSize;
         $this->average_speed_mbps = round($speedMbps, 2);
         $this->save();
+
+        Log::info("Video downloaded successfully", [
+            'file_size' => $fileSize,
+            'duration' => round($duration, 2) . 's',
+            'speed' => round($speedMbps, 2) . ' Mbps'
+        ]);
 
         // Extract video metadata if possible
         $this->extractVideoMetadata($localPath);
@@ -205,6 +228,12 @@ class VideoTransfer extends Model
         // Prepare file metadata
         $fileName = $this->video_title ?? basename($localFilePath);
         $this->drive_file_name = $fileName;
+        
+        // Get file size from the DOWNLOADED LOCAL file (not URL)
+        if (!file_exists($localFilePath)) {
+            throw new Exception("Local file not found: {$localFilePath}");
+        }
+        
         $fileSize = filesize($localFilePath);
         
         $metadata = [
@@ -370,21 +399,37 @@ class VideoTransfer extends Model
     private function extractVideoMetadata($filePath)
     {
         try {
+            // Verify file exists before trying to get metadata
+            if (!file_exists($filePath)) {
+                Log::warning("Cannot extract metadata - file not found: {$filePath}");
+                return;
+            }
+            
+            $fileSize = filesize($filePath);
+            if ($fileSize === false || $fileSize === 0) {
+                Log::warning("Cannot extract metadata - invalid file size");
+                return;
+            }
+            
             // Get file extension
             $extension = pathinfo($filePath, PATHINFO_EXTENSION);
             $this->video_format = strtolower($extension);
             
             // Store basic metadata
             $metadata = [
-                'file_size' => filesize($filePath),
+                'file_size' => $fileSize,
                 'file_name' => basename($filePath),
+                'source_url' => $this->source_url,
                 'extracted_at' => now()->toIso8601String(),
             ];
             
             $this->transfer_metadata = $metadata;
             $this->save();
+            
+            Log::info("Video metadata extracted", ['format' => $this->video_format, 'size' => $fileSize]);
         } catch (\Throwable $th) {
             Log::warning("Failed to extract video metadata: " . $th->getMessage());
+            // Don't throw - metadata extraction is non-critical
         }
     }
 
