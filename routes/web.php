@@ -3,6 +3,7 @@
 use App\Http\Controllers\ApiController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\MainController;
+use App\Http\Controllers\TransferProcessController;
 use App\Models\Gen;
 use App\Models\MovieCrawlerPage;
 use App\Models\MovieCrawlerWebsite;
@@ -28,6 +29,10 @@ use Symfony\Component\Process\Process;
 
 Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'index']);
 
+// Video Transfer Routes
+Route::get('transfer/process/{id}', [TransferProcessController::class, 'show'])->name('transfer.process');
+Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])->name('transfer.start');
+Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
 Route::get('process-muno-series', function (Request $r) {
 

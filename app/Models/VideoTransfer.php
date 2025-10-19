@@ -66,15 +66,18 @@ class VideoTransfer extends Model
     {
         parent::boot();
 
-        static::created(function ($transfer) {
-            // Auto-process new transfers asynchronously
-            // In production, use Laravel Queue for this
-            try {
-                $transfer->processTransfer();
-            } catch (\Throwable $th) {
-                Log::error('VideoTransfer auto-process failed: ' . $th->getMessage());
-            }
-        });
+        // Auto-processing disabled - transfers now start via manual trigger
+        // Use the "Start Transfer" button in admin panel or call processTransfer() manually
+        
+        // static::created(function ($transfer) {
+        //     // Auto-process new transfers asynchronously
+        //     // In production, use Laravel Queue for this
+        //     try {
+        //         $transfer->processTransfer();
+        //     } catch (\Throwable $th) {
+        //         Log::error('VideoTransfer auto-process failed: ' . $th->getMessage());
+        //     }
+        // });
     }
 
     /**

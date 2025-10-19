@@ -132,36 +132,48 @@ class VideoTransferController extends AdminController
             return $date ? date('Y-m-d H:i', strtotime($date)) : 'N/A';
         })->sortable();
 
-        // Custom action buttons
-        $grid->actions(function ($actions) {
-            $row = $actions->row;
+        // Custom action column with buttons
+        $grid->column('actions', 'Actions')->display(function () {
+            $row = $this;
+            $html = '';
+            
+            // Add "Start Transfer" button for pending transfers
+            if (strtolower($row->status) === 'pending') {
+                $html .= '<a href="' . url('transfer/process/' . $row->id) . '" 
+                    target="_blank" 
+                    class="btn btn-xs btn-primary" style="margin: 2px;">
+                    <i class="fa fa-cloud-upload"></i> Start Transfer
+                </a>';
+            }
             
             // Add retry button for failed transfers
-            if ($row->status === 'failed') {
-                $actions->append('<a href="' . admin_url('video-transfers/' . $row->id . '/retry') . '" 
-                    class="btn btn-xs btn-warning" 
-                    onclick="return confirm(\'Retry this transfer?\')">
+            if (strtolower($row->status) === 'failed') {
+                $html .= '<a href="' . url('transfer/process/' . $row->id) . '" 
+                    target="_blank" 
+                    class="btn btn-xs btn-warning" style="margin: 2px;">
                     <i class="fa fa-refresh"></i> Retry
-                </a>');
+                </a>';
             }
             
             // Add play button for completed transfers
-            if ($row->status === 'completed' && $row->drive_public_url) {
-                $actions->append('<a href="' . $row->drive_public_url . '" 
+            if (strtolower($row->status) === 'completed' && $row->drive_public_url) {
+                $html .= '<a href="' . $row->drive_public_url . '" 
                     target="_blank" 
-                    class="btn btn-xs btn-success">
+                    class="btn btn-xs btn-success" style="margin: 2px;">
                     <i class="fa fa-play"></i> Play
-                </a>');
+                </a>';
             }
             
             // Add cancel button for active transfers
-            if (in_array($row->status, ['pending', 'downloading', 'uploading'])) {
-                $actions->append('<a href="' . admin_url('video-transfers/' . $row->id . '/cancel') . '" 
-                    class="btn btn-xs btn-danger" 
+            if (in_array(strtolower($row->status), ['downloading', 'uploading'])) {
+                $html .= '<a href="' . admin_url('video-transfers/' . $row->id . '/cancel') . '" 
+                    class="btn btn-xs btn-danger" style="margin: 2px;"
                     onclick="return confirm(\'Cancel this transfer?\')">
                     <i class="fa fa-times"></i> Cancel
-                </a>');
+                </a>';
             }
+            
+            return $html;
         });
 
         // Statistics at the top
