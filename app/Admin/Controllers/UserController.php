@@ -26,7 +26,7 @@ class UserController extends AdminController
     {
         $grid = new Grid(new User());
         $grid->model()->orderBy('id', 'desc');
-        $grid->filter(function($filter){
+        $grid->filter(function ($filter) {
             // Remove the default id filter
             $filter->disableIdFilter();
             $filter->like('username', 'Username');
@@ -39,16 +39,23 @@ class UserController extends AdminController
             ]);
             $filter->between('created_at', 'Created At')->datetime();
             $filter->between('updated_at', 'Updated At')->datetime();
-        }); 
+        });
 
         $grid->column('id', __('Id'));
         $grid->column('username', __('Username'));
-        $grid->column('password', __('Password'));
         $grid->column('name', __('Name'));
-        $grid->column('avatar', __('Avatar'));
-        $grid->column('remember_token', __('Remember token'));
-        $grid->column('created_at', __('Created at'));
-        $grid->column('updated_at', __('Updated at'));
+        $grid->column('avatar', __('Avatar'))->lightbox();
+        $grid->column('app_type', __('App Type'))->sortable()
+            ->filter([
+                'ugflix' => 'Ugflix',
+                'lugaflix' => 'Lugaflix',
+            ]);
+        $grid->column('platform', __('Platform'))->sortable()
+            ->filter([
+                'android' => 'Android',
+                'ios' => 'iOS',
+            ]);
+
         $grid->column('terms_of_service_accepted', __('Terms of service accepted'));
         $grid->column('privacy_policy_accepted', __('Privacy policy accepted'));
         $grid->column('community_guidelines_accepted', __('Community guidelines accepted'));
@@ -127,7 +134,7 @@ class UserController extends AdminController
         $grid->column('last_trending_notification_date', __('Last trending notification date'));
         $grid->column('trending_notifications_today', __('Trending notifications today'));
         $grid->column('max_trending_notifications_per_day', __('Max trending notifications per day'));
-
+        $grid->column('created_at', __('Created'));
         return $grid;
     }
 

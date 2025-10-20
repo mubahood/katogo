@@ -10,7 +10,7 @@ php artisan db:seed --class=App\\Models\\php artisan admin:make TrendingNotifica
 
 php artisan admin:make UserController --model=App\\Models\\User
 
-php artisan make:migration add_serries_to_movie_crawler_pages --table=movie_crawler_pages
+php artisan make:migration add_app_type_subscriptions --table=subscriptions
 
 
 php artisan migrate

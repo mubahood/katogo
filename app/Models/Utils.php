@@ -97,7 +97,7 @@ class Utils
 
         // Try to get from header (X-App-Version)
         $version = 0;
-        
+
 
         // Fallback: try to get from query parameter
         if ($request->has('app_version')) {
@@ -106,6 +106,43 @@ class Utils
 
         // Default: return 0 if not found
         return 0;
+    }
+
+
+    public static function get_app_type($request = null)
+    {
+        // Use global request if not provided
+        if ($request === null) {
+            $request = request();
+        }
+
+        // Fallback: try to get from query parameter
+        if ($request->has('app_type')) {
+            return $request->get('app_type');
+        }
+
+        // Default: return 0 if not found
+        return 'ugflix';
+    }
+
+    //getter for platform
+    public static function get_platform_from_request($request = null)
+    {
+        // Use global request if not provided
+        if ($request === null) {
+            $request = request();
+        }
+
+        // Try to get from header (X-Platform-Type)
+        $platform = 'android';
+        if ($request->hasHeader('X-Platform-Type')) {
+            $platform = strtolower($request->header('X-Platform-Type'));
+        } elseif ($request->has('platform_type')) {
+            // Fallback: try to get from query parameter
+            $platform = strtolower($request->get('platform_type'));
+        }
+
+        return $platform;
     }
 
     /**

@@ -145,6 +145,17 @@ class SubscriptionController extends AdminController
         // Columns
         $grid->column('id', __('ID'))->sortable();
 
+        $grid->column('app_type', __('App Type'))->sortable()
+            ->filter([
+                'ugflix' => 'Ugflix',
+                'lugaflix' => 'Lugaflix',
+            ]);
+        $grid->column('platform', __('Platform'))->sortable()
+            ->filter([
+                'android' => 'Android',
+                'ios' => 'iOS',
+            ]);
+
         $grid->column('user.name', __('User'))
             ->display(function ($name) {
                 $model = $this;

@@ -73,15 +73,27 @@ class Subscription extends Model
                 $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(0);
             }
 
+            $user = User::find($subscription->user_id);
+            if ($user == null) {
+                throw new \Exception("User with ID {$subscription->user_id} not found for Subscription creation");
+            }
+
+            $sub = 'SUB-';
+            if (strtolower($user->app_type) == 'lugaflix') {
+                $sub = 'LUG-';
+            }
+
             // Generate merchant reference if not provided
             if (!$subscription->pesapal_merchant_reference) {
-                $subscription->pesapal_merchant_reference = 'SUB-' . $subscription->user_id . '-' . time();
+                $subscription->pesapal_merchant_reference = $sub . $subscription->user_id . '-' . time();
             }
 
             // Set IP and User Agent from request if available
             if (!$subscription->ip_address && request()) {
                 $subscription->ip_address = request()->ip();
                 $subscription->user_agent = request()->userAgent();
+                $subscription->platform = $user->platform;
+                $subscription->app_type = $user->app_type;
             }
         });
 
