@@ -84,8 +84,8 @@ class SubscriptionApiController extends Controller
                 $app_type = Utils::get_app_type($request);
                 $app_types = ['ugflix', 'lugaflix'];
                 if (!in_array($app_type, $app_types)) {
-                    $u->app_type = $app_types;
                 }
+                $u->app_type = $app_types;
                 $platform = Utils::get_platform_from_request($request);
                 if ($platform != null) {
                     $u->platform = $platform;
