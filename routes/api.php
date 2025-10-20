@@ -80,19 +80,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('me', [ApiController::class, 'me']);
     Route::get('manifest', [ApiController::class, 'manifest']);
 
-    // ===== SUBSCRIPTION-PROTECTED MOVIE ROUTES =====
-    // These routes require an active subscription (allows grace period)
-    Route::middleware(['subscription'])->group(function () {
-        Route::get('movies/{id}', [DynamicCrudController::class, 'movie']); // Alternative route for mobile app compatibility - must be before 'movies'
-        Route::get('movies', [DynamicCrudController::class, 'movies']);
-        Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
 
-        // Video Progress & Watch History Routes
-        Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress'])->middleware('throttle:video-progress');
-        Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
-        Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
-        Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
-    });
 
     Route::get('users-list', [DynamicCrudController::class, 'users_list']);
     Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
@@ -136,6 +124,16 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
     // Admin-only moderation routes
     Route::get('moderation/dashboard', [ModerationController::class, 'getModerationDashboard']);
+
+    Route::get('movies/{id}', [DynamicCrudController::class, 'movie']); // Alternative route for mobile app compatibility - must be before 'movies'
+    Route::get('movies', [DynamicCrudController::class, 'movies']);
+    Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
+
+    // Video Progress & Watch History Routes
+    Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress'])->middleware('throttle:video-progress');
+    Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
+    Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
+    Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
 });
 
 

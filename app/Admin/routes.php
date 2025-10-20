@@ -53,6 +53,7 @@ Route::group([
     $router->resource('gens', GenController::class);
     $router->resource('movie-views', MovieViewController::class);
     $router->resource('movie-likes', MovieLikeController::class);
+    $router->resource('movie-searches', MovieSearchController::class);
 
     $router->resource('my-counters', MyCounterController::class);
     $router->resource('movie-downloads', MovieDownloadController::class);

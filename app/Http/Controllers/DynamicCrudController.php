@@ -6,6 +6,7 @@ use App\Models\MovieLike;
 use App\Models\MovieModel;
 use App\Models\MovieView;
 use App\Models\MovieWishlist;
+use App\Models\MovieSearch;
 use App\Models\User;
 use App\Models\Utils;
 use Illuminate\Http\Request;
@@ -498,6 +499,32 @@ class DynamicCrudController extends Controller
                         'last_page'    => $lastPage,
                     ]
                 ];
+
+                // 🔍 LOG SEARCH FOR WEB PORTAL ANALYTICS
+                // Only log if NOT from mobile app (mobile has its own logging)
+                $userAgent = $request->userAgent() ?? '';
+                $isMobileApp = stripos($userAgent, 'okhttp') !== false || 
+                               stripos($userAgent, 'dart') !== false ||
+                               $request->header('X-App-Platform') === 'mobile';
+                
+                if (!$isMobileApp && !empty($searchTerm)) {
+                    try {
+                        $userId = $u ? $u->id : null;
+                        $foundMovieIds = array_slice(array_keys($movieScores), 0, 10); // Store top 10 movie IDs
+                        
+                        MovieSearch::logSearch(
+                            $searchTerm,
+                            $totalResults,
+                            $foundMovieIds,
+                            $userId,
+                            $request
+                        );
+                    } catch (\Exception $e) {
+                        // Silently fail - don't break search functionality
+                        \Log::error('Failed to log movie search: ' . $e->getMessage());
+                    }
+                }
+
                 return $this->success($response, "Search Movies retrieved successfully.");
             }
 
@@ -954,6 +981,30 @@ class DynamicCrudController extends Controller
                     'last_page'    => $lastPage,
                 ]
             ];
+
+            // 🔍 LOG SEARCH FOR WEB PORTAL ANALYTICS (Second search endpoint)
+            $userAgent = $request->userAgent() ?? '';
+            $isMobileApp = stripos($userAgent, 'okhttp') !== false || 
+                           stripos($userAgent, 'dart') !== false ||
+                           $request->header('X-App-Platform') === 'mobile';
+            
+            if (!$isMobileApp && !empty($searchTerm)) {
+                try {
+                    $userId = $u ? $u->id : null;
+                    $foundMovieIds = array_slice(array_keys($movieScores), 0, 10);
+                    
+                    MovieSearch::logSearch(
+                        $searchTerm,
+                        $totalResults,
+                        $foundMovieIds,
+                        $userId,
+                        $request
+                    );
+                } catch (\Exception $e) {
+                    \Log::error('Failed to log movie search (endpoint 2): ' . $e->getMessage());
+                }
+            }
+
             return $this->success($response, "Search Movies retrieved successfully.");
         }
 
@@ -1310,9 +1361,7 @@ class DynamicCrudController extends Controller
         // ===== SUBSCRIPTION PROTECTION =====
         // Get the current user for authentication
         $u = Utils::get_user($request);
-        if ($u == null) {
-            return $this->error('Authentication required. Please login to access movie details.', 401);
-        }
+      
 
         // Refresh user data and update last online
         $current = User::find($u->id);
