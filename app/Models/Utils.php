@@ -122,7 +122,7 @@ class Utils
         }
 
         // Default: return 0 if not found
-        return 'ugflix';
+        return 'ugflix-1';
     }
 
     //getter for platform
