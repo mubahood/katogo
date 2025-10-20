@@ -78,7 +78,7 @@ class Subscription extends Model
                 throw new \Exception("User with ID {$subscription->user_id} not found for Subscription creation");
             }
 
-            $sub = 'SUB-';
+            $sub = 'SUB-';//remvoe unused import 
             if (strtolower($user->app_type) == 'lugaflix') {
                 $sub = 'LUG-';
                 $subscription->app_type = 'lugaflix';
