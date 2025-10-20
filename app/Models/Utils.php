@@ -98,9 +98,6 @@ class Utils
         // Try to get from header (X-App-Version)
         $version = 0;
         
-        if ($version !== null && $version !== '') {
-            return (int) $version;
-        }
 
         // Fallback: try to get from query parameter
         if ($request->has('app_version')) {
