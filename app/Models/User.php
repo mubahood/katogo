@@ -571,11 +571,9 @@ class User extends Administrator implements JWTSubject
     public function createSubscription(\App\Models\SubscriptionPlan $plan)
     {
         $activeSubscription = $this->activeSubscription();
-
-        $sub = 'SUB-';
+ 
         $app_type = 'ugflix';
-        if (strtolower($this->app_type) == 'lugaflix') {
-            $sub = 'LUG-';
+        if (strtolower($this->app_type) == 'lugaflix') { 
             $app_type = 'lugaflix';
         }
 
