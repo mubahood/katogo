@@ -572,6 +572,14 @@ class User extends Administrator implements JWTSubject
     {
         $activeSubscription = $this->activeSubscription();
 
+        $sub = 'SUB-';
+        $app_type = 'ugflix';
+        if (strtolower($this->app_type) == 'lugaflix') {
+            $sub = 'LUG-';
+            $app_type = 'lugaflix';
+        }
+
+
         if ($activeSubscription && $activeSubscription->end_date_time > now()) {
             // EXTEND: Add days to existing subscription
             $startDate = \Carbon\Carbon::parse($activeSubscription->end_date_time);
@@ -588,6 +596,7 @@ class User extends Administrator implements JWTSubject
                 'is_extension' => true,
                 'extended_from_id' => $activeSubscription->id,
                 'status' => 'Pending', // Will be activated after payment
+                'app_type' => $app_type,
             ]);
         } else {
             // NEW: Create fresh subscription
@@ -603,6 +612,7 @@ class User extends Administrator implements JWTSubject
                 'amount_paid' => $plan->getActualPrice(),
                 'currency' => $plan->currency,
                 'status' => 'Pending', // Will be activated after payment
+                'app_type' => $app_type,
             ]);
         }
 
