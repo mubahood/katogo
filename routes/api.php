@@ -52,7 +52,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('subscriptions/history', [SubscriptionApiController::class, 'history']);
     Route::post('subscriptions/retry-payment', [SubscriptionApiController::class, 'retryPayment']);
     Route::post('subscriptions/check-status', [SubscriptionApiController::class, 'checkStatus']);
-    
+
     // Pending Subscription Management Routes
     Route::get('subscriptions/pending', [SubscriptionApiController::class, 'getPending']);
     Route::post('subscriptions/{id}/initiate-payment', [SubscriptionApiController::class, 'initiatePayment']);
@@ -67,7 +67,7 @@ Route::get('test-free-trial-plan', [App\Http\Controllers\FreeTrialTestController
 Route::get('test-free-trial-stats', [App\Http\Controllers\FreeTrialTestController::class, 'getFreeTrialStats']);
 Route::delete('test-free-trial-cleanup/{user_id?}', [App\Http\Controllers\FreeTrialTestController::class, 'cleanupTestData']);
 
-Route::get('products-1', [ApiController::class, 'products_1']); 
+Route::get('products-1', [ApiController::class, 'products_1']);
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
 Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('disable-account', [ApiController::class, 'disable_account']);
@@ -79,21 +79,21 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
     Route::get('me', [ApiController::class, 'me']);
     Route::get('manifest', [ApiController::class, 'manifest']);
-    
+
     // ===== SUBSCRIPTION-PROTECTED MOVIE ROUTES =====
     // These routes require an active subscription (allows grace period)
     Route::middleware(['subscription'])->group(function () {
         Route::get('movies/{id}', [DynamicCrudController::class, 'movie']); // Alternative route for mobile app compatibility - must be before 'movies'
         Route::get('movies', [DynamicCrudController::class, 'movies']);
         Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
-        
+
         // Video Progress & Watch History Routes
         Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress'])->middleware('throttle:video-progress');
         Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
         Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
         Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
     });
-    
+
     Route::get('users-list', [DynamicCrudController::class, 'users_list']);
     Route::get('/dynamic-list', [DynamicCrudController::class, 'index']);
     Route::post('/dynamic-save', [DynamicCrudController::class, 'save']);
@@ -102,7 +102,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
     Route::POST('chat-send', [ApiController::class, 'chat_send']);
     Route::get('/debug-chat/{id}', [App\Http\Controllers\ApiController::class, 'debug_chat']);
-Route::get('/chat-heads', [App\Http\Controllers\ApiController::class, 'chat_heads']);
+    Route::get('/chat-heads', [App\Http\Controllers\ApiController::class, 'chat_heads']);
     Route::get('chat-messages', [ApiController::class, 'chat_messages']);
     Route::POST('chat-mark-as-read', [ApiController::class, 'chat_mark_as_read']);
     Route::POST('chat-start', [ApiController::class, 'chat_start']);
@@ -110,19 +110,17 @@ Route::get('/chat-heads', [App\Http\Controllers\ApiController::class, 'chat_head
 
     // Account Layout & User Management Routes
     Route::get('account/dashboard', [DynamicCrudController::class, 'get_account_dashboard']);
-    
-    // ===== SUBSCRIPTION-PROTECTED WATCHLIST & PREFERENCES =====
-    // Premium features that require active subscription
-    Route::middleware(['subscription'])->group(function () {
-        Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);
-        Route::post('account/watchlist/add', [DynamicCrudController::class, 'add_to_watchlist']);
-        Route::delete('account/watchlist/{movie_id}', [DynamicCrudController::class, 'remove_from_watchlist']);
-        Route::get('account/watch-history', [DynamicCrudController::class, 'get_watch_history']);
-        Route::get('account/likes', [DynamicCrudController::class, 'get_liked_movies']);
-        Route::post('account/likes/toggle', [DynamicCrudController::class, 'toggle_movie_like']);
-        Route::get('account/wishlist', [DynamicCrudController::class, 'get_wishlisted_movies']);
-        Route::post('account/wishlist/toggle', [DynamicCrudController::class, 'toggle_movie_wishlist']);
-    });
+
+
+    Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);
+    Route::post('account/watchlist/add', [DynamicCrudController::class, 'add_to_watchlist']);
+    Route::delete('account/watchlist/{movie_id}', [DynamicCrudController::class, 'remove_from_watchlist']);
+    Route::get('account/watch-history', [DynamicCrudController::class, 'get_watch_history']);
+    Route::get('account/likes', [DynamicCrudController::class, 'get_liked_movies']);
+    Route::post('account/likes/toggle', [DynamicCrudController::class, 'toggle_movie_like']);
+    Route::get('account/wishlist', [DynamicCrudController::class, 'get_wishlisted_movies']);
+    Route::post('account/wishlist/toggle', [DynamicCrudController::class, 'toggle_movie_wishlist']);
+
 
     // Content Moderation & Safety Routes
     Route::post('moderation/report-content', [ModerationController::class, 'reportContent']);
@@ -135,10 +133,9 @@ Route::get('/chat-heads', [App\Http\Controllers\ApiController::class, 'chat_head
     Route::post('moderation/legal-consent', [ModerationController::class, 'updateLegalConsent']);
     Route::post('moderation/update-legal-consent', [ModerationController::class, 'updateLegalConsent']); // Alias
     Route::get('moderation/legal-consent-status', [ModerationController::class, 'getLegalConsentStatus']);
-    
+
     // Admin-only moderation routes
     Route::get('moderation/dashboard', [ModerationController::class, 'getModerationDashboard']);
-    
 });
 
 

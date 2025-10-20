@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Models\User;
 use App\Models\Utils;
 use App\Services\SubscriptionPesapalService;
 use Illuminate\Http\Request;
@@ -75,6 +76,25 @@ class SubscriptionApiController extends Controller
      */
     public function create(Request $request)
     {
+
+        $u = Utils::get_user($request);
+        if ($u != null) {
+            $u = User::find($u->id);
+            if ($u != null) {
+                $app_type = Utils::get_app_type($request);
+                $app_types = ['ugflix', 'lugaflix'];
+                if (!in_array($app_type, $app_types)) {
+                    $u->app_type = $app_types;
+                }
+                $platform = Utils::get_platform_from_request($request);
+                if ($platform != null) {
+                    $u->platform = $platform;
+                }
+                $u->last_online_at = now();
+                $u->save();
+            }
+        }
+
         try {
             $validator = Validator::make($request->all(), [
                 'plan_id' => 'required|exists:subscription_plans,id',
@@ -125,7 +145,7 @@ class SubscriptionApiController extends Controller
                             'old_subscription_id' => $pendingSub->id,
                             'user_id' => $user->id,
                         ]);
-                        
+
                         // Cancel the old pending subscription
                         $pendingSub->status = 'Cancelled';
                         $pendingSub->payment_status = 'Failed';
@@ -316,7 +336,7 @@ class SubscriptionApiController extends Controller
                 ], 401);
             }
 
-      
+
             $subscriptionStatus = $user->getSubscriptionStatus();
 
             return response()->json([
