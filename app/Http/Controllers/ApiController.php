@@ -1251,15 +1251,10 @@ class ApiController extends BaseController
         }
 
 
-        // 🔒 APP VERSION CHECK: Only show movies if app version > 19 OR user has active subscription
-        $app_version = Utils::get_app_version($r);
-        $can_show_movies = $app_version > 19 || $u->hasActiveSubscription();
-
-        if (!$can_show_movies) {
-            // User has old app version (<=19) and no subscription - hide movies
-            $lists = [];
-            $topMovie = [];
-        }
+        // ✅ MOVIES NOW FREELY BROWSABLE - No subscription required for listing
+        // Subscription is enforced only on:
+        // 1. Movie Details Page (Flutter - MovieDetailScreen)
+        // 2. Video Player Page (Flutter - VideoPlayerScreen)
 
         $manifest = [
             'top_movie' => $topMovie ? [$topMovie] : [],
@@ -1272,10 +1267,10 @@ class ApiController extends BaseController
             'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
             'subscription' => $subscription_info, // Add subscription information
             'dashboard_stats' => $dashboard_stats, // Add dashboard statistics
-            'client_app_version' => $app_version, // Return client's app version for debugging
+            'client_app_version' => Utils::get_app_version($r), // Return client's app version for debugging
         ];
 
-        return Utils::success($manifest, "Listed successfully.");
+        return Utils::success($manifest, "Listed successfully. online version is " . $APP_VERSION." LOCAL VERSION IS 20");
     }
 
     public function my_list(Request $r, $model)
@@ -1306,19 +1301,10 @@ class ApiController extends BaseController
         // Use mapped name if exists, otherwise use the provided model name
         $modelName = $modelMapping[strtolower($model)] ?? $model;
         
-        // 🔒 APP VERSION CHECK: Only return movies if app version > 19 OR user has active subscription
-        if ($modelName === 'MovieModel' || $modelName === 'SeriesMovie') {
-            $u = Utils::get_user($r);
-            if ($u != null) {
-                $app_version = Utils::get_app_version($r);
-                $can_show_movies = $app_version > 19 || $u->hasActiveSubscription();
-
-                if (!$can_show_movies) {
-                    // User has old app version (<=19) and no subscription - return empty array
-                    return Utils::success([], "Movies not available. Please update your app or subscribe.");
-                }
-            }
-        }
+        // ✅ MOVIES NOW FREELY BROWSABLE - No subscription required for listing
+        // Subscription is enforced only on:
+        // 1. Movie Details Page (Flutter - MovieDetailScreen)
+        // 2. Video Player Page (Flutter - VideoPlayerScreen)
 
         $model = "App\Models\\" . $modelName;
 
@@ -1336,11 +1322,16 @@ class ApiController extends BaseController
         // 🔒 APP VERSION CHECK: Only return movies if app version > 19 OR user has active subscription
         $app_version = Utils::get_app_version($r);
         $can_show_movies = $app_version > 19 || $u->hasActiveSubscription();
-
-        if (!$can_show_movies) {
-            // User has old app version (<=19) and no subscription - return empty array
-            Utils::success([], "Movies not available. Please update your app or subscribe.");
+    {
+        $u = Utils::get_user($r);
+        if ($u == null) {
+            Utils::error("Unauthonticated.");
         }
+
+        // ✅ MOVIES NOW FREELY BROWSABLE - No subscription required for listing
+        // Subscription is enforced only on:
+        // 1. Movie Details Page (Flutter - MovieDetailScreen)
+        // 2. Video Player Page (Flutter - VideoPlayerScreen)
 
         $model = "App\Models\\MovieModel";
         $data = [];
@@ -1353,15 +1344,6 @@ class ApiController extends BaseController
             if ($view != null) {
                 $movie->watched_movie = 'Yes';
                 $movie->watch_progress = $view->progress;
-                $movie->max_progress = $view->max_progress;
-                $movie->watch_status = $view->status;
-
-                /*                 $movie->watch_progress = 90;
-                $movie->max_progress = 100; */
-            } else {
-                $movie->watched_movie = 'No';
-                $movie->watch_progress = 0;
-                $movie->max_progress = 0;
                 $movie->watch_status = '';
             }
 

@@ -96,7 +96,7 @@ class Utils
         }
 
         // Try to get from header (X-App-Version)
-        $version = $request->header('X-App-Version');
+        $version = 0;
         
         if ($version !== null && $version !== '') {
             return (int) $version;

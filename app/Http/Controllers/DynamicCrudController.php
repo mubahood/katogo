@@ -226,22 +226,26 @@ class DynamicCrudController extends Controller
         // check if model is MovieModel , set status =active
         if ($modelName == 'MovieModel') {
 
-            if ($u != null) {
-                if (!$u->hasActiveSubscription()) {
-                    $movies = MovieModel::where('id', '23829')->get();
+            $app_version = Utils::get_app_version($request);
 
-                    $responseData = [
-                        'items' => $movies,
-                        'pagination' => [
-                            'current_page' => 1,
-                            'per_page' => count($movies),
-                            'total' => count($movies),
-                            'last_page' => 1,
-                        ]
-                    ];
-                    return $this->success($responseData, "Data retrieved successfully.");
-                    // throw new Exception("❌ Please subscribe to access movies. {$u->id}");
-                    return $this->error('Please subscribe.');
+            if ($app_version < 20) {
+                if ($u != null) {
+                    if (!$u->hasActiveSubscription()) {
+                        $movies = MovieModel::where('id', '23829')->get();
+
+                        $responseData = [
+                            'items' => $movies,
+                            'pagination' => [
+                                'current_page' => 1,
+                                'per_page' => count($movies),
+                                'total' => count($movies),
+                                'last_page' => 1,
+                            ]
+                        ];
+                        return $this->success($responseData, "Data retrieved successfully.");
+                        // throw new Exception("❌ Please subscribe to access movies. {$u->id}");
+                        return $this->error('Please subscribe.');
+                    }
                 }
             }
 
@@ -809,7 +813,7 @@ class DynamicCrudController extends Controller
             // 2.1: Full search keyword in series titles
             $fullMatchSeries = MovieModel::where('type', 'Series')
                 ->where('is_first_episode', 'Yes')
-                 ->where('is_muno', 'Yes')
+                ->where('is_muno', 'Yes')
                 ->where('title', 'LIKE', '%' . $searchTerm . '%')
                 ->pluck('id')->toArray();
             foreach ($fullMatchSeries as $id) {
