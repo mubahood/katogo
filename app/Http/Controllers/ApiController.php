@@ -1047,7 +1047,7 @@ class ApiController extends BaseController
             $my_list['movies'] = $movies->skip(80)->take(10);
             $lists[] = $my_list;
         }
-      
+
 
         //latest movies
         if (count($movies) > 210) {
@@ -1135,7 +1135,7 @@ class ApiController extends BaseController
             if ($iosMovies->count() > 0) {
                 $topMovie = $iosMovies->first();
             }
-        }else {
+        } else {
             // For non-iOS platforms, ensure topMovie is from the main movies list
             if ($topMovie == null && $movies->count() > 0) {
                 $topMovie = $movies->first();
@@ -1300,7 +1300,7 @@ class ApiController extends BaseController
 
         // Use mapped name if exists, otherwise use the provided model name
         $modelName = $modelMapping[strtolower($model)] ?? $model;
-        
+
         // ✅ MOVIES NOW FREELY BROWSABLE - No subscription required for listing
         // Subscription is enforced only on:
         // 1. Movie Details Page (Flutter - MovieDetailScreen)
@@ -1321,44 +1321,44 @@ class ApiController extends BaseController
 
         // 🔒 APP VERSION CHECK: Only return movies if app version > 19 OR user has active subscription
         $app_version = Utils::get_app_version($r);
-        $can_show_movies = $app_version > 19 || $u->hasActiveSubscription();
-    {
-        $u = Utils::get_user($r);
-        if ($u == null) {
-            Utils::error("Unauthonticated.");
-        }
-
-        // ✅ MOVIES NOW FREELY BROWSABLE - No subscription required for listing
-        // Subscription is enforced only on:
-        // 1. Movie Details Page (Flutter - MovieDetailScreen)
-        // 2. Video Player Page (Flutter - VideoPlayerScreen)
-
-        $model = "App\Models\\MovieModel";
-        $data = [];
-        $temp_data = $model::where([])->limit(1000000)->get();
-        foreach ($temp_data as $key => $movie) {
-            $view = DB::table('movie_views')->where([
-                'movie_model_id' => $movie->id,
-                'user_id' => $u->id,
-            ])->first();
-            if ($view != null) {
-                $movie->watched_movie = 'Yes';
-                $movie->watch_progress = $view->progress;
-                $movie->watch_status = '';
+        $can_show_movies = $app_version > 19 || $u->hasActiveSubscription(); {
+            $u = Utils::get_user($r);
+            if ($u == null) {
+                Utils::error("Unauthonticated.");
             }
 
+            // ✅ MOVIES NOW FREELY BROWSABLE - No subscription required for listing
+            // Subscription is enforced only on:
+            // 1. Movie Details Page (Flutter - MovieDetailScreen)
+            // 2. Video Player Page (Flutter - VideoPlayerScreen)
 
-            $liked = DB::table('movie_likes')->where('movie_model_id', $movie->id)->where('user_id', $u->id)
-                ->where('status', 'Active')->first();
-            if ($liked != null) {
-                $movie->liked_movie = 'Yes';
-            } else {
-                $movie->liked_movie = 'No';
+            $model = "App\Models\\MovieModel";
+            $data = [];
+            $temp_data = $model::where([])->limit(1000000)->get();
+            foreach ($temp_data as $key => $movie) {
+                $view = DB::table('movie_views')->where([
+                    'movie_model_id' => $movie->id,
+                    'user_id' => $u->id,
+                ])->first();
+                if ($view != null) {
+                    $movie->watched_movie = 'Yes';
+                    $movie->watch_progress = $view->progress;
+                    $movie->watch_status = '';
+                }
+
+
+                $liked = DB::table('movie_likes')->where('movie_model_id', $movie->id)->where('user_id', $u->id)
+                    ->where('status', 'Active')->first();
+                if ($liked != null) {
+                    $movie->liked_movie = 'Yes';
+                } else {
+                    $movie->liked_movie = 'No';
+                }
+                $data[] = $movie;
             }
-            $data[] = $movie;
-        }
 
-        Utils::success($data, "Listed successfully.");
+            Utils::success($data, "Listed successfully.");
+        }
     }
 
 
