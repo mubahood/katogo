@@ -81,17 +81,18 @@ class SubscriptionApiController extends Controller
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
-                $app_type = Utils::get_app_type($request);
-                $app_types = ['ugflix', 'lugaflix'];
-                if (!in_array($app_type, $app_types)) {
+                try {
+                    $app_type = Utils::get_app_type($request);
+                    $u->app_type = $app_type;
+                    $platform = Utils::get_platform_from_request($request);
+                    if ($platform != null) {
+                        $u->platform = $platform;
+                    }
+                    $u->last_online_at = now();
+                    $u->save();
+                } catch (\Throwable $th) {
+                    //throw $th;
                 }
-                $u->app_type = $app_types;
-                $platform = Utils::get_platform_from_request($request);
-                if ($platform != null) {
-                    $u->platform = $platform;
-                }
-                $u->last_online_at = now();
-                $u->save();
             }
         }
 
