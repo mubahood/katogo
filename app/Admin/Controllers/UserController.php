@@ -49,6 +49,10 @@ class UserController extends AdminController
             ->filter([
                 'ugflix' => 'Ugflix',
                 'lugaflix' => 'Lugaflix',
+            ])
+            ->editable('select', [
+                'ugflix' => 'Ugflix',
+                'lugaflix' => 'Lugaflix',
             ]);
         $grid->column('platform', __('Platform'))->sortable()
             ->filter([
@@ -246,6 +250,12 @@ class UserController extends AdminController
     protected function form()
     {
         $form = new Form(new User());
+
+        //app_type
+        $form->select('app_type', __('App Type'))->options([
+            'ugflix' => 'Ugflix',
+            'lugaflix' => 'Lugaflix',
+        ])->default('ugflix');
 
         $form->text('username', __('Username'));
         $form->password('password', __('Password'));

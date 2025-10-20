@@ -81,6 +81,7 @@ class Subscription extends Model
             $sub = 'SUB-';
             if (strtolower($user->app_type) == 'lugaflix') {
                 $sub = 'LUG-';
+                $subscription->app_type = 'lugaflix';
             }
 
             // Generate merchant reference if not provided
@@ -93,7 +94,6 @@ class Subscription extends Model
                 $subscription->ip_address = request()->ip();
                 $subscription->user_agent = request()->userAgent();
                 $subscription->platform = $user->platform;
-                $subscription->app_type = $user->app_type;
             }
         });
 
