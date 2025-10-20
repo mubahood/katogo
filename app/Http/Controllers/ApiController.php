@@ -1270,7 +1270,7 @@ class ApiController extends BaseController
             'client_app_version' => Utils::get_app_version($r), // Return client's app version for debugging
         ];
 
-        return Utils::success($manifest, "Listed successfully. online version is " . $APP_VERSION." LOCAL VERSION IS 20");
+        return Utils::success($manifest, "Listed successfully.");
     }
 
     public function my_list(Request $r, $model)
