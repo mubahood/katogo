@@ -167,6 +167,13 @@ class VideoTransfer extends Model
             'name' => $fileName,
             'mimeType' => 'video/mp4'
         ];
+        
+        // Add folder ID if specified in .env
+        $folderId = env('GOOGLE_DRIVE_FOLDER_ID');
+        if (!empty($folderId)) {
+            $metadata['parents'] = [$folderId];
+            Log::info("Uploading to folder: " . $folderId);
+        }
 
         $initResponse = Http::withToken($accessToken)
             ->withHeaders([

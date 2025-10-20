@@ -80,6 +80,50 @@ class Utils
         }
         return $platform_type;
     }
+
+    /**
+     * Get app version from request header
+     * Returns the app build number sent from mobile app
+     * 
+     * @param Request|null $request - Laravel request object (optional, will use global request if not provided)
+     * @return int - App version number (default: 0 if not found)
+     */
+    public static function get_app_version($request = null)
+    {
+        // Use global request if not provided
+        if ($request === null) {
+            $request = request();
+        }
+
+        // Try to get from header (X-App-Version)
+        $version = $request->header('X-App-Version');
+        
+        if ($version !== null && $version !== '') {
+            return (int) $version;
+        }
+
+        // Fallback: try to get from query parameter
+        if ($request->has('app_version')) {
+            return (int) $request->get('app_version');
+        }
+
+        // Default: return 0 if not found
+        return 0;
+    }
+
+    /**
+     * Check if app version meets minimum requirement
+     * 
+     * @param int $minimumVersion - Minimum required app version
+     * @param Request|null $request - Laravel request object (optional)
+     * @return bool - True if app version >= minimum, false otherwise
+     */
+    public static function check_app_version($minimumVersion, $request = null)
+    {
+        $currentVersion = self::get_app_version($request);
+        return $currentVersion >= $minimumVersion;
+    }
+
     public static function upload_images_2($files, $is_single_file = false)
     {
 

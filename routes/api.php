@@ -225,6 +225,21 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 });
 
 // ========================================
+// VIDEO TRANSFER ROUTES
+// ========================================
+use App\Http\Controllers\ApiVideoTransferController;
+
+// Public routes (can be accessed without authentication if needed)
+Route::get('video-transfers', [ApiVideoTransferController::class, 'index']);
+Route::get('video-transfers/{id}', [ApiVideoTransferController::class, 'show']);
+Route::get('video-transfers/{id}/stream-url', [ApiVideoTransferController::class, 'getStreamUrl']);
+
+// Protected routes (require authentication)
+Route::middleware([JwtMiddleware::class])->group(function () {
+    Route::post('video-transfers/{id}/retry', [ApiVideoTransferController::class, 'retry']);
+});
+
+// ========================================
 // CATCH-ALL DYNAMIC ROUTES (MUST BE LAST!)
 // ========================================
 // These routes should be at the END to avoid intercepting specific routes above

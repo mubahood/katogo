@@ -1047,87 +1047,7 @@ class ApiController extends BaseController
             $my_list['movies'] = $movies->skip(80)->take(10);
             $lists[] = $my_list;
         }
-        /* //horror movies
-        if (count($movies) > 90) { 
-            $my_list['title'] = "Horror Movies";
-            $my_list['movies'] = $movies->skip(90)->take(10);
-            $lists[] = $my_list;
-        }
-        //romantic movies
-        if (count($movies) > 100) {
-            $my_list['title'] = "Romantic Movies";
-            $my_list['movies'] = $movies->skip(100)->take(10);
-            $lists[] = $my_list;
-        }
-        //action movies
-        if (count($movies) > 110) {
-            $my_list['title'] = "Action Movies";
-            $my_list['movies'] = $movies->skip(110)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //documentary movies
-        if (count($movies) > 120) {
-            $my_list['title'] = "Documentary Movies";
-            $my_list['movies'] = $movies->skip(120)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //kids movies
-        if (count($movies) > 130) {
-            $my_list['title'] = "Kids Movies";
-            $my_list['movies'] = $movies->skip(130)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //oldest movies
-        if (count($movies) > 140) {
-            $my_list['title'] = "Oldest Movies";
-            $my_list['movies'] = $movies->skip(140)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //latest movies
-        if (count($movies) > 150) {
-            $my_list['title'] = "Latest Movies";
-            $my_list['movies'] = $movies->skip(150)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //latest movies
-        if (count($movies) > 160) {
-            $my_list['title'] = "Latest Movies";
-            $my_list['movies'] = $movies->skip(160)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //latest movies
-        if (count($movies) > 170) {
-            $my_list['title'] = "Latest Movies";
-            $my_list['movies'] = $movies->skip(170)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //Recommended movies
-        if (count($movies) > 180) {
-            $my_list['title'] = "Recommended Movies";
-            $my_list['movies'] = $movies->skip(180)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //indian movies
-        if (count($movies) > 190) {
-            $my_list['title'] = "Indian Movies";
-            $my_list['movies'] = $movies->skip(190)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //korean movies
-        if (count($movies) > 200) {
-            $my_list['title'] = "Korean Movies";
-            $my_list['movies'] = $movies->skip(200)->take(10);
-            $lists[] = $my_list;
-        } */
+      
 
         //latest movies
         if (count($movies) > 210) {
@@ -1331,7 +1251,12 @@ class ApiController extends BaseController
         }
 
 
-        if (!$u->hasActiveSubscription()) {
+        // 🔒 APP VERSION CHECK: Only show movies if app version > 19 OR user has active subscription
+        $app_version = Utils::get_app_version($r);
+        $can_show_movies = $app_version > 19 || $u->hasActiveSubscription();
+
+        if (!$can_show_movies) {
+            // User has old app version (<=19) and no subscription - hide movies
             $lists = [];
             $topMovie = [];
         }
@@ -1347,6 +1272,7 @@ class ApiController extends BaseController
             'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
             'subscription' => $subscription_info, // Add subscription information
             'dashboard_stats' => $dashboard_stats, // Add dashboard statistics
+            'client_app_version' => $app_version, // Return client's app version for debugging
         ];
 
         return Utils::success($manifest, "Listed successfully.");
@@ -1379,6 +1305,21 @@ class ApiController extends BaseController
 
         // Use mapped name if exists, otherwise use the provided model name
         $modelName = $modelMapping[strtolower($model)] ?? $model;
+        
+        // 🔒 APP VERSION CHECK: Only return movies if app version > 19 OR user has active subscription
+        if ($modelName === 'MovieModel' || $modelName === 'SeriesMovie') {
+            $u = Utils::get_user($r);
+            if ($u != null) {
+                $app_version = Utils::get_app_version($r);
+                $can_show_movies = $app_version > 19 || $u->hasActiveSubscription();
+
+                if (!$can_show_movies) {
+                    // User has old app version (<=19) and no subscription - return empty array
+                    return Utils::success([], "Movies not available. Please update your app or subscribe.");
+                }
+            }
+        }
+
         $model = "App\Models\\" . $modelName;
 
         $data = $model::where([])->limit(1000000)->get();
@@ -1391,6 +1332,16 @@ class ApiController extends BaseController
         if ($u == null) {
             Utils::error("Unauthonticated.");
         }
+
+        // 🔒 APP VERSION CHECK: Only return movies if app version > 19 OR user has active subscription
+        $app_version = Utils::get_app_version($r);
+        $can_show_movies = $app_version > 19 || $u->hasActiveSubscription();
+
+        if (!$can_show_movies) {
+            // User has old app version (<=19) and no subscription - return empty array
+            Utils::success([], "Movies not available. Please update your app or subscribe.");
+        }
+
         $model = "App\Models\\MovieModel";
         $data = [];
         $temp_data = $model::where([])->limit(1000000)->get();
