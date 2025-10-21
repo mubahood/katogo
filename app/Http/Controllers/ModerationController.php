@@ -29,12 +29,7 @@ class ModerationController extends BaseController
             $userId = $request->input('user_id');
             $additionalContext = $request->input('additional_context');
 
-            // Debug logging
-            Log::info('Content filtering request', [
-                'content' => $content,
-                'content_type' => $contentType,
-                'user_id' => $userId
-            ]);
+ 
 
             // Get user for logging
             $user = User::find($userId);
@@ -43,13 +38,11 @@ class ModerationController extends BaseController
                 return $this->error('User not found.', 404);
             }
 
-            Log::info('User found, running content filtering', ['user_id' => $userId]);
-
+        
             // Run content filtering logic
             $filterResult = $this->runContentFiltering($content, $contentType, $additionalContext);
 
-            Log::info('Content filtering result', ['result' => $filterResult]);
-
+          
             // Log the filtering action
             ContentModerationLog::logAction(
                 $contentType,

@@ -506,15 +506,7 @@ class DynamicCrudController extends Controller
                 $isMobileApp = stripos($userAgent, 'okhttp') !== false || 
                                stripos($userAgent, 'dart') !== false ||
                                $request->header('X-App-Platform') === 'mobile';
-                
-                // Debug logging
-                \Log::info('Search Analytics Check', [
-                    'userAgent' => $userAgent,
-                    'isMobileApp' => $isMobileApp,
-                    'searchTerm' => $searchTerm,
-                    'hasSearchTerm' => !empty($searchTerm),
-                    'willLog' => !$isMobileApp && !empty($searchTerm)
-                ]);
+             
                 
                 if (!$isMobileApp && !empty($searchTerm)) {
                     try {
@@ -528,12 +520,7 @@ class DynamicCrudController extends Controller
                             $userId,
                             $request
                         );
-                        
-                        \Log::info('Search logged successfully', [
-                            'search_id' => $searchRecord->id,
-                            'term' => $searchTerm,
-                            'results' => $totalResults
-                        ]);
+                    
                     } catch (\Exception $e) {
                         // Log error with full details
                         \Log::error('Failed to log movie search', [
@@ -988,14 +975,7 @@ class DynamicCrudController extends Controller
                            stripos($userAgent, 'dart') !== false ||
                            $request->header('X-App-Platform') === 'mobile';
             
-            // Debug logging
-            \Log::info('Search Analytics Check (movies endpoint)', [
-                'userAgent' => $userAgent,
-                'isMobileApp' => $isMobileApp,
-                'searchTerm' => $searchTerm,
-                'hasSearchTerm' => !empty($searchTerm),
-                'willLog' => !$isMobileApp && !empty($searchTerm)
-            ]);
+          
             
             if (!$isMobileApp && !empty($searchTerm)) {
                 try {
@@ -1010,11 +990,6 @@ class DynamicCrudController extends Controller
                         $request
                     );
                     
-                    \Log::info('Search logged successfully (movies endpoint)', [
-                        'search_id' => $searchRecord->id,
-                        'term' => $searchTerm,
-                        'results' => $totalResults
-                    ]);
                 } catch (\Exception $e) {
                     \Log::error('Failed to log movie search (movies endpoint)', [
                         'error' => $e->getMessage(),

@@ -91,13 +91,7 @@ class MunowatchCrawlerSeeder extends Seeder
         
         $this->command->info('✅ Munowatch record updated successfully');
         
-        // Log the changes
-        Log::info('Munowatch crawler record updated via seeder', [
-            'id' => $website->id,
-            'original' => $originalData,
-            'updated' => $website->fresh()->toArray()
-        ]);
-        
+      
         $this->displayRecordDetails($website);
     }
     
@@ -118,12 +112,7 @@ class MunowatchCrawlerSeeder extends Seeder
             
             $this->command->info("✅ Munowatch website record created successfully (ID: {$website->id})");
             
-            // Log the creation
-            Log::info('Munowatch crawler record created via seeder', [
-                'id' => $website->id,
-                'data' => $website->toArray()
-            ]);
-            
+   
             $this->displayRecordDetails($website);
             
         } catch (\Exception $e) {

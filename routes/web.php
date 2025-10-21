@@ -1373,13 +1373,7 @@ Route::get('send-notifications', function (Request $request) {
         $results['message'] = 'Notification process completed successfully';
         $results['end_time'] = $endTime->toISOString();
         $results['duration_seconds'] = $duration;
-
-        \Illuminate\Support\Facades\Log::info('Trending notification process completed', [
-            'trending_movie_id' => $trending->id,
-            'trending_movie_title' => $trending->title,
-            'duration_seconds' => $duration,
-            'statistics' => $results['statistics']
-        ]);
+ 
 
         // Return JSON for API consumers
         if ($request->expectsJson()) {

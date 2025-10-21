@@ -109,16 +109,7 @@ if ($u && $u->id) {
         $days_remaining = $subscription_status['days_remaining'] ?? 0;
         $status = $subscription_status['status'] ?? 'No Active Subscription';
         
-        // Log subscription status for debugging
-        \Log::info('📊 Manifest: Building subscription info', [
-            'user_id' => $u->id,
-            'has_active_subscription' => $has_active,
-            'days_remaining' => $days_remaining,
-            'hours_remaining' => $subscription_status['hours_remaining'] ?? 0,
-            'status' => $status,
-            'is_in_grace_period' => $subscription_status['is_in_grace_period'] ?? false,
-        ]);
-        
+   
         // VALIDATION: If days_remaining > 0 or status is Active, 
         // has_active_subscription MUST be true
         if (($days_remaining > 0 || $status === 'Active') && !$has_active) {
@@ -132,7 +123,7 @@ if ($u && $u->id) {
             
             // FIX IT: Force has_active_subscription to true
             $has_active = true;
-            \Log::info('✅ FIXED: Corrected has_active_subscription to true');
+         
         }
         
         $subscription_info = [
@@ -145,10 +136,7 @@ if ($u && $u->id) {
             'require_subscription' => !$has_active,
         ];
         
-        \Log::info('✅ Manifest: Subscription info built successfully', [
-            'user_id' => $u->id,
-            'final_data' => $subscription_info,
-        ]);
+  
         
     } catch (\Exception $e) {
         \Log::error('💥 Failed to get subscription status in manifest', [

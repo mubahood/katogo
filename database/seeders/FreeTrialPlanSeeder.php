@@ -29,11 +29,7 @@ class FreeTrialPlanSeeder extends Seeder
 
         if ($existingFreeTrial) {
             $this->command->info("Free Trial plan already exists (ID: {$existingFreeTrial->id}). Skipping creation.");
-            Log::info('Free Trial Plan Seeder: Plan already exists', [
-                'existing_plan_id' => $existingFreeTrial->id,
-                'existing_plan_name' => $existingFreeTrial->name,
-                'existing_plan_slug' => $existingFreeTrial->slug,
-            ]);
+           
             return;
         }
 
@@ -111,16 +107,7 @@ class FreeTrialPlanSeeder extends Seeder
             $this->command->info("   - Duration: {$createdPlan->duration_days} days");
             $this->command->info("   - Price: {$createdPlan->currency} {$createdPlan->price}");
             
-            Log::info('Free Trial Plan Created Successfully', [
-                'plan_id' => $createdPlan->id,
-                'plan_name' => $createdPlan->name,
-                'plan_slug' => $createdPlan->slug,
-                'duration_days' => $createdPlan->duration_days,
-                'price' => $createdPlan->price,
-                'currency' => $createdPlan->currency,
-                'is_trial' => $createdPlan->is_trial,
-                'status' => $createdPlan->status,
-            ]);
+     
             
         } catch (\Exception $e) {
             $this->command->error("❌ Failed to create Free Trial plan: " . $e->getMessage());

@@ -136,15 +136,7 @@ if ($transaction) {
 
 **Logging Examples**:
 
-```php
-Log::info('🔄 Pesapal: Starting subscription status update', [...]);
-Log::info('📦 Pesapal: Found subscription', [...]);
-Log::info('✅ Pesapal: Payment SUCCESSFUL - Starting activation', [...]);
-Log::info('📅 Pesapal: Setting start_date_time', [...]);
-Log::info('💾 Pesapal: Subscription SAVED successfully', [...]);
-Log::info('🎉 Pesapal: Subscription ACTIVATED successfully', [...]);
-```
-
+ 
 ### 2. Pesapal Callback Endpoint
 
 **Route**: `GET /api/subscriptions/pesapal/callback`

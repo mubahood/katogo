@@ -410,13 +410,7 @@ class VideoTransferController extends AdminController
             $model = $form->model();
             
             admin_toastr('Video transfer created! Processing will start automatically.', 'success');
-            
-            // Log the creation
-            Log::info('VideoTransfer created via admin', [
-                'id' => $model->id,
-                'source_url' => $model->source_url,
-                'admin' => auth()->user()->name ?? 'Unknown',
-            ]);
+           
         });
 
         // Disable delete and view buttons on form

@@ -1080,12 +1080,7 @@ class SubscriptionApiController extends Controller
 
             // Process IPN
             $result = $this->pesapalService->processIpnCallback($orderTrackingId, $orderMerchantReference);
-
-            Log::info('✅ Pesapal IPN: Processed successfully', [
-                'tracking_id' => $orderTrackingId,
-                'result_status' => $result['status'],
-            ]);
-
+ 
             // Return 200 OK immediately
             return response()->json([
                 'status' => 'success',
@@ -1156,32 +1151,20 @@ class SubscriptionApiController extends Controller
 
             // Check with Pesapal if not yet completed
             if ($subscription->payment_status !== 'Completed') {
-                Log::info('🔄 Payment Status Check: Querying Pesapal', [
-                    'subscription_id' => $subscription->id,
-                ]);
-
+                 
                 $statusResult = $this->pesapalService->getTransactionStatus($trackingId);
 
                 if ($statusResult['success']) {
                     $result = $this->pesapalService->updateSubscriptionStatus($trackingId, $statusResult['data']);
                     $subscription->refresh();
-
-                    Log::info('✅ Payment Status Check: Updated from Pesapal', [
-                        'subscription_id' => $subscription->id,
-                        'new_status' => $subscription->status,
-                        'new_payment_status' => $subscription->payment_status,
-                    ]);
+ 
                 }
             }
 
             // Build comprehensive response with manifest
             $manifest = $this->buildSubscriptionManifest($subscription);
 
-            Log::info('📦 Payment Status Check: Returning response', [
-                'subscription_id' => $subscription->id,
-                'status' => $subscription->status,
-                'payment_status' => $subscription->payment_status,
-            ]);
+  
 
             return response()->json([
                 'code' => 1,

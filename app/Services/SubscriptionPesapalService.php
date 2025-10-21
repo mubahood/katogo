@@ -42,7 +42,6 @@ class SubscriptionPesapalService
             $cachedToken = Cache::get($cacheKey);
             
             if ($cachedToken) {
-                Log::info('Pesapal Subscription: Using cached authentication token');
                 return $cachedToken;
             }
 
@@ -367,11 +366,7 @@ class SubscriptionPesapalService
             // ==================== PAYMENT SUCCESS ====================
             if ($statusCode == 1 || strtolower($paymentStatus ?? '') === 'completed') {
                 
-                Log::info('✅ Pesapal: Payment SUCCESSFUL - Starting activation process', [
-                    'subscription_id' => $subscription->id,
-                    'tracking_id' => $orderTrackingId,
-                ]);
-
+        
                 // Check if subscription is already active
                 $isAlreadyActive = ($subscription->status === 'Active' && $subscription->payment_status === 'Completed');
                 
@@ -573,10 +568,7 @@ class SubscriptionPesapalService
                         ['status_check' => $statusData]
                     );
                     $subscription->save();
-
-                    Log::info('💾 Pesapal: Updated payment status to Processing', [
-                        'subscription_id' => $subscription->id,
-                    ]);
+ 
                 }
 
                 return [
@@ -608,10 +600,7 @@ class SubscriptionPesapalService
     public function processIpnCallback($orderTrackingId, $merchantReference = null)
     {
         try {
-            Log::info('Pesapal Subscription: Processing IPN callback', [
-                'tracking_id' => $orderTrackingId,
-                'merchant_reference' => $merchantReference,
-            ]);
+         
 
             // Get latest transaction status from Pesapal
             $statusResult = $this->getTransactionStatus($orderTrackingId);
@@ -622,12 +611,7 @@ class SubscriptionPesapalService
 
             // Update subscription status
             $result = $this->updateSubscriptionStatus($orderTrackingId, $statusResult['data']);
-
-            Log::info('Pesapal Subscription: IPN callback processed successfully', [
-                'tracking_id' => $orderTrackingId,
-                'status' => $result['status'],
-            ]);
-
+ 
             return $result;
 
         } catch (\Exception $e) {

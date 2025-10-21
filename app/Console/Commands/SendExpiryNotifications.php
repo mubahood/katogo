@@ -97,15 +97,7 @@ class SendExpiryNotifications extends Command
                     $subscription->sendExpiryNotification();
                     $sent++;
                 }
-
-                // Log the notification
-                Log::info('Expiry notification sent', [
-                    'subscription_id' => $subscription->id,
-                    'user_id' => $user->id,
-                    'user_email' => $user->email,
-                    'days_remaining' => $daysRemaining,
-                    'dry_run' => $isDryRun,
-                ]);
+ 
 
                 if ($this->getOutput()->isVerbose()) {
                     $this->newLine();
@@ -199,12 +191,7 @@ class SendExpiryNotifications extends Command
             The Katogo Team
         ";
 
-        // Log the email content for debugging
-        Log::info('Expiry email content', [
-            'to' => $user->email,
-            'subject' => $subject,
-            'message' => $message,
-        ]);
+      
 
         // Uncomment when you have email configured:
         // Mail::raw($message, function ($mail) use ($user, $subject) {

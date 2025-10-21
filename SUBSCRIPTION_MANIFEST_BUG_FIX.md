@@ -55,18 +55,7 @@ return [
 3. ✅ Auto-corrects inconsistencies
 4. ✅ Logs critical errors
 
-**New Logic**:
-```php
-// VALIDATION: If days_remaining > 0 or status is Active, 
-// has_active_subscription MUST be true
-if (($days_remaining > 0 || $status === 'Active') && !$has_active) {
-    \Log::error('🚨 CRITICAL: Subscription data inconsistency detected!');
-    
-    // FIX IT: Force has_active_subscription to true
-    $has_active = true;
-    \Log::info('✅ FIXED: Corrected has_active_subscription to true');
-}
-```
+ 
 
 ---
 

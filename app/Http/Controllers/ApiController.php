@@ -1185,7 +1185,6 @@ class ApiController extends BaseController
 
                     // FIX IT: Force has_active_subscription to true if logic indicates active
                     $has_active = true;
-                    \Log::info('✅ FIXED: Corrected has_active_subscription to true');
                 }
 
                 $subscription_info = [
@@ -1198,10 +1197,7 @@ class ApiController extends BaseController
                     'require_subscription' => !$has_active,
                 ];
 
-                \Log::info('✅ Manifest: Subscription info built successfully', [
-                    'user_id' => $u->id,
-                    'final_data' => $subscription_info,
-                ]);
+             
             } catch (\Exception $e) {
                 // If subscription check fails, use default values
                 \Log::error('💥 Failed to get subscription status in manifest', [
@@ -1425,17 +1421,9 @@ class ApiController extends BaseController
 
         // Debug: Log file upload attempt
         if ($r->hasFile('photo')) {
-            \Log::info('Photo file received', [
-                'temp_file_field' => $r->temp_file_field,
-                'file_name' => $r->file('photo')->getClientOriginalName(),
-                'file_size' => $r->file('photo')->getSize(),
-                'mime_type' => $r->file('photo')->getMimeType()
-            ]);
+            
         } else {
-            \Log::info('No photo file in request', [
-                'temp_file_field' => $r->temp_file_field,
-                'has_files' => $r->hasFile('photo')
-            ]);
+            
         }
 
 
@@ -1702,11 +1690,7 @@ class ApiController extends BaseController
 
                 try {
                     $user->save();
-                    \Illuminate\Support\Facades\Log::info('New user created via Google OAuth', [
-                        'user_id' => $user->id,
-                        'email' => $user->email,
-                        'google_id' => $user->google_id
-                    ]);
+                   
                 } catch (\Exception $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to create Google OAuth user', [
                         'error' => $e->getMessage(),
@@ -1715,13 +1699,7 @@ class ApiController extends BaseController
                     return $this->error('Failed to create user account: ' . $e->getMessage());
                 }
             } else {
-                // User exists - update Google info and log them in
-                \Illuminate\Support\Facades\Log::info('Existing user logging in via Google OAuth', [
-                    'user_id' => $user->id,
-                    'email' => $user->email,
-                    'had_google_id' => !empty($user->google_id)
-                ]);
-
+               
                 // Update existing user's Google info if needed
                 $updated = false;
                 if (!$user->google_id) {
