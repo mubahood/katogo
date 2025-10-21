@@ -769,7 +769,7 @@ class ApiController extends BaseController
         }
         // $u->autoAssignFreeTrial();
 
-        $APP_VERSION = 19;
+        $APP_VERSION = 20;
         $UPDATE_NOTES = "- Fixed download disappearance bug
         - Added subscription management with free trial
         - Google Sign-In now available
@@ -1270,7 +1270,7 @@ class ApiController extends BaseController
             'vj' => $unique_vj ?? [],
             'platform_type' => Utils::get_platform(),
             'genres' => $unique_genres ?? [],
-            'APP_VERSION' => $APP_VERSION ?? 19,
+            'APP_VERSION' => $APP_VERSION ?? 20,
             'lists' => $lists ?? [],
             'UPDATE_NOTES' => $UPDATE_NOTES ?? '',
             'WHATSAPP_CONTAT_NUMBER' => $WHATSAPP_CONTAT_NUMBER ?? '',
