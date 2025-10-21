@@ -144,8 +144,10 @@ Route::get('reverse-firebase', function (Request $r) {
                         DB::table('movie_models')
                             ->where('id', $movie->id)
                             ->update([
-                                'firebase_transfer_successful' => 'FIX-FAIL',
+                                'firebase_transfer_successful' => '
+                                ',
                                 'firebase_transfer_failure_reason' => 'Still hosted on Google services',
+                                'status' => 'Inactive',
                                 'updated_at' => now()
                             ]);
                     }
@@ -172,6 +174,7 @@ Route::get('reverse-firebase', function (Request $r) {
                             ->where('id', $movie->id)
                             ->update([
                                 'firebase_transfer_successful' => 'FIX-FAIL',
+                                'status' => 'Inactive',
                                 'firebase_transfer_failure_reason' => 'URL is not a valid video URL during reverse check',
                                 'updated_at' => now()
                             ]);
@@ -220,7 +223,6 @@ Route::get('reverse-firebase', function (Request $r) {
                         . round($progress, 1) . '% Complete</div></div>';
                     flush();
                 }
-
             } catch (\Exception $e) {
                 DB::rollBack();
                 $stats['errors']++;
@@ -280,7 +282,6 @@ Route::get('reverse-firebase', function (Request $r) {
             echo '<p>All eligible movies have been processed.</p>';
             echo '</div>';
         }
-
     } catch (\Exception $e) {
         DB::rollBack();
         echo '<div class="error">';
