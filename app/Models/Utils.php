@@ -150,6 +150,187 @@ class Utils
         return false;
     }
 
+    /**
+     * Check if a URL is hosted on Google-based services
+     * 
+     * This function detects URLs hosted on:
+     * - Firebase Storage (firebasestorage.googleapis.com)
+     * - Firebase Hosting (*.firebaseapp.com, *.web.app)
+     * - Google Cloud Storage (storage.googleapis.com, storage.cloud.google.com)
+     * - Google Cloud CDN (*.googleusercontent.com)
+     * - YouTube (youtube.com, youtu.be)
+     * - Google Drive (drive.google.com, docs.google.com)
+     * - Google Cloud Platform (*.gcp.cloud, *.run.app)
+     * - And other Google services
+     * 
+     * @param string|null $url - The URL to check
+     * @param bool $strictValidation - If true, validates URL format first (default: false)
+     * @return bool - True if URL is hosted on Google services, false otherwise
+     * 
+     * @example
+     * Utils::isHostedOnGoogle('https://firebasestorage.googleapis.com/v0/b/bucket/o/video.mp4'); // returns true
+     * Utils::isHostedOnGoogle('https://storage.googleapis.com/bucket/video.mp4'); // returns true
+     * Utils::isHostedOnGoogle('https://example.com/video.mp4'); // returns false
+     * Utils::isHostedOnGoogle('https://my-app.firebaseapp.com/video.mp4'); // returns true
+     * Utils::isHostedOnGoogle('https://youtube.com/watch?v=abc123'); // returns true
+     */
+    public static function isHostedOnGoogle($url, $strictValidation = false)
+    {
+        // Null or empty check
+        if (empty($url) || !is_string($url)) {
+            return false;
+        }
+
+        // Trim whitespace
+        $url = trim($url);
+
+        // Minimum length check
+        if (strlen($url) < 10) {
+            return false;
+        }
+
+        // Basic URL validation - must start with http:// or https://
+        if (!preg_match('/^https?:\/\//i', $url)) {
+            return false;
+        }
+
+        // Strict validation using filter_var
+        if ($strictValidation) {
+            if (filter_var($url, FILTER_VALIDATE_URL) === false) {
+                return false;
+            }
+        }
+
+        // Parse the URL to get the host
+        $parsedUrl = parse_url($url);
+        
+        if (!isset($parsedUrl['host']) || empty($parsedUrl['host'])) {
+            return false;
+        }
+
+        // Normalize host to lowercase for comparison
+        $host = strtolower($parsedUrl['host']);
+
+        // Remove 'www.' prefix if present for easier matching
+        $hostWithoutWww = preg_replace('/^www\./i', '', $host);
+
+        // Comprehensive list of Google service domains and patterns
+        $googleDomains = [
+            // Firebase Services
+            'firebasestorage.googleapis.com',
+            'firebaseapp.com',
+            'web.app',
+            'firebase.google.com',
+            'firebaseio.com',
+            
+            // Google Cloud Storage
+            'storage.googleapis.com',
+            'storage.cloud.google.com',
+            'cloudstorage.googleapis.com',
+            
+            // Google Cloud CDN & Content
+            'googleusercontent.com',
+            'ggpht.com',
+            'gstatic.com',
+            
+            // YouTube & Video Services
+            'youtube.com',
+            'youtu.be',
+            'ytimg.com',
+            'googlevideo.com',
+            
+            // Google Drive & Docs
+            'drive.google.com',
+            'docs.google.com',
+            'googlegroups.com',
+            
+            // Google Cloud Platform
+            'run.app',
+            'appspot.com',
+            'cloudfunctions.net',
+            'cloudrun.dev',
+            'gcp.cloud',
+            
+            // Google APIs & Services
+            'googleapis.com',
+            'google.com',
+            'blogger.com',
+            'blogspot.com',
+            
+            // Other Google Services
+            'googlecode.com',
+            'googlecommerce.com',
+            'googlesyndication.com',
+            'googleadservices.com',
+            'doubleclick.net',
+            'googlesource.com',
+        ];
+
+        // Check exact match
+        if (in_array($host, $googleDomains) || in_array($hostWithoutWww, $googleDomains)) {
+            return true;
+        }
+
+        // Check subdomain patterns (e.g., *.firebaseapp.com, *.run.app)
+        foreach ($googleDomains as $googleDomain) {
+            // Check if host ends with the Google domain (for subdomains)
+            if (substr($host, -strlen('.' . $googleDomain)) === '.' . $googleDomain) {
+                return true;
+            }
+            
+            // Also check without www
+            if (substr($hostWithoutWww, -strlen('.' . $googleDomain)) === '.' . $googleDomain) {
+                return true;
+            }
+        }
+
+        // Additional pattern matching for Google Cloud Storage bucket URLs
+        // Pattern: <bucket-name>.storage.googleapis.com
+        if (preg_match('/\.storage\.googleapis\.com$/i', $host)) {
+            return true;
+        }
+
+        // Pattern: <project-id>.appspot.com
+        if (preg_match('/\.appspot\.com$/i', $host)) {
+            return true;
+        }
+
+        // Pattern: <region>-<project-id>.cloudfunctions.net
+        if (preg_match('/\.cloudfunctions\.net$/i', $host)) {
+            return true;
+        }
+
+        // Pattern: <service>-<hash>.run.app (Cloud Run)
+        if (preg_match('/\.run\.app$/i', $host)) {
+            return true;
+        }
+
+        // Pattern: *.web.app (Firebase Hosting)
+        if (preg_match('/\.web\.app$/i', $host)) {
+            return true;
+        }
+
+        // Pattern: *.firebaseapp.com
+        if (preg_match('/\.firebaseapp\.com$/i', $host)) {
+            return true;
+        }
+
+        // Pattern: *.googleusercontent.com (various Google services)
+        if (preg_match('/\.googleusercontent\.com$/i', $host)) {
+            return true;
+        }
+
+        // Check for Google Drive file URLs
+        // Pattern: drive.google.com/file/d/... or drive.google.com/uc?id=...
+        if ($host === 'drive.google.com' && isset($parsedUrl['path'])) {
+            if (preg_match('/\/(file|uc)/i', $parsedUrl['path'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 
 
     static function fetch_pages_content()

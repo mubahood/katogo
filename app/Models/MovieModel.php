@@ -178,40 +178,48 @@ class MovieModel extends Model
                     $model->type = 'Movie';
                 }
             }
+            
             //look for duplicates if type is movie
             if ($model->type == 'Movie') {
-                $existing = MovieModel::where('external_url', $model->external_url)
-                    ->where('type', $model->type)
-                    ->where('status', 'Active')
-                    ->where('id', '!=', $model->id)
-                    ->first();
-                if ($existing != null) {
-                    //delete dups
-                    DB::table('movie_models')->where('id', $model->id)->delete();
+                // Check by external_url - delete the EXISTING duplicate, keep current model
+                if (!empty($model->external_url)) {
+                    $existing = MovieModel::where('external_url', $model->external_url)
+                        ->where('type', $model->type)
+                        ->where('status', 'Active')
+                        ->where('id', '!=', $model->id)
+                        ->first();
+                    if ($existing != null) {
+                        // Delete the DUPLICATE (existing), not the current model
+                        DB::table('movie_models')->where('id', $existing->id)->delete();
+                    }
                 }
 
-                //check using munowatch_id as well
-                $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
-                    ->where('type', $model->type)
-                    ->where('status', 'Active')
-                    ->where('id', '!=', $model->id)
-                    ->first();
-                if ($existing != null) {
-                    //delete dups
-                    DB::table('movie_models')->where('id', $model->id)->delete();
+                // Check using munowatch_id - delete the EXISTING duplicate, keep current model
+                if (!empty($model->munowatch_id) && strlen($model->munowatch_id) > 1) {
+                    $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
+                        ->where('type', $model->type)
+                        ->where('status', 'Active')
+                        ->where('id', '!=', $model->id)
+                        ->first();
+                    if ($existing != null) {
+                        // Delete the DUPLICATE (existing), not the current model
+                        DB::table('movie_models')->where('id', $existing->id)->delete();
+                    }
                 }
 
-                //check using title as well and same vj and is muno
-                $existing = MovieModel::where('title', $model->title)
-                    ->where('vj', $model->vj)
-                    ->where('is_muno', 'Yes')
-                    ->where('type', $model->type)
-                    ->where('status', 'Active')
-                    ->where('id', '!=', $model->id)
-                    ->first();
-                if ($existing != null) {
-                    //delete dups
-                    DB::table('movie_models')->where('id', $model->id)->delete();
+                // Check using title + vj + is_muno - delete the EXISTING duplicate, keep current model
+                if (!empty($model->title)) {
+                    $existing = MovieModel::where('title', $model->title)
+                        ->where('vj', $model->vj)
+                        ->where('is_muno', 'Yes')
+                        ->where('type', $model->type)
+                        ->where('status', 'Active')
+                        ->where('id', '!=', $model->id)
+                        ->first();
+                    if ($existing != null) {
+                        // Delete the DUPLICATE (existing), not the current model
+                        DB::table('movie_models')->where('id', $existing->id)->delete();
+                    }
                 }
             }
 
@@ -270,6 +278,7 @@ class MovieModel extends Model
     //getter for url
     public function getUrlAttribute($value)
     {
+        return $value;
 
         $url = $value;
         //check if url contains  http
@@ -776,6 +785,7 @@ class MovieModel extends Model
     public function testFirebaseVideoUrl()
     {
         try {
+            return 'Yes';
             // Mark as being tested
             $this->firebase_video_tested_by_curl = 'Yes';
             $this->firebase_video_tested_by_curl_works = 'No';

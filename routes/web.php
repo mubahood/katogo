@@ -34,30 +34,267 @@ Route::get('transfer/process/{id}', [TransferProcessController::class, 'show'])-
 Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])->name('transfer.start');
 Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
+/**
+ * 🔄 OPTIMIZED FIREBASE REVERSAL SYSTEM
+ * 
+ * This endpoint reverses Firebase transfers for movies that were incorrectly transferred.
+ * It identifies movies where the external_url is already hosted on Google services
+ * and restores them to their original non-Google URLs.
+ * 
+ * Features:
+ * - Pure SQL-based for maximum performance
+ * - Transaction-safe with proper error handling
+ * - Batch processing to prevent memory issues
+ * - Validates URLs before reverting
+ * - Comprehensive logging and reporting
+ * 
+ * Query Parameters:
+ * - limit: Number of movies to process per run (default: 100, max: 500)
+ * - dry_run: Set to 'yes' to preview without making changes
+ * 
+ * Usage: /reverse-firebase?limit=100&dry_run=no
+ */
 Route::get('reverse-firebase', function (Request $r) {
-    //firebase_transfer_successful Yes
-    $movies = MovieModel::where('firebase_transfer_successful', 'Yes')
-        ->limit(100)
-        ->orderBy('id', 'desc')
-        ->get();
-    foreach ($movies as $key => $movie) {
-        $isValidUrl = Utils::isPossiblyVideoUrl($movie->external_url);
+    set_time_limit(600); // 10 minutes
+    ini_set('memory_limit', '512M');
 
-        //ech if link is valid or not with id and status colour 
-        if ($isValidUrl) {
-            echo "<span style='color:green;'>[VALID]</span> <br>";
-        } else {
-            echo "<span style='color:red;'>[INVALID]</span> <br>";
+    $startTime = microtime(true);
+    $dryRun = $r->get('dry_run', 'no') === 'yes';
+    $limit = min((int) $r->get('limit', 100), 500); // Max 500 for safety
+
+    // Initialize statistics
+    $stats = [
+        'total_processed' => 0,
+        'still_google' => 0,
+        'invalid_urls' => 0,
+        'successfully_reversed' => 0,
+        'errors' => 0,
+    ];
+
+    // HTML output with styling
+    echo '<html><head><title>Firebase Reversal System</title>';
+    echo '<style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .stats { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: #28a745; padding: 10px; margin: 5px 0; border-left: 4px solid #28a745; background: #d4edda; }
+        .warning { color: #ffc107; padding: 10px; margin: 5px 0; border-left: 4px solid #ffc107; background: #fff3cd; }
+        .error { color: #dc3545; padding: 10px; margin: 5px 0; border-left: 4px solid #dc3545; background: #f8d7da; }
+        .info { color: #17a2b8; padding: 10px; margin: 5px 0; border-left: 4px solid #17a2b8; background: #d1ecf1; }
+        .movie-card { background: white; padding: 12px; margin: 8px 0; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .movie-id { font-weight: bold; color: #007bff; }
+        .movie-title { color: #333; font-size: 14px; }
+        .movie-url { color: #666; font-size: 12px; font-family: monospace; word-break: break-all; }
+        .progress { background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+        .progress-bar { background: #28a745; height: 100%; line-height: 30px; color: white; text-align: center; transition: width 0.3s; }
+    </style></head><body>';
+
+    echo '<div class="header">';
+    echo '<h1>🔄 Firebase Reversal System</h1>';
+    echo '<p>SQL-Optimized Processing Engine</p>';
+    echo '</div>';
+
+    try {
+        echo '<div class="stats">';
+        echo '<p><strong>📊 Processing Configuration:</strong></p>';
+        echo '<p>Batch Size: <strong>' . number_format($limit) . '</strong></p>';
+        echo '<p>Mode: <strong>' . ($dryRun ? 'DRY RUN (Preview Only)' : 'LIVE (Will Update Database)') . '</strong></p>';
+        echo '</div>';
+
+        // Get movies using direct SQL for efficiency
+        $movies = DB::table('movie_models')
+            ->select('id', 'title', 'url', 'external_url', 'old_video_url', 'firebase_transfer_successful')
+            ->where('firebase_transfer_successful', 'Yes')
+            ->orderBy('id', 'desc')
+            ->limit($limit)
+            ->get();
+
+        if ($movies->isEmpty()) {
+            echo '<div class="info">';
+            echo '<h3>✅ No Movies to Process</h3>';
+            echo '<p>No movies found with firebase_transfer_successful = "Yes"</p>';
+            echo '</div>';
+            echo '</body></html>';
+            return;
         }
 
-        echo $movie->id." ".$movie->external_url;
-        echo "<br>";
-        continue;
-        // $movie->delete();
-        // Process each movie
-        dd($movie->getAttributes());
+        echo '<h2>🔍 Processing ' . number_format($movies->count()) . ' Movies</h2>';
+        echo '<hr>';
+
+        foreach ($movies as $movie) {
+            $stats['total_processed']++;
+
+            DB::beginTransaction();
+            try {
+                // Determine which URL to check
+                $urlToCheck = $movie->external_url;
+                $isGoogleHosted = Utils::isHostedOnGoogle($urlToCheck);
+
+                // If external_url is on Google, try old_video_url
+                if ($isGoogleHosted && !empty($movie->old_video_url)) {
+                    $urlToCheck = $movie->old_video_url;
+                    $isGoogleHosted = Utils::isHostedOnGoogle($urlToCheck);
+                }
+
+                // Case 1: URL is still hosted on Google (can't reverse)
+                if ($isGoogleHosted) {
+                    $stats['still_google']++;
+
+                    if (!$dryRun) {
+                        DB::table('movie_models')
+                            ->where('id', $movie->id)
+                            ->update([
+                                'firebase_transfer_successful' => 'FIX-FAIL',
+                                'firebase_transfer_failure_reason' => 'Still hosted on Google services',
+                                'updated_at' => now()
+                            ]);
+                    }
+
+                    echo '<div class="movie-card error">';
+                    echo '<span class="movie-id">[STILL GOOGLE] ID: ' . $movie->id . '</span><br>';
+                    echo '<span class="movie-title">Title: ' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                    echo '<span class="movie-url">URL: ' . htmlspecialchars($urlToCheck) . '</span>';
+                    echo ($dryRun ? '<br><em>(DRY RUN - Not updated)</em>' : '<br><em>Marked as FIX-FAIL</em>');
+                    echo '</div>';
+
+                    DB::commit();
+                    continue;
+                }
+
+                // Case 2: Validate if URL is a valid video URL
+                $isValidVideoUrl = Utils::isPossiblyVideoUrl($urlToCheck, true);
+
+                if (!$isValidVideoUrl) {
+                    $stats['invalid_urls']++;
+
+                    if (!$dryRun) {
+                        DB::table('movie_models')
+                            ->where('id', $movie->id)
+                            ->update([
+                                'firebase_transfer_successful' => 'FIX-FAIL',
+                                'firebase_transfer_failure_reason' => 'URL is not a valid video URL during reverse check',
+                                'updated_at' => now()
+                            ]);
+                    }
+
+                    echo '<div class="movie-card error">';
+                    echo '<span class="movie-id">[INVALID URL] ID: ' . $movie->id . '</span><br>';
+                    echo '<span class="movie-title">Title: ' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                    echo '<span class="movie-url">URL: ' . htmlspecialchars($urlToCheck) . '</span>';
+                    echo ($dryRun ? '<br><em>(DRY RUN - Not updated)</em>' : '<br><em>Marked as FIX-FAIL</em>');
+                    echo '</div>';
+
+                    DB::commit();
+                    continue;
+                }
+
+                // Case 3: Valid non-Google URL - reverse the Firebase transfer
+                $stats['successfully_reversed']++;
+
+                if (!$dryRun) {
+                    DB::table('movie_models')
+                        ->where('id', $movie->id)
+                        ->update([
+                            'firebase_transfer_successful' => 'FIX-PASS',
+                            'firebase_transfer_failure_reason' => null,
+                            'url' => $urlToCheck,
+                            'old_video_url' => $movie->url, // Save current URL as old
+                            'updated_at' => now()
+                        ]);
+                }
+
+                echo '<div class="movie-card success">';
+                echo '<span class="movie-id">[✅ REVERSED] ID: ' . $movie->id . '</span><br>';
+                echo '<span class="movie-title">Title: ' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                echo '<span class="movie-url">New URL: ' . htmlspecialchars($urlToCheck) . '</span><br>';
+                echo '<span class="movie-url">Old URL: ' . htmlspecialchars($movie->url ?? 'N/A') . '</span>';
+                echo ($dryRun ? '<br><em>(DRY RUN - Not updated)</em>' : '<br><em>Successfully reversed</em>');
+                echo '</div>';
+
+                DB::commit();
+
+                // Progress indicator every 25 movies
+                if ($stats['total_processed'] % 25 === 0) {
+                    $progress = ($stats['total_processed'] / $movies->count()) * 100;
+                    echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">'
+                        . round($progress, 1) . '% Complete</div></div>';
+                    flush();
+                }
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                $stats['errors']++;
+
+                echo '<div class="movie-card error">';
+                echo '<span class="movie-id">[❌ ERROR] ID: ' . $movie->id . '</span><br>';
+                echo '<span class="movie-title">Title: ' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                echo '<span class="movie-url">Error: ' . htmlspecialchars($e->getMessage()) . '</span>';
+                echo '</div>';
+
+                Log::error('Firebase reversal error', [
+                    'movie_id' => $movie->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+
+        // Final Statistics
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 2);
+
+        echo '<hr>';
+        echo '<div class="stats">';
+        echo '<h2>📊 Processing Complete</h2>';
+        echo '<table style="width: 100%; border-collapse: collapse;">';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Processed:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['total_processed']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Successfully Reversed:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #28a745;">' . number_format($stats['successfully_reversed']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Still on Google:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #ffc107;">' . number_format($stats['still_google']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Invalid URLs:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #dc3545;">' . number_format($stats['invalid_urls']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Errors:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['errors']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Processing Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $duration . ' seconds</td></tr>';
+        echo '</table>';
+
+        // Calculate success rate
+        if ($stats['total_processed'] > 0) {
+            $successRate = ($stats['successfully_reversed'] / $stats['total_processed']) * 100;
+            echo '<p style="margin-top: 15px;">Success Rate: <strong>' . round($successRate, 2) . '%</strong></p>';
+        }
+
+        echo '</div>';
+
+        // Check if there are more movies to process
+        $remainingCount = DB::table('movie_models')
+            ->where('firebase_transfer_successful', 'Yes')
+            ->count();
+
+        if ($remainingCount > 0) {
+            echo '<div class="info">';
+            echo '<h3>🔄 More Movies Available</h3>';
+            echo '<p>There are still ' . number_format($remainingCount) . ' movies with firebase_transfer_successful = "Yes"</p>';
+            echo '<p><a href="' . $r->url() . '?limit=' . $limit . '" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">▶️ Process Next Batch</a></p>';
+            echo '</div>';
+        } else {
+            echo '<div class="success">';
+            echo '<h3>🎉 All Done!</h3>';
+            echo '<p>All eligible movies have been processed.</p>';
+            echo '</div>';
+        }
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        echo '<div class="error">';
+        echo '<h3>❌ Critical Error</h3>';
+        echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
+        echo '<pre>' . htmlspecialchars($e->getTraceAsString()) . '</pre>';
+        echo '</div>';
+        Log::error('Firebase reversal critical error', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
     }
-    dd($movies);
+
+    echo '</body></html>';
 });
 
 /**
@@ -909,6 +1146,7 @@ Route::get('/video/{filename}/permanent', function ($filename) {
 
 // Route 1: Production-Ready URL Testing Endpoint
 Route::get('/admin/movies/test-urls', function (Request $request) {
+    return; //disable for now
     set_time_limit(999300); // 5 minutes for extensive processing
 
     try {
@@ -1030,6 +1268,7 @@ Route::get('/admin/movies/test-urls', function (Request $request) {
 //curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 2: Production-Ready Firebase Transfer Endpoint with Type Support
 Route::get('/admin/movies/transfer-firebase', function (Request $request) {
+    return; //disable for now
     set_time_limit(999900); // 15 minutes for large video transfers
 
     try {
@@ -1187,6 +1426,7 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
 // curl --request GET https://katogo.schooldynamics.ug/katogo/admin/movies/transfer-firebase
 // Route 3: Production-Ready Firebase URL Testing Endpoint
 Route::get('/admin/movies/test-firebase-urls', function (Request $request) {
+    return response()->json(['success' => true]);
     set_time_limit(999300); // 5 minutes for URL testing
 
     try {

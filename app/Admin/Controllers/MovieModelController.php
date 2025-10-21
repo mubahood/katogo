@@ -58,7 +58,7 @@ class MovieModelController extends AdminController
             ->filter();
         //is_muno
         $grid->column('is_muno', __('FROM MUNO'))
-            ->sortable() 
+            ->sortable()
             ->filter(
                 [
                     'Yes' => 'Yes',
@@ -86,7 +86,7 @@ class MovieModelController extends AdminController
             $batch->add(new \App\Admin\Actions\Post\MovieStatusChange());
         });
         $grid->filter(function ($filter) {
-            $filter->disableIdFilter();
+            // $filter->disableIdFilter();
             $filter->like('title', __('Title'));
 
             $filter->equal('category_id', __('Category'))
@@ -408,14 +408,15 @@ class MovieModelController extends AdminController
             ->filter(['Yes' => 'Yes', 'No' => 'No']);
 
         $grid->column('firebase_transfer_successful', __('Firebase Transfer Successful'))
-            ->editable('select', ['Yes' => 'Yes', 'No' => 'No'])
             ->sortable()
-            ->hide()
-            ->filter(['Yes' => 'Yes', 'No' => 'No']);
+            ->filter([
+                'Yes' => 'Yes',
+                'FIX-FAIL' => 'FIX-FAIL',
+                'No' => 'No'
+            ]);
 
         $grid->column('firebase_transfer_failure_reason', __('Firebase Transfer Failure Reason'))
             ->editable('text')
-            ->hide()
             ->sortable()
             ->filter('like');
 
