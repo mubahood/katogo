@@ -180,39 +180,6 @@ class MovieModel extends Model
             }
             //look for duplicates if type is movie
             if ($model->type == 'Movie') {
-                $existing = MovieModel::where('external_url', $model->external_url)
-                    ->where('type', $model->type)
-                    ->where('status', 'Active')
-                    ->where('id', '!=', $model->id)
-                    ->first();
-                if ($existing != null) {
-                    //delete dups
-                    DB::table('movie_models')->where('id', $model->id)->delete();
-                }
-
-                //check using munowatch_id as well
-                $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
-                    ->where('type', $model->type)
-                    ->where('status', 'Active')
-                    ->where('id', '!=', $model->id)
-                    ->first();
-                if ($existing != null) {
-                    //delete dups
-                    DB::table('movie_models')->where('id', $model->id)->delete();
-                }
-
-                //check using title as well and same vj and is muno
-                $existing = MovieModel::where('title', $model->title)
-                    ->where('vj', $model->vj)
-                    ->where('is_muno', 'Yes')
-                    ->where('type', $model->type)
-                    ->where('status', 'Active')
-                    ->where('id', '!=', $model->id)
-                    ->first();
-                if ($existing != null) {
-                    //delete dups
-                    DB::table('movie_models')->where('id', $model->id)->delete();
-                }
             }
 
             if (strpos($model->url, 'munowatch') !== false) {
@@ -319,6 +286,7 @@ class MovieModel extends Model
      */
     public function verify_movie(): self
     {
+        return $this;
         $baseUrl = 'https://movies.ug/';
         $url     = $this->url;
         $addedBase = false;
@@ -357,7 +325,6 @@ class MovieModel extends Model
                 $this->status           = 'Active';
             }
         } catch (\Exception $e) {
-            //delete the url 
             // Handle exceptions (e.g., network issues, invalid URLs)
             $this->content_type = 'Unknown';
             $this->content_is_video = 'No';
@@ -366,7 +333,6 @@ class MovieModel extends Model
 
         // If we prefixed the base URL but it's not a video, revert the stored URL
         if ($this->content_is_video != 'Yes') {
-            $this->delete();
             return $this;
         }
 
