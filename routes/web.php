@@ -57,8 +57,9 @@ Route::get('process-duplicates', function (Request $r) {
         'type' => 'Movie',
     ])
         ->orderBy('id', 'desc')
-        ->limit(100)
+        ->limit(1000)
         ->get();
+    $x = 0;
     foreach ($movies as $key => $movie) {
         $dups = MovieModel::where([
             'title' => $movie->title,
@@ -68,6 +69,7 @@ Route::get('process-duplicates', function (Request $r) {
             ->get();
 
         $dups2 = [];
+        $x++;
         if ($movie->munowatch_id != null && strlen($movie->munowatch_id) > 1) {
             $dups2 = MovieModel::where([
                 'munowatch_id' => $movie->munowatch_id,
