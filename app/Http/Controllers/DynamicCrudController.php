@@ -269,6 +269,13 @@ class DynamicCrudController extends Controller
 
             // Advanced full-text search
             if ($request->filled('search') || $request->filled('title_like')) {
+                
+                \Log::info('🎬 SEARCH BLOCK ENTERED (INDEX)', [
+                    'has_search' => $request->filled('search'),
+                    'has_title_like' => $request->filled('title_like'),
+                    'search_value' => $request->get('search'),
+                    'title_like_value' => $request->get('title_like')
+                ]);
 
                 $searchTerm = null;
                 if ($request->filled('search')) {
@@ -507,11 +514,28 @@ class DynamicCrudController extends Controller
                                stripos($userAgent, 'dart') !== false ||
                                $request->header('X-App-Platform') === 'mobile';
              
+                \Log::info('🔍 SEARCH ANALYTICS CHECKPOINT', [
+                    'endpoint' => 'index/MovieModel',
+                    'searchTerm' => $searchTerm,
+                    'userAgent' => $userAgent,
+                    'isMobileApp' => $isMobileApp,
+                    'hasUser' => $u ? true : false,
+                    'userId' => $u ? $u->id : null,
+                    'totalResults' => $totalResults,
+                    'willAttemptLog' => (!$isMobileApp && !empty($searchTerm))
+                ]);
                 
                 if (!$isMobileApp && !empty($searchTerm)) {
                     try {
                         $userId = $u ? $u->id : null;
                         $foundMovieIds = array_slice(array_keys($movieScores), 0, 10); // Store top 10 movie IDs
+                        
+                        \Log::info('🔍 ATTEMPTING TO LOG SEARCH', [
+                            'searchTerm' => $searchTerm,
+                            'resultsCount' => $totalResults,
+                            'foundMovieIds' => $foundMovieIds,
+                            'userId' => $userId
+                        ]);
                         
                         $searchRecord = MovieSearch::logSearch(
                             $searchTerm,
@@ -520,16 +544,27 @@ class DynamicCrudController extends Controller
                             $userId,
                             $request
                         );
+                        
+                        \Log::info('✅ SEARCH LOGGED SUCCESSFULLY', [
+                            'search_id' => $searchRecord ? $searchRecord->id : 'null',
+                            'search_term' => $searchTerm
+                        ]);
                     
                     } catch (\Exception $e) {
                         // Log error with full details
-                        \Log::error('Failed to log movie search', [
+                        \Log::error('❌ FAILED TO LOG MOVIE SEARCH', [
                             'error' => $e->getMessage(),
                             'trace' => $e->getTraceAsString(),
                             'search_term' => $searchTerm,
                             'user_id' => $userId ?? null
                         ]);
                     }
+                } else {
+                    \Log::info('⏭️ SKIPPING SEARCH LOG', [
+                        'reason' => $isMobileApp ? 'Mobile app detected' : 'Empty search term',
+                        'isMobileApp' => $isMobileApp,
+                        'searchTerm' => $searchTerm
+                    ]);
                 }
 
                 return $this->success($response, "Search Movies retrieved successfully.");
@@ -736,6 +771,13 @@ class DynamicCrudController extends Controller
 
         // ENHANCED INTELLIGENT SEARCH ENGINE or title_like
         if ($request->filled('search') || $request->filled('title_like')) {
+            
+            \Log::info('🎬 SEARCH BLOCK ENTERED (MOVIES)', [
+                'has_search' => $request->filled('search'),
+                'has_title_like' => $request->filled('title_like'),
+                'search_value' => $request->get('search'),
+                'title_like_value' => $request->get('title_like')
+            ]);
 
             $searchTerm = null;
             if ($request->filled('search')) {
@@ -975,12 +1017,28 @@ class DynamicCrudController extends Controller
                            stripos($userAgent, 'dart') !== false ||
                            $request->header('X-App-Platform') === 'mobile';
             
-          
+            \Log::info('🔍 SEARCH ANALYTICS CHECKPOINT (MOVIES)', [
+                'endpoint' => '/movies',
+                'searchTerm' => $searchTerm,
+                'userAgent' => $userAgent,
+                'isMobileApp' => $isMobileApp,
+                'hasUser' => $u ? true : false,
+                'userId' => $u ? $u->id : null,
+                'totalResults' => $totalResults,
+                'willAttemptLog' => (!$isMobileApp && !empty($searchTerm))
+            ]);
             
             if (!$isMobileApp && !empty($searchTerm)) {
                 try {
                     $userId = $u ? $u->id : null;
                     $foundMovieIds = array_slice(array_keys($movieScores), 0, 10);
+                    
+                    \Log::info('🔍 ATTEMPTING TO LOG SEARCH (MOVIES)', [
+                        'searchTerm' => $searchTerm,
+                        'resultsCount' => $totalResults,
+                        'foundMovieIds' => $foundMovieIds,
+                        'userId' => $userId
+                    ]);
                     
                     $searchRecord = MovieSearch::logSearch(
                         $searchTerm,
@@ -990,14 +1048,25 @@ class DynamicCrudController extends Controller
                         $request
                     );
                     
+                    \Log::info('✅ SEARCH LOGGED SUCCESSFULLY (MOVIES)', [
+                        'search_id' => $searchRecord ? $searchRecord->id : 'null',
+                        'search_term' => $searchTerm
+                    ]);
+                    
                 } catch (\Exception $e) {
-                    \Log::error('Failed to log movie search (movies endpoint)', [
+                    \Log::error('❌ FAILED TO LOG MOVIE SEARCH (MOVIES)', [
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString(),
                         'search_term' => $searchTerm,
                         'user_id' => $userId ?? null
                     ]);
                 }
+            } else {
+                \Log::info('⏭️ SKIPPING SEARCH LOG (MOVIES)', [
+                    'reason' => $isMobileApp ? 'Mobile app detected' : 'Empty search term',
+                    'isMobileApp' => $isMobileApp,
+                    'searchTerm' => $searchTerm
+                ]);
             }
 
             return $this->success($response, "Search Movies retrieved successfully.");
