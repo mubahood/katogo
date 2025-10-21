@@ -35,9 +35,181 @@ Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])-
 Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
 Route::get('process-duplicates', function (Request $r) {
-    $movies = MovieModel::where([])
-        ->orderBy('id', 'asc')
+    $movies = MovieModel::where([
+        'actor' => '--'
+    ])
+        ->limit(10)
         ->get();
+    if ($movies->count() < 5) {
+        DB::table('movie_models')->where([])
+            ->update(['actor' => '--']);
+        dd('reset done');
+    }
+    $movies = MovieModel::where([
+        'actor' => '--',
+        'type' => 'Movie',
+    ])
+        ->orderBy('id', 'desc')
+        ->limit(100)
+        ->get();
+    foreach ($movies as $key => $movie) {
+        $dups = MovieModel::where([
+            'title' => $movie->title,
+            'type' => 'Movie',
+        ])
+            ->where('id', '!=', $movie->id)
+            ->get();
+
+        $dups2 = [];
+        if ($movie->munowatch_id != null && strlen($movie->munowatch_id) > 1) {
+            $dups2 = MovieModel::where([
+                'munowatch_id' => $movie->munowatch_id,
+                'type' => 'Movie',
+            ])
+                ->where('id', '!=', $movie->id)
+                ->get();
+            foreach ($dups2 as $d2) {
+                if (!$dups->contains('id', $d2->id)) {
+                    $dups->push($d2);
+                }
+            }
+        }
+
+        //check by external_url
+        if ($movie->external_url != null && strlen($movie->external_url) > 10) {
+            $dups3 = MovieModel::where([
+                'external_url' => $movie->external_url,
+                'type' => 'Movie',
+            ])
+                ->where('id', '!=', $movie->id)
+                ->get();
+            foreach ($dups3 as $d3) {
+                if (!$dups->contains('id', $d3->id)) {
+                    $dups->push($d3);
+                }
+            }
+        }
+
+        //check by url
+        if ($movie->url != null && strlen($movie->url) > 10) {
+            $dups4 = MovieModel::where([
+                'url' => $movie->url,
+                'type' => 'Movie',
+            ])
+                ->where('id', '!=', $movie->id)
+                ->get();
+            foreach ($dups4 as $d4) {
+                if (!$dups->contains('id', $d4->id)) {
+                    $dups->push($d4);
+                }
+            }
+        }
+
+        if ($dups->count() == 0) {
+            //mark as processed (USING ACTOR FIELD)
+            DB::table('movie_models')->where('id', $movie->id)
+                ->update(['actor' => '-']);
+            echo "<p style='color: green;'>No duplicates found for movie: " . $movie->title . "</p>";
+            continue;
+        }
+        $dups_ids = $dups->pluck('id')->toArray();
+        echo "<p style='color: red;'>Found " . $dups->count() . " duplicates for movie: " . $movie->title . " - IDs: " . implode(',', $dups_ids) . "</p>";
+    }
+
+    /* 
+        "id" => 29361
+    "created_at" => "2025-10-21 05:51:13"
+    "updated_at" => "2025-10-21 06:00:02"
+    "title" => "Major League"
+    "external_url" => "https://munowatch.org/api/preview/v2/12253/169464"
+    "url" => "http://munoserver1.club/7e910/d5c/MAJOR LEAGUE TV_x264.mp4"
+    "image_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/2883.jpg"
+    "thumbnail_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/2883.jpg"
+    "description" => " The new owner of the Cleveland Indians puts together a purposely horrible team so they'll lose and she can move the team. But when the plot is uncovered, they  ▶"
+    "year" => "2020"
+    "rating" => "Tv G"
+    "duration" => "01h 40m"
+    "size" => 656.49
+    "genre" => "Sport"
+    "director" => null
+    "stars" => null
+    "country" => ""
+    "language" => "English to Luganda"
+    "imdb_url" => null
+    "imdb_rating" => null
+    "imdb_votes" => null
+    "imdb_id" => null
+    "type" => "Movie"
+    "status" => "Active"
+    "error" => null
+    "error_message" => null
+    "downloads_count" => null
+    "views_count" => null
+    "likes_count" => null
+    "dislikes_count" => null
+    "comments_count" => null
+    "comments" => null
+    "video_is_downloaded_to_server" => "no"
+    "video_downloaded_to_server_start_time" => null
+    "video_downloaded_to_server_end_time" => null
+    "video_downloaded_to_server_duration" => null
+    "video_is_downloaded_to_server_status" => null
+    "video_is_downloaded_to_server_error_message" => null
+    "category" => "Sport"
+    "category_id" => "18"
+    "is_processed" => null
+    "downloaded_from_google" => "No"
+    "uploaded_to_from_google" => "No"
+    "local_video_link" => null
+    "plays_on_google" => "No"
+    "downloaded_to_new_server" => "No"
+    "new_server_path" => null
+    "server_fail_reason" => null
+    "actor" => "--"
+    "vj" => "Vj Little T"
+    "content_type" => null
+    "content_is_video" => "No"
+    "content_type_processed" => "No"
+    "content_type_processed_time" => null
+    "is_premium" => "No"
+    "episode_number" => null
+    "is_first_episode" => "No"
+    "last_listing_date" => null
+    "views_time_count" => 0
+    "is_trending" => "No"
+    "trending_time" => null
+    "trending_id" => null
+    "platform_type" => "all"
+    "temp_status" => "Inactive"
+    "video_url_tested_by_curl" => "Yes"
+    "video_url_tested_by_curl_works" => "No"
+    "video_url_tested_by_human" => "No"
+    "video_url_tested_by_human_works" => "No"
+    "firebase_transfer_attempted" => "No"
+    "firebase_transfer_transfer_in_progress" => "No"
+    "firebase_transfer_successful" => "No"
+    "firebase_transfer_failure_reason" => null
+    "firebase_transfer_path" => null
+    "firebase_video_url" => null
+    "firebase_video_url_expires_at" => null
+    "firebase_video_tested_by_curl" => "No"
+    "firebase_video_tested_by_curl_works" => "No"
+    "firebase_video_tested_by_human" => "No"
+    "firebase_video_tested_by_human_works" => "No"
+    "old_video_url" => null
+    "page_source_url" => "https://munowatch.org/api/preview/v2/12253/169464"
+    "poster_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/2883.jpg"
+    "external_id" => "12253"
+    "season_number" => 1
+    "series_title" => null
+    "episode_title" => null
+    "is_muno" => "Yes"
+    "muno_processed" => "Yes"
+    "munowatch_id" => "12253"
+    "muno_success" => "Yes"
+    "muno_message" => ""
+    */
+    dd($movies[0]);
 
     dd($movies[0]);
 });

@@ -114,11 +114,31 @@ class MovieModel extends Model
             }
             //check if url contains munowatch
             if (strpos($model->url, 'munowatch') !== false) {
-                $model->status = 'Inactive'; //if yes, set to yes
+                //$model->status = 'Inactive'; //if yes, set to yes
             }
             if ($model->type == 'Movie') {
                 //get same movie with external_url
                 $existing = MovieModel::where('external_url', $model->external_url)
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->first();
+                if ($existing != null) {
+                    return false;
+                }
+
+                //check using munowatch_id as well
+                $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->first();
+                if ($existing != null) {
+                    return false;
+                }
+
+                //check using title as well and same vj and is muno
+                $existing = MovieModel::where('title', $model->title)
+                    ->where('vj', $model->vj)
+                    ->where('is_muno', 'Yes')
                     ->where('type', $model->type)
                     ->where('status', 'Active')
                     ->first();
@@ -155,6 +175,42 @@ class MovieModel extends Model
                     }
                 } else {
                     $model->type = 'Movie';
+                }
+            }
+            //look for duplicates if type is movie
+            if ($model->type == 'Movie') {
+                $existing = MovieModel::where('external_url', $model->external_url)
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->where('id', '!=', $model->id)
+                    ->first();
+                if ($existing != null) {
+                    //delete dups
+                    DB::table('movie_models')->where('id', $model->id)->delete();
+                }
+
+                //check using munowatch_id as well
+                $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->where('id', '!=', $model->id)
+                    ->first();
+                if ($existing != null) {
+                    //delete dups
+                    DB::table('movie_models')->where('id', $model->id)->delete();
+                }
+
+                //check using title as well and same vj and is muno
+                $existing = MovieModel::where('title', $model->title)
+                    ->where('vj', $model->vj)
+                    ->where('is_muno', 'Yes')
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->where('id', '!=', $model->id)
+                    ->first();
+                if ($existing != null) {
+                    //delete dups
+                    DB::table('movie_models')->where('id', $model->id)->delete();
                 }
             }
 
