@@ -34,6 +34,13 @@ Route::get('transfer/process/{id}', [TransferProcessController::class, 'show'])-
 Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])->name('transfer.start');
 Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
+Route::get('process-duplicates', function (Request $r) {
+    $movies = MovieModel::where([])
+        ->orderBy('id', 'asc')
+        ->get();
+
+    dd($movies[0]);
+});
 Route::get('process-muno-series', function (Request $r) {
 
     $id = $r->get('id');
@@ -1373,7 +1380,7 @@ Route::get('send-notifications', function (Request $request) {
         $results['message'] = 'Notification process completed successfully';
         $results['end_time'] = $endTime->toISOString();
         $results['duration_seconds'] = $duration;
- 
+
 
         // Return JSON for API consumers
         if ($request->expectsJson()) {
