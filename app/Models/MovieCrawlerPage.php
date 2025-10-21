@@ -164,7 +164,38 @@ class MovieCrawlerPage extends Model
             return;
         }
 
-        $newMovie = new MovieModel();
+        //first check if movie exist by external url
+        $existing_post = MovieModel::where('external_url', $this->url)->first();
+        if ($existing_post != null) {
+            $this->status = 'error';
+            $this->error_message = 'Movie already exists with this external URL';
+            $this->save();
+            return;
+        }
+
+        //check if movie already exists by title
+        $existing_post = MovieModel::where('title', $this->title)
+            ->where('status', 'Active')
+            ->first();
+        if ($existing_post != null) {
+            $this->status = 'error';
+            $this->error_message = 'Movie already exists with this title';
+            $this->save();
+            return;
+        }
+
+        //check if movie already exists by url
+        $existing_post = MovieModel::where('url', $this->url)
+            ->where('status', 'Active')
+            ->first();
+        if ($existing_post != null) {
+            $this->status = 'error';
+            $this->error_message = 'Movie already exists with this URL';
+            $this->save();
+            return;
+        }
+
+        $newMovie = new MovieModel(); //validated
         /* 
             "id" => 5
     "created_at" => "2025-09-30 03:54:01"
@@ -595,15 +626,36 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
     {
         try {
             // Check if movie already exists to avoid duplicates
-            $existing_post = MovieModel::where('external_url', $this->url)->first();
+            $existing_post = MovieModel::where('url', $this->url)->first();
             if ($existing_post != null) {
                 if ($existing_post->muno_processed == 'Yes') {
-                    $this->error_message = 'Movie already exists and processed with this external URL';
+                    $this->error_message = 'Movie already exists and processed with this URL';
                     $this->status = 'error';
                     $this->save();
                     return;
                 }
             }
+
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('external_url', $this->url)->first();
+                if ($existing_post != null) {
+                    if ($existing_post->muno_processed == 'Yes') {
+                        $this->error_message = 'Movie already exists and processed with this external URL';
+                        $this->status = 'error';
+                        $this->save();
+                        return;
+                    }
+                }
+            }
+
+            if ($existing_post == null) {
+                //check by title
+                $existing_post = MovieModel::where('title', $this->title)
+                    ->where('status', 'Active')
+                    ->first();
+            }
+            
+
             // Parse JSON response from munowatch API
             $jsonData = json_decode($this->page_content, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -1179,7 +1231,7 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
                     }
 
                     if ($episode == null) {
-                        $episode = new MovieModel();
+                        $episode = new MovieModel(); //validate new episode
                     }
                     $episode->title = $title;
                     $episode->description = $_preview['description'] ?? '';
