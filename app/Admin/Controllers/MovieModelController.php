@@ -168,7 +168,7 @@ class MovieModelController extends AdminController
                 'Movie' => 'success',
                 'Series' => 'danger',
             ]);
-        $grid->column('category', __('Category'))->sortable();
+        $grid->column('category', __('Category'))->sortable()->hide();
         $grid->column('category_id', __('Category id'))->display(function ($category_id) {
             $category = SeriesMovie::find($category_id);
             if ($category) {
@@ -412,6 +412,7 @@ class MovieModelController extends AdminController
             ->filter([
                 'Yes' => 'Yes',
                 'FIX-FAIL' => 'FIX-FAIL',
+                'FIX-PASS' => 'FIX-PASS', 
                 'No' => 'No'
             ]);
 
