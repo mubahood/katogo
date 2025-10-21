@@ -117,6 +117,7 @@ class MovieModel extends Model
                 //$model->status = 'Inactive'; //if yes, set to yes
             }
             if ($model->type == 'Movie') {
+                $model->actor = '--';
                 //get same movie with external_url
                 $existing = MovieModel::where('external_url', $model->external_url)
                     ->where('type', $model->type)
