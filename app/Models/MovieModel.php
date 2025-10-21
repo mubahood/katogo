@@ -178,48 +178,40 @@ class MovieModel extends Model
                     $model->type = 'Movie';
                 }
             }
-            
             //look for duplicates if type is movie
             if ($model->type == 'Movie') {
-                // Check by external_url - delete the EXISTING duplicate, keep current model
-                if (!empty($model->external_url)) {
-                    $existing = MovieModel::where('external_url', $model->external_url)
-                        ->where('type', $model->type)
-                        ->where('status', 'Active')
-                        ->where('id', '!=', $model->id)
-                        ->first();
-                    if ($existing != null) {
-                        // Delete the DUPLICATE (existing), not the current model
-                        DB::table('movie_models')->where('id', $existing->id)->delete();
-                    }
+                $existing = MovieModel::where('external_url', $model->external_url)
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->where('id', '!=', $model->id)
+                    ->first();
+                if ($existing != null) {
+                    //delete dups
+                    DB::table('movie_models')->where('id', $model->id)->delete();
                 }
 
-                // Check using munowatch_id - delete the EXISTING duplicate, keep current model
-                if (!empty($model->munowatch_id) && strlen($model->munowatch_id) > 1) {
-                    $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
-                        ->where('type', $model->type)
-                        ->where('status', 'Active')
-                        ->where('id', '!=', $model->id)
-                        ->first();
-                    if ($existing != null) {
-                        // Delete the DUPLICATE (existing), not the current model
-                        DB::table('movie_models')->where('id', $existing->id)->delete();
-                    }
+                //check using munowatch_id as well
+                $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->where('id', '!=', $model->id)
+                    ->first();
+                if ($existing != null) {
+                    //delete dups
+                    DB::table('movie_models')->where('id', $model->id)->delete();
                 }
 
-                // Check using title + vj + is_muno - delete the EXISTING duplicate, keep current model
-                if (!empty($model->title)) {
-                    $existing = MovieModel::where('title', $model->title)
-                        ->where('vj', $model->vj)
-                        ->where('is_muno', 'Yes')
-                        ->where('type', $model->type)
-                        ->where('status', 'Active')
-                        ->where('id', '!=', $model->id)
-                        ->first();
-                    if ($existing != null) {
-                        // Delete the DUPLICATE (existing), not the current model
-                        DB::table('movie_models')->where('id', $existing->id)->delete();
-                    }
+                //check using title as well and same vj and is muno
+                $existing = MovieModel::where('title', $model->title)
+                    ->where('vj', $model->vj)
+                    ->where('is_muno', 'Yes')
+                    ->where('type', $model->type)
+                    ->where('status', 'Active')
+                    ->where('id', '!=', $model->id)
+                    ->first();
+                if ($existing != null) {
+                    //delete dups
+                    DB::table('movie_models')->where('id', $model->id)->delete();
                 }
             }
 
@@ -278,22 +270,21 @@ class MovieModel extends Model
     //getter for url
     public function getUrlAttribute($value)
     {
-        return $value;
 
         $url = $value;
         //check if url contains  http
-        if (!str_contains($value, 'googleapis')) {
-            //check if is active
-            if ($this->status == 'Active' && $this->external_url != null && strlen($this->external_url) > 5) {
-                //check if firebase_video_url is not null and not empty
-                if ($this->firebase_video_url != null && strlen($this->firebase_video_url) > 5) {
-                    $url = $this->firebase_video_url;
-                    $sql = "UPDATE movie_models SET url = '$url', old_video_url = '{$value}' WHERE id = {$this->id}";
-                    DB::update($sql);
-                    // return $url;
-                }
-            }
-        }
+        // if (!str_contains($value, 'googleapis')) {
+        //     //check if is active
+        //     if ($this->status == 'Active' && $this->external_url != null && strlen($this->external_url) > 5) {
+        //         //check if firebase_video_url is not null and not empty
+        //         if ($this->firebase_video_url != null && strlen($this->firebase_video_url) > 5) {
+        //             $url = $this->firebase_video_url;
+        //             $sql = "UPDATE movie_models SET url = '$url', old_video_url = '{$value}' WHERE id = {$this->id}";
+        //             DB::update($sql);
+        //             // return $url;
+        //         }
+        //     }
+        // }
 
         //encode the url
         $value = $url;
