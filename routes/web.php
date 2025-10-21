@@ -122,6 +122,9 @@ Route::get('process-duplicates', function (Request $r) {
             continue;
         }
         $dups_ids = $dups->pluck('id')->toArray();
+        //delete
+        MovieModel::whereIn('id', $dups_ids)->delete();
+
         echo "<p style='color: red;'>Found " . $dups->count() . " duplicates for movie: " . $movie->title . " - IDs: " . implode(',', $dups_ids) . "</p>";
     }
     die("done");
