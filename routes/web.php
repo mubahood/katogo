@@ -34,205 +34,290 @@ Route::get('transfer/process/{id}', [TransferProcessController::class, 'show'])-
 Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])->name('transfer.start');
 Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
+/**
+ * 🎯 OPTIMIZED SQL-BASED DUPLICATE REMOVAL SYSTEM
+ * 
+ * This endpoint efficiently finds and removes duplicate movies using pure SQL queries.
+ * Duplicates are identified by: title, munowatch_id, external_url, or url.
+ * The system keeps the oldest record (lowest ID) and removes all duplicates.
+ * 
+ * Features:
+ * - Pure SQL-based for maximum performance and reliability
+ * - Transaction-safe with proper error handling
+ * - Batch processing to prevent memory issues
+ * - Progress tracking and detailed reporting
+ * - Automatic reset capability when processing is complete
+ * 
+ * Query Parameters:
+ * - limit: Number of movies to process per run (default: 500, max: 2000)
+ * - reset: Set to 'yes' to reset all movies for reprocessing
+ * - dry_run: Set to 'yes' to preview without deleting
+ * 
+ * Usage: /process-duplicates?limit=500&dry_run=no
+ */
 Route::get('process-duplicates', function (Request $r) {
-
-    //set time
     set_time_limit(6000); // 10 minutes
+    ini_set('memory_limit', '1024M'); // 1GB for safety
 
-    //set memory
-    ini_set('memory_limit', '512M'); // 512 MB
+    $startTime = microtime(true);
+    $dryRun = $r->get('dry_run', 'no') === 'yes';
+    $limit = min((int) $r->get('limit', 500), 2000); // Max 2000 for safety
+    $reset = $r->get('reset', 'no') === 'yes';
 
-    $movies = MovieModel::where([
-        'actor' => '--'
-    ])
-        ->limit(1000)
-        ->get();
-    if ($movies->count() < 5) {
-        DB::table('movie_models')->where([])
-            ->update(['actor' => '--']);
-        dd('reset done');
-    }
-    $movies = MovieModel::where([
-        'actor' => '--',
-        'type' => 'Movie',
-    ])
-        ->orderBy('id', 'desc')
-        ->limit(1000)
-        ->get();
-    $x = 0;
-    foreach ($movies as $key => $movie) {
-        $dups = MovieModel::where([
-            'title' => $movie->title,
-            'type' => 'Movie',
-        ])
-            ->where('id', '!=', $movie->id)
+    // Initialize statistics
+    $stats = [
+        'total_processed' => 0,
+        'duplicates_found' => 0,
+        'duplicates_deleted' => 0,
+        'no_duplicates' => 0,
+        'errors' => 0,
+        'by_title' => 0,
+        'by_munowatch_id' => 0,
+        'by_external_url' => 0,
+        'by_url' => 0,
+    ];
+
+    echo '<html><head><title>Duplicate Movie Removal</title>';
+    echo '<style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .stats { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: #28a745; padding: 10px; margin: 5px 0; border-left: 4px solid #28a745; background: #d4edda; }
+        .warning { color: #ffc107; padding: 10px; margin: 5px 0; border-left: 4px solid #ffc107; background: #fff3cd; }
+        .error { color: #dc3545; padding: 10px; margin: 5px 0; border-left: 4px solid #dc3545; background: #f8d7da; }
+        .info { color: #17a2b8; padding: 10px; margin: 5px 0; border-left: 4px solid #17a2b8; background: #d1ecf1; }
+        .progress { background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+        .progress-bar { background: #28a745; height: 100%; line-height: 30px; color: white; text-align: center; transition: width 0.3s; }
+    </style></head><body>';
+
+    echo '<div class="header">';
+    echo '<h1>🎯 Duplicate Movie Removal System</h1>';
+    echo '<p>SQL-Optimized Processing Engine</p>';
+    echo '</div>';
+
+    try {
+        // RESET LOGIC: Reset all movies for reprocessing
+        if ($reset) {
+            echo '<div class="warning"><strong>⚠️ RESET MODE ACTIVATED</strong></div>';
+            $resetCount = DB::table('movie_models')
+                ->where('type', 'Movie')
+                ->update(['actor' => '--']);
+            echo '<div class="success">✅ Reset complete! Marked ' . number_format($resetCount) . ' movies for reprocessing.</div>';
+            echo '<div class="info">💡 Refresh this page without reset=yes to start processing.</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        // Check if processing is needed
+        $unprocessedCount = DB::table('movie_models')
+            ->where('type', 'Movie')
+            ->where('actor', '--')
+            ->count();
+
+        if ($unprocessedCount < 5) {
+            echo '<div class="info"><strong>✅ Processing Complete!</strong></div>';
+            echo '<div class="stats">';
+            echo '<p>All movies have been processed for duplicates.</p>';
+            echo '<p>To reprocess all movies, visit: <a href="?reset=yes">Reset & Reprocess All</a></p>';
+            echo '</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        echo '<div class="stats">';
+        echo '<p><strong>📊 Processing Status:</strong></p>';
+        echo '<p>Unprocessed Movies: <strong>' . number_format($unprocessedCount) . '</strong></p>';
+        echo '<p>Batch Size: <strong>' . number_format($limit) . '</strong></p>';
+        echo '<p>Mode: <strong>' . ($dryRun ? 'DRY RUN (Preview Only)' : 'LIVE (Will Delete Duplicates)') . '</strong></p>';
+        echo '</div>';
+
+        // Get movies to process using SQL for efficiency
+        $moviesToProcess = DB::table('movie_models')
+            ->select('id', 'title', 'munowatch_id', 'external_url', 'url')
+            ->where('type', 'Movie')
+            ->where('actor', '--')
+            ->orderBy('id', 'asc')
+            ->limit($limit)
             ->get();
 
-        $dups2 = [];
-        $x++;
-        if ($movie->munowatch_id != null && strlen($movie->munowatch_id) > 1) {
-            $dups2 = MovieModel::where([
-                'munowatch_id' => $movie->munowatch_id,
-                'type' => 'Movie',
-            ])
-                ->where('id', '!=', $movie->id)
-                ->get();
-            foreach ($dups2 as $d2) {
-                if (!$dups->contains('id', $d2->id)) {
-                    $dups->push($d2);
+        if ($moviesToProcess->isEmpty()) {
+            echo '<div class="warning">⚠️ No movies to process in this batch.</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        echo '<h2>🔍 Processing ' . number_format($moviesToProcess->count()) . ' Movies</h2>';
+        echo '<hr>';
+
+        // Process each movie using pure SQL
+        foreach ($moviesToProcess as $movie) {
+            $stats['total_processed']++;
+            
+            DB::beginTransaction();
+            try {
+                // Build SQL query to find ALL duplicates in one go using UNION
+                // This is much more efficient than multiple queries
+                $duplicateIds = DB::table('movie_models as m')
+                    ->select('m.id')
+                    ->where('m.type', 'Movie')
+                    ->where('m.id', '!=', $movie->id)
+                    ->where(function($query) use ($movie) {
+                        // Match by title
+                        if (!empty($movie->title)) {
+                            $query->orWhere('m.title', $movie->title);
+                        }
+                        // Match by munowatch_id
+                        if (!empty($movie->munowatch_id) && strlen($movie->munowatch_id) > 1) {
+                            $query->orWhere('m.munowatch_id', $movie->munowatch_id);
+                        }
+                        // Match by external_url
+                        if (!empty($movie->external_url) && strlen($movie->external_url) > 10) {
+                            $query->orWhere('m.external_url', $movie->external_url);
+                        }
+                        // Match by url
+                        if (!empty($movie->url) && strlen($movie->url) > 10) {
+                            $query->orWhere('m.url', $movie->url);
+                        }
+                    })
+                    ->pluck('id')
+                    ->toArray();
+
+                if (empty($duplicateIds)) {
+                    // No duplicates found - mark as processed
+                    if (!$dryRun) {
+                        DB::table('movie_models')
+                            ->where('id', $movie->id)
+                            ->update(['actor' => '-']);
+                    }
+                    
+                    $stats['no_duplicates']++;
+                    echo '<div class="success">✅ ID: ' . $movie->id . ' - "' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 60)) . '" - No duplicates</div>';
+                } else {
+                    // Duplicates found - get details for reporting
+                    $duplicateDetails = DB::table('movie_models')
+                        ->select('id', 'title', 'munowatch_id', 'external_url', 'url')
+                        ->whereIn('id', $duplicateIds)
+                        ->get();
+
+                    // Categorize duplicates for statistics
+                    foreach ($duplicateDetails as $dup) {
+                        if (!empty($movie->title) && $dup->title === $movie->title) {
+                            $stats['by_title']++;
+                        }
+                        if (!empty($movie->munowatch_id) && $dup->munowatch_id === $movie->munowatch_id) {
+                            $stats['by_munowatch_id']++;
+                        }
+                        if (!empty($movie->external_url) && $dup->external_url === $movie->external_url) {
+                            $stats['by_external_url']++;
+                        }
+                        if (!empty($movie->url) && $dup->url === $movie->url) {
+                            $stats['by_url']++;
+                        }
+                    }
+
+                    $stats['duplicates_found'] += count($duplicateIds);
+
+                    if (!$dryRun) {
+                        // Delete duplicates in a single query
+                        $deleted = DB::table('movie_models')
+                            ->whereIn('id', $duplicateIds)
+                            ->delete();
+                        
+                        $stats['duplicates_deleted'] += $deleted;
+
+                        // Mark original as processed
+                        DB::table('movie_models')
+                            ->where('id', $movie->id)
+                            ->update(['actor' => '-']);
+                    }
+
+                    echo '<div class="error">🗑️ ID: ' . $movie->id . ' - "' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 60)) . '"';
+                    echo '<br>&nbsp;&nbsp;&nbsp;&nbsp;Found ' . count($duplicateIds) . ' duplicate(s): [' . implode(', ', $duplicateIds) . ']';
+                    echo ($dryRun ? ' <strong>(DRY RUN - Not deleted)</strong>' : ' <strong>✅ Deleted</strong>');
+                    echo '</div>';
                 }
+
+                DB::commit();
+
+                // Progress indicator every 50 movies
+                if ($stats['total_processed'] % 50 === 0) {
+                    $progress = ($stats['total_processed'] / $moviesToProcess->count()) * 100;
+                    echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">' 
+                        . round($progress, 1) . '% Complete</div></div>';
+                    flush();
+                }
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                $stats['errors']++;
+                echo '<div class="error">❌ Error processing ID: ' . $movie->id . ' - ' . htmlspecialchars($e->getMessage()) . '</div>';
+                Log::error('Duplicate processing error', [
+                    'movie_id' => $movie->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
             }
         }
 
-        //check by external_url
-        if ($movie->external_url != null && strlen($movie->external_url) > 10) {
-            $dups3 = MovieModel::where([
-                'external_url' => $movie->external_url,
-                'type' => 'Movie',
-            ])
-                ->where('id', '!=', $movie->id)
-                ->get();
-            foreach ($dups3 as $d3) {
-                if (!$dups->contains('id', $d3->id)) {
-                    $dups->push($d3);
-                }
-            }
+        // Final Statistics
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 2);
+        $remainingCount = DB::table('movie_models')
+            ->where('type', 'Movie')
+            ->where('actor', '--')
+            ->count();
+
+        echo '<hr>';
+        echo '<div class="stats">';
+        echo '<h2>📊 Processing Complete</h2>';
+        echo '<table style="width: 100%; border-collapse: collapse;">';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Processed:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['total_processed']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Movies with No Duplicates:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #28a745;">' . number_format($stats['no_duplicates']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Duplicates Found:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #dc3545;">' . number_format($stats['duplicates_found']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Duplicates Deleted:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #dc3545;">' . number_format($stats['duplicates_deleted']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Errors:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['errors']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Processing Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $duration . ' seconds</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Remaining to Process:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($remainingCount) . '</td></tr>';
+        echo '</table>';
+        
+        echo '<h3>🔍 Duplicate Detection Breakdown:</h3>';
+        echo '<ul>';
+        echo '<li>By Title: <strong>' . number_format($stats['by_title']) . '</strong></li>';
+        echo '<li>By Munowatch ID: <strong>' . number_format($stats['by_munowatch_id']) . '</strong></li>';
+        echo '<li>By External URL: <strong>' . number_format($stats['by_external_url']) . '</strong></li>';
+        echo '<li>By URL: <strong>' . number_format($stats['by_url']) . '</strong></li>';
+        echo '</ul>';
+        echo '</div>';
+
+        if ($remainingCount > 0) {
+            echo '<div class="info">';
+            echo '<h3>🔄 Continue Processing</h3>';
+            echo '<p>There are still ' . number_format($remainingCount) . ' movies to process.</p>';
+            echo '<p><a href="' . $r->url() . '?limit=' . $limit . '" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">▶️ Process Next Batch</a></p>';
+            echo '</div>';
+        } else {
+            echo '<div class="success">';
+            echo '<h3>🎉 All Done!</h3>';
+            echo '<p>All movies have been processed successfully.</p>';
+            echo '</div>';
         }
 
-        //check by url
-        if ($movie->url != null && strlen($movie->url) > 10) {
-            $dups4 = MovieModel::where([
-                'url' => $movie->url,
-                'type' => 'Movie',
-            ])
-                ->where('id', '!=', $movie->id)
-                ->get();
-            foreach ($dups4 as $d4) {
-                if (!$dups->contains('id', $d4->id)) {
-                    $dups->push($d4);
-                }
-            }
-        }
-
-        if ($dups->count() == 0) {
-            //mark as processed (USING ACTOR FIELD)
-            DB::table('movie_models')->where('id', $movie->id)
-                ->update(['actor' => '-']);
-            echo "<p style='color: green;'>No duplicates found for movie: " . $movie->title . "</p>";
-            continue;
-        }
-        $dups_ids = $dups->pluck('id')->toArray();
-
-        //remove original id if is $dups_ids
-        if (($key = array_search($movie->id, $dups_ids)) !== false) {
-            unset($dups_ids[$key]);
-        } 
-
-        //delete
-        MovieModel::whereIn('id', $dups_ids)->delete();
-
-
-        echo "<p style='color: red;'>Found " . $dups->count() . " duplicates for movie: " . $movie->title . " - IDs: " . implode(',', $dups_ids) . "</p>";
+    } catch (\Exception $e) {
+        DB::rollBack();
+        echo '<div class="error">';
+        echo '<h3>❌ Critical Error</h3>';
+        echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
+        echo '</div>';
+        Log::error('Duplicate processing critical error', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
     }
-    die("done");
 
-    /* 
-        "id" => 29361
-    "created_at" => "2025-10-21 05:51:13"
-    "updated_at" => "2025-10-21 06:00:02"
-    "title" => "Major League"
-    "external_url" => "https://munowatch.org/api/preview/v2/12253/169464"
-    "url" => "http://munoserver1.club/7e910/d5c/MAJOR LEAGUE TV_x264.mp4"
-    "image_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/2883.jpg"
-    "thumbnail_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/2883.jpg"
-    "description" => " The new owner of the Cleveland Indians puts together a purposely horrible team so they'll lose and she can move the team. But when the plot is uncovered, they  ▶"
-    "year" => "2020"
-    "rating" => "Tv G"
-    "duration" => "01h 40m"
-    "size" => 656.49
-    "genre" => "Sport"
-    "director" => null
-    "stars" => null
-    "country" => ""
-    "language" => "English to Luganda"
-    "imdb_url" => null
-    "imdb_rating" => null
-    "imdb_votes" => null
-    "imdb_id" => null
-    "type" => "Movie"
-    "status" => "Active"
-    "error" => null
-    "error_message" => null
-    "downloads_count" => null
-    "views_count" => null
-    "likes_count" => null
-    "dislikes_count" => null
-    "comments_count" => null
-    "comments" => null
-    "video_is_downloaded_to_server" => "no"
-    "video_downloaded_to_server_start_time" => null
-    "video_downloaded_to_server_end_time" => null
-    "video_downloaded_to_server_duration" => null
-    "video_is_downloaded_to_server_status" => null
-    "video_is_downloaded_to_server_error_message" => null
-    "category" => "Sport"
-    "category_id" => "18"
-    "is_processed" => null
-    "downloaded_from_google" => "No"
-    "uploaded_to_from_google" => "No"
-    "local_video_link" => null
-    "plays_on_google" => "No"
-    "downloaded_to_new_server" => "No"
-    "new_server_path" => null
-    "server_fail_reason" => null
-    "actor" => "--"
-    "vj" => "Vj Little T"
-    "content_type" => null
-    "content_is_video" => "No"
-    "content_type_processed" => "No"
-    "content_type_processed_time" => null
-    "is_premium" => "No"
-    "episode_number" => null
-    "is_first_episode" => "No"
-    "last_listing_date" => null
-    "views_time_count" => 0
-    "is_trending" => "No"
-    "trending_time" => null
-    "trending_id" => null
-    "platform_type" => "all"
-    "temp_status" => "Inactive"
-    "video_url_tested_by_curl" => "Yes"
-    "video_url_tested_by_curl_works" => "No"
-    "video_url_tested_by_human" => "No"
-    "video_url_tested_by_human_works" => "No"
-    "firebase_transfer_attempted" => "No"
-    "firebase_transfer_transfer_in_progress" => "No"
-    "firebase_transfer_successful" => "No"
-    "firebase_transfer_failure_reason" => null
-    "firebase_transfer_path" => null
-    "firebase_video_url" => null
-    "firebase_video_url_expires_at" => null
-    "firebase_video_tested_by_curl" => "No"
-    "firebase_video_tested_by_curl_works" => "No"
-    "firebase_video_tested_by_human" => "No"
-    "firebase_video_tested_by_human_works" => "No"
-    "old_video_url" => null
-    "page_source_url" => "https://munowatch.org/api/preview/v2/12253/169464"
-    "poster_url" => "https://munoapp.org/munowatch-api/laba/yo/naki/2883.jpg"
-    "external_id" => "12253"
-    "season_number" => 1
-    "series_title" => null
-    "episode_title" => null
-    "is_muno" => "Yes"
-    "muno_processed" => "Yes"
-    "munowatch_id" => "12253"
-    "muno_success" => "Yes"
-    "muno_message" => ""
-    */
-    dd($movies[0]);
-
-    dd($movies[0]);
+    echo '</body></html>';
 });
+
+
 Route::get('process-muno-series', function (Request $r) {
 
     $id = $r->get('id');
