@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('movie_searches', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->nullable();
             $table->string('search_term', 255);
             $table->string('search_term_normalized', 255)->index(); // Lowercase for comparison
             $table->string('ip_address', 45)->nullable();
