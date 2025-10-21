@@ -507,8 +507,7 @@ class DynamicCrudController extends Controller
                     ]
                 ];
 
-                // 🔍 LOG SEARCH FOR WEB PORTAL ANALYTICS
-                // Only log if NOT from mobile app (mobile has its own logging)
+                // 🔍 LOG SEARCH FOR ALL PLATFORMS (WEB + MOBILE)
                 $userAgent = $request->userAgent() ?? '';
                 $isMobileApp = stripos($userAgent, 'okhttp') !== false || 
                                stripos($userAgent, 'dart') !== false ||
@@ -522,10 +521,11 @@ class DynamicCrudController extends Controller
                     'hasUser' => $u ? true : false,
                     'userId' => $u ? $u->id : null,
                     'totalResults' => $totalResults,
-                    'willAttemptLog' => (!$isMobileApp && !empty($searchTerm))
+                    'willAttemptLog' => !empty($searchTerm) // Changed: Now logs regardless of platform
                 ]);
                 
-                if (!$isMobileApp && !empty($searchTerm)) {
+                // LOG ALL SEARCHES - Mobile and Web
+                if (!empty($searchTerm)) {
                     try {
                         $userId = $u ? $u->id : null;
                         $foundMovieIds = array_slice(array_keys($movieScores), 0, 10); // Store top 10 movie IDs
@@ -534,7 +534,8 @@ class DynamicCrudController extends Controller
                             'searchTerm' => $searchTerm,
                             'resultsCount' => $totalResults,
                             'foundMovieIds' => $foundMovieIds,
-                            'userId' => $userId
+                            'userId' => $userId,
+                            'platform' => $isMobileApp ? 'mobile' : 'web'
                         ]);
                         
                         $searchRecord = MovieSearch::logSearch(
@@ -547,7 +548,8 @@ class DynamicCrudController extends Controller
                         
                         \Log::info('✅ SEARCH LOGGED SUCCESSFULLY', [
                             'search_id' => $searchRecord ? $searchRecord->id : 'null',
-                            'search_term' => $searchTerm
+                            'search_term' => $searchTerm,
+                            'platform' => $isMobileApp ? 'mobile' : 'web'
                         ]);
                     
                     } catch (\Exception $e) {
@@ -561,8 +563,7 @@ class DynamicCrudController extends Controller
                     }
                 } else {
                     \Log::info('⏭️ SKIPPING SEARCH LOG', [
-                        'reason' => $isMobileApp ? 'Mobile app detected' : 'Empty search term',
-                        'isMobileApp' => $isMobileApp,
+                        'reason' => 'Empty search term',
                         'searchTerm' => $searchTerm
                     ]);
                 }
@@ -1011,7 +1012,7 @@ class DynamicCrudController extends Controller
                 ]
             ];
 
-            // 🔍 LOG SEARCH FOR WEB PORTAL ANALYTICS (Second search endpoint)
+            // 🔍 LOG SEARCH FOR ALL PLATFORMS (WEB + MOBILE)
             $userAgent = $request->userAgent() ?? '';
             $isMobileApp = stripos($userAgent, 'okhttp') !== false || 
                            stripos($userAgent, 'dart') !== false ||
@@ -1025,10 +1026,11 @@ class DynamicCrudController extends Controller
                 'hasUser' => $u ? true : false,
                 'userId' => $u ? $u->id : null,
                 'totalResults' => $totalResults,
-                'willAttemptLog' => (!$isMobileApp && !empty($searchTerm))
+                'willAttemptLog' => !empty($searchTerm) // Changed: Now logs regardless of platform
             ]);
             
-            if (!$isMobileApp && !empty($searchTerm)) {
+            // LOG ALL SEARCHES - Mobile and Web
+            if (!empty($searchTerm)) {
                 try {
                     $userId = $u ? $u->id : null;
                     $foundMovieIds = array_slice(array_keys($movieScores), 0, 10);
@@ -1037,7 +1039,8 @@ class DynamicCrudController extends Controller
                         'searchTerm' => $searchTerm,
                         'resultsCount' => $totalResults,
                         'foundMovieIds' => $foundMovieIds,
-                        'userId' => $userId
+                        'userId' => $userId,
+                        'platform' => $isMobileApp ? 'mobile' : 'web'
                     ]);
                     
                     $searchRecord = MovieSearch::logSearch(
@@ -1050,7 +1053,8 @@ class DynamicCrudController extends Controller
                     
                     \Log::info('✅ SEARCH LOGGED SUCCESSFULLY (MOVIES)', [
                         'search_id' => $searchRecord ? $searchRecord->id : 'null',
-                        'search_term' => $searchTerm
+                        'search_term' => $searchTerm,
+                        'platform' => $isMobileApp ? 'mobile' : 'web'
                     ]);
                     
                 } catch (\Exception $e) {
@@ -1063,8 +1067,7 @@ class DynamicCrudController extends Controller
                 }
             } else {
                 \Log::info('⏭️ SKIPPING SEARCH LOG (MOVIES)', [
-                    'reason' => $isMobileApp ? 'Mobile app detected' : 'Empty search term',
-                    'isMobileApp' => $isMobileApp,
+                    'reason' => 'Empty search term',
                     'searchTerm' => $searchTerm
                 ]);
             }

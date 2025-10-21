@@ -74,6 +74,16 @@ class MovieSearch extends Model
         $ipAddress = $request ? $request->ip() : request()->ip();
         $userAgent = $request ? $request->userAgent() : request()->userAgent();
         
+        // Detect platform (mobile vs web)
+        $platform = 'web';
+        if ($userAgent) {
+            if (stripos($userAgent, 'okhttp') !== false || 
+                stripos($userAgent, 'dart') !== false ||
+                ($request && $request->header('X-App-Platform') === 'mobile')) {
+                $platform = 'mobile';
+            }
+        }
+        
         // Look for recent similar searches (last 5 minutes)
         $fiveMinutesAgo = Carbon::now()->subMinutes(5);
         
@@ -121,7 +131,7 @@ class MovieSearch extends Model
             'search_term_normalized' => $normalized,
             'ip_address' => $ipAddress,
             'user_agent' => $userAgent,
-            'platform' => 'web',
+            'platform' => $platform, // Use detected platform (web or mobile)
             'search_count' => 1,
             'results_count' => $resultsCount,
             'has_results' => $resultsCount > 0,
