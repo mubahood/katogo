@@ -35,10 +35,17 @@ Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])-
 Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
 Route::get('process-duplicates', function (Request $r) {
+
+    //set time
+    set_time_limit(6000); // 10 minutes
+
+    //set memory
+    ini_set('memory_limit', '512M'); // 512 MB
+
     $movies = MovieModel::where([
         'actor' => '--'
     ])
-        ->limit(10)
+        ->limit(1000)
         ->get();
     if ($movies->count() < 5) {
         DB::table('movie_models')->where([])
@@ -115,6 +122,7 @@ Route::get('process-duplicates', function (Request $r) {
         $dups_ids = $dups->pluck('id')->toArray();
         echo "<p style='color: red;'>Found " . $dups->count() . " duplicates for movie: " . $movie->title . " - IDs: " . implode(',', $dups_ids) . "</p>";
     }
+    die("done");
 
     /* 
         "id" => 29361
