@@ -689,6 +689,7 @@ class MovieModel extends Model
      */
     public function transferToFirebase()
     {
+        return;
         try {
             // Mark transfer as attempted and in progress
             $this->firebase_transfer_attempted = 'Yes';

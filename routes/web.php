@@ -34,6 +34,32 @@ Route::get('transfer/process/{id}', [TransferProcessController::class, 'show'])-
 Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])->name('transfer.start');
 Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
+Route::get('reverse-firebase', function (Request $r) {
+    //firebase_transfer_successful Yes
+    $movies = MovieModel::where('firebase_transfer_successful', 'Yes')
+        ->limit(100)
+        ->orderBy('id', 'desc')
+        ->get();
+    foreach ($movies as $key => $movie) {
+        $isValidUrl = Utils::isPossiblyVideoUrl($movie->external_url);
+
+        //ech if link is valid or not with id and status colour 
+        if ($isValidUrl) {
+            echo "<span style='color:green;'>[VALID]</span> <br>";
+        } else {
+            echo "<span style='color:red;'>[INVALID]</span> <br>";
+        }
+
+        echo $movie->id." ".$movie->external_url;
+        echo "<br>";
+        continue;
+        // $movie->delete();
+        // Process each movie
+        dd($movie->getAttributes());
+    }
+    dd($movies);
+});
+
 /**
  * 🎯 OPTIMIZED SQL-BASED DUPLICATE REMOVAL SYSTEM
  * 
@@ -152,7 +178,7 @@ Route::get('process-duplicates', function (Request $r) {
         // Process each movie using pure SQL
         foreach ($moviesToProcess as $movie) {
             $stats['total_processed']++;
-            
+
             DB::beginTransaction();
             try {
                 // Build SQL query to find ALL duplicates in one go using UNION
@@ -161,7 +187,7 @@ Route::get('process-duplicates', function (Request $r) {
                     ->select('m.id')
                     ->where('m.type', 'Movie')
                     ->where('m.id', '!=', $movie->id)
-                    ->where(function($query) use ($movie) {
+                    ->where(function ($query) use ($movie) {
                         // Match by title
                         if (!empty($movie->title)) {
                             $query->orWhere('m.title', $movie->title);
@@ -189,7 +215,7 @@ Route::get('process-duplicates', function (Request $r) {
                             ->where('id', $movie->id)
                             ->update(['actor' => '-']);
                     }
-                    
+
                     $stats['no_duplicates']++;
                     echo '<div class="success">✅ ID: ' . $movie->id . ' - "' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 60)) . '" - No duplicates</div>';
                 } else {
@@ -222,7 +248,7 @@ Route::get('process-duplicates', function (Request $r) {
                         $deleted = DB::table('movie_models')
                             ->whereIn('id', $duplicateIds)
                             ->delete();
-                        
+
                         $stats['duplicates_deleted'] += $deleted;
 
                         // Mark original as processed
@@ -242,11 +268,10 @@ Route::get('process-duplicates', function (Request $r) {
                 // Progress indicator every 50 movies
                 if ($stats['total_processed'] % 50 === 0) {
                     $progress = ($stats['total_processed'] / $moviesToProcess->count()) * 100;
-                    echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">' 
+                    echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">'
                         . round($progress, 1) . '% Complete</div></div>';
                     flush();
                 }
-
             } catch (\Exception $e) {
                 DB::rollBack();
                 $stats['errors']++;
@@ -279,7 +304,7 @@ Route::get('process-duplicates', function (Request $r) {
         echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Processing Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $duration . ' seconds</td></tr>';
         echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Remaining to Process:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($remainingCount) . '</td></tr>';
         echo '</table>';
-        
+
         echo '<h3>🔍 Duplicate Detection Breakdown:</h3>';
         echo '<ul>';
         echo '<li>By Title: <strong>' . number_format($stats['by_title']) . '</strong></li>';
@@ -301,7 +326,6 @@ Route::get('process-duplicates', function (Request $r) {
             echo '<p>All movies have been processed successfully.</p>';
             echo '</div>';
         }
-
     } catch (\Exception $e) {
         DB::rollBack();
         echo '<div class="error">';

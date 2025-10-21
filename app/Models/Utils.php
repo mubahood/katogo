@@ -17,6 +17,139 @@ include_once('simple_html_dom.php');
 
 class Utils
 {
+    /**
+     * Check if a URL is possibly a video based on extension and URL validity
+     * 
+     * This function validates:
+     * 1. URL format is valid
+     * 2. URL has a video file extension
+     * 3. URL is accessible (optional strict mode)
+     * 
+     * Supported video extensions:
+     * - Common: mp4, mov, avi, mkv, webm, flv, wmv, m4v
+     * - Streaming: m3u8, mpd, ts
+     * - Others: 3gp, ogv, mpeg, mpg, vob
+     * 
+     * @param string|null $url - The URL to check
+     * @param bool $strictValidation - If true, also validates URL structure (default: false)
+     * @return bool - True if URL is possibly a video, false otherwise
+     * 
+     * @example
+     * Utils::isPossiblyVideoUrl('https://example.com/video.mp4'); // returns true
+     * Utils::isPossiblyVideoUrl('https://example.com/page.html'); // returns false
+     * Utils::isPossiblyVideoUrl('not-a-url'); // returns false
+     * Utils::isPossiblyVideoUrl('https://example.com/video.mp4', true); // returns true (with strict validation)
+     */
+    public static function isPossiblyVideoUrl($url, $strictValidation = false)
+    {
+        // Null or empty check
+        if (empty($url) || !is_string($url)) {
+            return false;
+        }
+
+        // Trim whitespace
+        $url = trim($url);
+
+        // Minimum length check (must be at least something like "http://a.co/v.mp4")
+        if (strlen($url) < 10) {
+            return false;
+        }
+
+        // Basic URL validation - must start with http:// or https://
+        if (!preg_match('/^https?:\/\//i', $url)) {
+            return false;
+        }
+
+        // Strict validation using filter_var
+        if ($strictValidation) {
+            if (filter_var($url, FILTER_VALIDATE_URL) === false) {
+                return false;
+            }
+
+            // Additional check: URL must have a valid domain structure
+            $parsedUrl = parse_url($url);
+            if (!isset($parsedUrl['host']) || empty($parsedUrl['host'])) {
+                return false;
+            }
+
+            // Check if host has at least one dot (e.g., example.com)
+            if (strpos($parsedUrl['host'], '.') === false) {
+                return false;
+            }
+        }
+
+        // Comprehensive list of video extensions
+        $videoExtensions = [
+            // Most common formats
+            'mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v',
+            
+            // Streaming formats
+            'm3u8', 'mpd', 'ts',
+            
+            // Other video formats
+            '3gp', 'ogv', 'mpeg', 'mpg', 'vob', 'mts', 'm2ts',
+            'divx', 'xvid', 'asf', 'rm', 'rmvb', 'f4v', 'swf',
+            
+            // High quality formats
+            'mxf', 'roq', 'nsv', 'amv', 'mp2', 'mpe', 'mpv',
+            'm2v', 'm4p', 'mp2v', 'qt', 'yuv', 'drc', 'gif',
+            'gifv', 'mng', 'avi', 'mts', 'm2ts', 'mov', 'qt',
+            'wmv', 'yuv', 'rm', 'rmvb', 'viv', 'asf', 'amv',
+            'mp4', 'm4p', 'm4v', 'mpg', 'mp2', 'mpeg', 'mpe',
+            'mpv', 'ogg', 'm4v', 'svi', '3gp', '3g2', 'mxf',
+            'roq', 'nsv', 'flv', 'f4v', 'f4p', 'f4a', 'f4b'
+        ];
+
+        // Remove duplicates and normalize
+        $videoExtensions = array_unique(array_map('strtolower', $videoExtensions));
+
+        // Parse the URL to get the path
+        $parsedUrl = parse_url($url);
+        
+        if (!isset($parsedUrl['path'])) {
+            return false;
+        }
+
+        $path = $parsedUrl['path'];
+
+        // Remove query string from path if any (sometimes part of parse_url)
+        $path = strtok($path, '?');
+
+        // Get the file extension
+        $pathInfo = pathinfo($path);
+        
+        if (!isset($pathInfo['extension'])) {
+            // No extension found, but check if URL ends with common video patterns
+            // Some streaming URLs might not have extensions
+            if (preg_match('/\/(video|stream|play|watch|media|movie|film)/i', $path)) {
+                // Might be a streaming endpoint
+                return true;
+            }
+            return false;
+        }
+
+        $extension = strtolower($pathInfo['extension']);
+
+        // Check if extension is in our video list
+        if (in_array($extension, $videoExtensions)) {
+            return true;
+        }
+
+        // Additional check for URLs with parameters that might contain video indicators
+        if (isset($parsedUrl['query'])) {
+            parse_str($parsedUrl['query'], $queryParams);
+            
+            // Check for common video URL patterns in query params
+            foreach ($queryParams as $key => $value) {
+                if (preg_match('/\.(mp4|m3u8|mpd|mov|avi|mkv|webm)$/i', $value)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
 
 
     static function fetch_pages_content()
