@@ -8,6 +8,7 @@ use App\Models\Gen;
 use App\Models\MovieCrawlerPage;
 use App\Models\MovieCrawlerWebsite;
 use App\Models\MovieModel;
+use App\Models\MoviePic;
 use App\Models\MovieView;
 use App\Models\SeriesMovie;
 use App\Models\SubscriptionTransaction;
@@ -35,25 +36,509 @@ Route::post('transfer/start/{id}', [TransferProcessController::class, 'start'])-
 Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])->name('transfer.status');
 
 /**
- * 🔄 OPTIMIZED FIREBASE REVERSAL SYSTEM
+ * 🔄 OPTIMIZED IMAGE URL REPLACEMENT SYSTEM
  * 
- * This endpoint reverses Firebase transfers for movies that were incorrectly transferred.
- * It identifies movies where the external_url is already hosted on Google services
- * and restores them to their original non-Google URLs.
+ * This endpoint replaces movie image URLs from movie_pics table back into movie_models table.
+ * Uses the 'director' field as a processing flag: '-' = pending, '--' = processed.
  * 
  * Features:
  * - Pure SQL-based for maximum performance
  * - Transaction-safe with proper error handling
  * - Batch processing to prevent memory issues
- * - Validates URLs before reverting
- * - Comprehensive logging and reporting
+ * - Progress tracking and detailed reporting
+ * - Automatic reset capability when processing is complete
  * 
  * Query Parameters:
  * - limit: Number of movies to process per run (default: 100, max: 500)
- * - dry_run: Set to 'yes' to preview without making changes
+ * - reset: Set to 'yes' to reset all movies for reprocessing
+ * - dry_run: Set to 'yes' to preview without updating
  * 
- * Usage: /reverse-firebase?limit=100&dry_run=no
+ * Usage: /replace-images?limit=100&dry_run=no
  */
+Route::get('replace-images', function (Request $r) {
+    set_time_limit(600); // 10 minutes
+    ini_set('memory_limit', '512M');
+
+    $startTime = microtime(true);
+    $dryRun = $r->get('dry_run', 'no') === 'yes';
+    $limit = min((int) $r->get('limit', 100), 500); // Max 500 for safety
+    $reset = $r->get('reset', 'no') === 'yes';
+
+    // Initialize statistics
+    $stats = [
+        'total_processed' => 0,
+        'images_replaced' => 0,
+        'no_image_found' => 0,
+        'errors' => 0,
+    ];
+
+    // HTML output with styling
+    echo '<html><head><title>Image URL Replacement System</title>';
+    echo '<style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .stats { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: #28a745; padding: 10px; margin: 5px 0; border-left: 4px solid #28a745; background: #d4edda; }
+        .warning { color: #ffc107; padding: 10px; margin: 5px 0; border-left: 4px solid #ffc107; background: #fff3cd; }
+        .error { color: #dc3545; padding: 10px; margin: 5px 0; border-left: 4px solid #dc3545; background: #f8d7da; }
+        .info { color: #17a2b8; padding: 10px; margin: 5px 0; border-left: 4px solid #17a2b8; background: #d1ecf1; }
+        .movie-card { background: white; padding: 12px; margin: 8px 0; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .movie-id { font-weight: bold; color: #007bff; }
+        .movie-title { color: #333; font-size: 14px; margin: 5px 0; }
+        .progress { background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+        .progress-bar { background: #28a745; height: 100%; line-height: 30px; color: white; text-align: center; transition: width 0.3s; }
+    </style></head><body>';
+
+    echo '<div class="header">';
+    echo '<h1>🔄 Image URL Replacement System</h1>';
+    echo '<p>SQL-Optimized Processing Engine</p>';
+    echo '</div>';
+
+    try {
+        // RESET LOGIC: Reset all movies for reprocessing
+        if ($reset) {
+            echo '<div class="warning"><strong>⚠️ RESET MODE ACTIVATED</strong></div>';
+            $resetCount = DB::table('movie_models')
+                ->update(['director' => '-']);
+            echo '<div class="success">✅ Reset complete! Marked ' . number_format($resetCount) . ' movies for reprocessing.</div>';
+            echo '<div class="info">💡 Refresh this page without reset=yes to start processing.</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        // Check if processing is needed
+        $pendingCount = DB::table('movie_models')
+            ->where('director', '-')
+            ->count();
+
+        if ($pendingCount < 5) {
+            // Auto-reset when less than 5 pending
+            echo '<div class="warning"><strong>⚠️ AUTO-RESET TRIGGERED</strong></div>';
+            echo '<div class="info">Less than 5 movies pending. Resetting all movies for reprocessing...</div>';
+            $resetCount = DB::table('movie_models')
+                ->update(['director' => '-']);
+            echo '<div class="success">✅ Reset complete! Marked ' . number_format($resetCount) . ' movies for reprocessing.</div>';
+            echo '<div class="info">💡 <a href="' . $r->url() . '">Click here to start processing</a></div>';
+            echo '</body></html>';
+            return;
+        }
+
+        echo '<div class="stats">';
+        echo '<p><strong>📊 Processing Configuration:</strong></p>';
+        echo '<p>Pending Movies: <strong>' . number_format($pendingCount) . '</strong></p>';
+        echo '<p>Batch Size: <strong>' . number_format($limit) . '</strong></p>';
+        echo '<p>Mode: <strong>' . ($dryRun ? 'DRY RUN (Preview Only)' : 'LIVE (Will Update Database)') . '</strong></p>';
+        echo '</div>';
+
+        // Get movies to process using efficient SQL with LEFT JOIN
+        $movies = DB::table('movie_models as m')
+            ->select('m.id', 'm.title', 'm.image_url as current_image_url', 'mp.pic_url')
+            ->leftJoin('movie_pics as mp', 'm.id', '=', 'mp.movie_id')
+            ->where('m.director', '-')
+            ->orderBy('m.id', 'desc')
+            ->limit($limit)
+            ->get();
+
+        if ($movies->isEmpty()) {
+            echo '<div class="info">';
+            echo '<h3>✅ No Movies to Process</h3>';
+            echo '<p>All movies have been processed.</p>';
+            echo '</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        echo '<h2>🔍 Processing ' . number_format($movies->count()) . ' Movies</h2>';
+        echo '<hr>';
+
+        foreach ($movies as $movie) {
+            $stats['total_processed']++;
+
+            DB::beginTransaction();
+            try {
+                // Case 1: No image found in movie_pics
+                if (empty($movie->pic_url)) {
+                    $stats['no_image_found']++;
+
+                    if (!$dryRun) {
+                        DB::table('movie_models')
+                            ->where('id', $movie->id)
+                            ->update([
+                                'director' => '--', // Mark as processed even without image
+                                'updated_at' => now()
+                            ]);
+                    }
+
+                    echo '<div class="movie-card warning">';
+                    echo '<span class="movie-id">[NO IMAGE] ID: ' . $movie->id . '</span><br>';
+                    echo '<span class="movie-title">' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                    echo '<em>No image found in movie_pics table - marked as processed</em>';
+                    echo ($dryRun ? '<br><em>(DRY RUN - Not updated)</em>' : '');
+                    echo '</div>';
+
+                    DB::commit();
+                    continue;
+                }
+
+                // Case 2: Image found - replace URL
+                $stats['images_replaced']++;
+
+                if (!$dryRun) {
+                    DB::table('movie_models')
+                        ->where('id', $movie->id)
+                        ->update([
+                            'director' => '--',
+                            'image_url' => $movie->pic_url,
+                            'updated_at' => now()
+                        ]);
+                }
+
+                echo '<div class="movie-card success">';
+                echo '<span class="movie-id">[✅ REPLACED] ID: ' . $movie->id . '</span><br>';
+                echo '<span class="movie-title">' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                echo '<em>Old URL: ' . htmlspecialchars(substr($movie->current_image_url ?? 'N/A', 0, 60)) . '...</em><br>';
+                echo '<em>New URL: ' . htmlspecialchars(substr($movie->pic_url, 0, 60)) . '...</em>';
+                echo ($dryRun ? '<br><em>(DRY RUN - Not updated)</em>' : '');
+                echo '</div>';
+
+                DB::commit();
+
+                // Progress indicator every 25 movies
+                if ($stats['total_processed'] % 25 === 0) {
+                    $progress = ($stats['total_processed'] / $movies->count()) * 100;
+                    echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">'
+                        . round($progress, 1) . '% Complete</div></div>';
+                    flush();
+                }
+            } catch (\Exception $e) {
+                DB::rollBack();
+                $stats['errors']++;
+
+                echo '<div class="movie-card error">';
+                echo '<span class="movie-id">[❌ ERROR] ID: ' . $movie->id . '</span><br>';
+                echo '<span class="movie-title">' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                echo '<span style="color: #666;">Error: ' . htmlspecialchars($e->getMessage()) . '</span>';
+                echo '</div>';
+
+                Log::error('Image replacement error', [
+                    'movie_id' => $movie->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+
+        // Final Statistics
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 2);
+
+        // Check remaining movies
+        $remainingCount = DB::table('movie_models')
+            ->where('director', '-')
+            ->count();
+
+        echo '<hr>';
+        echo '<div class="stats">';
+        echo '<h2>📊 Processing Complete</h2>';
+        echo '<table style="width: 100%; border-collapse: collapse;">';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Processed:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['total_processed']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Images Replaced:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #28a745;">' . number_format($stats['images_replaced']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>No Image Found:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #ffc107;">' . number_format($stats['no_image_found']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Errors:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['errors']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Processing Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $duration . ' seconds</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Remaining Movies:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($remainingCount) . '</td></tr>';
+        echo '</table>';
+
+        // Calculate success rate
+        if ($stats['total_processed'] > 0) {
+            $successRate = ($stats['images_replaced'] / $stats['total_processed']) * 100;
+            echo '<p style="margin-top: 15px;">Success Rate: <strong>' . round($successRate, 2) . '%</strong></p>';
+        }
+
+        echo '</div>';
+
+        if ($remainingCount > 0) {
+            echo '<div class="info">';
+            echo '<h3>🔄 More Movies Available</h3>';
+            echo '<p>There are still ' . number_format($remainingCount) . ' movies to process.</p>';
+            echo '<p><a href="' . $r->url() . '?limit=' . $limit . '" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">▶️ Process Next Batch</a></p>';
+            echo '</div>';
+        } else {
+            echo '<div class="success">';
+            echo '<h3>🎉 Batch Complete!</h3>';
+            echo '<p>This batch has been processed successfully.</p>';
+            echo '<p>The system will auto-reset when less than 5 movies remain.</p>';
+            echo '</div>';
+        }
+    } catch (\Exception $e) {
+        DB::rollBack();
+        echo '<div class="error">';
+        echo '<h3>❌ Critical Error</h3>';
+        echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
+        echo '<pre>' . htmlspecialchars($e->getTraceAsString()) . '</pre>';
+        echo '</div>';
+        Log::error('Image replacement critical error', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
+
+    echo '</body></html>';
+});
+
+/**
+ * 🖼️ OPTIMIZED IMAGE MIGRATION SYSTEM
+ * 
+ * This endpoint migrates movie images from movie_models table to movie_pics table.
+ * It efficiently processes movies that don't have entries in movie_pics table yet.
+ * 
+ * Features:
+ * - Pure SQL-based for maximum performance
+ * - Transaction-safe with proper error handling
+ * - Batch processing to prevent memory issues
+ * - Validates image URLs before insertion
+ * - Progress tracking and detailed reporting
+ * - Skips movies that already have images
+ * 
+ * Query Parameters:
+ * - limit: Number of movies to process per run (default: 500, max: 2000)
+ * - dry_run: Set to 'yes' to preview without inserting
+ * 
+ * Usage: /fix-images?limit=500&dry_run=no
+ */
+Route::get('fix-images', function (Request $r) {
+    die("done processing");
+    set_time_limit(600); // 10 minutes
+    ini_set('memory_limit', '512M');
+
+    $startTime = microtime(true);
+    $dryRun = $r->get('dry_run', 'no') === 'yes';
+    $limit = min((int) $r->get('limit', 500), 2000); // Max 2000 for safety
+
+    // Initialize statistics
+    $stats = [
+        'total_processed' => 0,
+        'images_added' => 0,
+        'already_exists' => 0,
+        'no_valid_image' => 0,
+        'errors' => 0,
+        'used_image_url' => 0,
+        'used_thumbnail_url' => 0,
+    ];
+
+    // HTML output with styling
+    echo '<html><head><title>Image Migration System</title>';
+    echo '<style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .stats { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: #28a745; padding: 10px; margin: 5px 0; border-left: 4px solid #28a745; background: #d4edda; }
+        .warning { color: #ffc107; padding: 10px; margin: 5px 0; border-left: 4px solid #ffc107; background: #fff3cd; }
+        .error { color: #dc3545; padding: 10px; margin: 5px 0; border-left: 4px solid #dc3545; background: #f8d7da; }
+        .info { color: #17a2b8; padding: 10px; margin: 5px 0; border-left: 4px solid #17a2b8; background: #d1ecf1; }
+        .movie-card { background: white; padding: 12px; margin: 8px 0; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .movie-id { font-weight: bold; color: #007bff; }
+        .movie-title { color: #333; font-size: 14px; margin: 5px 0; }
+        .movie-image { max-width: 100px; max-height: 150px; border-radius: 4px; margin-top: 5px; }
+        .progress { background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+        .progress-bar { background: #28a745; height: 100%; line-height: 30px; color: white; text-align: center; transition: width 0.3s; }
+    </style></head><body>';
+
+    echo '<div class="header">';
+    echo '<h1>🖼️ Image Migration System</h1>';
+    echo '<p>SQL-Optimized Processing Engine</p>';
+    echo '</div>';
+
+    try {
+        echo '<div class="stats">';
+        echo '<p><strong>📊 Processing Configuration:</strong></p>';
+        echo '<p>Batch Size: <strong>' . number_format($limit) . '</strong></p>';
+        echo '<p>Mode: <strong>' . ($dryRun ? 'DRY RUN (Preview Only)' : 'LIVE (Will Insert Images)') . '</strong></p>';
+        echo '</div>';
+
+        // Get movies that don't have images yet using efficient LEFT JOIN
+        $movies = DB::table('movie_models as m')
+            ->select('m.id', 'm.title', 'm.image_url', 'm.thumbnail_url')
+            ->leftJoin('movie_pics as mp', 'm.id', '=', 'mp.movie_id')
+            ->whereNull('mp.id') // Only get movies without movie_pics entry
+            ->orderBy('m.id', 'desc')
+            ->limit($limit)
+            ->get();
+
+        if ($movies->isEmpty()) {
+            echo '<div class="info">';
+            echo '<h3>✅ No Movies to Process</h3>';
+            echo '<p>All movies already have images in the movie_pics table.</p>';
+            echo '</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        echo '<h2>🔍 Processing ' . number_format($movies->count()) . ' Movies</h2>';
+        echo '<hr>';
+
+        foreach ($movies as $movie) {
+            $stats['total_processed']++;
+
+            DB::beginTransaction();
+            try {
+                // Double-check in case of race condition
+                $existingCheck = DB::table('movie_pics')
+                    ->where('movie_id', $movie->id)
+                    ->exists();
+
+                if ($existingCheck) {
+                    $stats['already_exists']++;
+
+                    echo '<div class="movie-card warning">';
+                    echo '<span class="movie-id">[SKIP - EXISTS] ID: ' . $movie->id . '</span><br>';
+                    echo '<span class="movie-title">' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span>';
+                    echo '</div>';
+
+                    DB::commit();
+                    continue;
+                }
+
+                // Determine which URL to use (image_url first, then thumbnail_url)
+                $imageUrl = null;
+                $urlSource = null;
+
+                if (!empty($movie->image_url) && strlen($movie->image_url) >= 10) {
+                    $imageUrl = $movie->image_url;
+                    $urlSource = 'image_url';
+                    $stats['used_image_url']++;
+                } elseif (!empty($movie->thumbnail_url) && strlen($movie->thumbnail_url) >= 10) {
+                    $imageUrl = $movie->thumbnail_url;
+                    $urlSource = 'thumbnail_url';
+                    $stats['used_thumbnail_url']++;
+                }
+
+                // No valid image URL found
+                if ($imageUrl === null) {
+                    $stats['no_valid_image']++;
+
+                    echo '<div class="movie-card warning">';
+                    echo '<span class="movie-id">[NO IMAGE] ID: ' . $movie->id . '</span><br>';
+                    echo '<span class="movie-title">' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                    echo '<em>No valid image URL found</em>';
+                    echo '</div>';
+
+                    DB::commit();
+                    continue;
+                }
+
+                // Insert image record
+                if (!$dryRun) {
+                    DB::table('movie_pics')->insert([
+                        'movie_id' => $movie->id,
+                        'pic_url' => $imageUrl,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                }
+
+                $stats['images_added']++;
+
+                echo '<div class="movie-card success">';
+                echo '<span class="movie-id">[✅ ADDED] ID: ' . $movie->id . '</span><br>';
+                echo '<span class="movie-title">' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                echo '<em>Source: ' . $urlSource . '</em><br>';
+                // echo '<img src="' . htmlspecialchars($imageUrl) . '" class="movie-image" onerror="this.style.display=\'none\'" />';
+                echo ($dryRun ? '<br><em>(DRY RUN - Not inserted)</em>' : '');
+                echo '</div>';
+
+                DB::commit();
+
+                // Progress indicator every 50 movies
+                if ($stats['total_processed'] % 50 === 0) {
+                    $progress = ($stats['total_processed'] / $movies->count()) * 100;
+                    echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">'
+                        . round($progress, 1) . '% Complete</div></div>';
+                    flush();
+                }
+            } catch (\Exception $e) {
+                DB::rollBack();
+                $stats['errors']++;
+
+                echo '<div class="movie-card error">';
+                echo '<span class="movie-id">[❌ ERROR] ID: ' . $movie->id . '</span><br>';
+                echo '<span class="movie-title">' . htmlspecialchars(substr($movie->title ?? 'Untitled', 0, 80)) . '</span><br>';
+                echo '<span style="color: #666;">Error: ' . htmlspecialchars($e->getMessage()) . '</span>';
+                echo '</div>';
+
+                Log::error('Image migration error', [
+                    'movie_id' => $movie->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+
+        // Final Statistics
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 2);
+
+        // Check remaining movies
+        $remainingCount = DB::table('movie_models as m')
+            ->leftJoin('movie_pics as mp', 'm.id', '=', 'mp.movie_id')
+            ->whereNull('mp.id')
+            ->count();
+
+        echo '<hr>';
+        echo '<div class="stats">';
+        echo '<h2>📊 Processing Complete</h2>';
+        echo '<table style="width: 100%; border-collapse: collapse;">';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Processed:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['total_processed']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Images Added:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #28a745;">' . number_format($stats['images_added']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Already Exists:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #ffc107;">' . number_format($stats['already_exists']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>No Valid Image:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #ffc107;">' . number_format($stats['no_valid_image']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Errors:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['errors']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Processing Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $duration . ' seconds</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Remaining Movies:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($remainingCount) . '</td></tr>';
+        echo '</table>';
+
+        echo '<h3>📸 Image Source Breakdown:</h3>';
+        echo '<ul>';
+        echo '<li>From image_url: <strong>' . number_format($stats['used_image_url']) . '</strong></li>';
+        echo '<li>From thumbnail_url: <strong>' . number_format($stats['used_thumbnail_url']) . '</strong></li>';
+        echo '</ul>';
+
+        // Calculate success rate
+        if ($stats['total_processed'] > 0) {
+            $successRate = ($stats['images_added'] / $stats['total_processed']) * 100;
+            echo '<p style="margin-top: 15px;">Success Rate: <strong>' . round($successRate, 2) . '%</strong></p>';
+        }
+
+        echo '</div>';
+
+        if ($remainingCount > 0) {
+            echo '<div class="info">';
+            echo '<h3>🔄 More Movies Available</h3>';
+            echo '<p>There are still ' . number_format($remainingCount) . ' movies without images.</p>';
+            echo '<p><a href="' . $r->url() . '?limit=' . $limit . '" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">▶️ Process Next Batch</a></p>';
+            echo '</div>';
+        } else {
+            echo '<div class="success">';
+            echo '<h3>🎉 All Done!</h3>';
+            echo '<p>All movies have been processed successfully.</p>';
+            echo '</div>';
+        }
+    } catch (\Exception $e) {
+        DB::rollBack();
+        echo '<div class="error">';
+        echo '<h3>❌ Critical Error</h3>';
+        echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
+        echo '<pre>' . htmlspecialchars($e->getTraceAsString()) . '</pre>';
+        echo '</div>';
+        Log::error('Image migration critical error', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
+
+    echo '</body></html>';
+});
+
 Route::get('reverse-firebase', function (Request $r) {
     set_time_limit(600); // 10 minutes
     ini_set('memory_limit', '512M');

@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('movie_searches', function (Blueprint $table) {
             // Drop the foreign key constraint
-            $table->dropForeign(['user_id']);
+            // $table->dropForeign(['user_id']);
             
             // Change user_id to a regular bigInteger (no foreign key)
             $table->unsignedBigInteger('user_id')->nullable()->change();
