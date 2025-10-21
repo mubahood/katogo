@@ -507,21 +507,41 @@ class DynamicCrudController extends Controller
                                stripos($userAgent, 'dart') !== false ||
                                $request->header('X-App-Platform') === 'mobile';
                 
+                // Debug logging
+                \Log::info('Search Analytics Check', [
+                    'userAgent' => $userAgent,
+                    'isMobileApp' => $isMobileApp,
+                    'searchTerm' => $searchTerm,
+                    'hasSearchTerm' => !empty($searchTerm),
+                    'willLog' => !$isMobileApp && !empty($searchTerm)
+                ]);
+                
                 if (!$isMobileApp && !empty($searchTerm)) {
                     try {
                         $userId = $u ? $u->id : null;
                         $foundMovieIds = array_slice(array_keys($movieScores), 0, 10); // Store top 10 movie IDs
                         
-                        MovieSearch::logSearch(
+                        $searchRecord = MovieSearch::logSearch(
                             $searchTerm,
                             $totalResults,
                             $foundMovieIds,
                             $userId,
                             $request
                         );
+                        
+                        \Log::info('Search logged successfully', [
+                            'search_id' => $searchRecord->id,
+                            'term' => $searchTerm,
+                            'results' => $totalResults
+                        ]);
                     } catch (\Exception $e) {
-                        // Silently fail - don't break search functionality
-                        \Log::error('Failed to log movie search: ' . $e->getMessage());
+                        // Log error with full details
+                        \Log::error('Failed to log movie search', [
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString(),
+                            'search_term' => $searchTerm,
+                            'user_id' => $userId ?? null
+                        ]);
                     }
                 }
 
@@ -703,27 +723,7 @@ class DynamicCrudController extends Controller
 
         // Refresh user data
         $user = User::find($user->id);
-        if ($user == null) {
-            // return $this->error('User not found.', 404);
-        } else {
-            // CHECKPOINT 2: Auto-assign free trial if user is eligible
-            try {
-                $freeTrialResult = $user->autoAssignFreeTrial();
-                if ($freeTrialResult['success']) {
-                    \Illuminate\Support\Facades\Log::info('Free trial auto-assigned via movies endpoint', [
-                        'user_id' => $user->id,
-                        'endpoint' => 'movies',
-                        'subscription_id' => $freeTrialResult['subscription']['id'] ?? null,
-                    ]);
-                }
-            } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Failed to auto-assign free trial in movies endpoint', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                    'endpoint' => 'movies',
-                ]);
-            }
-        }
+      
 
         // Check subscription status (includes grace period)
         /* if (!$user->hasActiveSubscription(true)) {
@@ -988,20 +988,40 @@ class DynamicCrudController extends Controller
                            stripos($userAgent, 'dart') !== false ||
                            $request->header('X-App-Platform') === 'mobile';
             
+            // Debug logging
+            \Log::info('Search Analytics Check (movies endpoint)', [
+                'userAgent' => $userAgent,
+                'isMobileApp' => $isMobileApp,
+                'searchTerm' => $searchTerm,
+                'hasSearchTerm' => !empty($searchTerm),
+                'willLog' => !$isMobileApp && !empty($searchTerm)
+            ]);
+            
             if (!$isMobileApp && !empty($searchTerm)) {
                 try {
                     $userId = $u ? $u->id : null;
                     $foundMovieIds = array_slice(array_keys($movieScores), 0, 10);
                     
-                    MovieSearch::logSearch(
+                    $searchRecord = MovieSearch::logSearch(
                         $searchTerm,
                         $totalResults,
                         $foundMovieIds,
                         $userId,
                         $request
                     );
+                    
+                    \Log::info('Search logged successfully (movies endpoint)', [
+                        'search_id' => $searchRecord->id,
+                        'term' => $searchTerm,
+                        'results' => $totalResults
+                    ]);
                 } catch (\Exception $e) {
-                    \Log::error('Failed to log movie search (endpoint 2): ' . $e->getMessage());
+                    \Log::error('Failed to log movie search (movies endpoint)', [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                        'search_term' => $searchTerm,
+                        'user_id' => $userId ?? null
+                    ]);
                 }
             }
 
