@@ -150,18 +150,9 @@ class MovieModel extends Model
         });
 
         static::updating(function ($model) {
-            // Auto-activate movies when Firebase video testing succeeds
-            if (
-                $model->isDirty('firebase_video_tested_by_curl_works') &&
-                $model->firebase_video_tested_by_curl_works == 'Yes'
-            ) {
-                $model->status = 'Active';
-                $model->temp_status = 'Active';
-                $model->old_video_url = $model->url;
-                $model->url = $model->firebase_video_url;
-            }
 
-            if ($model->type == 'Series') {
+
+            if ($model->type == 'Series' && $model->category_id != null && $model->category_id != '' && $model->category_id != 0) {
                 $series = SeriesMovie::find($model->category_id);
                 if ($series != null) {
                     $model->category = $series->title;
@@ -178,13 +169,7 @@ class MovieModel extends Model
                     $model->type = 'Movie';
                 }
             }
-            //look for duplicates if type is movie
-            if ($model->type == 'Movie') {
-            }
 
-            if (strpos($model->url, 'munowatch') !== false) {
-                // $model->status = 'Inactive'; //if yes, set to yes 
-            }
             return $model;
         });
     }
@@ -340,17 +325,6 @@ class MovieModel extends Model
         // Reload and return fresh model
         return self::find($this->id);
     }
-
-    //getter for thumbnail_url
-    public function getThumbnailUrlAttribute($value)
-    {
-        //if contains http, return value
-        if (strpos($value, 'http') !== false) {
-            return $value;
-        }
-        return 'https://katogo.schooldynamics.ug/storage/' . $value;
-    }
-
 
 
 
