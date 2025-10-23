@@ -128,6 +128,9 @@
                         <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm px-2 py-1" style="font-size: 0.75rem;">
                             <i class="bi bi-play-fill me-1"></i>Watch Now
                         </a>
+                        <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-success btn-sm px-2 py-1" style="font-size: 0.75rem;">
+                            <i class="bi bi-download me-1"></i>Download App
+                        </a>
                         <button onclick="shareMovie()" class="btn btn-outline-light btn-sm px-2 py-1" style="font-size: 0.75rem;">
                             <i class="bi bi-share me-1"></i>Share
                         </button>
@@ -313,14 +316,14 @@ function shareMovie() {
     const appName = "{{ $siteName }}";
     const appLink = "{{ $playStoreUrl }}";
     const movieUrl = "{{ url('/movie/' . $movie->id) }}";
-    const shareText = `Watch "${title}" on ${appName} now. Download the app: ${appLink}\n\nView details: ${movieUrl}`;
+    const shareText = `Watch/Download - "${title}" on ${appName} now!. \n\nLink:\n${movieUrl}`;
     
     // Check if Web Share API is supported
     if (navigator.share) {
         navigator.share({
-            title: `${title} - ${appName}`,
+            // title: `${title} - ${appName}`,
             text: shareText,
-            url: movieUrl
+            // url: movieUrl
         }).then(() => {
             console.log('Shared successfully');
         }).catch((error) => {

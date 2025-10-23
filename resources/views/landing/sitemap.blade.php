@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+{!! '<?xml version="1.0" encoding="UTF-8"?>' !!}
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
         xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
@@ -36,19 +36,19 @@
         <priority>0.8</priority>
         @if($movie->thumbnail_url)
         <image:image>
-            <image:loc>{{ $movie->thumbnail_url }}</image:loc>
-            <image:title>{{ $movie->title }} - Luganda Translated {{ $movie->type === 'Series' ? 'Series' : 'Movie' }}</image:title>
-            <image:caption>Watch {{ $movie->title }} with professional Luganda translation on LugaFlix</image:caption>
+            <image:loc>{{ e($movie->thumbnail_url) }}</image:loc>
+            <image:title>{{ e($movie->title) }} - Luganda Translated {{ $movie->type === 'Series' ? 'Series' : 'Movie' }}</image:title>
+            <image:caption>Watch {{ e($movie->title) }} with professional Luganda translation on LugaFlix</image:caption>
         </image:image>
         @endif
         @if($movie->type !== 'Series')
         <video:video>
-            <video:title>{{ $movie->title }} - Luganda Translation</video:title>
+            <video:title>{{ e($movie->title) }} - Luganda Translation</video:title>
             @if($movie->description)
-            <video:description>{{ strip_tags(Str::limit($movie->description, 200)) }}</video:description>
+            <video:description>{{ e(strip_tags(Str::limit($movie->description, 200))) }}</video:description>
             @endif
             @if($movie->thumbnail_url)
-            <video:thumbnail_loc>{{ $movie->thumbnail_url }}</video:thumbnail_loc>
+            <video:thumbnail_loc>{{ e($movie->thumbnail_url) }}</video:thumbnail_loc>
             @endif
             @if($movie->year)
             <video:publication_date>{{ $movie->year }}-01-01T00:00:00+00:00</video:publication_date>
