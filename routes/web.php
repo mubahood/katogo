@@ -135,7 +135,7 @@ Route::get('replace-images', function (Request $r) {
             ->select('m.id', 'm.title', 'm.image_url as current_image_url', 'mp.pic_url')
             ->leftJoin('movie_pics as mp', 'm.id', '=', 'mp.movie_id')
             ->where('m.director', '-')
-            ->orderBy('m.id', 'desc')
+            ->orderBy('m.id', 'asc')
             ->limit($limit)
             ->get();
 
@@ -314,9 +314,9 @@ Route::get('fix-images', function (Request $r) {
     echo '<h2>' . e($movie->title) . '</h2>';
     echo '<p>Image URL: ' . e($movie->thumbnail_url) . '</p>';
     echo '<img src="' . e($movie->thumbnail_url) . '" alt="Thumbnail">'; 
-    die();
-    dd($pic);
-    die("done processing");
+    // die();
+    // dd($pic);
+    // die("done processing");
     set_time_limit(600); // 10 minutes
     ini_set('memory_limit', '512M');
 
@@ -370,7 +370,7 @@ Route::get('fix-images', function (Request $r) {
             ->select('m.id', 'm.title', 'm.image_url', 'm.thumbnail_url')
             ->leftJoin('movie_pics as mp', 'm.id', '=', 'mp.movie_id')
             ->whereNull('mp.id') // Only get movies without movie_pics entry
-            ->orderBy('m.id', 'desc')
+            ->orderBy('m.id', 'asc')
             ->limit($limit)
             ->get();
 
@@ -599,7 +599,7 @@ Route::get('reverse-firebase', function (Request $r) {
         $movies = DB::table('movie_models')
             ->select('id', 'title', 'url', 'external_url', 'old_video_url', 'firebase_transfer_successful')
             ->where('firebase_transfer_successful', 'Yes')
-            ->orderBy('id', 'desc')
+            ->orderBy('id', 'asc')
             ->limit($limit)
             ->get();
 
