@@ -161,97 +161,91 @@
     </div>
 </section>
 
-<!-- Features Section -->
-<section class="py-5" style="background: #16213e;">
+<!-- Compact Features Section -->
+<section class="py-3 py-md-4" style="background: #16213e;">
     <div class="container">
-        <div class="text-center mb-5">
-            <h2 class="display-5 fw-bold text-white mb-3">Why Choose {{ $siteName }}?</h2>
-            <p class="lead text-white-50">The best platform for Luganda translated entertainment</p>
+        <div class="text-center mb-3 mb-md-4">
+            <h2 class="fw-bold text-white mb-2" style="font-size: clamp(1.25rem, 4vw, 2rem);">Why Choose {{ $siteName }}?</h2>
+            <p class="text-white-50 mb-0" style="font-size: clamp(0.8rem, 2vw, 1rem);">The best platform for Luganda entertainment</p>
         </div>
-        <div class="row g-4">
-            <div class="col-lg-3 col-md-6">
-                <div class="text-center p-4">
-                    <div class="mb-3">
-                        <i class="bi bi-translate text-primary" style="font-size: 3rem;"></i>
+        <div class="row g-3">
+            <div class="col-6 col-md-3">
+                <div class="text-center p-2 p-md-3">
+                    <div class="mb-2">
+                        <i class="bi bi-translate text-primary" style="font-size: clamp(2rem, 5vw, 3rem);"></i>
                     </div>
-                    <h5 class="text-white">Professional Translation</h5>
-                    <p class="text-white-50 small">Expert Luganda voice actors and translators ensure authentic cultural adaptation</p>
+                    <h5 class="text-white mb-1" style="font-size: clamp(0.85rem, 2vw, 1.1rem);">Professional Translation</h5>
+                    <p class="text-white-50 mb-0" style="font-size: clamp(0.7rem, 1.5vw, 0.85rem); line-height: 1.4;">Expert Luganda voice actors</p>
                 </div>
             </div>
-            <div class="col-lg-3 col-md-6">
-                <div class="text-center p-4">
-                    <div class="mb-3">
-                        <i class="bi bi-lightning-charge-fill text-primary" style="font-size: 3rem;"></i>
+            <div class="col-6 col-md-3">
+                <div class="text-center p-2 p-md-3">
+                    <div class="mb-2">
+                        <i class="bi bi-lightning-charge-fill text-primary" style="font-size: clamp(2rem, 5vw, 3rem);"></i>
                     </div>
-                    <h5 class="text-white">Fast Streaming</h5>
-                    <p class="text-white-50 small">HD quality streaming optimized for Uganda's internet speeds</p>
+                    <h5 class="text-white mb-1" style="font-size: clamp(0.85rem, 2vw, 1.1rem);">Fast Streaming</h5>
+                    <p class="text-white-50 mb-0" style="font-size: clamp(0.7rem, 1.5vw, 0.85rem); line-height: 1.4;">HD quality optimized</p>
                 </div>
             </div>
-            <div class="col-lg-3 col-md-6">
-                <div class="text-center p-4">
-                    <div class="mb-3">
-                        <i class="bi bi-arrow-clockwise text-primary" style="font-size: 3rem;"></i>
+            <div class="col-6 col-md-3">
+                <div class="text-center p-2 p-md-3">
+                    <div class="mb-2">
+                        <i class="bi bi-arrow-clockwise text-primary" style="font-size: clamp(2rem, 5vw, 3rem);"></i>
                     </div>
-                    <h5 class="text-white">Weekly Updates</h5>
-                    <p class="text-white-50 small">New Luganda translated movies and series added every week</p>
+                    <h5 class="text-white mb-1" style="font-size: clamp(0.85rem, 2vw, 1.1rem);">Weekly Updates</h5>
+                    <p class="text-white-50 mb-0" style="font-size: clamp(0.7rem, 1.5vw, 0.85rem); line-height: 1.4;">New content weekly</p>
                 </div>
             </div>
-            <div class="col-lg-3 col-md-6">
-                <div class="text-center p-4">
-                    <div class="mb-3">
-                        <i class="bi bi-device-hdd-fill text-primary" style="font-size: 3rem;"></i>
+            <div class="col-6 col-md-3">
+                <div class="text-center p-2 p-md-3">
+                    <div class="mb-2">
+                        <i class="bi bi-download text-primary" style="font-size: clamp(2rem, 5vw, 3rem);"></i>
                     </div>
-                    <h5 class="text-white">Offline Viewing</h5>
-                    <p class="text-white-50 small">Download movies to watch offline anytime, anywhere</p>
+                    <h5 class="text-white mb-1" style="font-size: clamp(0.85rem, 2vw, 1.1rem);">Offline Viewing</h5>
+                    <p class="text-white-50 mb-0" style="font-size: clamp(0.7rem, 1.5vw, 0.85rem); line-height: 1.4;">Download and watch</p>
                 </div>
             </div>
         </div>
     </div>
 </section>
 
-<!-- CTA Section -->
-<section class="py-5 bg-primary">
+<!-- Compact CTA Section -->
+<section class="py-3 py-md-4 bg-primary">
     <div class="container">
-        <div class="row align-items-center">
-            <div class="col-lg-8">
-                <h2 class="h3 text-white mb-2">Start Watching Luganda Movies Today</h2>
-                <p class="text-white mb-3 mb-lg-0">Download {{ $siteName }} app and enjoy unlimited Luganda translated entertainment</p>
+        <div class="row align-items-center g-2">
+            <div class="col-12 col-md-8 text-center text-md-start">
+                <h2 class="text-white mb-1" style="font-size: clamp(1.1rem, 3vw, 1.5rem);">Start Watching Luganda Movies Today</h2>
+                <p class="text-white mb-2 mb-md-0" style="font-size: clamp(0.8rem, 2vw, 1rem);">Download {{ $siteName }} app and enjoy unlimited entertainment</p>
             </div>
-            <div class="col-lg-4 text-lg-end">
-                <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-dark btn-lg px-4">
-                    <i class="bi bi-google-play me-2"></i>Download Now
+            <div class="col-12 col-md-4 text-center text-md-end">
+                <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-dark btn-sm px-3 py-2">
+                    <i class="bi bi-google-play me-1"></i>Download Now
                 </a>
             </div>
         </div>
     </div>
 </section>
 
-<!-- SEO Content Section -->
-<section class="py-5 bg-dark">
+<!-- Compact SEO Content -->
+<section class="py-3 py-md-4 bg-dark">
     <div class="container">
         <div class="row">
-            <div class="col-lg-8 mx-auto">
-                <article class="text-white-50">
-                    <h2 class="h4 text-white mb-3">About {{ $siteName }} - Your Premier Luganda Movie Streaming Platform</h2>
-                    <p>
-                        {{ $siteName }} is Uganda's leading streaming platform dedicated to bringing you the best Hollywood movies and international series professionally translated into Luganda. We understand the importance of enjoying entertainment in your mother tongue, which is why we've made it our mission to make world-class content accessible to Luganda speakers everywhere.
+            <div class="col-12">
+                <article class="text-white-50" style="font-size: 0.8rem;">
+                    <h2 class="text-white mb-2" style="font-size: clamp(1rem, 3vw, 1.25rem);">About {{ $siteName }} - Luganda Movie Streaming</h2>
+                    <p style="line-height: 1.5;">
+                        {{ $siteName }} is Uganda's premier streaming platform for Hollywood movies and international series professionally translated into Luganda. We bring you world-class entertainment in your mother tongue with HD quality, expert dubbing, and new content added weekly. Download the app and start streaming thousands of Luganda translated movies today.
                     </p>
                     <h3 class="h5 text-white mt-4 mb-3">Watch Luganda Translated Movies Online</h3>
-                    <p>
-                        Our extensive library features over 1,000 movies and series, all carefully translated and dubbed by professional Luganda voice actors. From action-packed blockbusters to heartwarming dramas, thrilling mysteries to hilarious comedies - there's something for everyone. Every title is available in crystal-clear HD quality, optimized for smooth streaming even on slower internet connections.
+                    <p style="line-height: 1.5;">
+                        {{ $siteName }} is Uganda's premier streaming platform for Hollywood movies and international series professionally translated into Luganda. We bring you world-class entertainment in your mother tongue with HD quality, expert dubbing, and new content added weekly. Download the app and start streaming thousands of Luganda translated movies today.
                     </p>
-                    <h3 class="h5 text-white mt-4 mb-3">Why Luganda Translation Matters</h3>
-                    <p>
-                        Watching movies in Luganda isn't just about language - it's about cultural connection and authentic entertainment. Our translation team goes beyond word-for-word translation to capture idioms, humor, and cultural nuances that make the content relatable and enjoyable for Ugandan audiences. This attention to detail sets {{ $siteName }} apart as the premier platform for Luganda entertainment.
-                    </p>
-                    <h3 class="h5 text-white mt-4 mb-3">Features That Make Us Stand Out</h3>
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>Professional Luganda dubbing and subtitles</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>HD and Full HD streaming quality</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>Download for offline viewing</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>New content added weekly</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>Compatible with all Android devices</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>User-friendly interface in Luganda</li>
+                    <ul class="list-unstyled mb-0" style="font-size: 0.75rem;">
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Professional Luganda dubbing</li>
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>HD streaming quality</li>
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Offline downloads</li>
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Weekly new releases</li>
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>All Android devices</li>
                     </ul>
                 </article>
             </div>
@@ -260,8 +254,11 @@
 </section>
 
 <style>
+.movie-card {
+    transition: transform 0.3s;
+}
 .movie-card:hover {
-    transform: scale(1.05);
+    transform: translateY(-3px);
 }
 </style>
 @endsection

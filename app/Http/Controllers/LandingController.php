@@ -25,6 +25,7 @@ class LandingController extends Controller
 
         $featuredSeries = MovieModel::where('status', 'Active')
             ->where('type', 'Series')
+            ->where('is_first_episode', 'Yes')
             ->orderBy('id', 'desc')
             ->limit(12)
             ->get();
@@ -76,6 +77,7 @@ class LandingController extends Controller
         // Get series episodes (each episode is a separate record)
         $series = MovieModel::where('status', 'Active')
             ->where('type', 'Series')
+            ->where('is_first_episode', 'Yes')
             ->orderBy('id', 'desc')
             ->paginate($perPage);
 

@@ -457,7 +457,7 @@
     </nav>
 
     <!-- Main Content -->
-    <main>
+    <main style="padding-top: 80px;">
         @yield('content')
     </main>
 
