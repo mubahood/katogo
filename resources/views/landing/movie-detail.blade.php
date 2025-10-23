@@ -179,7 +179,7 @@
         </h2>
         
         @php
-            $episodesBySeason = $episodes->groupBy('season');
+            $episodesBySeason = $episodes->groupBy('season_number');
         @endphp
         
         @foreach($episodesBySeason as $season => $seasonEpisodes)
@@ -190,11 +190,11 @@
                 <div class="col-6 col-md-4 col-lg-3">
                     <div class="episode-card p-2" style="background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
                         <div class="d-flex justify-content-between align-items-start mb-1">
-                            <h4 class="text-white mb-0" style="font-size: 0.75rem;">S{{ $episode->season }}E{{ $episode->episode }}</h4>
+                            <h4 class="text-white mb-0" style="font-size: 0.75rem;">S{{ $episode->season_number }}E{{ $episode->episode_number }}</h4>
                             <span class="badge bg-primary" style="font-size: 0.6rem;">Luganda</span>
                         </div>
                         <p class="text-white-50 small mb-0" style="font-size: 0.7rem;">
-                            {{ Str::limit($episode->name ?? $episode->title ?? 'Episode ' . $episode->episode, 35) }}
+                            {{ Str::limit($episode->title ?? 'Episode ' . $episode->episode_number, 35) }}
                         </p>
                     </div>
                 </div>

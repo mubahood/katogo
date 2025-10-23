@@ -68,15 +68,15 @@
             <div class="col-lg-2 col-md-3 col-sm-4 col-6">
                 <a href="{{ route('landing.movie.detail', $show->id) }}" class="text-decoration-none series-link">
                     <article class="series-card h-100" itemscope itemtype="https://schema.org/TVSeries">
-                        <meta itemprop="name" content="{{ $show->name }} - Luganda">
+                        <meta itemprop="name" content="{{ $show->title }} - Luganda">
                         @if($show->description)
                         <meta itemprop="description" content="{{ Str::limit(strip_tags($show->description), 150) }}">
                         @endif
                         
                         <div style="position: relative; overflow: hidden; border-radius: 8px; transition: all 0.3s;">
-                            @if($show->thumbnail)
-                            <img src="{{ $show->thumbnail }}" 
-                                 alt="{{ $show->name }} - Luganda Translated Series" 
+                            @if($show->thumbnail_url
+                            <img src="{{ $show->thumbnail_url}}" 
+                                 alt="{{ $show->title }} - Luganda Translated Series" 
                                  itemprop="image"
                                  class="img-fluid w-100" 
                                  style="aspect-ratio: 2/3; object-fit: cover;"
@@ -89,15 +89,15 @@
                             
                             <div class="movie-overlay" style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.9)); padding: 1rem 0.5rem;">
                                 <h3 class="text-white mb-0 small" style="font-size: 0.875rem; font-weight: 600;">
-                                    {{ Str::limit($show->name, 35) }}
+                                    {{ Str::limit($show->title, 35) }}
                                 </h3>
                                 <div class="d-flex justify-content-between align-items-center mt-1">
                                     <small class="text-white-50">
                                         <i class="bi bi-collection-play-fill"></i> Series
                                     </small>
-                                    @if(isset($firstEpisodes[$show->id]))
+                                    @if($show->season_number && $show->episode_number)
                                     <small class="text-primary">
-                                        S{{ $firstEpisodes[$show->id]->season }}E{{ $firstEpisodes[$show->id]->episode }}
+                                        S{{ $show->season_number }}E{{ $show->episode_number }}
                                     </small>
                                     @endif
                                 </div>
@@ -107,15 +107,6 @@
                             <div style="position: absolute; top: 0.5rem; right: 0.5rem;">
                                 <span class="badge bg-primary" style="font-size: 0.7rem;">Luganda</span>
                             </div>
-                            
-                            <!-- Episode Count -->
-                            @if(isset($firstEpisodes[$show->id]))
-                            <div style="position: absolute; top: 0.5rem; left: 0.5rem;">
-                                <span class="badge bg-dark bg-opacity-75" style="font-size: 0.7rem;">
-                                    First Episode
-                                </span>
-                            </div>
-                            @endif
                         </div>
                     </article>
                 </a>

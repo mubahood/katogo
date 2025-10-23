@@ -73,26 +73,16 @@ class LandingController extends Controller
         $perPage = 24;
         $page = $request->get('page', 1);
 
+        // Get series episodes (each episode is a separate record)
         $series = MovieModel::where('status', 'Active')
             ->where('type', 'Series')
             ->orderBy('id', 'desc')
             ->paginate($perPage);
 
-        // Get first episode for each series
-        $seriesIds = $series->pluck('id')->toArray();
-        $firstEpisodes = SeriesMovie::whereIn('movie_model_id', $seriesIds)
-            ->select('movie_model_id', DB::raw('MIN(id) as first_episode_id'))
-            ->groupBy('movie_model_id')
-            ->get()
-            ->pluck('first_episode_id', 'movie_model_id');
-
-        $episodesData = SeriesMovie::whereIn('id', $firstEpisodes->values())->get()->keyBy('movie_model_id');
-
         return view('landing.series', [
             'siteName' => env('APP_NAME', 'LugaFlix'),
             'playStoreUrl' => env('PLAYSTORE_LINK'),
             'series' => $series,
-            'firstEpisodes' => $episodesData,
             'currentPage' => $page,
             'totalSeries' => $series->total(),
         ]);
@@ -114,11 +104,18 @@ class LandingController extends Controller
             ->get();
 
         // Get episodes if it's a series
+        // Episodes are stored in movie_models table with same title pattern
         $episodes = [];
         if ($movie->type === 'Series') {
-            $episodes = SeriesMovie::where('movie_model_id', $movie->id)
-                ->orderBy('season', 'asc')
-                ->orderBy('episode', 'asc')
+            // Extract series name from title (before " - Episode")
+            $seriesName = preg_replace('/ - Episode \d+$/', '', $movie->title);
+            
+            // Get all episodes with similar title
+            $episodes = MovieModel::where('status', 'Active')
+                ->where('type', 'Series')
+                ->where('title', 'like', $seriesName . ' - Episode%')
+                ->orderBy('season_number', 'asc')
+                ->orderBy('episode_number', 'asc')
                 ->get();
         }
 
