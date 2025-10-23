@@ -55,7 +55,7 @@
                         <video:publication_date>{{ $movie->year }}-01-01T00:00:00+00:00</video:publication_date>
                     @endif
                     @if ($movie->duration)
-                        <video:duration>{{ $movie->duration * 60 }}</video:duration>
+                        <video:duration>{{ $movie->duration }}</video:duration>
                     @endif
                     @if ($movie->rating)
                         <video:rating>{{ $movie->rating }}</video:rating>

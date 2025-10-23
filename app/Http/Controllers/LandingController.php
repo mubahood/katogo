@@ -111,7 +111,7 @@ class LandingController extends Controller
         if ($movie->type === 'Series') {
             // Extract series name from title (before " - Episode")
             $seriesName = preg_replace('/ - Episode \d+$/', '', $movie->title);
-            
+
             // Get all episodes with similar title
             $episodes = MovieModel::where('status', 'Active')
                 ->where('type', 'Series')
@@ -204,14 +204,14 @@ class LandingController extends Controller
             // Send email notification (you can customize this)
             Mail::raw(
                 "New contact form submission:\n\n" .
-                "Name: " . $request->name . "\n" .
-                "Email: " . $request->email . "\n" .
-                "Subject: " . $request->subject . "\n\n" .
-                "Message:\n" . $request->message,
+                    "Name: " . $request->name . "\n" .
+                    "Email: " . $request->email . "\n" .
+                    "Subject: " . $request->subject . "\n\n" .
+                    "Message:\n" . $request->message,
                 function ($message) use ($request) {
                     $message->to(env('LANDING_CONTACT_EMAIL'))
-                           ->subject('Contact Form: ' . $request->subject)
-                           ->replyTo($request->email, $request->name);
+                        ->subject('Contact Form: ' . $request->subject)
+                        ->replyTo($request->email, $request->name);
                 }
             );
 
