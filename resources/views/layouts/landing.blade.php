@@ -7,6 +7,9 @@
     <meta name="keywords" content="@yield('keywords', 'Luganda movies, translated movies, Uganda movies, streaming, entertainment')">
     <title>@yield('title', env('LANDING_SITE_NAME', 'Luganda Translated Movies'))</title>
     
+    <!-- Additional Meta Tags -->
+    @stack('meta')
+    
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -339,6 +342,34 @@
             border-color: rgba(220, 53, 69, 0.3);
             color: #f1b2b8;
         }
+
+        /* Pagination Styles */
+        .pagination {
+            margin: 0;
+        }
+        .pagination .page-link {
+            background-color: var(--card-bg);
+            border-color: var(--border-color);
+            color: var(--light-text);
+            padding: 0.5rem 0.75rem;
+            margin: 0 0.25rem;
+            border-radius: 8px;
+        }
+        .pagination .page-link:hover {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+        .pagination .page-item.active .page-link {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+        .pagination .page-item.disabled .page-link {
+            background-color: var(--darker-bg);
+            border-color: var(--border-color);
+            color: var(--muted-text);
+        }
     </style>
 
     @stack('styles')
@@ -348,7 +379,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
         <div class="container">
             <a class="navbar-brand" href="{{ route('landing.index') }}">
-                <i class="bi bi-play-circle-fill me-2"></i>{{ env('LANDING_SITE_NAME', 'Luganda Movies') }}
+                <i class="bi bi-play-circle-fill me-2"></i>{{ env('APP_NAME', 'LugaFlix') }}
             </a>
             
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -361,17 +392,21 @@
                         <a class="nav-link" href="{{ route('landing.index') }}">Home</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="{{ route('landing.movies') }}">Movies</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ route('landing.series') }}">Series</a>
+                    </li>
+                    @if(Route::has('landing.about'))
+                    <li class="nav-item">
                         <a class="nav-link" href="{{ route('landing.about') }}">About</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ route('landing.features') }}">Features</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ route('landing.support') }}">Support</a>
-                    </li>
+                    @endif
+                    @if(Route::has('landing.contact'))
                     <li class="nav-item">
                         <a class="nav-link" href="{{ route('landing.contact') }}">Contact</a>
                     </li>
+                    @endif
                 </ul>
                 
                 <ul class="navbar-nav">

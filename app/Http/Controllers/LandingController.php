@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use App\Models\MovieModel;
+use App\Models\SeriesMovie;
+use Illuminate\Support\Facades\DB;
 
 class LandingController extends Controller
 {
@@ -13,16 +16,133 @@ class LandingController extends Controller
      */
     public function index()
     {
+        // Get featured movies and series for landing page
+        $featuredMovies = MovieModel::where('status', 'Active')
+            ->where('type', 'Movie')
+            ->orderBy('id', 'desc')
+            ->limit(12)
+            ->get();
+
+        $featuredSeries = MovieModel::where('status', 'Active')
+            ->where('type', 'Series')
+            ->orderBy('id', 'desc')
+            ->limit(12)
+            ->get();
+
         return view('landing.index', [
-            'siteName' => env('LANDING_SITE_NAME', 'UGFlix'),
+            'siteName' => env('APP_NAME', 'LugaFlix - Luganda Translated Movies'),
             'companyName' => env('LANDING_COMPANY_NAME', 'UGFlix Ltd'),
             'appStoreUrl' => env('LANDING_APP_STORE_URL', 'https://apps.apple.com/ug/app/hambren/id6475098479'),
-            'playStoreUrl' => env('LANDING_PLAY_STORE_URL', 'https://play.google.com/store/apps/details?id=ugflix.com&hl=en'),
+            'playStoreUrl' => env('PLAYSTORE_LINK', 'https://play.google.com/store/apps/details?id=lugaflix.movies'),
             'facebookUrl' => env('LANDING_FACEBOOK_URL', 'https://facebook.com/ugflix'),
             'twitterUrl' => env('LANDING_TWITTER_URL', 'https://twitter.com/ugflix'),
             'instagramUrl' => env('LANDING_INSTAGRAM_URL', 'https://instagram.com/ugflix'),
             'youtubeUrl' => env('LANDING_YOUTUBE_URL', 'https://youtube.com/@ugflix'),
+            'featuredMovies' => $featuredMovies,
+            'featuredSeries' => $featuredSeries,
         ]);
+    }
+
+    /**
+     * Show movies listing page (SEO optimized)
+     */
+    public function movies(Request $request)
+    {
+        $perPage = 24;
+        $page = $request->get('page', 1);
+
+        $movies = MovieModel::where('status', 'Active')
+            ->where('type', 'Movie')
+            ->orderBy('id', 'desc')
+            ->paginate($perPage);
+
+        return view('landing.movies', [
+            'siteName' => env('APP_NAME', 'LugaFlix'),
+            'playStoreUrl' => env('PLAYSTORE_LINK'),
+            'movies' => $movies,
+            'currentPage' => $page,
+            'totalMovies' => $movies->total(),
+        ]);
+    }
+
+    /**
+     * Show series listing page (SEO optimized)
+     */
+    public function series(Request $request)
+    {
+        $perPage = 24;
+        $page = $request->get('page', 1);
+
+        $series = MovieModel::where('status', 'Active')
+            ->where('type', 'Series')
+            ->orderBy('id', 'desc')
+            ->paginate($perPage);
+
+        // Get first episode for each series
+        $seriesIds = $series->pluck('id')->toArray();
+        $firstEpisodes = SeriesMovie::whereIn('movie_model_id', $seriesIds)
+            ->select('movie_model_id', DB::raw('MIN(id) as first_episode_id'))
+            ->groupBy('movie_model_id')
+            ->get()
+            ->pluck('first_episode_id', 'movie_model_id');
+
+        $episodesData = SeriesMovie::whereIn('id', $firstEpisodes->values())->get()->keyBy('movie_model_id');
+
+        return view('landing.series', [
+            'siteName' => env('APP_NAME', 'LugaFlix'),
+            'playStoreUrl' => env('PLAYSTORE_LINK'),
+            'series' => $series,
+            'firstEpisodes' => $episodesData,
+            'currentPage' => $page,
+            'totalSeries' => $series->total(),
+        ]);
+    }
+
+    /**
+     * Show single movie detail page (SEO optimized)
+     */
+    public function movieDetail($id)
+    {
+        $movie = MovieModel::findOrFail($id);
+
+        // Get related movies
+        $relatedMovies = MovieModel::where('status', 'Active')
+            ->where('type', $movie->type)
+            ->where('id', '!=', $movie->id)
+            ->orderBy('id', 'desc')
+            ->limit(6)
+            ->get();
+
+        // Get episodes if it's a series
+        $episodes = [];
+        if ($movie->type === 'Series') {
+            $episodes = SeriesMovie::where('movie_model_id', $movie->id)
+                ->orderBy('season', 'asc')
+                ->orderBy('episode', 'asc')
+                ->get();
+        }
+
+        return view('landing.movie-detail', [
+            'siteName' => env('APP_NAME', 'LugaFlix'),
+            'playStoreUrl' => env('PLAYSTORE_LINK'),
+            'movie' => $movie,
+            'relatedMovies' => $relatedMovies,
+            'episodes' => $episodes,
+        ]);
+    }
+
+    /**
+     * Generate dynamic sitemap for movies
+     */
+    public function sitemap()
+    {
+        $movies = MovieModel::where('status', 'Active')
+            ->orderBy('updated_at', 'desc')
+            ->get();
+
+        return response()->view('landing.sitemap', [
+            'movies' => $movies,
+        ])->header('Content-Type', 'text/xml');
     }
 
     /**

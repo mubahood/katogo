@@ -1,2 +1,13 @@
 User-agent: *
-Disallow:
+Allow: /
+Allow: /movies
+Allow: /series
+Allow: /movie/*
+Allow: /sitemap.xml
+
+Disallow: /admin
+Disallow: /api
+Disallow: /login
+Disallow: /account
+
+Sitemap: http://localhost:8888/katogo/sitemap.xml

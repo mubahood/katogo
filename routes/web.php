@@ -1515,6 +1515,13 @@ Route::get('set-all-movies-to-no', function () {
     DB::table('movie_models')->update($data);
     dd('Done');
 });
+
+// SEO-optimized public pages
+Route::get('/movies', [LandingController::class, 'movies'])->name('landing.movies');
+Route::get('/series', [LandingController::class, 'series'])->name('landing.series');
+Route::get('/movie/{id}', [LandingController::class, 'movieDetail'])->name('landing.movie.detail');
+Route::get('/sitemap.xml', [LandingController::class, 'sitemap'])->name('landing.sitemap');
+
 // Static pages
 Route::get('/about', [LandingController::class, 'about'])->name('landing.about');
 Route::get('/features', [LandingController::class, 'features'])->name('landing.features');
