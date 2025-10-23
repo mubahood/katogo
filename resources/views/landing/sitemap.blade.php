@@ -1,3 +1,4 @@
+{!! '<?xml version="1.0" encoding="UTF-8"?>' !!}
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
     xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
 
@@ -44,22 +45,13 @@
             @if ($movie->type !== 'Series')
                 <video:video>
                     <video:title>{{ e($movie->title) }} - Luganda Translation</video:title>
-                    @if ($movie->description)
-                        <video:description>{{ e(strip_tags(Str::limit($movie->description, 200))) }}
-                        </video:description>
-                    @endif
+                    <video:description>{{ e($movie->description ? strip_tags(Str::limit($movie->description, 200)) : 'Watch ' . $movie->title . ' with professional Luganda translation. Stream unlimited movies and series with HD quality on LugaFlix.') }}</video:description>
                     @if ($movie->thumbnail_url)
                         <video:thumbnail_loc>{{ e($movie->thumbnail_url) }}</video:thumbnail_loc>
                     @endif
-                    @if ($movie->year)
-                        <video:publication_date>{{ $movie->year }}-01-01T00:00:00+00:00</video:publication_date>
-                    @endif
-                    @if ($movie->duration)
-                        <video:duration>{{ $movie->duration }}</video:duration>
-                    @endif
-                    @if ($movie->rating)
-                        <video:rating>{{ $movie->rating }}</video:rating>
-                    @endif
+                    <video:publication_date>{{ ($movie->year && is_numeric($movie->year) && $movie->year >= 1900 && $movie->year <= date('Y')) ? $movie->year : date('Y') }}-01-01T00:00:00+00:00</video:publication_date>
+                    <video:duration>{{ ($movie->duration && is_numeric($movie->duration) && $movie->duration > 0) ? intval($movie->duration * 60) : 7200 }}</video:duration>
+                    <video:rating>{{ ($movie->rating && is_numeric($movie->rating) && $movie->rating >= 0 && $movie->rating <= 10) ? number_format(min(5.0, floatval($movie->rating) / 2), 1) : '4.5' }}</video:rating>
                     <video:family_friendly>yes</video:family_friendly>
                     <video:requires_subscription>yes</video:requires_subscription>
                     <video:platform relationship="allow">web mobile tv</video:platform>
