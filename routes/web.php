@@ -315,7 +315,7 @@ Route::get('fix-images', function (Request $r) {
     echo '<h2>' . e($movie->title) . '</h2>';
     echo '<p>Image URL: ' . e($movie->thumbnail_url) . '</p>';
     echo '<img src="' . e($movie->thumbnail_url) . '" alt="Thumbnail">'; 
-    die();
+    die();  
     // dd($pic);
     // die("done processing");
     set_time_limit(600); // 10 minutes
