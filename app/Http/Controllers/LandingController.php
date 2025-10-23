@@ -139,6 +139,10 @@ class LandingController extends Controller
             ->orderBy('updated_at', 'desc')
             ->get();
 
+        //set output to be xml
+
+        header('Content-Type: text/xml; charset=utf-8');
+
         return response()->view('landing.sitemap', [
             'movies' => $movies,
         ])->header('Content-Type', 'text/xml');
