@@ -189,6 +189,7 @@ Route::get('replace-images', function (Request $r) {
                         ->update([
                             'director' => '--',
                             'image_url' => $movie->pic_url,
+                            'thumbnail_url' => $movie->pic_url,
                             'updated_at' => now()
                         ]);
                 }
