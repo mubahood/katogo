@@ -8,11 +8,15 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{ $siteName }} - Luganda Translated Movies">
 <meta property="og:description" content="Stream unlimited Luganda translated movies and series. Professional dubbing, HD quality, new releases weekly.">
-<meta property="og:image" content="{{ asset('assets/images/logo.png') }}">
+<meta property="og:image" content="{{ url('assets/images/logo.png') }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{ $siteName }} Logo">
 <meta property="og:url" content="{{ url('/') }}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ $siteName }} - Luganda Translated Movies">
-<meta name="twitter:image" content="{{ asset('assets/images/logo.png') }}">
+<meta name="twitter:description" content="Stream unlimited Luganda translated movies and series. Professional dubbing, HD quality, new releases weekly.">
+<meta name="twitter:image" content="{{ url('assets/images/logo.png') }}">
 <link rel="canonical" href="{{ url('/') }}">
 @endpush
 
