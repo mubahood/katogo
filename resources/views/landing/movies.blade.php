@@ -94,11 +94,7 @@
                                     @if($movie->year)
                                     <small class="text-white-50">{{ $movie->year }}</small>
                                     @endif
-                                    @if($movie->rating)
-                                    <small class="text-warning">
-                                        <i class="bi bi-star-fill"></i> {{ number_format($movie->rating, 1) }}
-                                    </small>
-                                    @endif
+                                   
                                 </div>
                             </div>
                             

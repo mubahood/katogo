@@ -117,9 +117,7 @@
                         @if($movie->year)
                         <div><i class="bi bi-calendar3 me-1"></i>{{ $movie->year }}</div>
                         @endif
-                        @if($movie->rating)
-                        <div><i class="bi bi-star-fill text-warning me-1"></i>{{ number_format($movie->rating, 1) }}</div>
-                        @endif
+                       
                         @if($movie->duration)
                         <div><i class="bi bi-clock me-1"></i>{{ $movie->duration }}m</div>
                         @endif
