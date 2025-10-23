@@ -308,9 +308,12 @@ Route::get('replace-images', function (Request $r) {
  */
 Route::get('fix-images', function (Request $r) {
     $pic = MoviePic::where('movie_id', 78)->first();
-
     //display pic_url
     echo '<img src="' . e($pic->pic_url) . '" alt="Movie Picture">';
+    $movie = MovieModel::find(78);
+    echo '<h2>' . e($movie->title) . '</h2>';
+    echo '<p>Image URL: ' . e($movie->thumbnail_url) . '</p>';
+    echo '<img src="' . e($movie->thumbnail_url) . '" alt="Thumbnail">'; 
     die();
     dd($pic);
     die("done processing");
