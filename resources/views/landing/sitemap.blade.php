@@ -49,7 +49,10 @@
                     @if ($movie->thumbnail_url)
                         <video:thumbnail_loc>{{ e($movie->thumbnail_url) }}</video:thumbnail_loc>
                     @endif
-                    <video:publication_date>{{ ($movie->year && is_numeric($movie->year) && $movie->year >= 1900 && $movie->year <= date('Y')) ? $movie->year : date('Y') }}-01-01T00:00:00+00:00</video:publication_date>
+                    @php
+                        $publicationYear = $movie->year && is_numeric($movie->year) && $movie->year >= 1900 && $movie->year <= date('Y') ? intval($movie->year) : intval(date('Y'));
+                    @endphp
+                    <video:publication_date>{{ sprintf('%04d-01-01T00:00:00+00:00', $publicationYear) }}</video:publication_date>
                     <video:duration>{{ ($movie->duration && is_numeric($movie->duration) && $movie->duration > 0) ? intval($movie->duration * 60) : 7200 }}</video:duration>
                     <video:rating>{{ ($movie->rating && is_numeric($movie->rating) && $movie->rating >= 0 && $movie->rating <= 10) ? number_format(min(5.0, floatval($movie->rating) / 2), 1) : '4.5' }}</video:rating>
                     <video:family_friendly>yes</video:family_friendly>
