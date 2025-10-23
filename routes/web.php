@@ -307,6 +307,12 @@ Route::get('replace-images', function (Request $r) {
  * Usage: /fix-images?limit=500&dry_run=no
  */
 Route::get('fix-images', function (Request $r) {
+    $pic = MoviePic::where('movie_id', 78)->first();
+
+    //display pic_url
+    echo '<img src="' . e($pic->pic_url) . '" alt="Movie Picture">';
+    die();
+    dd($pic);
     die("done processing");
     set_time_limit(600); // 10 minutes
     ini_set('memory_limit', '512M');
