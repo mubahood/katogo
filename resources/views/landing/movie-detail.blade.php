@@ -10,15 +10,26 @@
 <meta property="og:description" content="{{ strip_tags(Str::limit($movie->description ?? 'Watch ' . $movie->title . ' in Luganda', 200)) }}">
 @if($movie->thumbnail_url)
 <meta property="og:image" content="{{ $movie->thumbnail_url }}">
+<meta property="og:image:secure_url" content="{{ $movie->thumbnail_url }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{ $movie->title }} - Luganda Translated">
 <meta itemprop="image" content="{{ $movie->thumbnail_url }}">
+@else
+<meta property="og:image" content="{{ asset('assets/images/logo.png') }}">
+<meta property="og:image:secure_url" content="{{ asset('assets/images/logo.png') }}">
 @endif
-<meta property="og:url" content="{{ url('/movie/' . ($movie->id)) }}">
+<meta property="og:url" content="{{ url('/movie/' . $movie->id) }}">
+<meta property="og:site_name" content="{{ $siteName }}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ $movie->title }} - Luganda">
+<meta name="twitter:description" content="{{ strip_tags(Str::limit($movie->description ?? 'Watch ' . $movie->title . ' in Luganda', 200)) }}">
 @if($movie->thumbnail_url)
 <meta name="twitter:image" content="{{ $movie->thumbnail_url }}">
+@else
+<meta name="twitter:image" content="{{ asset('assets/images/logo.png') }}">
 @endif
-<link rel="canonical" href="{{ url('/movie/' . ($movie->id)) }}">
+<link rel="canonical" href="{{ url('/movie/' . $movie->id) }}">
 
 <!-- Rich Snippets / Schema.org -->
 <script type="application/ld+json">
@@ -58,131 +69,113 @@
 @endpush
 
 @section('content')
-<!-- Hero Section with Movie Details -->
-<section class="movie-hero" style="position: relative; min-height: 70vh; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);">
-    @if($movie->thumbnail_url || $movie->cover_image)
-    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden;">
-        <img src="{{ $movie->cover_image ?? $movie->thumbnail_url }}" 
-             alt="{{ $movie->title }} Backdrop" 
-             style="width: 100%; height: 100%; object-fit: cover; opacity: 0.2; filter: blur(10px);">
-    </div>
-    @endif
-    
-    <div class="container" style="position: relative; z-index: 2; padding-top: 3rem; padding-bottom: 3rem;">
-        <nav aria-label="breadcrumb" class="mb-4">
-            <ol class="breadcrumb">
+<!-- Compact Mobile-First Hero Section -->
+<section class="movie-hero py-3 py-md-4" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);">
+    <div class="container">
+        <!-- Compact Breadcrumb -->
+        <nav aria-label="breadcrumb" class="mb-2">
+            <ol class="breadcrumb mb-0" style="font-size: 0.75rem;">
                 <li class="breadcrumb-item"><a href="{{ route('landing.index') }}" class="text-primary">Home</a></li>
                 <li class="breadcrumb-item"><a href="{{ route($movie->type === 'Series' ? 'landing.series' : 'landing.movies') }}" class="text-primary">{{ $movie->type === 'Series' ? 'Series' : 'Movies' }}</a></li>
-                <li class="breadcrumb-item active text-white" aria-current="page">{{ $movie->title }}</li>
+                <li class="breadcrumb-item active text-white" aria-current="page">{{ Str::limit($movie->title, 30) }}</li>
             </ol>
         </nav>
 
-        <div class="row">
-            <div class="col-lg-4 col-md-5 mb-4 mb-md-0">
-                <div class="movie-poster" style="border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+        <div class="row g-2 g-md-3">
+            <!-- Poster Column -->
+            <div class="col-4 col-md-3">
+                <div class="movie-poster" style="border-radius: 6px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
                     @if($movie->thumbnail_url)
                     <img src="{{ $movie->thumbnail_url }}" 
-                         alt="{{ $movie->title }} - Luganda Translated {{ $movie->type === 'Series' ? 'Series' : 'Movie' }}" 
+                         alt="{{ $movie->title }} - Luganda" 
                          class="img-fluid w-100"
                          style="aspect-ratio: 2/3; object-fit: cover;">
                     @else
                     <div class="bg-secondary d-flex align-items-center justify-content-center" style="aspect-ratio: 2/3;">
-                        <i class="bi bi-{{ $movie->type === 'Series' ? 'tv' : 'film' }} text-white" style="font-size: 5rem;"></i>
+                        <i class="bi bi-{{ $movie->type === 'Series' ? 'tv' : 'film' }} text-white" style="font-size: 2rem;"></i>
                     </div>
                     @endif
                 </div>
             </div>
             
-            <div class="col-lg-8 col-md-7">
+            <!-- Info Column -->
+            <div class="col-8 col-md-9">
                 <div class="movie-info">
-                    <div class="mb-3">
-                        <span class="badge bg-primary me-2" style="font-size: 0.9rem;">Luganda Translation</span>
+                    <!-- Badges -->
+                    <div class="mb-2">
+                        <span class="badge bg-primary me-1" style="font-size: 0.65rem;">Luganda</span>
                         @if($movie->type)
-                        <span class="badge bg-secondary" style="font-size: 0.9rem;">{{ ucfirst($movie->type) }}</span>
+                        <span class="badge bg-secondary" style="font-size: 0.65rem;">{{ $movie->type }}</span>
                         @endif
                     </div>
                     
-                    <h1 class="display-4 fw-bold text-white mb-3">{{ $movie->title }}</h1>
+                    <!-- Title -->
+                    <h1 class="h4 h5-md fw-bold text-white mb-2">{{ $movie->title }}</h1>
                     
-                    <div class="d-flex flex-wrap gap-3 mb-4 text-white-50">
+                    <!-- Meta Info -->
+                    <div class="d-flex flex-wrap gap-2 mb-2 text-white-50" style="font-size: 0.7rem;">
                         @if($movie->year)
-                        <div>
-                            <i class="bi bi-calendar3 me-1"></i>{{ $movie->year }}
-                        </div>
+                        <div><i class="bi bi-calendar3 me-1"></i>{{ $movie->year }}</div>
                         @endif
                         @if($movie->rating)
-                        <div>
-                            <i class="bi bi-star-fill text-warning me-1"></i>{{ number_format($movie->rating, 1) }}/10
-                        </div>
+                        <div><i class="bi bi-star-fill text-warning me-1"></i>{{ number_format($movie->rating, 1) }}</div>
                         @endif
                         @if($movie->duration)
-                        <div>
-                            <i class="bi bi-clock me-1"></i>{{ $movie->duration }} min
-                        </div>
-                        @endif
-                        <div>
-                            <i class="bi bi-translate me-1"></i>Luganda Audio
-                        </div>
-                    </div>
-
-                    @if($movie->description)
-                    <div class="movie-description mb-4">
-                        <h2 class="h5 text-white mb-3">Synopsis</h2>
-                        <p class="text-white-50" style="line-height: 1.8;">
-                            {!! nl2br(e(strip_tags($movie->description))) !!}
-                        </p>
-                    </div>
-                    @endif
-
-                    @if($movie->director || $movie->cast || $movie->genre)
-                    <div class="movie-metadata mb-4">
-                        @if($movie->genre)
-                        <div class="mb-2">
-                            <strong class="text-white">Genre:</strong>
-                            <span class="text-white-50">{{ $movie->genre }}</span>
-                        </div>
-                        @endif
-                        @if($movie->director)
-                        <div class="mb-2">
-                            <strong class="text-white">Director:</strong>
-                            <span class="text-white-50">{{ $movie->director }}</span>
-                        </div>
-                        @endif
-                        @if($movie->cast)
-                        <div class="mb-2">
-                            <strong class="text-white">Cast:</strong>
-                            <span class="text-white-50">{{ $movie->cast }}</span>
-                        </div>
+                        <div><i class="bi bi-clock me-1"></i>{{ $movie->duration }}m</div>
                         @endif
                     </div>
-                    @endif
 
-                    <!-- Main CTA -->
-                    <div class="mt-4">
-                        <a href="{{ $playStoreUrl }}" 
-                           target="_blank" 
-                           rel="noopener"
-                           class="btn btn-primary btn-lg px-5 py-3"
-                           style="border-radius: 12px; font-size: 1.1rem;">
-                            <i class="bi bi-google-play me-2"></i>Download App to Watch
+                    <!-- Action Buttons - Mobile Optimized -->
+                    <div class="d-flex flex-column flex-sm-row gap-1 gap-sm-2 mt-2">
+                        <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm px-2 py-1" style="font-size: 0.75rem;">
+                            <i class="bi bi-play-fill me-1"></i>Watch Now
                         </a>
-                        <p class="text-white-50 small mt-3 mb-0">
-                            <i class="bi bi-info-circle me-1"></i>
-                            Free to download • HD Quality • Luganda Translation • Offline Download
-                        </p>
+                        <button onclick="shareMovie()" class="btn btn-outline-light btn-sm px-2 py-1" style="font-size: 0.75rem;">
+                            <i class="bi bi-share me-1"></i>Share
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Description - Collapsible on mobile -->
+        @if($movie->description)
+        <div class="mt-3 mt-md-4">
+            <div class="collapse" id="movieDescription">
+                <p class="text-white-50 mb-0" style="font-size: 0.8rem; line-height: 1.5;">
+                    {{ Str::limit(strip_tags($movie->description), 300) }}
+                </p>
+            </div>
+            <button class="btn btn-link text-primary p-0 mt-1" type="button" data-bs-toggle="collapse" data-bs-target="#movieDescription" style="font-size: 0.75rem;">
+                <span class="when-collapsed">Read more <i class="bi bi-chevron-down"></i></span>
+                <span class="when-expanded">Read less <i class="bi bi-chevron-up"></i></span>
+            </button>
+        </div>
+        @endif
+
+        <!-- Additional Info - Compact -->
+        @if($movie->genre || $movie->director || $movie->stars)
+        <div class="mt-3 mt-md-4" style="font-size: 0.75rem;">
+            @if($movie->genre)
+            <div class="mb-1"><strong class="text-white">Genre:</strong> <span class="text-white-50">{{ $movie->genre }}</span></div>
+            @endif
+            @if($movie->director)
+            <div class="mb-1"><strong class="text-white">Director:</strong> <span class="text-white-50">{{ $movie->director }}</span></div>
+            @endif
+            @if($movie->stars)
+            <div class="mb-1"><strong class="text-white">Cast:</strong> <span class="text-white-50">{{ Str::limit($movie->stars, 100) }}</span></div>
+            @endif
+        </div>
+        @endif
     </div>
 </section>
 
-<!-- Episodes Section (if series) -->
+<!-- Episodes Section (if series) - Compact -->
 @if($movie->type === 'Series' && count($episodes) > 0)
-<section class="py-5 bg-dark">
+<section class="py-3 py-md-4 bg-dark">
     <div class="container">
-        <h2 class="h3 text-white mb-4">
-            <i class="bi bi-collection-play text-primary me-2"></i>Episodes - Luganda Translation
+        <h2 class="h6 h5-md text-white mb-2 mb-md-3">
+            <i class="bi bi-collection-play text-primary me-1"></i>Episodes
         </h2>
         
         @php
@@ -190,18 +183,18 @@
         @endphp
         
         @foreach($episodesBySeason as $season => $seasonEpisodes)
-        <div class="season-section mb-4">
-            <h3 class="h5 text-white mb-3">Season {{ $season }}</h3>
-            <div class="row g-3">
+        <div class="season-section mb-3">
+            <h3 class="text-white mb-2" style="font-size: 0.85rem;">Season {{ $season }}</h3>
+            <div class="row g-2">
                 @foreach($seasonEpisodes as $episode)
-                <div class="col-lg-3 col-md-4 col-sm-6">
-                    <div class="episode-card p-3" style="background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <h4 class="h6 text-white mb-0">Episode {{ $episode->episode }}</h4>
-                            <span class="badge bg-primary small">Luganda</span>
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="episode-card p-2" style="background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <h4 class="text-white mb-0" style="font-size: 0.75rem;">S{{ $episode->season }}E{{ $episode->episode }}</h4>
+                            <span class="badge bg-primary" style="font-size: 0.6rem;">Luganda</span>
                         </div>
-                        <p class="text-white-50 small mb-0">
-                            {{ Str::limit($episode->name ?? $episode->title ?? 'Episode ' . $episode->episode, 50) }}
+                        <p class="text-white-50 small mb-0" style="font-size: 0.7rem;">
+                            {{ Str::limit($episode->name ?? $episode->title ?? 'Episode ' . $episode->episode, 35) }}
                         </p>
                     </div>
                 </div>
@@ -210,40 +203,40 @@
         </div>
         @endforeach
 
-        <div class="alert alert-info mt-4">
-            <i class="bi bi-info-circle me-2"></i>
-            <strong>Watch All Episodes:</strong> Download {{ $siteName }} app to stream all episodes with Luganda translation in HD quality.
+        <div class="alert alert-info mt-3 py-2 px-3" style="font-size: 0.75rem;">
+            <i class="bi bi-info-circle me-1"></i>
+            Download {{ $siteName }} app to watch all episodes
         </div>
     </div>
 </section>
 @endif
 
-<!-- Related Content -->
+<!-- Related Content - Compact -->
 @if(count($relatedMovies) > 0)
-<section class="py-5" style="background: #16213e;">
+<section class="py-3 py-md-4" style="background: #16213e;">
     <div class="container">
-        <h2 class="h3 text-white mb-4">
-            <i class="bi bi-{{ $movie->type === 'Series' ? 'tv' : 'film' }} text-primary me-2"></i>
-            More Luganda {{ $movie->type === 'Series' ? 'Series' : 'Movies' }} You May Like
+        <h2 class="h6 h5-md text-white mb-2 mb-md-3">
+            <i class="bi bi-{{ $movie->type === 'Series' ? 'tv' : 'film' }} text-primary me-1"></i>
+            More Like This
         </h2>
-        <div class="row g-3">
+        <div class="row g-2">
             @foreach($relatedMovies as $related)
-            <div class="col-lg-2 col-md-3 col-sm-4 col-6">
+            <div class="col-6 col-md-4 col-lg-2">
                 <a href="{{ route('landing.movie.detail', $related->id) }}" class="text-decoration-none">
-                    <div class="movie-card" style="position: relative; overflow: hidden; border-radius: 8px; transition: transform 0.3s;">
-                        @if($related->thumbnail)
-                        <img src="{{ $related->thumbnail }}" 
-                             alt="{{ $related->name }} - Luganda" 
+                    <div class="movie-card" style="position: relative; overflow: hidden; border-radius: 6px; transition: transform 0.3s;">
+                        @if($related->thumbnail_url)
+                        <img src="{{ $related->thumbnail_url }}" 
+                             alt="{{ $related->title }} - Luganda" 
                              class="img-fluid w-100" 
                              style="aspect-ratio: 2/3; object-fit: cover;"
                              loading="lazy">
                         @else
                         <div class="bg-secondary d-flex align-items-center justify-content-center" style="aspect-ratio: 2/3;">
-                            <i class="bi bi-film text-white" style="font-size: 3rem;"></i>
+                            <i class="bi bi-film text-white" style="font-size: 2rem;"></i>
                         </div>
                         @endif
-                        <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.9)); padding: 1rem 0.5rem;">
-                            <h3 class="text-white mb-0 small">{{ Str::limit($related->name, 25) }}</h3>
+                        <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.9)); padding: 0.4rem;">
+                            <h3 class="text-white mb-0" style="font-size: 0.7rem;">{{ Str::limit($related->title, 20) }}</h3>
                         </div>
                     </div>
                 </a>
@@ -254,31 +247,20 @@
 </section>
 @endif
 
-<!-- SEO Content Section -->
-<section class="py-5 bg-dark">
+<!-- Compact SEO Content -->
+<section class="py-3 py-md-4 bg-dark">
     <div class="container">
         <div class="row">
-            <div class="col-lg-10 mx-auto">
-                <article class="text-white-50">
-                    <h2 class="h4 text-white mb-3">Watch {{ $movie->title }} with Luganda Translation</h2>
-                    <p class="mb-3">
-                        Experience {{ $movie->title }} like never before with professional Luganda translation. This {{ $movie->type === 'Series' ? 'series' : 'movie' }} has been expertly translated and dubbed by experienced Luganda voice actors who bring authentic cultural context to every scene. Whether you're a fan of the original or discovering it for the first time, watching {{ $movie->title }} in Luganda offers a unique and enjoyable viewing experience.
+            <div class="col-12">
+                <article class="text-white-50" style="font-size: 0.8rem;">
+                    <h2 class="h6 h5-md text-white mb-2">Watch {{ $movie->title }} in Luganda</h2>
+                    <p class="mb-2" style="line-height: 1.5;">
+                        Experience {{ $movie->title }} with professional Luganda translation. This {{ $movie->type === 'Series' ? 'series' : 'movie' }} features expert dubbing by Luganda voice actors. Download {{ $siteName }} app to stream {{ $movie->title }} and thousands of titles in HD quality.
                     </p>
-                    <p class="mb-3">
-                        {{ $siteName }} is proud to offer {{ $movie->title }} in high-definition quality with crystal-clear Luganda audio. Our professional translation team has ensured that every dialogue, joke, and emotional moment is accurately conveyed in Luganda while maintaining the essence of the original content. Download our app today to stream {{ $movie->title }} and thousands of other titles translated into Luganda.
-                    </p>
-                    @if($movie->type === 'Series')
-                    <p class="mb-3">
-                        All episodes of {{ $movie->title }} are available with complete Luganda translation. Binge-watch the entire series, pick up where you left off, or rewatch your favorite episodes – all in your preferred language. With offline download capabilities, you can enjoy {{ $movie->title }} even without an internet connection.
-                    </p>
-                    @endif
-                    <h3 class="h5 text-white mt-4 mb-3">Why Watch {{ $movie->title }} in Luganda?</h3>
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>Professional Luganda dubbing by expert voice actors</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>HD streaming quality optimized for Uganda</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>Cultural adaptation for Ugandan audiences</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>Download for offline viewing anytime</li>
-                        <li class="mb-2"><i class="bi bi-check-circle-fill text-primary me-2"></i>Watch on any Android device</li>
+                    <ul class="list-unstyled mb-0" style="font-size: 0.75rem;">
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Professional Luganda dubbing</li>
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>HD streaming optimized for Uganda</li>
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Offline download available</li>
                     </ul>
                 </article>
             </div>
@@ -286,13 +268,13 @@
     </div>
 </section>
 
-<!-- Final CTA -->
-<section class="py-5 bg-primary">
+<!-- Compact Final CTA -->
+<section class="py-3 py-md-4 bg-primary">
     <div class="container text-center">
-        <h2 class="h3 text-white mb-3">Ready to Watch {{ $movie->title }} in Luganda?</h2>
-        <p class="text-white mb-4">Download {{ $siteName }} app now and start streaming instantly</p>
-        <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-dark btn-lg px-5 py-3">
-            <i class="bi bi-download me-2"></i>Download Free App
+        <h2 class="h6 h5-md text-white mb-2">Watch {{ $movie->title }} Now</h2>
+        <p class="text-white mb-2" style="font-size: 0.8rem;">Download free app and start streaming</p>
+        <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-dark btn-sm px-3 py-2">
+            <i class="bi bi-download me-1"></i>Download App
         </a>
     </div>
 </section>
@@ -309,5 +291,71 @@
 .breadcrumb-item + .breadcrumb-item::before {
     color: #6c757d;
 }
+.when-collapsed .when-expanded,
+.when-expanded .when-collapsed {
+    display: none;
+}
+.collapsed .when-collapsed {
+    display: inline;
+}
+.collapsed .when-expanded {
+    display: none;
+}
+:not(.collapsed) .when-collapsed {
+    display: none;
+}
+:not(.collapsed) .when-expanded {
+    display: inline;
+}
 </style>
+
+<script>
+function shareMovie() {
+    const title = "{{ $movie->title }}";
+    const appName = "{{ $siteName }}";
+    const appLink = "{{ $playStoreUrl }}";
+    const movieUrl = "{{ url('/movie/' . $movie->id) }}";
+    const shareText = `Watch "${title}" on ${appName} now. Download the app: ${appLink}\n\nView details: ${movieUrl}`;
+    
+    // Check if Web Share API is supported
+    if (navigator.share) {
+        navigator.share({
+            title: `${title} - ${appName}`,
+            text: shareText,
+            url: movieUrl
+        }).then(() => {
+            console.log('Shared successfully');
+        }).catch((error) => {
+            console.log('Error sharing:', error);
+            fallbackShare(shareText);
+        });
+    } else {
+        fallbackShare(shareText);
+    }
+}
+
+function fallbackShare(text) {
+    // Fallback: Copy to clipboard
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Link copied to clipboard! Share it anywhere.');
+        }).catch(() => {
+            promptShare(text);
+        });
+    } else {
+        promptShare(text);
+    }
+}
+
+function promptShare(text) {
+    // Final fallback: Prompt user
+    const dummy = document.createElement('textarea');
+    document.body.appendChild(dummy);
+    dummy.value = text;
+    dummy.select();
+    document.execCommand('copy');
+    document.body.removeChild(dummy);
+    alert('Link copied to clipboard! Share it anywhere.');
+}
+</script>
 @endsection
