@@ -440,10 +440,14 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
         echo '<p>Found ' . count($existingMovieIds) . ' existing pages in this range.</p>';
         echo '</div>';
 
+        //set time to process each movie
+        set_time_limit(3000); // 50 minutes
+
         // Prepare bulk insert data
         $bulkInsertData = [];
         $now = now();
-
+        $min_movie_id = 4005;
+        $max_movie_id_batch = 60106;
         for ($i = $min_movie_id; $i <= $max_movie_id_batch; $i++) {
             $stats['total_checked']++;
 
