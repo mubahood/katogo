@@ -1599,7 +1599,6 @@ Route::get('process-muno-series', function (Request $r) {
         //process serises
         $pages = MovieCrawlerPage::where([
             'id' => $id,
-            'vj' => 'Munowatch API',
         ])
             ->orderBy('id', 'asc')
             ->limit(20)
@@ -1622,6 +1621,20 @@ Route::get('process-muno-series', function (Request $r) {
             print_r($page_content->toArray());
             echo "</pre>";
 
+            if ($page_content->type == 'Series') {
+                $series = SeriesMovie::find($page_content->series_id);
+                if ($series == null) {
+                    echo "Series not found for series_id: {$page_content->series_id}<br>";
+                    die();
+                } else {
+                    echo "Series found: {$series->id} - {$series->title}. total episodes: {$series->total_episodes}<br>";
+                    //display Thumbnail
+                    echo '<img src="' . $series->thumbnail . '" /><br>';
+                    die("Done processing series ID: {$pendMuno->id}");
+                }
+            }
+
+
             $movie = MovieModel::where('munowatch_id', $pendMuno->muno_id)->first();
             if ($movie == null) {
                 echo "Movie not found for munowatch_id: {$pendMuno->muno_id}<br>";
@@ -1641,9 +1654,7 @@ Route::get('process-muno-series', function (Request $r) {
     } else {
         //process serises
         $pages = MovieCrawlerPage::where([
-            'type' => 'Series',
             'muno_series_processed' => 'No',
-            'vj' => 'Munowatch API',
 
         ])
             ->orderBy('id', 'asc')
@@ -1657,35 +1668,35 @@ Route::get('process-muno-series', function (Request $r) {
 
     foreach ($pages as $key => $page) {
         try {
-            $page_content = null;
-            $_title = '';
-            try {
-                if ($page->page_content != null && strlen($page->page_content) > 10) {
-                    $page_content = json_decode($page->page_content);
-                }
-                if ($page_content != null && $page_content->preview != null) {
-                    $_thumbnail = $page_content->preview->thumbnail;
-
-                    echo '<img src="' . $_thumbnail . '" /><br>';
-                    echo $page_content->preview->video_title;
-                    $_title = $page_content->preview->video_title;
-                    echo 'title: ' . $_title;
-                    echo '<br>';
-                }
-            } catch (\Throwable $th) {
-                //throw $th;
+            $page->process_munowatch_intelligent();
+            echo "Page {$page->id} processed successfully.<br>";
+            $newPage = MovieCrawlerPage::find($page->id);
+            if ($newPage == null) {
+                echo "Failed to reload page after processing {$page->id}.<br>";
+                continue;
             }
-
-            $page->process_munowatch_series();
-            echo "Page {$page->id}. {$page->title} - successfully<hr>";
-
-            $page->muno_series_processed = 'Yes';
-            $page->muno_series_success = 'Yes';
-            $page->save();
-            $series = SeriesMovie::where('title', $_title)->first();
-            if ($series != null) {
-                echo "Series found: {$series->id} - {$series->title}. total episodes: {$series->total_episodes}<br>";
+            if ($newPage->type == 'Series') {
+                $series = SeriesMovie::find($newPage->series_id);
+                if ($series == null) {
+                    echo "Series not found for series_id: {$newPage->series_id}<br>";
+                    continue;
+                } else {
+                    echo "Series found: {$series->id} - {$series->title}. total episodes: {$series->total_episodes}<br>";
+                    //display Thumbnail
+                    echo '<img src="' . $series->thumbnail . '" /><br>';
+                    continue;
+                }
             }
+            $movie = MovieModel::where('munowatch_id', $page->muno_id)->first();
+            if ($movie == null) {
+                echo "Movie not found for munowatch_id: {$page->muno_id}<br>";
+                continue;
+            }
+            echo "Page {$page->id}. {$movie->title} - successfully<hr>";
+            //title
+            echo "Title: {$movie->title}<br>";
+            //thumbnail
+            echo '<img src="' . $movie->thumbnail . '" /><br>';
         } catch (\Throwable $th) {
             $page->muno_series_success = 'No';
             $page->save();

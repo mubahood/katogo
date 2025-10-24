@@ -44,8 +44,8 @@ class MovieCrawlerPageController extends AdminController
             });
 
         $grid->column('movie_crawler_website_id', __('Movie crawler website id'))->hide();
-        $grid->column('title', __('Title'))->sortable();
-        $grid->column('slug', __('Slug'))->sortable();
+        $grid->column('title', __('Title'))->sortable()->hide();
+        $grid->column('slug', __('Slug'))->sortable()->hide();
         $grid->column('url', __('Url'))->sortable();
         $grid->column('movie_id', __('Movie id'))->hide();
         $grid->column('page_content', __('Page content'))->hide();
@@ -56,13 +56,14 @@ class MovieCrawlerPageController extends AdminController
                 'success' => 'Success',
                 'error' => 'Error',
             ]);
-        $grid->column('last_fetched_at', __('Last fetched at'))->sortable();
+        $grid->column('last_fetched_at', __('Last fetched at'))->sortable()->hide();
         $grid->column('type', __('Type'))->sortable();
         $grid->column('row_id', __('Row id'))->hide();
         $grid->column('img_port_muno_file_name', __('Img port muno file name'))->hide();
         $grid->column('bunny_file_name', __('Bunny file name'))->hide();
         $grid->column('tmdb_poster_path', __('Tmdb poster path'))->hide();
-        $grid->column('vj', __('Vj'))->sortable();
+        $grid->column('vj', __('Vj'))->sortable()
+            ->hide();
 
         //muno_processed
         $grid->column('muno_processed', __('Muno Processed'))->sortable()

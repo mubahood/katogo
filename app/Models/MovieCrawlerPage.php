@@ -464,7 +464,7 @@ class MovieCrawlerPage extends Model
                 $this->notes = "SERIES DETECTED: (seriesCode: $seriesCode, showId: $showId)";
                 $this->muno_processed = 'Yes';
                 $this->muno_success = 'No';
-                $this->muno_message = 'Series detected, pending processing';
+                $this->muno_message = 'Series detected, pending processing 1';
 
                 //get movie with this external url
                 $existing_post = MovieModel::where('external_url', $this->url)->first();
@@ -474,7 +474,7 @@ class MovieCrawlerPage extends Model
                         $existing_post->status = 'error';
                         $existing_post->muno_processed = 'Yes';
                         $existing_post->muno_success = 'No';
-                        $existing_post->muno_message = 'Series detected, pending processing';
+                        $existing_post->muno_message = 'Series detected, pending processing 2';
                         $existing_post->save();
                     }
                 }
@@ -675,7 +675,7 @@ class MovieCrawlerPage extends Model
             if ($existing_post == null) {
                 $existing_post = MovieModel::where('page_source_url', $this->url)
                     ->first();
-            } 
+            }
 
             //use munowatch id to check
             if ($existing_post == null) {
@@ -1201,6 +1201,13 @@ class MovieCrawlerPage extends Model
                         continue;
                     }
                 }
+                $related_page->status = 'success';
+                $related_page->muno_series_processed = 'Yes';
+                $related_page->muno_series_success = 'Yes';
+                $related_page->error_message = null;
+                $related_page->title = $title;
+                $related_page->series_id = $seriesMovie->id;
+                $related_page->save();
             }
         } catch (\Throwable $th) {
             $this->status = 'error';
@@ -1296,7 +1303,7 @@ class MovieCrawlerPage extends Model
                 'X-Api-Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
                 'User-Agent: okhttp/4.9.0',
                 'Content-Type: application/json',
-                'Accept: application/json' 
+                'Accept: application/json'
             ];
 
             $context = stream_context_create([
