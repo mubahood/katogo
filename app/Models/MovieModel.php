@@ -120,25 +120,24 @@ class MovieModel extends Model
                 $model->actor = '--';
                 //get same movie with external_url
                 $existing = MovieModel::where('external_url', $model->external_url)
-                    ->where('type', $model->type)
                     ->where('status', 'Active')
                     ->first();
                 if ($existing != null) {
                     return false;
                 }
 
-                //check using munowatch_id as well
-                $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
-                    ->where('type', $model->type)
-                    ->where('status', 'Active')
-                    ->first();
-                if ($existing != null) {
-                    return false;
+                if ($model->munowatch_id != null && $model->munowatch_id != '') {
+                    //check using munowatch_id as well
+                    $existing = MovieModel::where('munowatch_id', $model->munowatch_id)
+                        ->where('status', 'Active')
+                        ->first();
+                    if ($existing != null) {
+                        return false;
+                    }
                 }
 
                 //check using title as well and same vj and is muno
                 $existing = MovieModel::where('title', $model->title)
-                    ->where('vj', $model->vj)
                     ->where('is_muno', 'Yes')
                     ->where('type', $model->type)
                     ->where('status', 'Active')
