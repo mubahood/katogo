@@ -61,7 +61,7 @@ Route::get('replace-images', function (Request $r) {
 
     $startTime = microtime(true);
     $dryRun = $r->get('dry_run', 'no') === 'yes';
-    $limit = min((int) $r->get('limit', 100), 1500); // Max 500 for safety
+    $limit = (int) $r->get('limit', 1500); // Max 500 for safety
     $reset = $r->get('reset', 'no') === 'yes';
 
     // Initialize statistics
