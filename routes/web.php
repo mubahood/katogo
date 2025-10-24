@@ -1599,6 +1599,7 @@ Route::get('process-muno-series', function (Request $r) {
         //process serises
         $pages = MovieCrawlerPage::where([
             'id' => $id,
+            'is_muno' => 'Yes',
         ])
             ->orderBy('id', 'asc')
             ->limit(20)
@@ -1655,12 +1656,14 @@ Route::get('process-muno-series', function (Request $r) {
         //process serises
         $pages = MovieCrawlerPage::where([
             'muno_series_processed' => 'No',
-
+            'is_muno' => 'Yes',
+            'status' => 'Pending',
         ])
             ->orderBy('id', 'asc')
-            ->limit(10)
+            ->limit(2)
             ->get();
     }
+
 
     //set time limit
     set_time_limit(6000); // 10 minutes
@@ -1675,6 +1678,9 @@ Route::get('process-muno-series', function (Request $r) {
                 echo "Failed to reload page after processing {$page->id}.<br>";
                 continue;
             }
+            echo "<pre>";
+            print_r($newPage->toArray());
+            echo "</pre>";
             if ($newPage->type == 'Series') {
                 $series = SeriesMovie::find($newPage->series_id);
                 if ($series == null) {
@@ -1686,18 +1692,19 @@ Route::get('process-muno-series', function (Request $r) {
                     echo '<img src="' . $series->thumbnail . '" /><br>';
                     continue;
                 }
-            }
-            $movie = MovieModel::where('munowatch_id', $page->muno_id)->first();
-            if ($movie == null) {
-                echo "Movie not found for munowatch_id: {$page->muno_id}<br>";
+            } else {  
+                $movie = MovieModel::where('id', $page->movie_id)->first();
+                if ($movie == null) {
+                    echo "Movie not found for munowatch_id: {$page->muno_id}<br>";
+                    continue;
+                }
+                echo "Movie found: {$movie->id} - {$movie->title}<br>";
+                //display Thumbnail
+                echo '<img src="' . $movie->thumbnail_url . '" /><br>';
                 continue;
             }
-            echo "Page {$page->id}. {$movie->title} - successfully<hr>";
-            //title
-            echo "Title: {$movie->title}<br>";
-            //thumbnail
-            echo '<img src="' . $movie->thumbnail . '" /><br>';
         } catch (\Throwable $th) {
+            throw $th;
             $page->muno_series_success = 'No';
             $page->save();
             echo "Failed to process page {$page->id} because " . $th->getMessage() . "<br>";

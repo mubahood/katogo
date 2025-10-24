@@ -383,10 +383,29 @@ class MovieCrawlerPage extends Model
     {
         if ($this->page_content == null || strlen(trim($this->page_content)) < 10) {
             try {
-                $this->fetch_page_content(false);
+                //check if url is reachable again
+                if (strpos($this->url, 'munowatch.org/api/') !== false) {
+                    $this->fetch_page_content(false);
+                } else {
+                    $this->status = 'error';
+                    $this->error_message = "Page content is empty for intelligent processing";
+                    $this->save();
+                    return;
+                }
             } catch (\Throwable $th) {
+                $this->status = 'error';
+                $this->error_message = 'Failed to fetch page content: ' . $th->getMessage();
+                $this->save();
+                return;
                 //throw $th;
             }
+        }
+
+        if ($this->page_content == null || strlen(trim($this->page_content)) < 10) {
+            $this->status = 'error';
+            $this->error_message = "Page content is empty for intelligent processing";
+            $this->save();
+            return;
         }
 
         try {
