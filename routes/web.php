@@ -314,8 +314,8 @@ Route::get('fix-images', function (Request $r) {
     $movie = MovieModel::find(78);
     echo '<h2>' . e($movie->title) . '</h2>';
     echo '<p>Image URL: ' . e($movie->thumbnail_url) . '</p>';
-    echo '<img src="' . e($movie->thumbnail_url) . '" alt="Thumbnail">'; 
-    die();  
+    echo '<img src="' . e($movie->thumbnail_url) . '" alt="Thumbnail">';
+    die();
     // dd($pic);
     // die("done processing");
     set_time_limit(600); // 10 minutes
@@ -323,7 +323,7 @@ Route::get('fix-images', function (Request $r) {
 
     $startTime = microtime(true);
     $dryRun = $r->get('dry_run', 'no') === 'yes';
-    $limit = min((int) $r->get('limit', 500), 2000); // Max 2000 for safety
+    $limit = $r->get('limit', 1000); // Max 2000 for safety
 
     // Initialize statistics
     $stats = [
