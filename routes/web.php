@@ -30,6 +30,37 @@ use Symfony\Component\Process\Process;
 
 Route::get('munowatch-movies-crawler', function (Request $request) {
 
+    $pendingMunoWatches = MovieCrawlerPage::where([
+        'movie_crawler_website_id' => 2,
+        'status' => 'success',
+        // 'status' => 'Pending',
+        'is_muno' => 'Yes',
+    ])->orderBy('id', 'asc')->limit(10)->get();
+
+/*     foreach ($pendingMunoWatches as $key => $pendMuno) {
+        if ($pendMuno->movie_id != null && is_numeric($pendMuno->movie_id)) {
+            $movie = MovieModel::find($pendMuno->movie_id);
+            if ($movie == null) {
+                $movie = MovieModel::where('external_id', $pendMuno->movie_id)->first();
+            }
+
+            if ($movie != null) {
+                if ($movie->status == 'Active') {
+                    echo "Movie ID " . $movie->id . " is already Active. Skipping.<br>";
+                    continue;
+                }
+            }
+        }
+
+
+
+        dd($pendMuno);
+        continue;
+    }
+
+    die("done processing"); */
+
+
     // $user_id = 169765;
     $user_id = 3664;
     $min_move_id = 4005;
@@ -47,7 +78,7 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
             $url = ("https://munowatch.org/api/preview/v2/$i/" . $user_id);
             $existinPage = MovieCrawlerPage::where('url', $url)->first();
             if ($existinPage) {
-                echo $i . ". Page already exists: $url";
+                // echo $i . ". Page already exists: $url";
                 continue;
             }
 
@@ -61,7 +92,7 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
             $newPage->is_generated = "Yes";
             $newPage->is_muno = "Yes";
             $newPage->save();
-            echo $i . ". Created new crawler page: $url<br>";
+            echo $i . ". Created new crawler<br>";
         }
         die("Done generating pages from $min_move_id to $max_move_id");
     }
