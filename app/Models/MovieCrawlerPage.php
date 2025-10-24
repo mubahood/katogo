@@ -481,7 +481,7 @@ class MovieCrawlerPage extends Model
                 $this->save();
                 $this->process_munowatch_series();
                 return;
-            } else { 
+            } else {
                 // Movie or weak series signals - route to movie processor
                 $this->type = 'Movie'; // Update the type field
                 $this->notes = "MOVIE DETECTED: (treating as standalone movie)";
@@ -507,37 +507,11 @@ class MovieCrawlerPage extends Model
 
     public function process_munowatch_movie()
     {
-        dd('process_munowatch_movie');
+
         try {
             // Check if movie already exists to avoid duplicates
-            $existing_post = MovieModel::where('url', $this->url)->first();
-            if ($existing_post != null) {
-                if ($existing_post->muno_processed == 'Yes') {
-                    $this->error_message = 'Movie already exists and processed with this URL';
-                    $this->status = 'error';
-                    $this->save();
-                    return;
-                }
-            }
+            $existing_post = MovieModel::where('external_url', $this->url)->first();
 
-            if ($existing_post == null) {
-                $existing_post = MovieModel::where('external_url', $this->url)->first();
-                if ($existing_post != null) {
-                    if ($existing_post->muno_processed == 'Yes') {
-                        $this->error_message = 'Movie already exists and processed with this external URL';
-                        $this->status = 'error';
-                        $this->save();
-                        return;
-                    }
-                }
-            }
-
-            if ($existing_post == null) {
-                //check by title
-                $existing_post = MovieModel::where('title', $this->title)
-                    ->where('status', 'Active')
-                    ->first();
-            }
 
 
             // Parse JSON response from munowatch API
@@ -555,8 +529,42 @@ class MovieCrawlerPage extends Model
                 $this->save();
                 // throw new \Exception('Invalid munowatch response structure - missing preview data');
             }
-
             $preview = $jsonData['preview'];
+
+            $playingUrl = $preview['playingUrl'] ?? null;
+            if ($playingUrl == null || strlen(trim($playingUrl)) < 5) {
+                $this->error_message = 'No valid video URL found in munowatch response';
+                $this->status = 'error';
+                $this->save();
+                // throw new \Exception('No valid video URL found in munowatch response');
+            }
+
+            if (!(Utils::isPossiblyVideoUrl($playingUrl))) {
+                $this->error_message = 'Extracted video URL is not valid: ' . $playingUrl;
+                $this->status = 'error';
+                $this->save();
+                // throw new \Exception('Extracted video URL is not valid: ' . $playingUrl);
+            }
+
+            //check by page source url
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('external_url', $this->url)->first();
+            }
+
+            //check by url
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('url', $playingUrl)
+                    ->first();
+            }
+
+            if ($existing_post == null) {
+                //check by title
+                $existing_post = MovieModel::where('title', $this->title)
+                    ->where('status', 'Active')
+                    ->where('type', $this->type)
+                    ->first();
+            }
+
 
             //check if is series
 
@@ -644,6 +652,22 @@ class MovieCrawlerPage extends Model
 
             if ($existing_post == null) {
                 $existing_post = MovieModel::where('title', $title)
+                    ->first();
+            }
+
+            //check by url using primaryVideoUrl
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('url', $primaryVideoUrl)
+                    ->first();
+            }
+            //check using url encoded
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('url', urlencode($primaryVideoUrl))
+                    ->first();
+            }
+            if ($existing_post == null) {
+                $encodedPlayingUrl = str_replace(' ', '%20', $playingUrl);
+                $existing_post = MovieModel::where('url', $encodedPlayingUrl)
                     ->first();
             }
 

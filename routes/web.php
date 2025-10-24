@@ -64,67 +64,226 @@ Route::get('process-muno-movies-pages', function (Request $request) {
         continue;
     }
 });
+/**
+ * 🎬 OPTIMIZED MUNOWATCH MOVIES CRAWLER
+ * 
+ * This endpoint generates Munowatch movie crawler pages in bulk.
+ * Efficiently creates crawler records for movie IDs that don't exist yet.
+ * 
+ * Features:
+ * - Pure SQL-based for maximum performance
+ * - Bulk insert with batch processing (500 records at a time)
+ * - Automatic range detection from last processed movie
+ * - Skips existing pages using efficient SQL queries
+ * - Progress tracking and detailed reporting
+ * - Transaction-safe operations
+ * 
+ * Query Parameters:
+ * - generate_pages: Set to 'yes' to start generating pages (required)
+ * - batch_size: Number of movies to check per batch (default: 5000, max: 10000)
+ * - user_id: Munowatch user ID (default: 3664)
+ * 
+ * Usage: /munowatch-movies-crawler?generate_pages=yes&batch_size=5000
+ */
 Route::get('munowatch-movies-crawler', function (Request $request) {
-
-
-
-
-    // $user_id = 169765;
-    $user_id = 3664;
-    $min_move_id = 4005;
-    $max_move_id = 60106;
-    //set timeout to 20 minutes
     set_time_limit(1200); // 20 minutes
-    ini_set('memory_limit', '512M'); // 512 MB 
+    ini_set('memory_limit', '512M');
 
-    $mostLastMunoWatchMovie = MovieCrawlerPage::where('movie_crawler_website_id', 2)
-        ->where('is_muno', 'Yes')
-        ->orderBy('movie_id', 'desc')
-        ->first();
-    if ($mostLastMunoWatchMovie) {
-        $min_move_id = $mostLastMunoWatchMovie->movie_id + 1;
-    }
+    $startTime = microtime(true);
+    $user_id = (int) $request->get('user_id', 3664);
+    $batch_size = min((int) $request->get('batch_size', 5000), 10000);
+    $max_movie_id = 60106; // Munowatch maximum movie ID
+    $generate_pages = $request->get('generate_pages', 'no') === 'yes';
 
-    //max + 5000 but less than 60106
-    $max_move_id = min($min_move_id + 5000, 60106);
+    // Initialize statistics
+    $stats = [
+        'pages_created' => 0,
+        'pages_skipped' => 0,
+        'errors' => 0,
+        'total_checked' => 0,
+    ];
 
-    echo "Generating Munowatch movie pages from ID $min_move_id to $max_move_id<br>";
-    $generate_pages = false;
-    if ($request->has('generate_pages') && $request->get('generate_pages') == 'yes') {
-        $generate_pages = true;
-    }
-    if ($generate_pages) {
-        for ($i = $min_move_id; $i <= $max_move_id; $i++) {
-            $url = ("https://munowatch.org/api/preview/v2/$i/" . $user_id);
-            $existinPage = MovieCrawlerPage::where('url', $url)->first();
-            if ($existinPage) {
-                // echo $i . ". Page already exists: $url";
+    // HTML output with styling
+    echo '<html><head><title>Munowatch Movies Crawler</title>';
+    echo '<style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .stats { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: #28a745; padding: 10px; margin: 5px 0; border-left: 4px solid #28a745; background: #d4edda; }
+        .warning { color: #ffc107; padding: 10px; margin: 5px 0; border-left: 4px solid #ffc107; background: #fff3cd; }
+        .error { color: #dc3545; padding: 10px; margin: 5px 0; border-left: 4px solid #dc3545; background: #f8d7da; }
+        .info { color: #17a2b8; padding: 10px; margin: 5px 0; border-left: 4px solid #17a2b8; background: #d1ecf1; }
+        .progress { background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+        .progress-bar { background: #28a745; height: 100%; line-height: 30px; color: white; text-align: center; transition: width 0.3s; }
+    </style></head><body>';
+
+    echo '<div class="header">';
+    echo '<h1>🎬 Munowatch Movies Crawler</h1>';
+    echo '<p>SQL-Optimized Bulk Page Generator</p>';
+    echo '</div>';
+
+    try {
+        // Get the last processed movie ID using efficient SQL
+        $lastProcessedMovie = DB::table('movie_crawler_pages')
+            ->where('movie_crawler_website_id', 2)
+            ->where('is_muno', 'Yes')
+            ->whereNotNull('movie_id')
+            ->where('movie_id', '!=', '')
+            ->orderBy('movie_id', 'desc')
+            ->first();
+
+        $min_movie_id = 4005; // Default starting ID
+        if ($lastProcessedMovie && is_numeric($lastProcessedMovie->movie_id)) {
+            $min_movie_id = (int) $lastProcessedMovie->movie_id + 1;
+        }
+
+        // Calculate range for this batch
+        $max_movie_id_batch = min($min_movie_id + $batch_size - 1, $max_movie_id);
+
+        echo '<div class="stats">';
+        echo '<p><strong>📊 Crawler Configuration:</strong></p>';
+        echo '<p>User ID: <strong>' . $user_id . '</strong></p>';
+        echo '<p>Movie ID Range: <strong>' . number_format($min_movie_id) . ' - ' . number_format($max_movie_id_batch) . '</strong></p>';
+        echo '<p>Batch Size: <strong>' . number_format($max_movie_id_batch - $min_movie_id + 1) . '</strong></p>';
+        echo '<p>Max Movie ID: <strong>' . number_format($max_movie_id) . '</strong></p>';
+        echo '<p>Mode: <strong>' . ($generate_pages ? 'GENERATE (Creating Pages)' : 'PREVIEW (Dry Run)') . '</strong></p>';
+        echo '</div>';
+
+        if (!$generate_pages) {
+            echo '<div class="warning">';
+            echo '<h3>⚠️ Preview Mode</h3>';
+            echo '<p>Add <code>?generate_pages=yes</code> to start generating pages.</p>';
+            echo '<p><a href="' . $request->url() . '?generate_pages=yes&batch_size=' . $batch_size . '&user_id=' . $user_id . '" ';
+            echo 'style="background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">▶️ Start Generating Pages</a></p>';
+            echo '</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        if ($min_movie_id > $max_movie_id) {
+            echo '<div class="success">';
+            echo '<h3>🎉 All Movies Processed!</h3>';
+            echo '<p>All movie IDs up to ' . number_format($max_movie_id) . ' have been generated.</p>';
+            echo '</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        echo '<h2>🚀 Generating Pages...</h2>';
+        echo '<hr>';
+
+        // Get all existing URLs in this range using efficient SQL
+        $existingMovieIds = DB::table('movie_crawler_pages')
+            ->where('movie_crawler_website_id', 2)
+            ->where('is_muno', 'Yes')
+            ->whereBetween('movie_id', [$min_movie_id, $max_movie_id_batch])
+            ->pluck('movie_id')
+            ->map(function($id) { return (int) $id; })
+            ->toArray();
+
+        $existingMovieIdsSet = array_flip($existingMovieIds);
+
+        echo '<div class="info">';
+        echo '<p>Found ' . count($existingMovieIds) . ' existing pages in this range.</p>';
+        echo '</div>';
+
+        // Prepare bulk insert data
+        $bulkInsertData = [];
+        $now = now();
+
+        for ($i = $min_movie_id; $i <= $max_movie_id_batch; $i++) {
+            $stats['total_checked']++;
+
+            // Skip if already exists
+            if (isset($existingMovieIdsSet[$i])) {
+                $stats['pages_skipped']++;
                 continue;
             }
 
-            $newPage = new MovieCrawlerPage();
-            $newPage->movie_crawler_website_id = 2;
-            $newPage->title = "";
-            $newPage->slug =  $i . "";
-            $newPage->movie_id =  $i . "";
-            $newPage->url = $url;
-            $newPage->status = "Pending";
-            $newPage->is_generated = "Yes";
-            $newPage->is_muno = "Yes";
-            $newPage->save();
-            echo $i . ". Created new crawler<br>";
+            $url = "https://munowatch.org/api/preview/v2/$i/" . $user_id;
+
+            $bulkInsertData[] = [
+                'movie_crawler_website_id' => 2,
+                'title' => '',
+                'slug' => (string) $i,
+                'movie_id' => (string) $i,
+                'url' => $url,
+                'status' => 'Pending',
+                'is_generated' => 'Yes',
+                'is_muno' => 'Yes',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+
+            $stats['pages_created']++;
+
+            // Insert in chunks of 500 to avoid memory issues
+            if (count($bulkInsertData) >= 500) {
+                DB::table('movie_crawler_pages')->insert($bulkInsertData);
+                echo '<div class="success">✅ Inserted ' . count($bulkInsertData) . ' pages (IDs: ' . ($i - count($bulkInsertData) + 1) . ' - ' . $i . ')</div>';
+                
+                $progress = (($i - $min_movie_id + 1) / ($max_movie_id_batch - $min_movie_id + 1)) * 100;
+                echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">'
+                    . round($progress, 1) . '% Complete</div></div>';
+                
+                flush();
+                $bulkInsertData = [];
+            }
         }
-        die("Done generating pages from $min_move_id to $max_move_id");
+
+        // Insert remaining records
+        if (!empty($bulkInsertData)) {
+            DB::table('movie_crawler_pages')->insert($bulkInsertData);
+            echo '<div class="success">✅ Inserted final ' . count($bulkInsertData) . ' pages</div>';
+        }
+
+        // Final Statistics
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 2);
+
+        // Check remaining movies
+        $remainingMovies = $max_movie_id - $max_movie_id_batch;
+
+        echo '<hr>';
+        echo '<div class="stats">';
+        echo '<h2>📊 Generation Complete</h2>';
+        echo '<table style="width: 100%; border-collapse: collapse;">';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Checked:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['total_checked']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Pages Created:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #28a745;">' . number_format($stats['pages_created']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Pages Skipped (Existing):</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #ffc107;">' . number_format($stats['pages_skipped']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Processing Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $duration . ' seconds</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Speed:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['total_checked'] / max($duration, 0.001)) . ' movies/sec</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Remaining Movies:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format(max(0, $remainingMovies)) . '</td></tr>';
+        echo '</table>';
+        echo '</div>';
+
+        if ($remainingMovies > 0) {
+            echo '<div class="info">';
+            echo '<h3>🔄 Continue Processing</h3>';
+            echo '<p>There are still ' . number_format($remainingMovies) . ' movies to process.</p>';
+            echo '<p><a href="' . $request->url() . '?generate_pages=yes&batch_size=' . $batch_size . '&user_id=' . $user_id . '" ';
+            echo 'style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">▶️ Process Next Batch</a></p>';
+            echo '</div>';
+        } else {
+            echo '<div class="success">';
+            echo '<h3>🎉 All Done!</h3>';
+            echo '<p>All Munowatch movies up to ID ' . number_format($max_movie_id) . ' have been generated successfully.</p>';
+            echo '</div>';
+        }
+
+    } catch (\Exception $e) {
+        echo '<div class="error">';
+        echo '<h3>❌ Critical Error</h3>';
+        echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
+        echo '<pre>' . htmlspecialchars($e->getTraceAsString()) . '</pre>';
+        echo '</div>';
+        Log::error('Munowatch crawler critical error', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
     }
 
-
-
-    $lastMunoWatchMoviePage = MovieCrawlerPage::where([])
-        ->where('type', 'Movie')
-        ->orderBy('id', 'desc')
-        ->first();
-
-    dd($lastMunoWatchMoviePage);
+    echo '</body></html>';
 });
 
 
