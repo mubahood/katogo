@@ -29,6 +29,14 @@ class MovieCrawlerPageController extends AdminController
         $grid->model()->orderBy('id', 'desc');
         $grid->quickSearch('title', 'slug', 'url', 'movie_id', 'page_content', 'error_message', 'status');
         $grid->column('id', __('Id'))->sortable();
+
+        //is_generated
+        $grid->column('is_generated', __('Is Generated'))->sortable()
+            ->filter([
+                'Yes' => 'Yes',
+                'No' => 'No',
+            ])->sortable();
+
         $grid->column('created_at', __('Created'))
             ->sortable()
             ->display(function ($created_at) {
