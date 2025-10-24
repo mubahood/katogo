@@ -28,8 +28,7 @@ use Illuminate\Support\Facades\Route;
 use Symfony\Component\Process\Process;
 
 
-Route::get('munowatch-movies-crawler', function (Request $request) {
-
+Route::get('process-muno-movies-pages', function (Request $request) {
     $pendingMunoWatches = MovieCrawlerPage::where([
         'movie_crawler_website_id' => 2,
         'status' => 'success',
@@ -37,7 +36,8 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
         'is_muno' => 'Yes',
     ])->orderBy('id', 'asc')->limit(10)->get();
 
-/*     foreach ($pendingMunoWatches as $key => $pendMuno) {
+
+    foreach ($pendingMunoWatches as $key => $pendMuno) {
         if ($pendMuno->movie_id != null && is_numeric($pendMuno->movie_id)) {
             $movie = MovieModel::find($pendMuno->movie_id);
             if ($movie == null) {
@@ -53,12 +53,20 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
         }
 
 
+        try {
+            $pendMuno->process_munowatch_intelligent();
+        } catch (\Throwable $th) {
+            //throw $th;
+        }
 
+        die("done processing");
         dd($pendMuno);
         continue;
     }
+});
+Route::get('munowatch-movies-crawler', function (Request $request) {
 
-    die("done processing"); */
+
 
 
     // $user_id = 169765;
@@ -69,6 +77,18 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
     set_time_limit(1200); // 20 minutes
     ini_set('memory_limit', '512M'); // 512 MB 
 
+    $mostLastMunoWatchMovie = MovieCrawlerPage::where('movie_crawler_website_id', 2)
+        ->where('is_muno', 'Yes')
+        ->orderBy('movie_id', 'desc')
+        ->first();
+    if ($mostLastMunoWatchMovie) {
+        $min_move_id = $mostLastMunoWatchMovie->movie_id + 1;
+    }
+
+    //max + 5000 but less than 60106
+    $max_move_id = min($min_move_id + 5000, 60106);
+
+    echo "Generating Munowatch movie pages from ID $min_move_id to $max_move_id<br>";
     $generate_pages = false;
     if ($request->has('generate_pages') && $request->get('generate_pages') == 'yes') {
         $generate_pages = true;

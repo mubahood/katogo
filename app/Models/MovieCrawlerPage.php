@@ -381,16 +381,30 @@ class MovieCrawlerPage extends Model
      */
     public function process_munowatch_intelligent()
     {
+        if ($this->page_content == null || strlen(trim($this->page_content)) < 10) {
+            try {
+                $this->fetch_page_content(false);
+            } catch (\Throwable $th) {
+                //throw $th;
+            }
+        }
+
         try {
             $jsonData = null;
             // Parse JSON response to determine content type
             try {
                 $jsonData = json_decode($this->page_content, true);
             } catch (\Throwable $th) {
+                $this->status = 'error';
+                $this->error_message = 'Failed to parse JSON response: ' . $th->getMessage();
+                $this->save();
                 throw new \Exception('Failed to parse JSON response: ' . $th->getMessage());
             }
 
             if (json_last_error() !== JSON_ERROR_NONE) {
+                $this->status = 'error';
+                $this->error_message = 'Failed to parse JSON response: ' . json_last_error_msg();
+                $this->save();
                 throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
             }
 
@@ -401,124 +415,16 @@ class MovieCrawlerPage extends Model
             $showId = null;
             $detectionSignals = [];
 
+            if (!isset($jsonData['preview']) || !is_array($jsonData['preview'])) {
+                $this->status = 'error';
+                $this->error_message = 'Invalid munowatch response structure - missing preview data';
+                $this->save();
+                throw new \Exception('Invalid munowatch response structure - missing preview data');
+            }
+
             // Extract movie data from various possible structures
             $movieData = $this->extractMovieDataFromResponse($jsonData);
-            /* 
-array:54 [▼ // app/Models/MovieCrawlerPage.php:375
-  "id" => 59707
-  "video_title" => "Foundation 3"
-  "description" => "A complex saga of humans scattered on planets throughout the galaxy all living under the rule of the Galactic Empire."
-  "video_name" => "FOUNDATION S01.E03.VJ SOUL.2025.mp4"
-  "filehistory" => ""
-  "openload" => "0"
-  "embedurl" => ""
-  "serverhost" => "75"
-  "allow_openload" => "0"
-  "full_video_name" => ""
-  "duration" => "49h 39m"
-  "thumbnail" => "https://munoapp.org/munowatch-api/laba/yo/naki/o2gUFhcSnk7468.jpg"
-  "tfilehistory" => ""
-  "category_id" => 5
-  "language_id" => 1
-  "recording_date" => "2025-10-07"
-  "age_id" => "18 +"
-  "location" => 1
-  "tab_category_id" => 5
-  "series_code" => "83589"
-  "access" => "1"
-  "paid_for" => "1"
-  "new_movie" => "1"
-  "priority" => "No"
-  "size" => "397.4 MB"
-  "create_date" => "2025-10-07 15:10:11"
-  "schedule_date" => "07.10.2025 03:37:15 PM"
-  "user_id" => 169464
-  "vj_id" => 57
-  "video_status_id" => 0
-  "network_id" => "45.221.10.185"
-  "user_access" => "deny"
-  "notification" => ""
-  "secduration" => "178740.000000"
-  "issubscriber" => true
-  "download" => "0"
-  "genre" => "Series"
-  "vjname" => "Vj Soul"
-  "episodes" => 23
-  "episode_state" => "NEXT"
-  "nxt_eps" => "EPS  4"
-  "nxt_eps_id" => 59708
-  "nxt_eps_title" => "Foundation 4"
-  "nxt_ldur" => 0
-  "nxt_playing_url" => "http://munoserver64.club/kabalasi/kabalasi42/FOUNDATION S01.E04.VJ SOUL.2025.mp4"
-  "playingUrl" => "http://munoserver64.club/kabalasi/kabalasi42/FOUNDATION S01.E03.VJ SOUL.2025.mp4"
-  "ldur" => 2938
-  "session_id" => "2185d39f13ef2eb0256147bbcf769f6d"
-  "device" => ""
-  "lang_name" => "English to Luganda"
-  "vjrelease" => "1 day ago"
-  "mstatus" => false
-  "kstatus" => ""
-  "substatus" => "FAILED"
-]
 
-
-array:54 [▼ // app/Models/MovieCrawlerPage.php:432
-  "id" => 52804
-  "video_title" => "Girl Haunts Boy"
-  "description" => " A young boy befriends the spirit of a 1920s girl lingering in his new home, forming an unlikely yet profound bond across decades."
-  "video_name" => "Girl.Haunts.Boy.2024.1080p.MX.mp4"
-  "filehistory" => ""
-  "openload" => "0"
-  "embedurl" => "No"
-  "serverhost" => "67"
-  "allow_openload" => "0"
-  "full_video_name" => ""
-  "duration" => "01h 35m"
-  "thumbnail" => "https://munoapp.org/munowatch-api/laba/yo/naki/xC7AxlR0D91997.jpg"
-  "tfilehistory" => ""
-  "category_id" => 15
-  "language_id" => 1
-  "recording_date" => "2024-10-26"
-  "age_id" => "13 +"
-  "location" => 1
-  "tab_category_id" => 15
-  "series_code" => "52804"
-  "access" => "1"
-  "paid_for" => "1"
-  "new_movie" => "1"
-  "priority" => "No"
-  "size" => "843.79 MB"
-  "create_date" => "2024-10-26 12:10:08"
-  "schedule_date" => "26.10.2024 07:15:49 PM"
-  "user_id" => 169464
-  "vj_id" => 1
-  "video_status_id" => 0
-  "network_id" => "45.221.8.174"
-  "user_access" => ""
-  "notification" => "No"
-  "secduration" => "5726.000000"
-  "issubscriber" => true
-  "download" => "0"
-  "genre" => "Romance"
-  "vjname" => "Vj Junior"
-  "episodes" => 0
-  "episode_state" => ""
-  "nxt_eps" => ""
-  "nxt_eps_id" => 0
-  "nxt_eps_title" => ""
-  "nxt_ldur" => 0
-  "nxt_playing_url" => "https://munowatch.co/clips/ELI.mp4"
-  "playingUrl" => "http://munoserver56.club/coco/coco22/Girl.Haunts.Boy.2024.1080p.MX.mp4"
-  "ldur" => 0
-  "session_id" => "2185d39f13ef2eb0256147bbcf769f6d"
-  "device" => ""
-  "lang_name" => "English to Luganda"
-  "vjrelease" => "11 months ago"
-  "mstatus" => false
-  "kstatus" => ""
-  "substatus" => "FAILED"
-]
-*/
             if ($movieData) {
                 // dd($movieData);
                 // ===== SIGNAL 1: SERIES_CODE PRESENCE =====
@@ -552,14 +458,10 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
 
 
 
-            // ===== INTELLIGENT ROUTING DECISION =====
-
-            $detectionSummary = implode(', ', $detectionSignals);
-
-            if ($isSeries && count($detectionSignals) >= 2) {
+            if ($isSeries) {
                 // Strong series signals - route to series processor
                 $this->type = 'Series'; // Update the type field
-                $this->notes = "SERIES DETECTED: $detectionSummary (seriesCode: $seriesCode, showId: $showId)";
+                $this->notes = "SERIES DETECTED: (seriesCode: $seriesCode, showId: $showId)";
                 $this->muno_processed = 'Yes';
                 $this->muno_success = 'No';
                 $this->muno_message = 'Series detected, pending processing';
@@ -577,33 +479,14 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
                     }
                 }
                 $this->save();
-                //dd($existing_post);
+                $this->process_munowatch_series();
                 return;
-
-
-                Log::info('Munowatch series detected', [
-                    'page_id' => $this->id,
-                    'url' => $this->url,
-                    'title' => $this->title,
-                    'series_code' => $seriesCode,
-                    'show_id' => $showId,
-                    'detection_signals' => $detectionSignals
-                ]);
-
-                // return $this->process_munowatch_series_independent();
-            } else {
+            } else { 
                 // Movie or weak series signals - route to movie processor
                 $this->type = 'Movie'; // Update the type field
-                $this->notes = "MOVIE DETECTED: $detectionSummary (treating as standalone movie)";
+                $this->notes = "MOVIE DETECTED: (treating as standalone movie)";
                 $this->save();
-                Log::info('Munowatch movie detected', [
-                    'page_id' => $this->id,
-                    'url' => $this->url,
-                    'title' => $this->title,
-                    'detection_signals' => $detectionSignals
-                ]);
-
-                return $this->process_munowatch();
+                return $this->process_munowatch_movie();
             }
         } catch (\Throwable $th) {
             $this->status = 'error';
@@ -612,7 +495,7 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
 
             // Fallback to standard movie processor
             try {
-                return $this->process_munowatch();
+                return $this->process_munowatch_movie();
             } catch (\Throwable $fallbackError) {
                 $this->error_message = 'Both series and movie processing failed: ' . $fallbackError->getMessage();
                 $this->save();
@@ -622,8 +505,9 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
     }
 
 
-    public function process_munowatch()
+    public function process_munowatch_movie()
     {
+        dd('process_munowatch_movie');
         try {
             // Check if movie already exists to avoid duplicates
             $existing_post = MovieModel::where('url', $this->url)->first();
@@ -654,7 +538,7 @@ array:54 [▼ // app/Models/MovieCrawlerPage.php:432
                     ->where('status', 'Active')
                     ->first();
             }
-            
+
 
             // Parse JSON response from munowatch API
             $jsonData = json_decode($this->page_content, true);
