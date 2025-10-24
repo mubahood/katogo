@@ -1660,7 +1660,7 @@ Route::get('process-muno-series', function (Request $r) {
             'status' => 'Pending',
         ])
             ->orderBy('id', 'asc')
-            ->limit(2)
+            ->limit(20)
             ->get();
     }
 
