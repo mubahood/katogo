@@ -123,19 +123,29 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
     echo '</div>';
 
     try {
-        // Get the last processed movie ID using efficient SQL
+        // Get the last processed movie ID using efficient SQL with proper numeric ordering
+        // Since movie_id is stored as string, we need to cast it to integer for proper ordering
         $lastProcessedMovie = DB::table('movie_crawler_pages')
+            ->select('movie_id')
             ->where('movie_crawler_website_id', 2)
             ->where('is_muno', 'Yes')
             ->whereNotNull('movie_id')
             ->where('movie_id', '!=', '')
-            ->orderBy('movie_id', 'desc')
+            ->where('movie_id', 'REGEXP', '^[0-9]+$') // Only numeric IDs
+            ->orderByRaw('CAST(movie_id AS UNSIGNED) DESC') // Cast to integer for proper numeric ordering
             ->first();
 
         $min_movie_id = 4005; // Default starting ID
         if ($lastProcessedMovie && is_numeric($lastProcessedMovie->movie_id)) {
             $min_movie_id = (int) $lastProcessedMovie->movie_id + 1;
         }
+        
+        // Debug output
+        echo '<div class="info">';
+        echo '<p><strong>🔍 Debug Info:</strong></p>';
+        echo '<p>Last Processed Movie ID: <strong>' . ($lastProcessedMovie ? $lastProcessedMovie->movie_id : 'None') . '</strong></p>';
+        echo '<p>Next Starting ID: <strong>' . number_format($min_movie_id) . '</strong></p>';
+        echo '</div>';
 
         // Calculate range for this batch
         $max_movie_id_batch = min($min_movie_id + $batch_size - 1, $max_movie_id);

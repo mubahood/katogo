@@ -671,6 +671,12 @@ class MovieCrawlerPage extends Model
                     ->first();
             }
 
+            //check by page_source_url
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('page_source_url', $this->url)
+                    ->first();
+            } 
+
             if ($existing_post != null) {
                 $movie = $existing_post;
             } else {
