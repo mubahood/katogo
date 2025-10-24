@@ -141,6 +141,10 @@ Route::get('process-muno-movies-pages', function (Request $request) {
 
                 if (!$pendMuno) {
                     echo '<div class="error">❌ Page ID ' . $pageData->id . ' not found</div>';
+                    //but mark the page as failed
+                    $stats['errors']++;
+                    $pendMuno->status = 'failed';
+                    $pendMuno->save();
                     continue;
                 }
 
@@ -171,6 +175,9 @@ Route::get('process-muno-movies-pages', function (Request $request) {
                         }
                         echo '<em>Movie already exists and is active</em>';
                         echo '</div>';
+                        //but mark the page as successful
+                        $pendMuno->status = 'success';
+                        $pendMuno->save();
                         continue;
                     }
                 }
@@ -197,6 +204,8 @@ Route::get('process-muno-movies-pages', function (Request $request) {
                         $stats['page_not_success']++;
                         echo '<em style="color: #ffc107;">⚠️ Processing completed but status is: ' . $pendMuno->status . '</em><br>';
                         echo '</div>';
+                        $pendMuno->status = 'failed';
+                        $pendMuno->save();
                         continue;
                     }
 
@@ -226,6 +235,9 @@ Route::get('process-muno-movies-pages', function (Request $request) {
                         echo '</div>';
                     }
                 } catch (\Exception $e) {
+                    $stats['errors']++;
+                    $pendMuno->status = 'failed';
+                    $pendMuno->save();
                     DB::rollBack();
                     throw $e;
                 }
