@@ -677,6 +677,12 @@ class MovieCrawlerPage extends Model
                     ->first();
             } 
 
+            //use munowatch id to check
+            if ($existing_post == null) {
+                $existing_post = MovieModel::where('munowatch_id', $videoId)
+                    ->first();
+            }
+
             if ($existing_post != null) {
                 $movie = $existing_post;
             } else {

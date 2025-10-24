@@ -28,42 +28,283 @@ use Illuminate\Support\Facades\Route;
 use Symfony\Component\Process\Process;
 
 
+/**
+ * 🎬 OPTIMIZED MUNOWATCH PAGES PROCESSOR
+ * 
+ * This endpoint processes pending Munowatch crawler pages and creates movie records.
+ * Efficiently handles batch processing with intelligent duplicate detection.
+ * 
+ * Features:
+ * - SQL-based query optimization for better performance
+ * - Smart duplicate detection (checks if movie already exists and is active)
+ * - Batch processing with configurable limits
+ * - Professional UI with progress tracking
+ * - Comprehensive error handling and logging
+ * - Transaction-safe processing per page
+ * - Real-time statistics and reporting
+ * 
+ * Query Parameters:
+ * - limit: Number of pages to process per run (default: 10, max: 50)
+ * - skip_active: Skip pages where movie already exists and is active (default: yes)
+ * 
+ * Usage: /process-muno-movies-pages?limit=20&skip_active=yes
+ */
 Route::get('process-muno-movies-pages', function (Request $request) {
-    $pendingMunoWatches = MovieCrawlerPage::where([
-        'movie_crawler_website_id' => 2,
-        'status' => 'success',
-        // 'status' => 'Pending',
-        'is_muno' => 'Yes',
-    ])->orderBy('id', 'asc')->limit(10)->get();
+    set_time_limit(30000); // 8+ hours for extensive processing
+    ini_set('memory_limit', '512M');
 
+    $startTime = microtime(true);
+    $limit = min((int) $request->get('limit', 10), 50); // Max 50 for safety
+    $skipActive = $request->get('skip_active', 'yes') === 'yes';
 
-    foreach ($pendingMunoWatches as $key => $pendMuno) {
-        if ($pendMuno->movie_id != null && is_numeric($pendMuno->movie_id)) {
-            $movie = MovieModel::find($pendMuno->movie_id);
-            if ($movie == null) {
-                $movie = MovieModel::where('external_id', $pendMuno->movie_id)->first();
-            }
+    // Initialize statistics
+    $stats = [
+        'total_processed' => 0,
+        'movies_created' => 0,
+        'already_active' => 0,
+        'processing_failed' => 0,
+        'page_not_success' => 0,
+        'errors' => 0,
+    ];
 
-            if ($movie != null) {
-                if ($movie->status == 'Active') {
-                    echo "Movie ID " . $movie->id . " is already Active. Skipping.<br>";
+    // HTML output with styling
+    echo '<html><head><title>Munowatch Pages Processor</title>';
+    echo '<style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .stats { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: #28a745; padding: 10px; margin: 5px 0; border-left: 4px solid #28a745; background: #d4edda; border-radius: 4px; }
+        .warning { color: #ffc107; padding: 10px; margin: 5px 0; border-left: 4px solid #ffc107; background: #fff3cd; border-radius: 4px; }
+        .error { color: #dc3545; padding: 10px; margin: 5px 0; border-left: 4px solid #dc3545; background: #f8d7da; border-radius: 4px; }
+        .info { color: #17a2b8; padding: 10px; margin: 5px 0; border-left: 4px solid #17a2b8; background: #d1ecf1; border-radius: 4px; }
+        .page-card { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .page-id { font-weight: bold; color: #007bff; font-size: 16px; }
+        .movie-thumb { max-width: 80px; max-height: 120px; border-radius: 4px; margin: 10px 0; }
+        .progress { background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+        .progress-bar { background: #28a745; height: 100%; line-height: 30px; color: white; text-align: center; transition: width 0.3s; }
+    </style></head><body>';
+
+    echo '<div class="header">';
+    echo '<h1>🎬 Munowatch Pages Processor</h1>';
+    echo '<p>Intelligent Movie Creation Engine</p>';
+    echo '</div>';
+
+    try {
+        // Get pending pages count using SQL
+        $totalPending = DB::table('movie_crawler_pages')
+            ->where('movie_crawler_website_id', 2)
+            ->where('status', 'Pending')
+            ->where('is_muno', 'Yes')
+            ->count();
+
+        echo '<div class="stats">';
+        echo '<p><strong>📊 Processing Configuration:</strong></p>';
+        echo '<p>Total Pending Pages: <strong>' . number_format($totalPending) . '</strong></p>';
+        echo '<p>Batch Size: <strong>' . $limit . '</strong></p>';
+        echo '<p>Skip Active Movies: <strong>' . ($skipActive ? 'Yes' : 'No') . '</strong></p>';
+        echo '</div>';
+
+        if ($totalPending === 0) {
+            echo '<div class="success">';
+            echo '<h3>✅ No Pending Pages</h3>';
+            echo '<p>All Munowatch pages have been processed.</p>';
+            echo '</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        // Get pending pages using SQL
+        $pendingPages = DB::table('movie_crawler_pages')
+            ->select('id', 'movie_id', 'url', 'title', 'slug')
+            ->where('movie_crawler_website_id', 2)
+            ->where('status', 'Pending')
+            ->where('is_muno', 'Yes')
+            ->orderBy('id', 'asc')
+            ->limit($limit)
+            ->get();
+
+        if ($pendingPages->isEmpty()) {
+            echo '<div class="info">No pages to process in this batch.</div>';
+            echo '</body></html>';
+            return;
+        }
+
+        echo '<h2>🚀 Processing ' . count($pendingPages) . ' Pages</h2>';
+        echo '<hr>';
+
+        foreach ($pendingPages as $pageData) {
+            $stats['total_processed']++;
+
+            try {
+                // Load the full model for processing
+                $pendMuno = MovieCrawlerPage::find($pageData->id);
+
+                if (!$pendMuno) {
+                    echo '<div class="error">❌ Page ID ' . $pageData->id . ' not found</div>';
                     continue;
                 }
+
+                // Check if movie already exists and is active
+                if ($skipActive && $pendMuno->movie_id != null && is_numeric($pendMuno->movie_id)) {
+                    // Use SQL for faster lookup
+                    $existingMovie = DB::table('movie_models')
+                        ->select('id', 'status', 'title', 'thumbnail_url')
+                        ->where('id', $pendMuno->movie_id)
+                        ->first();
+
+                    if (!$existingMovie) {
+                        $existingMovie = DB::table('movie_models')
+                            ->select('id', 'status', 'title', 'thumbnail_url')
+                            ->where('external_id', $pendMuno->movie_id)
+                            ->first();
+                    }
+
+                    if ($existingMovie && $existingMovie->status === 'Active') {
+                        $stats['already_active']++;
+
+                        echo '<div class="page-card warning">';
+                        echo '<span class="page-id">[SKIP - ACTIVE] Page ID: ' . $pendMuno->id . '</span><br>';
+                        echo '<strong>Movie ID:</strong> ' . $existingMovie->id . '<br>';
+                        echo '<strong>Title:</strong> ' . htmlspecialchars($existingMovie->title ?? 'N/A') . '<br>';
+                        if (!empty($existingMovie->thumbnail_url)) {
+                            echo '<img src="' . htmlspecialchars($existingMovie->thumbnail_url) . '" class="movie-thumb" onerror="this.style.display=\'none\'" /><br>';
+                        }
+                        echo '<em>Movie already exists and is active</em>';
+                        echo '</div>';
+                        continue;
+                    }
+                }
+
+                // Process the page
+                echo '<div class="page-card info">';
+                echo '<span class="page-id">[PROCESSING] Page ID: ' . $pendMuno->id . '</span><br>';
+                echo '<strong>URL:</strong> ' . htmlspecialchars(substr($pendMuno->url ?? '', 0, 80)) . '...<br>';
+                flush();
+
+                DB::beginTransaction();
+                try {
+                    $pendMuno->process_munowatch_intelligent();
+                    DB::commit();
+
+                    // Refresh page status
+                    $pendMuno->refresh();
+
+                    echo "<pre>";
+                    print_r($pendMuno->toArray());
+                    echo "</pre>";
+
+                    if ($pendMuno->status !== 'success') {
+                        $stats['page_not_success']++;
+                        echo '<em style="color: #ffc107;">⚠️ Processing completed but status is: ' . $pendMuno->status . '</em><br>';
+                        echo '</div>';
+                        continue;
+                    }
+
+                    // Check if movie was created
+                    $createdMovie = DB::table('movie_models')
+                        ->select('id', 'title', 'thumbnail_url', 'status', 'type')
+                        ->where('external_url', $pendMuno->url)
+                        ->first();
+
+                    if ($createdMovie) {
+                        $stats['movies_created']++;
+
+                        echo '<em style="color: #28a745;">✅ Processing successful!</em><br>';
+                        echo '</div>';
+
+                        echo '<div class="page-card success">';
+                        echo '<span class="page-id">[✅ MOVIE CREATED] Movie ID: ' . $createdMovie->id . '</span><br>';
+                        echo '<strong>Title:</strong> ' . htmlspecialchars($createdMovie->title ?? 'Untitled') . '<br>';
+                        echo '<strong>Type:</strong> ' . ($createdMovie->type ?? 'Movie') . '<br>';
+                        echo '<strong>Status:</strong> ' . ($createdMovie->status ?? 'Unknown') . '<br>';
+                        if (!empty($createdMovie->thumbnail_url)) {
+                            echo '<img src="' . htmlspecialchars($createdMovie->thumbnail_url) . '" class="movie-thumb" onerror="this.style.display=\'none\'" />';
+                        }
+                        echo '</div>';
+                    } else {
+                        echo '<em style="color: #ffc107;">⚠️ Page processed but no movie found</em><br>';
+                        echo '</div>';
+                    }
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    throw $e;
+                }
+
+                // Progress indicator
+                $progress = ($stats['total_processed'] / count($pendingPages)) * 100;
+                echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">'
+                    . round($progress, 1) . '% Complete</div></div>';
+            } catch (\Throwable $th) {
+                $stats['errors']++;
+
+                echo '<div class="page-card error">';
+                echo '<span class="page-id">[❌ ERROR] Page ID: ' . $pageData->id . '</span><br>';
+                echo '<strong>Error:</strong> ' . htmlspecialchars($th->getMessage()) . '<br>';
+                echo '<em>Check logs for full details</em>';
+                echo '</div>';
+
+                Log::error('Error processing MovieCrawlerPage', [
+                    'page_id' => $pageData->id,
+                    'error' => $th->getMessage(),
+                    'trace' => $th->getTraceAsString()
+                ]);
             }
         }
 
+        // Final Statistics
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 2);
 
-        try {
-            $pendMuno->process_munowatch_intelligent();
-        } catch (\Throwable $th) {
-            //throw $th;
+        echo '<hr>';
+        echo '<div class="stats">';
+        echo '<h2>📊 Processing Complete</h2>';
+        echo '<table style="width: 100%; border-collapse: collapse;">';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Processed:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($stats['total_processed']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Movies Created:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #28a745;">' . number_format($stats['movies_created']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Already Active (Skipped):</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #ffc107;">' . number_format($stats['already_active']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Page Not Success:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #ffc107;">' . number_format($stats['page_not_success']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Errors:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #dc3545;">' . number_format($stats['errors']) . '</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Processing Time:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . $duration . ' seconds</td></tr>';
+        echo '<tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Remaining Pages:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">' . number_format($totalPending - $stats['total_processed']) . '</td></tr>';
+        echo '</table>';
+
+        // Calculate success rate
+        if ($stats['total_processed'] > 0) {
+            $successRate = ($stats['movies_created'] / $stats['total_processed']) * 100;
+            echo '<p style="margin-top: 15px;">Success Rate: <strong>' . round($successRate, 2) . '%</strong></p>';
         }
 
-        die("done processing");
-        dd($pendMuno);
-        continue;
+        echo '</div>';
+
+        $remainingPages = $totalPending - $stats['total_processed'];
+        if ($remainingPages > 0) {
+            echo '<div class="info">';
+            echo '<h3>🔄 More Pages Available</h3>';
+            echo '<p>There are still ' . number_format($remainingPages) . ' pending pages to process.</p>';
+            echo '<p><a href="' . $request->url() . '?limit=' . $limit . '&skip_active=' . ($skipActive ? 'yes' : 'no') . '" ';
+            echo 'style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">▶️ Process Next Batch</a></p>';
+            echo '</div>';
+        } else {
+            echo '<div class="success">';
+            echo '<h3>🎉 All Done!</h3>';
+            echo '<p>All pending pages have been processed successfully.</p>';
+            echo '</div>';
+        }
+    } catch (\Exception $e) {
+        echo '<div class="error">';
+        echo '<h3>❌ Critical Error</h3>';
+        echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
+        echo '<pre>' . htmlspecialchars($e->getTraceAsString()) . '</pre>';
+        echo '</div>';
+        Log::error('Munowatch pages processor critical error', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
     }
+
+    echo '</body></html>';
 });
+
 /**
  * 🎬 OPTIMIZED MUNOWATCH MOVIES CRAWLER
  * 
@@ -139,7 +380,7 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
         if ($lastProcessedMovie && is_numeric($lastProcessedMovie->movie_id)) {
             $min_movie_id = (int) $lastProcessedMovie->movie_id + 1;
         }
-        
+
         // Debug output
         echo '<div class="info">';
         echo '<p><strong>🔍 Debug Info:</strong></p>';
@@ -188,7 +429,9 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
             ->where('is_muno', 'Yes')
             ->whereBetween('movie_id', [$min_movie_id, $max_movie_id_batch])
             ->pluck('movie_id')
-            ->map(function($id) { return (int) $id; })
+            ->map(function ($id) {
+                return (int) $id;
+            })
             ->toArray();
 
         $existingMovieIdsSet = array_flip($existingMovieIds);
@@ -231,11 +474,11 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
             if (count($bulkInsertData) >= 500) {
                 DB::table('movie_crawler_pages')->insert($bulkInsertData);
                 echo '<div class="success">✅ Inserted ' . count($bulkInsertData) . ' pages (IDs: ' . ($i - count($bulkInsertData) + 1) . ' - ' . $i . ')</div>';
-                
+
                 $progress = (($i - $min_movie_id + 1) / ($max_movie_id_batch - $min_movie_id + 1)) * 100;
                 echo '<div class="progress"><div class="progress-bar" style="width: ' . $progress . '%">'
                     . round($progress, 1) . '% Complete</div></div>';
-                
+
                 flush();
                 $bulkInsertData = [];
             }
@@ -280,7 +523,6 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
             echo '<p>All Munowatch movies up to ID ' . number_format($max_movie_id) . ' have been generated successfully.</p>';
             echo '</div>';
         }
-
     } catch (\Exception $e) {
         echo '<div class="error">';
         echo '<h3>❌ Critical Error</h3>';
@@ -1358,6 +1600,40 @@ Route::get('process-muno-series', function (Request $r) {
             ->orderBy('id', 'asc')
             ->limit(20)
             ->get();
+
+        $pendMuno = $pages->first();
+        if ($pendMuno == null) {
+            die("No page found with ID: {$id}");
+        }
+        try {
+            $pendMuno->process_munowatch_intelligent();
+            $page_content = MovieCrawlerPage::find($pendMuno->id);
+            if ($page_content == null) {
+                echo "Failed to reload page content after processing.<br>";
+                die();
+            }
+
+            //display $pendMuno
+            echo "<pre>";
+            print_r($page_content->toArray());
+            echo "</pre>";
+
+            $movie = MovieModel::where('munowatch_id', $pendMuno->muno_id)->first();
+            if ($movie == null) {
+                echo "Movie not found for munowatch_id: {$pendMuno->muno_id}<br>";
+                die();
+            }
+            echo "Page {$pendMuno->id}. {$movie->title} - successfully<hr>";
+            //ttile
+            echo "Title: {$movie->title}<br>";
+            //thumbnail
+            echo '<img src="' . $movie->thumbnail . '" /><br>';
+            die("Done processing page ID: {$pendMuno->id}");
+        } catch (\Throwable $th) {
+            echo "Failed to process page {$pendMuno->id} because " . $th->getMessage() . "<br>";
+            Log::error("Failed to process page {$pendMuno->id} because " . $th->getMessage());
+            die();
+        }
     } else {
         //process serises
         $pages = MovieCrawlerPage::where([
