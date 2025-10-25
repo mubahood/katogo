@@ -33,7 +33,7 @@ Route::get('process-episodes-new', function (Request $request) {
         ->where('episodes_data_fetched', 'No')
         ->limit(10)
         ->get();
-    // $episodePages = MovieCrawlerPage::where('id', 2968)->get();
+    $episodePages = MovieCrawlerPage::where('id', 2968)->get();
     foreach ($episodePages as $episodePage) {
         // Process each episode page
         try {

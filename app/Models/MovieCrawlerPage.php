@@ -1039,7 +1039,7 @@ class MovieCrawlerPage extends Model
                     $seriesMovie = SeriesMovie::find($this->series_id);
                 }
 
-               
+
                 if ($seriesMovie == null) {
                     $seriesMovie = new SeriesMovie();
                     $seriesMovie->title = $title;
@@ -1053,7 +1053,7 @@ class MovieCrawlerPage extends Model
                     $seriesMovie->muno_processed = 'Yes';
                     $seriesMovie->is_muno = 'Yes';
                     $seriesMovie->is_premium = 'Yes';
-                    $seriesMovie->vj = $vjname; 
+                    $seriesMovie->vj = $vjname;
                     $seriesMovie->status = 'Active';
                     $seriesMovie->munowatch_id = $series_code;
                     try {
@@ -1067,6 +1067,123 @@ class MovieCrawlerPage extends Model
                         continue;
                     }
                 }
+
+                $seriesMovie->refresh();
+
+                if ($this->is_episode == "Yes") {
+                    $this->series_id = $seriesMovie->id;
+                    $episode = MovieModel::where('external_url', $related_page->url)
+                        ->first();
+                    if ($episode == null) {
+                        $episode = MovieModel::where('url', $playingUrl)
+                            ->first();
+                    }
+                    if ($episode == null) {
+                        $episode = MovieModel::where('munowatch_id', $_preview['id'])
+                            ->first();
+                    }
+                    if ($episode == null) {
+                        $episode = new MovieModel();
+                    }
+                    $titleSplits = explode(' ', $this->title);
+                    $ep = end($titleSplits);
+                    $ep = (int)($ep);
+                    $episode->title = $this->title;
+                    
+                }
+  /*  
+    "video_name" => "THE HAUNTED PALACE EP 2.mp4"
+    "filehistory" => ""
+    "openload" => "0"
+    "embedurl" => ""
+    "serverhost" => "66"
+    "allow_openload" => "0"
+    "full_video_name" => ""
+    "duration" => "32h 44m"
+    "thumbnail" => "https://munoapp.org/munowatch-api/laba/yo/naki/Ng1bUnca1l3766.jpg"
+    "tfilehistory" => ""
+    "category_id" => 5
+    "language_id" => 1
+    "recording_date" => "2025-10-08"
+    "age_id" => "18 +"
+    "location" => 1
+    "tab_category_id" => 5
+    "series_code" => "28051"
+    "access" => "1"
+    "paid_for" => "1"
+    "new_movie" => "1"
+    "priority" => "No"
+    "size" => "272.41 MB"
+    "create_date" => "2025-10-08 16:10:22"
+    "schedule_date" => "08.10.2025 04:18:03 PM"
+    "user_id" => 169464
+    "vj_id" => 37
+    "video_status_id" => 0
+    "network_id" => "45.221.10.185"
+    "user_access" => "deny"
+    "notification" => ""
+    "secduration" => "117840.000000"
+    "issubscriber" => true
+    "download" => "0"
+    "genre" => "Series"
+    "vjname" => "Vj KS"
+    "episodes" => 31
+    "episode_state" => "NEXT"
+    "nxt_eps" => "EPS   3"
+    "nxt_eps_id" => 59738
+    "nxt_eps_title" => "The Haunted Palace 3"
+    "nxt_ldur" => 0
+    "nxt_playing_url" => "http://munoserver55.club/simo/simo22/THE HAUNTED PALACE EP 3.mp4"
+    "playingUrl" => "http://munoserver55.club/simo/simo22/THE HAUNTED PALACE EP 2.mp4"
+    "ldur" => 0
+    "session_id" => "51ca288bbec537a2da5ced8b0b828f74"
+    "device" => "android"
+    "lang_name" => "English to Luganda"
+    "vjrelease" => "23 hrs ago"
+    "mstatus" => false
+    "kstatus" => ""
+    "substatus" => "FAILED"
+                */
+    
+                /* 
+                    "id" => 2968
+    "created_at" => "2025-10-09 22:17:01"
+    "updated_at" => "2025-10-26 00:45:06"
+    "movie_crawler_website_id" => 2
+    "title" => "The Haunted Palace 2"
+    "slug" => "59248"
+    "url" => "https://munowatch.org/api/preview/v2/59766/3664"
+    "movie_id" => null
+    "page_content" => "        {"preview":{"id":59737,"video_title":"The Haunted Palace 2","description":"The story takes place in the royal palace, where a conspiracy summons an evil ▶"
+    "error_message" => "Call to undefined method App\Models\SeriesMovie::refrsh()"
+    "status" => "error"
+    "last_fetched_at" => null
+    "type" => "Series"
+    "row_id" => "59737"
+    "img_port_muno_file_name" => null
+    "bunny_file_name" => null
+    "tmdb_poster_path" => null
+    "vj" => "Munowatch API"
+    "notes" => "SERIES DETECTED: (seriesCode: 28051, showId: 59737)"
+    "series_id" => 2691
+    "is_muno" => "Yes"
+    "muno_processed" => "Yes"
+    "munowatch_id" => "59737"
+    "muno_success" => "No"
+    "muno_message" => "Series detected, pending processing 1"
+    "muno_series_processed" => "Yes"
+    "muno_series_success" => "Yes"
+    "muno_series_group_id" => "83524"
+    "is_generated" => "No"
+    "is_episode" => "Yes"
+    "episodes_data_fetched" => "Error"
+    "episode_data" => "      
+                */
+
+
+
+              
+
                 if (isset($_preview['thumbnail']) && filter_var($_preview['thumbnail'], FILTER_VALIDATE_URL)) {
                     $seriesMovie->thumbnail = $_preview['thumbnail'];
                     $seriesMovie->poster_url = $_preview['thumbnail'];
