@@ -127,7 +127,7 @@ Route::get('process-muno-movies-pages', function (Request $request) {
     ini_set('memory_limit', '512M');
 
     $startTime = microtime(true);
-    $limit = min((int) $request->get('limit', 10), 50); // Max 50 for safety
+    $limit = min((int) $request->get('limit', 20), 50); // Max 50 for safety
     $skipActive = $request->get('skip_active', 'yes') === 'yes';
 
     // Initialize statistics
