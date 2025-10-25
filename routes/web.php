@@ -63,13 +63,44 @@ Route::get('process-muno-movies-pages', function (Request $request) {
     if ($page->page_content != null && strlen(trim($page->page_content)) > 10) {
         echo "Processing page content...<br>";
         $page->process_munowatch_intelligent();
-        dd($page->toArray());
     } else {
         echo "Failed to fetch page content.<br>";
         dd($page);
     }
+    $page->refresh();
+    
 
-    dd($page->page_content);
+    //if type is movie,
+    if ($page->type === 'Movie') {
+        $movie = MovieModel::find($page->movie_id);
+        if (!$movie) {
+            echo "Movie not found.<br>";
+            dd($page);
+        }
+        //ECHO THE MOVIE DETAILS
+        echo "Movie Details:<br>";
+        echo "ID: " . $movie->id . "<br>";
+        echo "Title: " . $movie->title . "<br>";
+        //img
+        echo "<img src='" . $movie->thumbnail_url . "' alt='Movie Thumbnail' /><br>";
+    }else if ($page->type === 'Series') {
+        $series = SeriesMovie::find($page->movie_id);
+        if (!$series) {
+            echo "Series not found.<br>";
+            dd($page);
+        }
+        //ECHO THE SERIES DETAILS
+        echo "Series Details:<br>";
+        echo "ID: " . $series->id . "<br>";
+        echo "Title: " . $series->title . "<br>";
+        //img
+        echo "<img src='" . $series->thumbnail . "' alt='Series Thumbnail' /><br>";
+    } else {
+        echo "Unknown type: " . $page->type . "<br>";
+    }
+    dd($page);
+
+    die(); 
 
     $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
     $headers = [
