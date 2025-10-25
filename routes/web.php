@@ -50,8 +50,15 @@ use Symfony\Component\Process\Process;
  * Usage: /process-muno-movies-pages?limit=20&skip_active=yes
  */
 Route::get('process-muno-movies-pages', function (Request $request) {
-    $url = 'https://munowatch.org/api/preview/v2/4920/3664';
-    $page = MovieCrawlerPage::where('url', $url)->first();
+    // $url = 'https://munowatch.org/api/preview/v2/4920/3664';
+    // $page = MovieCrawlerPage::where('url', $url)->first();
+    //next pending page for munowatch
+    $page = MovieCrawlerPage::where('movie_crawler_website_id', 2)
+        ->where('status', 'Pending')
+        ->where('is_muno', 'Yes')
+        ->orderBy('id', 'asc')
+        ->first();
+
     if ($page->page_content == null || strlen(trim($page->page_content)) < 10) {
         echo "Fetching page content...<br>";
         $page->fetch_page_content(false);
