@@ -79,7 +79,7 @@ Route::get('process-muno-movies-pages', function (Request $request) {
         dd($page);
     }
     $page->refresh();
-    
+
 
     //if type is movie,
     if ($page->type === 'Movie') {
@@ -94,7 +94,7 @@ Route::get('process-muno-movies-pages', function (Request $request) {
         echo "Title: " . $movie->title . "<br>";
         //img
         echo "<img src='" . $movie->thumbnail_url . "' alt='Movie Thumbnail' /><br>";
-    }else if ($page->type === 'Series') {
+    } else if ($page->type === 'Series') {
         $series = SeriesMovie::find($page->series_id);
         if (!$series) {
             echo "Series not found.<br>";
@@ -109,25 +109,25 @@ Route::get('process-muno-movies-pages', function (Request $request) {
     } else {
         echo "Unknown type: " . $page->type . "<br>";
     }
-    dd($page);
+    // dd($page);
 
-    die(); 
+    // die(); 
 
-    $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
-    $headers = [
-        'Authorization' => 'Bearer ' . $baseToken,
-        'X-Api-Key' => $baseToken,
-        'User-Agent' => 'okhttp/4.9.0'
-    ];
-    $data = Utils::get_url_with_auth($url, $headers);
-    dd($data);
+    // $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+    // $headers = [
+    //     'Authorization' => 'Bearer ' . $baseToken,
+    //     'X-Api-Key' => $baseToken,
+    //     'User-Agent' => 'okhttp/4.9.0'
+    // ];
+    // $data = Utils::get_url_with_auth($url, $headers);
+    // dd($data);
 
 
     set_time_limit(30000); // 8+ hours for extensive processing
     ini_set('memory_limit', '512M');
 
     $startTime = microtime(true);
-    $limit = min((int) $request->get('limit', 100), 500); // Max 50 for safety
+    $limit = min((int) $request->get('limit', 10), 50); // Max 50 for safety
     $skipActive = $request->get('skip_active', 'yes') === 'yes';
 
     // Initialize statistics
@@ -1415,7 +1415,7 @@ Route::get('reverse-firebase', function (Request $r) {
  * Usage: /process-duplicates?limit=500&dry_run=no
  */
 Route::get('process-duplicates', function (Request $r) {
-    return; 
+    return;
     set_time_limit(6000); // 10 minutes
     ini_set('memory_limit', '1024M'); // 1GB for safety
 
