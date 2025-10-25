@@ -50,6 +50,37 @@ use Symfony\Component\Process\Process;
  * Usage: /process-muno-movies-pages?limit=20&skip_active=yes
  */
 Route::get('process-muno-movies-pages', function (Request $request) {
+    $url = 'https://munowatch.org/api/preview/v2/4920/3664';
+    $page = MovieCrawlerPage::where('url', $url)->first();
+    if ($page->page_content == null || strlen(trim($page->page_content)) < 10) {
+        echo "Fetching page content...<br>";
+        $page->fetch_page_content(false);
+    } else {
+        echo "Page content already exists.<br>";
+    }
+
+
+    if ($page->page_content != null && strlen(trim($page->page_content)) > 10) {
+        echo "Processing page content...<br>";
+        $page->process_munowatch_intelligent();
+        dd($page->toArray());
+    } else {
+        echo "Failed to fetch page content.<br>";
+        dd($page);
+    }
+
+    dd($page->page_content);
+
+    $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+    $headers = [
+        'Authorization' => 'Bearer ' . $baseToken,
+        'X-Api-Key' => $baseToken,
+        'User-Agent' => 'okhttp/4.9.0'
+    ];
+    $data = Utils::get_url_with_auth($url, $headers);
+    dd($data);
+
+
     set_time_limit(30000); // 8+ hours for extensive processing
     ini_set('memory_limit', '512M');
 
@@ -1704,7 +1735,7 @@ Route::get('process-muno-series', function (Request $r) {
                     echo '<img src="' . $series->thumbnail . '" /><br>';
                     continue;
                 }
-            } else {  
+            } else {
                 $movie = MovieModel::where('id', $page->movie_id)->first();
                 if ($movie == null) {
                     echo "Movie not found for munowatch_id: {$page->muno_id}<br>";
