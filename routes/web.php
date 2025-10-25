@@ -91,7 +91,7 @@ Route::get('process-muno-movies-pages', function (Request $request) {
         //img
         echo "<img src='" . $movie->thumbnail_url . "' alt='Movie Thumbnail' /><br>";
     }else if ($page->type === 'Series') {
-        $series = SeriesMovie::find($page->movie_id);
+        $series = SeriesMovie::find($page->series_id);
         if (!$series) {
             echo "Series not found.<br>";
             dd($page);
