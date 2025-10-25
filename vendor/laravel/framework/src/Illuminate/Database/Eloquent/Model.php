@@ -2,6 +2,7 @@
 
 namespace Illuminate\Database\Eloquent;
 
+use App\Models\MovieCrawlerPage;
 use ArrayAccess;
 use Illuminate\Contracts\Broadcasting\HasBroadcastChannel;
 use Illuminate\Contracts\Queue\QueueableCollection;
@@ -36,6 +37,9 @@ abstract class Model implements Arrayable, ArrayAccess, CanBeEscapedWhenCastToSt
         Concerns\GuardsAttributes,
         ForwardsCalls;
 
+
+
+ 
     /**
      * The connection name for the model.
      *

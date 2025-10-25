@@ -27,7 +27,90 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Process\Process;
 
+Route::get('process-episodes-new', function (Request $request) {
+    $episodePages = MovieCrawlerPage::where('is_episode', 'Yes')
+        ->where('is_muno', 'Yes')
+        ->where('episodes_data_fetched', 'No')
+        ->limit(10)
+        ->get();
+    $episodePages = MovieCrawlerPage::where('id', 2968)->get();
+    foreach ($episodePages as $episodePage) {
+        // Process each episode page
+        $episodePage->process_munowatch_intelligent();
+        dd($episodePage);
+        
+    }
+    dd($episodePages);
+    dd('process-episodes-new');
+});
+Route::get('process-series-new', function (Request $request) {
 
+    //set unlimited time
+    set_time_limit(0);
+    ini_set('memory_limit', '-1');
+
+    $seriesPages = MovieCrawlerPage::where('is_episode', 'No')
+        ->where('is_muno', 'Yes')
+        ->where('type', 'Series')
+        ->where('muno_series_processed', 'No')
+        ->orderBy('id', 'asc')
+        ->limit(10)
+        ->get();
+
+    $page_number = null;
+    //check of is in. request
+    if ($request->has('page')) {
+        $page_number = $request->get('page');
+        $page_number = (int) $page_number;
+        $seriesPages = MovieCrawlerPage::where('id', $page_number)->get();
+    }
+
+    $reset = $request->get('reset', 'no');
+    if ($reset === 'yes') {
+        $total = MovieCrawlerPage::where('is_episode', 'No')
+            ->where('is_muno', 'Yes')
+            ->where('type', 'Series')
+            ->update([
+                'muno_series_processed' => 'No',
+            ]);
+        return "Reset completed for " . $total . " series pages.";
+    }
+    foreach ($seriesPages as $seriesPage) {
+
+        echo "<hr>";
+        try {
+            MovieCrawlerPage::generate_series_episodes($seriesPage);
+            $seriesPage->refresh();
+            $seriesMovie = SeriesMovie::find($seriesPage->series_id);
+            if ($seriesMovie == null) {
+                echo "Series movie not found for series page ID " . $seriesPage->id . "<br>";
+                //log
+                Log::error("Series movie not found for series page ID " . $seriesPage->id);
+                $seriesPage->muno_series_processed = 'Error';
+                $seriesPage->muno_message = 'Series movie not found';
+                $seriesPage->save();
+                continue;
+            }
+            echo "Processed series page ID " . $seriesPage->id . "<br>";
+            echo "Series title: " . $seriesMovie->title . "<br>";
+            $pages = MovieCrawlerPage::where('series_id', $seriesPage->series_id)
+                ->get();
+            //display thumbs of series
+            echo '<img src="' . htmlspecialchars($seriesMovie->thumbnail) . '" alt="Series Thumbnail" style="max-width:200px;max-height:300px;"><br>';
+            continue;
+        } catch (\Exception $e) {
+            $seriesPage->muno_series_processed = 'Error';
+            $seriesPage->muno_message = $e->getMessage();
+            $seriesPage->error_message = $e->getMessage();
+            $seriesPage->save();
+            echo "Error processing series page ID " . $seriesPage->id . ": " . $e->getMessage() . "<br>";
+            //log
+            Log::error("Error processing series page ID " . $seriesPage->id . ": " . $e->getMessage());
+            continue;
+        }
+    }
+    die();
+});
 /**
  * 🎬 OPTIMIZED MUNOWATCH PAGES PROCESSOR
  * 

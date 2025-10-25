@@ -381,6 +381,10 @@ class MovieCrawlerPage extends Model
      */
     public function process_munowatch_intelligent()
     {
+        if ($this->is_episode === "Yes") {
+            $this->process_munowatch_series();
+            return;
+        }
         if ($this->page_content == null || strlen(trim($this->page_content)) < 10) {
             try {
                 //check if url is reachable again
@@ -931,6 +935,7 @@ class MovieCrawlerPage extends Model
                 $this->save();
             }
 
+            // dd( 'Searching for related pages with series_code: ' . $series_code);
             // dd( '%"series_code":"' . $series_code . '"%');
             // dd($series_code);
 
@@ -1030,13 +1035,11 @@ class MovieCrawlerPage extends Model
                     'munowatch_id' => $series_code
                 ])->first();
 
-                if ($seriesMovie == null && $vjname != null && strlen($vjname) > 1) {
-                    $seriesMovie = SeriesMovie::where([
-                        'is_muno' => 'Yes',
-                        'title' => $series_code,
-                        'vj' => $vjname
-                    ])->first();
+                if ($seriesMovie == null && $this->series_id != null && (($this->series_id) > 0)) {
+                    $seriesMovie = SeriesMovie::find($this->series_id);
                 }
+
+               
                 if ($seriesMovie == null) {
                     $seriesMovie = new SeriesMovie();
                     $seriesMovie->title = $title;
@@ -1050,7 +1053,7 @@ class MovieCrawlerPage extends Model
                     $seriesMovie->muno_processed = 'Yes';
                     $seriesMovie->is_muno = 'Yes';
                     $seriesMovie->is_premium = 'Yes';
-                    $seriesMovie->vj = $vjname;
+                    $seriesMovie->vj = $vjname; 
                     $seriesMovie->status = 'Active';
                     $seriesMovie->munowatch_id = $series_code;
                     try {
@@ -1493,5 +1496,284 @@ class MovieCrawlerPage extends Model
         }
 
         return null;
+    }
+
+
+    public static function generate_series_episodes($seriesPage)
+    {
+
+        if ($seriesPage->is_episode == 'Yes') {
+            throw new \Exception("Episodes cannot be generated for an episode page.");
+        }
+        if ($seriesPage->muno_series_processed == 'Yes') {
+            throw new \Exception("Episodes already processed for this series page.");
+        }
+        if ($seriesPage->episode_data == null && strlen(trim($seriesPage->episode_data)) < 10) {
+            if ($seriesPage->page_content == null || strlen(trim($seriesPage->page_content)) < 10) {
+                $seriesPage->fetch_page_content(false);
+            }
+            $seriesPage->refresh();
+            if ($seriesPage->page_content == null || strlen(trim($seriesPage->page_content)) < 10) {
+                throw new \Exception("Failed to fetch series page content.");
+            }
+            $page_content = null;
+
+            try {
+                $page_content = json_decode($seriesPage->page_content, true);
+            } catch (\Throwable $th) {
+                throw $th;
+            }
+
+            if (!isset($page_content['preview'])) {
+                throw new \Exception("Preview data not found in page content.");
+            }
+            $preview = $page_content['preview'];
+            if (!isset($preview['series_code']) || !isset($preview['id'])) {
+                throw new \Exception("Required preview fields missing.");
+            }
+            try {
+                $series_code = $preview['series_code'];
+                $id = $preview['id'];
+                $season_number = 1;
+                $url = 'https://munowatch.org/api/episodes/range/' . $id . '/' . $series_code . '/' . $season_number;
+
+                $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+                $headers = [
+                    'Authorization' => 'Bearer ' . $baseToken,
+                    'X-Api-Key' => $baseToken,
+                    'User-Agent' => 'okhttp/4.9.0'
+                ];
+                $data = Utils::get_url_with_auth($url, $headers);
+                $seriesPage->episode_data = $data;
+                $seriesPage->save();
+            } catch (\Throwable $th) {
+                throw $th;
+            }
+        }
+        $seriesPage->refresh();
+        if ($seriesPage->episode_data == null || strlen(trim($seriesPage->episode_data)) < 10) {
+            throw new \Exception("Failed to fetch episode data.");
+        }
+        $data = null;
+        try {
+            $data = json_decode($seriesPage->episode_data, true);
+        } catch (\Throwable $th) {
+            throw $th;
+        }
+
+        $page_content = null;
+
+        try {
+            $page_content = json_decode($seriesPage->page_content, true);
+        } catch (\Throwable $th) {
+            throw $th;
+        }
+
+        if (!isset($page_content['preview'])) {
+            throw new \Exception("Preview data not found in page content.");
+        }
+        $preview = $page_content['preview'];
+        if (!isset($preview['series_code']) || !isset($preview['id'])) {
+            throw new \Exception("Required preview fields missing.");
+        }
+
+
+        $episodes_ids = [];
+        $count = 0;
+        foreach ($data as $key => $ep) {
+            if (!isset($ep['eps_range'])) continue;
+            $eps_range = explode('__', $ep['eps_range']);
+            $ep_min = 0;
+            $ep_max = 0;
+            if (isset($eps_range[0])) {
+                $ep_min = (int) str_replace('EPISODE_', '', $eps_range[0]);
+            }
+            if (isset($eps_range[1])) {
+                $ep_max = (int) str_replace('EPISODE_', '', $eps_range[1]);
+            }
+            //if check if ep invalid
+            if ($ep_min <= 0 || $ep_max <= 0 || $ep_max < $ep_min) {
+                continue;
+            }
+            for ($i = $ep_min; $i <= $ep_max; $i++) {
+                $count++;
+                $_ep['id'] = $i;
+                $_ep['number'] =  $count;
+                $_ep['video_title'] = 'Episode ' . $count;
+                $episodes_ids[] = $_ep;
+            }
+        }
+
+        //count $episodes_ids
+        if (count($episodes_ids) == 0) {
+            throw new \Exception("No episodes found in episode data.");
+        }
+        $video_title = null;
+
+        if (
+            isset($preview['video_title']) &&
+            isset($preview['nxt_eps']) &&
+            is_string($preview['video_title']) &&
+            is_string($preview['nxt_eps'])
+        ) {
+            $this_title = trim($preview['video_title']);
+            $this_nxt_eps = trim($preview['nxt_eps']);
+
+            // Safely split and get next episode number
+            $next_ep_splits = explode('EPS', $this_nxt_eps);
+            if (!empty($next_ep_splits)) {
+                $last_ep_seg = trim(end($next_ep_splits));
+                $prev_num = (int) filter_var($last_ep_seg, FILTER_SANITIZE_NUMBER_INT);
+
+                // Only process if we have a valid episode number greater than 1
+                if ($prev_num > 1) {
+                    $prev_num_adjusted = $prev_num - 1;
+                    // Replace last instance of previous episode number from title
+                    $last_pos = strrpos($this_title, (string) $prev_num_adjusted);
+                    if ($last_pos !== false) {
+                        $video_title = substr_replace($this_title, '', $last_pos, strlen((string) $prev_num_adjusted));
+                        $video_title = trim($video_title);
+                    } else {
+                        $video_title = $this_title;
+                    }
+                } else {
+                    $video_title = $this_title;
+                }
+            } else {
+                $video_title = $this_title;
+            }
+        } else {
+            $video_title = null;
+        }
+
+        //check if is null , video_title and just use the defaut title
+        if (is_null($video_title)) {
+            if (isset($preview['video_title'])) {
+                $video_title = $preview['video_title'];
+            }
+        }
+
+
+        // Check if title contains episode indicators and clean it up
+        if ($video_title != null) {
+            // Case-insensitive check for episode indicators
+            $lowerTitle = strtolower($video_title);
+
+            // Check for various episode patterns (ep, episode, etc.)
+            if (preg_match('/(ep\s*\d+|episode\s*\d+)/i', $video_title, $matches)) {
+                // Find position of the match
+                $pos = stripos($video_title, $matches[0]);
+                if ($pos !== false) {
+                    // Extract everything before the episode indicator
+                    $video_title = trim(substr($video_title, 0, $pos));
+                }
+            }
+        }
+
+        //if $video_title contains ep or episode , then use the original title
+        if ($video_title != null) {
+            $lowerTitle = strtolower($video_title);
+            if (strpos($lowerTitle, 'ep') !== false || strpos($lowerTitle, 'episode') !== false) {
+                if (isset($preview['video_title'])) {
+                    $video_title = $preview['video_title'];
+                }
+            }
+        }
+
+        $existingSerie = SeriesMovie::where('title', $video_title)
+            ->where('is_muno', 'Yes')
+            ->first();
+
+        $munowatch_id = null;
+        $series_code = null;
+        if (isset($preview['id'])) {
+            $munowatch_id = $preview['id'];
+        }
+
+        if (isset($preview['series_code'])) {
+            $series_code = $preview['series_code'];
+        }
+
+        if ($munowatch_id == null) {
+            throw new \Exception("Munowatch ID not found in preview data.");
+        }
+
+        if ($existingSerie == null) {
+            $existingSerie = SeriesMovie::where('munowatch_id', $munowatch_id)
+                ->first();
+        }
+
+        if ($existingSerie == null) {
+            $existingSerie = SeriesMovie::where('series_code', $series_code)
+                ->first();
+        }
+
+        if ($existingSerie == null) {
+            $existingSerie = SeriesMovie::where('external_url', $seriesPage->url)
+                ->first();
+        }
+
+        if ($existingSerie == null) {
+            $existingSerie = new SeriesMovie();
+        }
+
+        $existingSerie->munowatch_id = $munowatch_id;
+        $existingSerie->title = $video_title;
+        $existingSerie->Category = $preview['vjname'] ?? 'Drama';
+        $existingSerie->description = $preview['description'] ?? '';
+        $existingSerie->thumbnail = $preview['thumbnail'] ?? null;
+        $existingSerie->total_episodes = 0;
+        $existingSerie->total_views = 0;
+        $existingSerie->total_rating = 0;
+        $existingSerie->external_id = $munowatch_id;
+        $existingSerie->series_code = $series_code;
+        $existingSerie->is_muno = 'Yes';
+        $existingSerie->muno_processed = 'No';
+        $existingSerie->is_active = 'No';
+        $existingSerie->vj = $preview['vjname'] ?? null;
+        $existingSerie->genre = $preview['genre'] ?? null;
+        $existingSerie->save();
+
+
+
+        $user_id = 3664; //admin user
+        foreach ($episodes_ids as $key => $episode) {
+            $munowatch_id = $preview['id'];
+            $page_url = "https://munowatch.org/api/preview/v2/{$episode['id']}/" . $user_id;
+            $existingPage = MovieCrawlerPage::where('url', $page_url)
+                ->first();
+            if ($existingPage == null) {
+                //serach by $munowatch_id
+                $existingPage = MovieCrawlerPage::where('munowatch_id', $munowatch_id)
+                    ->first();
+            }
+            if ($existingPage == null) {
+                $existingPage = new MovieCrawlerPage();
+            }
+
+            $existingPage->movie_crawler_website_id = 2;
+            $existingPage->url = $page_url;
+            $existingPage->title = $existingSerie->title;
+            $existingPage->slug = $munowatch_id;
+            $existingPage->type = 'Series';
+            $existingPage->series_id = $existingSerie->id;
+            $existingPage->is_muno = 'Yes';
+            $existingPage->status = 'success';
+            $existingPage->is_episode = 'Yes';
+            $existingPage->muno_processed = 'No';
+            $existingPage->is_generated = 'No';
+            $existingPage->muno_series_processed = 'Yes';
+            $existingPage->episodes_data_fetched = 'No';
+            $existingPage->series_code = $series_code;
+            $existingPage->muno_series_group_id = $series_code;
+            $existingPage->save();
+        }
+        $existingSerie->refresh();
+        $existingSerie->status = 'Active';
+        $existingSerie->save();
+        $seriesPage->series_id = $existingSerie->id;
+        $seriesPage->muno_series_processed = 'Yes';
+        $seriesPage->save();
+        return $existingSerie;
     }
 }
