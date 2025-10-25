@@ -50,6 +50,10 @@ use Symfony\Component\Process\Process;
  * Usage: /process-muno-movies-pages?limit=20&skip_active=yes
  */
 Route::get('process-muno-movies-pages', function (Request $request) {
+    //set tmer
+    set_time_limit(30000); // 8+ hours for extensive processing
+    ini_set('memory_limit', '512M');
+
     // $url = 'https://munowatch.org/api/preview/v2/4920/3664';
     // $page = MovieCrawlerPage::where('url', $url)->first();
     //next pending page for munowatch
@@ -307,7 +311,7 @@ Route::get('process-muno-movies-pages', function (Request $request) {
                     $stats['errors']++;
                     $pendMuno->status = 'failed';
                     $pendMuno->save();
-                    DB::rollBack();
+                    // DB::rollBack();
                     throw $e;
                 }
 
@@ -808,7 +812,7 @@ Route::get('replace-images', function (Request $r) {
                     flush();
                 }
             } catch (\Exception $e) {
-                DB::rollBack();
+                // DB::rollBack();
                 $stats['errors']++;
 
                 echo '<div class="movie-card error">';
@@ -868,7 +872,7 @@ Route::get('replace-images', function (Request $r) {
             echo '</div>';
         }
     } catch (\Exception $e) {
-        DB::rollBack();
+        // DB::rollBack();
         echo '<div class="error">';
         echo '<h3>❌ Critical Error</h3>';
         echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
@@ -1063,7 +1067,7 @@ Route::get('fix-images', function (Request $r) {
                     flush();
                 }
             } catch (\Exception $e) {
-                DB::rollBack();
+                // DB::rollBack();
                 $stats['errors']++;
 
                 echo '<div class="movie-card error">';
@@ -1130,7 +1134,7 @@ Route::get('fix-images', function (Request $r) {
             echo '</div>';
         }
     } catch (\Exception $e) {
-        DB::rollBack();
+        // DB::rollBack();
         echo '<div class="error">';
         echo '<h3>❌ Critical Error</h3>';
         echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
@@ -1315,7 +1319,7 @@ Route::get('reverse-firebase', function (Request $r) {
                     flush();
                 }
             } catch (\Exception $e) {
-                DB::rollBack();
+                // DB::rollBack();
                 $stats['errors']++;
 
                 echo '<div class="movie-card error">';
@@ -1374,7 +1378,7 @@ Route::get('reverse-firebase', function (Request $r) {
             echo '</div>';
         }
     } catch (\Exception $e) {
-        DB::rollBack();
+        // DB::rollBack();
         echo '<div class="error">';
         echo '<h3>❌ Critical Error</h3>';
         echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
@@ -1602,7 +1606,7 @@ Route::get('process-duplicates', function (Request $r) {
                     flush();
                 }
             } catch (\Exception $e) {
-                DB::rollBack();
+                // DB::rollBack();
                 $stats['errors']++;
                 echo '<div class="error">❌ Error processing ID: ' . $movie->id . ' - ' . htmlspecialchars($e->getMessage()) . '</div>';
                 Log::error('Duplicate processing error', [
@@ -1656,7 +1660,7 @@ Route::get('process-duplicates', function (Request $r) {
             echo '</div>';
         }
     } catch (\Exception $e) {
-        DB::rollBack();
+        // DB::rollBack();
         echo '<div class="error">';
         echo '<h3>❌ Critical Error</h3>';
         echo '<p>' . htmlspecialchars($e->getMessage()) . '</p>';
