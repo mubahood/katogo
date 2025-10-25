@@ -33,15 +33,41 @@ Route::get('process-episodes-new', function (Request $request) {
         ->where('episodes_data_fetched', 'No')
         ->limit(10)
         ->get();
-    $episodePages = MovieCrawlerPage::where('id', 2968)->get();
+    // $episodePages = MovieCrawlerPage::where('id', 2968)->get();
     foreach ($episodePages as $episodePage) {
         // Process each episode page
-        $episodePage->process_munowatch_intelligent();
-        dd($episodePage);
-        
+        try {
+            echo "<hr>";
+            $episodePage->process_munowatch_intelligent();
+            $episodePage->refresh();
+            echo "Processed episode page ID " . $episodePage->id . "<br>";
+            echo "Episode title: " . $episodePage->title . "<br>";
+            $seriesMovie = SeriesMovie::find($episodePage->series_id);
+            if ($seriesMovie == null) {
+                echo "Series movie not found for episode page ID " . $episodePage->id . "<br>";
+                //log
+                Log::error("Series movie not found for episode page ID " . $episodePage->id);
+                $episodePage->episodes_data_fetched = 'Error';
+                $episodePage->error_message = 'Series movie not found';
+                $episodePage->save();
+                continue;
+            }
+            echo "Series title: " . $seriesMovie->title . "<br>";
+            //display thumbs of series
+            echo '<img src="' . htmlspecialchars($seriesMovie->thumbnail) . '" alt="Series Thumbnail" style="max-width:200px;max-height:300px;"><br>';
+            $episodePage->episodes_data_fetched = 'Success';
+            $episodePage->save();
+            continue;
+        } catch (\Exception $e) {
+            $episodePage->episodes_data_fetched = 'Error';
+            $episodePage->error_message = $e->getMessage();
+            $episodePage->save();
+            echo "Error processing episode page ID " . $episodePage->id . ": " . $e->getMessage() . "<br>";
+            //log
+            Log::error("Error processing episode page ID " . $episodePage->id . ": " . $e->getMessage());
+            continue;
+        }
     }
-    dd($episodePages);
-    dd('process-episodes-new');
 });
 Route::get('process-series-new', function (Request $request) {
 
