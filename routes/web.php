@@ -1415,6 +1415,7 @@ Route::get('reverse-firebase', function (Request $r) {
  * Usage: /process-duplicates?limit=500&dry_run=no
  */
 Route::get('process-duplicates', function (Request $r) {
+    return; 
     set_time_limit(6000); // 10 minutes
     ini_set('memory_limit', '1024M'); // 1GB for safety
 
