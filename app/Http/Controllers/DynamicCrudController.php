@@ -1017,7 +1017,7 @@ class DynamicCrudController extends Controller
             $isMobileApp = stripos($userAgent, 'okhttp') !== false || 
                            stripos($userAgent, 'dart') !== false ||
                            $request->header('X-App-Platform') === 'mobile';
-            
+            $u = Utils::get_user($request); 
             \Log::info('🔍 SEARCH ANALYTICS CHECKPOINT (MOVIES)', [
                 'endpoint' => '/movies',
                 'searchTerm' => $searchTerm,
