@@ -178,7 +178,10 @@ class SubscriptionController extends AdminController
             ->display(function ($amount) {
                 $model = $this;
                 return "<strong>{$model->currency} " . number_format($amount, 2) . "</strong>";
-            })->sortable();
+            })->sortable()
+            ->totalRow(function ($amount) {
+                return 'UGX ' . number_format($amount);
+            });
 
         $grid->column('status', __('Status'))
             ->display(function ($status) {
