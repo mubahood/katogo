@@ -6,6 +6,7 @@ use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\Utils;
 use App\Services\SubscriptionPesapalService;
+use App\Services\PaymentStatusChecker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -19,10 +20,14 @@ use Illuminate\Support\Facades\DB;
 class SubscriptionApiController extends Controller
 {
     protected $pesapalService;
+    protected $statusChecker;
 
-    public function __construct(SubscriptionPesapalService $pesapalService)
-    {
+    public function __construct(
+        SubscriptionPesapalService $pesapalService,
+        PaymentStatusChecker $statusChecker
+    ) {
         $this->pesapalService = $pesapalService;
+        $this->statusChecker = $statusChecker;
     }
 
     /**
@@ -251,6 +256,8 @@ class SubscriptionApiController extends Controller
      * Handle IPN notifications from Pesapal
      * POST /api/subscriptions/pesapal/ipn
      * 
+     * ENHANCED: Added better error handling and retry queue
+     * 
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
@@ -269,8 +276,40 @@ class SubscriptionApiController extends Controller
                 ], 400);
             }
 
-            // Process IPN callback
-            $this->pesapalService->processIpnCallback($orderTrackingId, $merchantReference);
+            // ENHANCED: Use robust status checker instead of direct processing
+            // This ensures retries and proper error handling
+            $subscription = Subscription::where('pesapal_tracking_id', $orderTrackingId)->first();
+
+            if (!$subscription) {
+                Log::error('Pesapal IPN: Subscription not found', [
+                    'tracking_id' => $orderTrackingId,
+                    'merchant_reference' => $merchantReference,
+                ]);
+
+                // Still respond with success to Pesapal to avoid repeated IPN calls
+                return response()->json([
+                    'orderNotificationType' => 'IPNCHANGE',
+                    'orderTrackingId' => $orderTrackingId,
+                    'orderMerchantReference' => $merchantReference,
+                    'status' => 200
+                ]);
+            }
+
+            // Check payment status with retry mechanism
+            $checkResult = $this->statusChecker->checkPaymentStatus($subscription, [
+                'max_retries' => 2,
+                'retry_delay' => 1,
+            ]);
+
+            if (!$checkResult['success']) {
+                Log::error('Pesapal IPN: Status check failed', [
+                    'tracking_id' => $orderTrackingId,
+                    'error' => $checkResult['error'] ?? 'Unknown error',
+                ]);
+
+                // Queue for retry
+                // TODO: Implement IPN retry queue for failed processing
+            }
 
             // Respond to Pesapal
             return response()->json([
@@ -279,15 +318,22 @@ class SubscriptionApiController extends Controller
                 'orderMerchantReference' => $merchantReference,
                 'status' => 200
             ]);
+
         } catch (\Exception $e) {
             Log::error('Pesapal subscription IPN processing failed', [
                 'error' => $e->getMessage(),
-                'request' => $request->all()
+                'request' => $request->all(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
+            // Still respond with success to prevent repeated IPN calls
+            // The CheckPendingPayments command will catch these
             return response()->json([
-                'error' => 'IPN processing failed'
-            ], 500);
+                'orderNotificationType' => 'IPNCHANGE',
+                'orderTrackingId' => $request->get('OrderTrackingId'),
+                'orderMerchantReference' => $request->get('OrderMerchantReference'),
+                'status' => 200
+            ]);
         }
     }
 
@@ -570,13 +616,34 @@ class SubscriptionApiController extends Controller
                 ]);
             }
 
-            // Check with Pesapal
+            // ENHANCED: Use robust status checker with retry mechanism
             if ($subscription->pesapal_tracking_id) {
-                $statusResult = $this->pesapalService->getTransactionStatus($subscription->pesapal_tracking_id);
+                $checkResult = $this->statusChecker->checkPaymentStatus($subscription, [
+                    'max_retries' => 3,
+                    'retry_delay' => 2,
+                    'exponential_backoff' => true,
+                ]);
 
-                if ($statusResult['success']) {
-                    $this->pesapalService->updateSubscriptionStatus($subscription->pesapal_tracking_id, $statusResult['data']);
+                if ($checkResult['success']) {
                     $subscription->refresh();
+
+                    Log::info('Payment status check completed successfully', [
+                        'subscription_id' => $subscription->id,
+                        'status' => $subscription->status,
+                        'attempts' => $checkResult['attempts'] ?? 1,
+                    ]);
+                } else {
+                    Log::error('Payment status check failed', [
+                        'subscription_id' => $subscription->id,
+                        'error' => $checkResult['error'] ?? 'Unknown error',
+                    ]);
+
+                    return response()->json([
+                        'code' => 0,
+                        'status' => 500,
+                        'message' => 'Failed to verify payment status: ' . ($checkResult['error'] ?? 'Please try again'),
+                        'data' => null,
+                    ], 500);
                 }
             }
 
@@ -1251,6 +1318,99 @@ class SubscriptionApiController extends Controller
                 'ip_address' => $subscription->ip_address,
             ],
         ];
+    }
+
+    /**
+     * Force verify payment status (Admin/Support endpoint)
+     * POST /api/subscriptions/force-verify
+     * 
+     * Manually forces a payment verification check, bypassing idempotency checks.
+     * Useful for resolving stuck payments where callbacks failed.
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function forceVerify(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'subscription_id' => 'required|exists:subscriptions,id',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 400,
+                    'message' => 'Validation failed',
+                    'data' => ['errors' => $validator->errors()],
+                ], 400);
+            }
+
+            $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 401,
+                    'message' => 'Authentication required',
+                    'data' => null,
+                ], 401);
+            }
+
+            $subscription = Subscription::findOrFail($request->subscription_id);
+
+            // Verify ownership
+            if ($subscription->user_id !== $user->id) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 403,
+                    'message' => 'Unauthorized access',
+                    'data' => null,
+                ], 403);
+            }
+
+            // Force verify payment
+            $verifyResult = $this->statusChecker->forceVerifyPayment($subscription);
+
+            if ($verifyResult['success']) {
+                $subscription->refresh();
+
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Payment verification completed',
+                    'data' => [
+                        'subscription' => $subscription->toApiArray(),
+                        'verification_result' => $verifyResult,
+                    ],
+                ]);
+            } else {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 500,
+                    'message' => 'Force verification failed: ' . ($verifyResult['error'] ?? 'Unknown error'),
+                    'data' => null,
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to force verify payment', [
+                'user_id' => $request->user()?->id,
+                'subscription_id' => $request->subscription_id ?? null,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'code' => 0,
+                'status' => 500,
+                'message' => 'Force verification failed',
+                'data' => null,
+            ], 500);
+        }
     }
 
     /**

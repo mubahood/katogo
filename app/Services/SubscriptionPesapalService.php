@@ -70,10 +70,14 @@ class SubscriptionPesapalService
             if ($httpCode === 200 && isset($data['token'])) {
                 $token = $data['token'];
                 
-                // Cache token for 4 minutes (expires in 5)
-                Cache::put($cacheKey, $token, 240);
+                // ENHANCED: Cache token for 4.5 minutes (expires in 5) with safety buffer
+                // Prevents token expiration during long-running operations
+                Cache::put($cacheKey, $token, 270);
                 
-                Log::info('Pesapal Subscription: Authentication successful');
+                Log::info('Pesapal Subscription: Authentication successful', [
+                    'cache_duration' => '270s (4.5min)',
+                    'expires_at' => now()->addSeconds(270)->toDateTimeString(),
+                ]);
                 return $token;
             }
 
@@ -360,11 +364,16 @@ class SubscriptionPesapalService
             Log::info('🔍 Pesapal: Analyzing payment status', [
                 'payment_status' => $paymentStatus,
                 'status_code' => $statusCode,
+                'status_code_type' => gettype($statusCode),
                 'full_data' => $statusData,
             ]);
 
+            // Normalize status code to integer for strict comparison
+            $statusCodeInt = is_numeric($statusCode) ? (int)$statusCode : null;
+
             // ==================== PAYMENT SUCCESS ====================
-            if ($statusCode == 1 || strtolower($paymentStatus ?? '') === 'completed') {
+            // FIXED: Use strict === comparison to avoid type coercion issues
+            if ($statusCodeInt === 1 || strtolower($paymentStatus ?? '') === 'completed') {
                 
         
                 // Check if subscription is already active
@@ -502,7 +511,8 @@ class SubscriptionPesapalService
 
             } 
             // ==================== PAYMENT FAILED ====================
-            elseif ($statusCode == 2 || in_array(strtolower($paymentStatus ?? ''), ['failed', 'invalid'])) {
+            // FIXED: Use strict === comparison
+            elseif ($statusCodeInt === 2 || in_array(strtolower($paymentStatus ?? ''), ['failed', 'invalid'], true)) {
                 
                 Log::warning('❌ Pesapal: Payment FAILED', [
                     'subscription_id' => $subscription->id,
