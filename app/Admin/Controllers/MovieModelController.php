@@ -30,7 +30,7 @@ class MovieModelController extends AdminController
 
         $grid = new Grid(new MovieModel());
         $grid->model()->orderBy('id', 'desc');
-
+/*
         $url_segs = explode('/', request()->url());
         if (in_array('movies-active', $url_segs)) {
             $grid->model()->where('status', 'Active');
@@ -49,7 +49,7 @@ class MovieModelController extends AdminController
         }
 
 
-        $grid->model()->orderBy('id', 'asc');
+        $grid->model()->orderBy('id', 'asc');*/
         $grid->column('id', __('Id'))->sortable()->editable();
 
         $grid->column('stars', __('FROM MY VJ'))

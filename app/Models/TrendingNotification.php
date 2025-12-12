@@ -66,6 +66,17 @@ class TrendingNotification extends Model
 
         if ($movie == null) {
 
+            // FIXED: Get IDs of movies that have been sent as trending notifications in the last 7 days
+            // This prevents the same movie from being sent repeatedly
+            $recently_notified_movie_ids = TrendingNotification::where('created_at', '>=', Carbon::now()->subDays(7))
+                ->where('is_sent', 'Yes')
+                ->pluck('movie_model_id')
+                ->unique()
+                ->toArray();
+
+            Log::info('Recently notified movies in last 7 days: ' . count($recently_notified_movie_ids));
+
+            // Get movies that are currently trending (from last 90 days)
             $ids_of_trendings = MovieModel::where('created_at', '>=', $ninty_days_ago)
                 ->where('status', 'Active')
                 ->where('type', 'Movie')
@@ -86,14 +97,21 @@ class TrendingNotification extends Model
             $sql->update(['is_trending' => 'No']);
 
 
+            // FIXED: Exclude recently notified movies from trending selection
             $recent_movie_views = MovieView::where('created_at', '>=', $ninty_days_ago)
-                ->whereNotIn('movie_model_id', $ids_of_trendings)
                 ->selectRaw('movie_model_id, SUM(progress) as total_watch_time')
                 ->groupBy('movie_model_id')
                 ->orderByDesc('total_watch_time')
                 ->pluck('movie_model_id')
                 ->toArray();
+            
             foreach ($recent_movie_views as $recent_movie_view) {
+                // FIXED: Skip movies that have been notified recently (last 7 days)
+                if (in_array($recent_movie_view, $recently_notified_movie_ids)) {
+                    Log::info("Skipping recently notified movie ID: {$recent_movie_view}");
+                    continue;
+                }
+
                 $movie = MovieModel::find($recent_movie_view);
                 if ($movie == null) {
                     continue;
@@ -105,6 +123,7 @@ class TrendingNotification extends Model
                     continue;
                 }
 
+                Log::info("Creating trending notification for movie: {$movie->title} (ID: {$movie->id})");
 
                 $trending = new TrendingNotification();
                 $trending->day_time = $day_time;
@@ -126,32 +145,65 @@ class TrendingNotification extends Model
             }
         }
 
+        // FIXED: If still no movie found, get one that hasn't been notified in last 7 days
         if ($movie == null) {
+            $recently_notified_movie_ids = TrendingNotification::where('created_at', '>=', Carbon::now()->subDays(7))
+                ->where('is_sent', 'Yes')
+                ->pluck('movie_model_id')
+                ->unique()
+                ->toArray();
+
             $minViewTime = 30 * 60; // 30 minutes minimum watch time
-            // Try to find a movie that hasn't been trending recently
-            $movie = MovieModel::where('is_trending', '!=', 'Yes')
-                ->where('type', 'Movie')
+            
+            $query = MovieModel::where('type', 'Movie')
                 ->where('status', 'Active')
-                ->where('views_time_count', '>=', $minViewTime)
+                ->where('views_time_count', '>=', $minViewTime);
+            
+            if (count($recently_notified_movie_ids) > 0) {
+                $query->whereNotIn('id', $recently_notified_movie_ids);
+            }
+            
+            $movie = $query->orderBy('views_time_count', 'desc')->first();
+            
+            if ($movie) {
+                Log::info("Found fallback movie (not recently notified): {$movie->title} (ID: {$movie->id})");
+            }
+        }
+        
+        // FIXED: Second fallback - any active movie not notified recently
+        if ($movie == null) {
+            $recently_notified_movie_ids = TrendingNotification::where('created_at', '>=', Carbon::now()->subDays(7))
+                ->where('is_sent', 'Yes')
+                ->pluck('movie_model_id')
+                ->unique()
+                ->toArray();
+
+            $minViewTime = 30 * 60; // 30 minutes minimum watch time
+            
+            $query = MovieModel::where('type', 'Movie')
+                ->where('status', 'Active')
+                ->where('views_time_count', '>=', $minViewTime);
+            
+            if (count($recently_notified_movie_ids) > 0) {
+                $query->whereNotIn('id', $recently_notified_movie_ids);
+            }
+            
+            $movie = $query->orderBy('views_time_count', 'desc')->first();
+        }
+        
+        // FIXED: Final fallback - any active movie at all (if all have been notified)
+        if ($movie == null) {
+            Log::warning("All movies have been notified recently, selecting based on view time only");
+            $movie = MovieModel::where('type', 'Movie')
+                ->where('status', 'Active')
                 ->orderBy('views_time_count', 'desc')
                 ->first();
         }
-        if ($movie == null) {
-            $minViewTime = 30 * 60; // 30 minutes minimum watch time
-            // Try to find a movie that hasn't been trending recently
-            $movie = MovieModel::where('type', 'Movie')
-                ->where('status', 'Active')
-                ->where('views_time_count', '>=', $minViewTime)
-                ->orderBy('views_time_count', 'desc')
-                ->first();
-        }
-        if ($movie == null) {
-            $minViewTime = 30 * 60; // 30 minutes minimum watch time
-            // Try to find a movie that hasn't been trending recently
-            $movie = MovieModel::where('type', 'Movie')
-                ->where('status', 'Active')
-                ->orderBy('created_at', 'desc')
-                ->first();
+
+        if ($movie) {
+            Log::info("Returning trending movie: {$movie->title} (ID: {$movie->id})");
+        } else {
+            Log::error("No trending movie found!");
         }
 
         return $movie;
