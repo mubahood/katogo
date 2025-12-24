@@ -23,6 +23,9 @@ Route::post('auth/google', [ApiController::class, 'googleAuth']);
 // Content filtering endpoint (used by app's automated systems)
 Route::post('moderation/filter-content', [ModerationController::class, 'filterContent']);
 
+// Video Playback Failure Reporting (Public - no authentication required)
+Route::post('video-playback-failures', [App\Http\Controllers\Api\VideoPlaybackFailureController::class, 'store']);
+
 // Public endpoint for random movie (no authentication required)
 Route::get('random-movie', [DynamicCrudController::class, 'random_movie']);
 

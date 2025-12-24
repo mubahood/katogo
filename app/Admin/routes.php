@@ -91,6 +91,9 @@ Route::group([
     $router->resource('movie-crawler-websites', MovieCrawlerWebsiteController::class);
     $router->resource('movie-crawler-pages', MovieCrawlerPageController::class);
 
+    // Video Playback Failure Routes
+    $router->resource('video-playback-failures', VideoPlaybackFailureController::class);
+
     // Video Transfer to Google Drive Routes
     $router->resource('video-transfers', VideoTransferController::class);
     $router->get('video-transfers/{id}/retry', 'VideoTransferController@retry')->name('video-transfers.retry');
