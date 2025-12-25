@@ -774,7 +774,7 @@ class ApiController extends BaseController
         - Added subscription management with free trial
         - Google Sign-In now available
         - Dashboard statistics for watchlist and favorites
-        - Improved movie recommendations
+        - Improved movie recommendatiobut i asked youns
         - Fixed profile photo upload issues";
         $WHATSAPP_CONTAT_NUMBER = "+256783204665";
         $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
