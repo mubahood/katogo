@@ -1273,6 +1273,20 @@ class ApiController extends BaseController
             'subscription' => $subscription_info, // Add subscription information
             'dashboard_stats' => $dashboard_stats, // Add dashboard statistics
             'client_app_version' => Utils::get_app_version($r), // Return client's app version for debugging
+            'safemode_auth' => [ // SafeMode auto-login credentials for MunoWatch
+                // Pre-authenticated session (try this first - faster!)
+                'user_id' => 169464,
+                'session_id' => 'e5d66b26a9392f23e0236221cd260ff1',
+                'username' => 'Imdaad',
+                'avatar' => 'https://lh3.googleusercontent.com/a/ACg8ocIbh-PGzTzJDeqeMXSyhJZDfZ70cWI1cDTtvwUsSl3cWXzZew=s96-c',
+                
+                // Fallback: login credentials (if session expired)
+                'email' => 'Jumaperejunior@gmail.com',
+                'password' => base64_encode('uganda7766'), // Base64 encoded for basic obfuscation
+                'api_endpoint' => 'https://munowatch.org/api/users/login/v2',
+                'dashboard_endpoint' => 'https://munowatch.org/api/dashboard/v2',
+                'bearer_token' => 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
+            ],
         ];
 
         return Utils::success($manifest, "Listed successfully.");
