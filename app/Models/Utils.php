@@ -18,6 +18,19 @@ include_once('simple_html_dom.php');
 class Utils
 {
     /**
+     * Current mobile app build version enforced by backend
+     * Bump this when releasing a new minimum-required build.
+     */
+    public const CURRENT_APP_VERSION = 22;
+
+    /**
+     * Get current backend-declared app version (build number)
+     */
+    public static function get_current_app_version(): int
+    {
+        return self::CURRENT_APP_VERSION;
+    }
+    /**
      * Check if a URL is possibly a video based on extension and URL validity
      * 
      * This function validates:
@@ -409,16 +422,37 @@ class Utils
             $request = request();
         }
 
-        // Try to get from header (X-App-Version)
-        $version = 0;
+        // Try to get from headers first (supports multiple common keys)
+        $headerKeys = [
+            'X-App-Version',
+            'App-Version',
+            'X-App-Build',
+            'X-Build-Number',
+            'X-Appversion',
+        ];
 
+        foreach ($headerKeys as $key) {
+            if ($request->hasHeader($key)) {
+                $raw = trim((string) $request->header($key));
+                // Extract a trailing integer build number if present (e.g., 1.1.3+22 -> 22)
+                if (preg_match('/(\d+)$/', $raw, $m)) {
+                    return (int) $m[1];
+                }
+                // Fallback: remove non-digits and cast
+                $digits = preg_replace('/\D+/', '', $raw);
+                if ($digits !== null && $digits !== '') {
+                    return (int) $digits;
+                }
+            }
+        }
 
         // Fallback: try to get from query parameter
         if ($request->has('app_version')) {
             return (int) $request->get('app_version');
         }
 
-        // Default: return 0 if not found
+        // Default: if not provided by client, treat as unknown (0)
+        // Callers comparing against CURRENT_APP_VERSION should handle unknowns explicitly
         return 0;
     }
 
