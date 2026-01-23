@@ -92,6 +92,19 @@ class MovieCrawlerPageController extends AdminController
                 return "<a href='{$url}' target='_blank'>Process Series</a>";
             });
 
+        // Add Process Profile button for User Profile types
+        $grid->column('process_profile', __('Action'))->display(function () {
+            if ($this->type === 'User Profile') {
+                $url = url('process-dating-profile/' . $this->id);
+                $status = $this->status;
+                $color = $status === 'pending' ? 'primary' : ($status === 'success' ? 'success' : 'warning');
+                return "<a href='{$url}' target='_blank' class='btn btn-{$color} btn-sm'>
+                    <i class='fa fa-user'></i> Process Profile
+                </a>";
+            }
+            return '';
+        });
+
 
         return $grid;
     }

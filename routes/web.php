@@ -2206,6 +2206,337 @@ Route::post('/logout', function () {
 
 /*
 |--------------------------------------------------------------------------
+| Uganda Hot Girls Dating Site Crawler Routes
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Crawl Uganda Hot Girls pages to discover user profile URLs
+ * 
+ * This route triggers the page discovery process which:
+ * - Crawls the homepage for profile links
+ * - Extracts city page links
+ * - Crawls each city page with pagination
+ * - Stores discovered profile URLs in movie_crawler_pages table
+ * 
+ * Usage: GET /crawl-dating-pages
+ */
+Route::get('crawl-dating-pages', function () {
+    set_time_limit(0);
+    ini_set('memory_limit', '-1');
+
+    try {
+        // Get the Uganda Hot Girls website record
+        $website = MovieCrawlerWebsite::where('slug', MovieCrawlerWebsite::UGANDAHOTGIRLS)->first();
+        
+        if (!$website) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Uganda Hot Girls website not found in database. Please run the seeder first: php artisan db:seed --class=UgandaHotGirlsCrawlerSeeder'
+            ], 404);
+        }
+
+        echo "<h2>🚀 Starting Uganda Hot Girls Page Crawling</h2>";
+        echo "<p><em>Processing cities in batches to optimize resources. Adjust limit with ?max_cities parameter (default: 5)</em></p>";
+        echo "<hr>";
+        flush();
+        
+        // Get max cities from request (default 5)
+        $maxCities = request()->get('max_cities', 5);
+        $maxCities = min($maxCities, 20); // Cap at 20 cities per run
+        
+        // Start crawling
+        $stats = $website->crawl_ugandahotgirls_pages($maxCities);
+        
+        echo "<hr>";
+        echo "<h2>✅ Crawling Complete!</h2>";
+        echo "<h3>Statistics:</h3>";
+        echo "<table border='1' cellpadding='10' style='border-collapse: collapse;'>";
+        echo "<tr><th>Metric</th><th>Count</th></tr>";
+        echo "<tr><td>Cities Processed</td><td><strong>" . ($stats['cities_processed'] ?? 0) . "</strong></td></tr>";
+        echo "<tr><td>Pages Crawled</td><td>" . $stats['pages_crawled'] . "</td></tr>";
+        echo "<tr><td>Profiles Discovered</td><td><strong style='color: blue;'>" . $stats['profiles_discovered'] . "</strong></td></tr>";
+        echo "<tr><td>New Profiles</td><td><strong style='color: green;'>" . $stats['profiles_new'] . "</strong></td></tr>";
+        echo "<tr><td>Duplicate Profiles</td><td>" . $stats['profiles_duplicate'] . "</td></tr>";
+        echo "<tr><td>Errors</td><td><strong style='color: red;'>" . count($stats['errors']) . "</strong></td></tr>";
+        echo "</table>";
+
+        if (!empty($stats['errors'])) {
+            echo "<h3>Errors:</h3>";
+            echo "<ul>";
+            foreach ($stats['errors'] as $error) {
+                echo "<li style='color: red;'>" . htmlspecialchars($error) . "</li>";
+            }
+            echo "</ul>";
+        }
+
+        echo "<hr>";
+        echo "<h3>Next Steps:</h3>";
+        echo "<p>Visit <a href='/extract-dating-users' style='color: blue; text-decoration: underline;'>/extract-dating-users</a> to extract user details from discovered profiles</p>";
+
+        return response()->json([
+            'success' => true,
+            'stats' => $stats
+        ]);
+
+    } catch (\Exception $e) {
+        echo "<h2 style='color: red;'>❌ Error: " . htmlspecialchars($e->getMessage()) . "</h2>";
+        echo "<pre>" . htmlspecialchars($e->getTraceAsString()) . "</pre>";
+
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});
+
+/**
+ * Extract user details from discovered profile pages
+ * 
+ * This route processes the stored profile URLs and:
+ * - Fetches each profile page content
+ * - Extracts user details (name, age, location, phone, photos, etc.)
+ * - Stores user data in the users table
+ * - Prevents duplicates by checking phone number and URL
+ * 
+ * Usage: GET /extract-dating-users
+ * Optional params:
+ * - limit: Number of profiles to process (default: 10)
+ * - page_id: Process specific page by ID
+ */
+Route::get('extract-dating-users', function (Request $request) {
+    set_time_limit(0);
+    ini_set('memory_limit', '-1');
+
+    try {
+        $limit = $request->get('limit', 10);
+        $pageId = $request->get('page_id');
+
+        // Get the Uganda Hot Girls website record
+        $website = MovieCrawlerWebsite::where('slug', MovieCrawlerWebsite::UGANDAHOTGIRLS)->first();
+        
+        if (!$website) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Uganda Hot Girls website not found in database'
+            ], 404);
+        }
+
+        echo "<h2>🔍 Starting User Profile Extraction</h2>";
+        echo "<hr>";
+
+        // Get pending profile pages
+        $query = MovieCrawlerPage::where('movie_crawler_website_id', $website->id)
+            ->where('type', 'User Profile');
+
+        if ($pageId) {
+            $query->where('id', $pageId);
+            echo "<p>Processing specific page ID: {$pageId}</p>";
+        } else {
+            $query->whereIn('status', ['pending', 'error'])
+                ->limit($limit);
+            echo "<p>Processing up to {$limit} profiles...</p>";
+        }
+
+        $pages = $query->get();
+
+        if ($pages->isEmpty()) {
+            echo "<p style='color: orange;'>⚠️ No pending profiles found to process</p>";
+            echo "<p>Run <a href='/crawl-dating-pages' style='color: blue;'>/crawl-dating-pages</a> first to discover profile URLs</p>";
+            return;
+        }
+
+        echo "<p>Found {$pages->count()} profiles to process</p>";
+        echo "<hr>";
+
+        $stats = [
+            'processed' => 0,
+            'success' => 0,
+            'duplicate' => 0,
+            'errors' => 0,
+            'error_messages' => []
+        ];
+
+        foreach ($pages as $page) {
+            echo "<div style='margin: 10px 0; padding: 10px; border: 1px solid #ccc;'>";
+            echo "<strong>Processing:</strong> " . htmlspecialchars($page->url) . "<br>";
+            
+            try {
+                // Fetch page content if not already fetched
+                if (empty($page->page_content)) {
+                    echo "Fetching page content...<br>";
+                    $page->fetch_page_content(false);
+                    $page->refresh();
+                }
+
+                // Process the page
+                echo "Extracting user data...<br>";
+                $page->process_page_content();
+                $page->refresh();
+
+                $stats['processed']++;
+
+                if ($page->status == 'success') {
+                    $stats['success']++;
+                    echo "<span style='color: green;'>✅ Success!</span><br>";
+                } elseif ($page->status == 'duplicate') {
+                    $stats['duplicate']++;
+                    echo "<span style='color: orange;'>⚠️ Duplicate: " . htmlspecialchars($page->error_message) . "</span><br>";
+                } else {
+                    $stats['errors']++;
+                    $stats['error_messages'][] = $page->error_message;
+                    echo "<span style='color: red;'>❌ Error: " . htmlspecialchars($page->error_message) . "</span><br>";
+                }
+
+            } catch (\Exception $e) {
+                $stats['errors']++;
+                $stats['error_messages'][] = $e->getMessage();
+                echo "<span style='color: red;'>❌ Exception: " . htmlspecialchars($e->getMessage()) . "</span><br>";
+            }
+
+            echo "</div>";
+        }
+
+        echo "<hr>";
+        echo "<h2>📊 Extraction Summary</h2>";
+        echo "<ul>";
+        echo "<li><strong>Total Processed:</strong> " . $stats['processed'] . "</li>";
+        echo "<li><strong>Successful:</strong> <span style='color: green;'>" . $stats['success'] . "</span></li>";
+        echo "<li><strong>Duplicates:</strong> <span style='color: orange;'>" . $stats['duplicate'] . "</span></li>";
+        echo "<li><strong>Errors:</strong> <span style='color: red;'>" . $stats['errors'] . "</span></li>";
+        echo "</ul>";
+
+        if (!empty($stats['error_messages'])) {
+            echo "<h3>Error Details:</h3>";
+            echo "<ul>";
+            foreach (array_unique($stats['error_messages']) as $error) {
+                echo "<li style='color: red;'>" . htmlspecialchars($error) . "</li>";
+            }
+            echo "</ul>";
+        }
+
+        echo "<hr>";
+        echo "<p>To process more profiles, visit <a href='/extract-dating-users?limit=50' style='color: blue;'>/extract-dating-users?limit=50</a></p>";
+
+        return response()->json([
+            'success' => true,
+            'stats' => $stats
+        ]);
+
+    } catch (\Exception $e) {
+        echo "<h2 style='color: red;'>❌ Error: " . htmlspecialchars($e->getMessage()) . "</h2>";
+        echo "<pre>" . htmlspecialchars($e->getTraceAsString()) . "</pre>";
+
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});
+
+/**
+ * Process a single user profile by page ID
+ * 
+ * This route processes a specific profile page:
+ * - Fetches the profile page content
+ * - Extracts user details
+ * - Stores user data in the database
+ * 
+ * Usage: GET /process-dating-profile/{page_id}
+ */
+Route::get('process-dating-profile/{page_id}', function ($pageId) {
+    set_time_limit(0);
+    
+    try {
+        $page = MovieCrawlerPage::find($pageId);
+        
+        if (!$page) {
+            echo "<h2 style='color: red;'>❌ Error: Profile page not found</h2>";
+            return;
+        }
+
+        // Verify this is a dating profile
+        if ($page->type !== 'User Profile') {
+            echo "<h2 style='color: red;'>❌ Error: This page is not a user profile</h2>";
+            return;
+        }
+
+        echo "<h2>🔍 Processing User Profile</h2>";
+        echo "<hr>";
+        echo "<p><strong>Page ID:</strong> {$page->id}</p>";
+        echo "<p><strong>URL:</strong> " . htmlspecialchars($page->url) . "</p>";
+        echo "<p><strong>Status Before:</strong> <span style='color: orange;'>{$page->status}</span></p>";
+        echo "<hr>";
+
+        // Fetch page content if not already fetched
+        if (empty($page->page_content)) {
+            echo "<p>📡 Fetching page content...</p>";
+            flush();
+            $page->fetch_page_content(false);
+            $page->refresh();
+            echo "<p>✅ Page content fetched</p>";
+            flush();
+        } else {
+            echo "<p>✅ Page content already available</p>";
+            flush();
+        }
+
+        // Process the page
+        echo "<p>🔄 Extracting user data...</p>";
+        flush();
+        $page->process_page_content();
+        $page->refresh();
+
+        echo "<hr>";
+        echo "<h3>📊 Processing Result</h3>";
+        echo "<p><strong>Status After:</strong> ";
+        
+        if ($page->status == 'success') {
+            echo "<span style='color: green; font-weight: bold;'>✅ SUCCESS</span></p>";
+            echo "<p><strong>Message:</strong> User profile extracted successfully</p>";
+            echo "<div style='padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 5px; margin-top: 10px;'>";
+            echo "<h4 style='color: #155724; margin: 0;'>✅ User Created Successfully!</h4>";
+            echo "<p style='margin: 5px 0 0 0;'>The user profile has been extracted and saved to the database.</p>";
+            echo "</div>";
+        } elseif ($page->status == 'duplicate') {
+            echo "<span style='color: orange; font-weight: bold;'>⚠️ DUPLICATE</span></p>";
+            echo "<p><strong>Message:</strong> " . htmlspecialchars($page->error_message ?? 'User already exists') . "</p>";
+            echo "<div style='padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; margin-top: 10px;'>";
+            echo "<h4 style='color: #856404; margin: 0;'>⚠️ Duplicate Detected</h4>";
+            echo "<p style='margin: 5px 0 0 0;'>This user profile already exists in the database.</p>";
+            echo "</div>";
+        } else {
+            echo "<span style='color: red; font-weight: bold;'>❌ ERROR</span></p>";
+            echo "<p><strong>Error Message:</strong> " . htmlspecialchars($page->error_message ?? 'Unknown error') . "</p>";
+            echo "<div style='padding: 15px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; margin-top: 10px;'>";
+            echo "<h4 style='color: #721c24; margin: 0;'>❌ Processing Failed</h4>";
+            echo "<p style='margin: 5px 0 0 0;'>" . htmlspecialchars($page->error_message ?? 'Unknown error') . "</p>";
+            echo "</div>";
+        }
+
+        echo "<hr>";
+        echo "<p><a href='javascript:window.close()' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Close Window</a> ";
+        echo "<a href='/admin/movie-crawler-pages' style='padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 5px; margin-left: 10px;'>Back to List</a></p>";
+
+    } catch (\Exception $e) {
+        Log::error('Error processing dating profile', [
+            'page_id' => $pageId,
+            'error' => $e->getMessage()
+        ]);
+
+        echo "<h2 style='color: red;'>❌ Exception Error</h2>";
+        echo "<p><strong>Error:</strong> " . htmlspecialchars($e->getMessage()) . "</p>";
+        echo "<details style='margin-top: 20px;'>";
+        echo "<summary style='cursor: pointer; padding: 10px; background: #f8f9fa; border: 1px solid #dee2e6;'>Show Trace</summary>";
+        echo "<pre style='padding: 10px; background: #f8f9fa; border: 1px solid #dee2e6; overflow: auto;'>" . htmlspecialchars($e->getTraceAsString()) . "</pre>";
+        echo "</details>";
+    }
+});
+
+/*
+|--------------------------------------------------------------------------
 | Landing Site Routes
 |--------------------------------------------------------------------------
 */

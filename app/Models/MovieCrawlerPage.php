@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
+use App\Models\User;
 
 include_once('simple_html_dom.php');
 
@@ -12,6 +13,18 @@ include_once('simple_html_dom.php');
 class MovieCrawlerPage extends Model
 {
     use HasFactory;
+
+    protected $fillable = [
+        'movie_crawler_website_id',
+        'url',
+        'title',
+        'status',
+        'is_muno',
+        'is_episode',
+        'type',
+        'page_content',
+        'error_message'
+    ];
 
     public function fetch_page_content($doProcessPage = true)
     {
@@ -71,6 +84,9 @@ class MovieCrawlerPage extends Model
         } elseif ($this->movie_crawler_website->slug == MovieCrawlerWebsite::MUNOWATCH) {
             // Intelligent series vs movie detection for munowatch
             $this->process_munowatch_intelligent();
+        } elseif ($this->movie_crawler_website->slug == MovieCrawlerWebsite::UGANDAHOTGIRLS) {
+            // Process Uganda Hot Girls user profile
+            $this->process_ugandahotgirls_profile();
         } else {
             $this->status = 'error';
             $this->error_message = "Slug not found When processing page content";
@@ -1893,4 +1909,279 @@ class MovieCrawlerPage extends Model
         $seriesPage->save();
         return $existingSerie;
     }
+
+    /**
+     * Process Uganda Hot Girls user profile page
+     * 
+     * Extracts user details from the profile page and stores them in the User model.
+     * Handles duplicate prevention by checking phone number and profile URL.
+     * 
+     * @return void
+     */
+    public function process_ugandahotgirls_profile()
+    {
+        try {
+            Log::info('Processing Uganda Hot Girls profile', ['url' => $this->url]);
+
+            if (empty($this->page_content)) {
+                $this->status = 'error';
+                $this->error_message = 'Page content is empty';
+                $this->save();
+                return;
+            }
+
+            // Extract user data from HTML
+            $userData = $this->extract_ugandahotgirls_user_data($this->page_content);
+
+            if (empty($userData)) {
+                $this->status = 'error';
+                $this->error_message = 'Failed to extract user data from page';
+                $this->save();
+                return;
+            }
+
+            // Check for duplicate by phone number
+            $existingUser = null;
+            if (!empty($userData['phone'] ?? null)) {
+                $existingUser = User::where('phone_number', $userData['phone'])->first();
+            }
+            
+            // If not found by phone, check by profile URL
+            if (!$existingUser) {
+                $existingUser = User::where('external_profile_url', $this->url)->first();
+            }
+
+            if ($existingUser) {
+                // Update existing user instead of creating duplicate
+                Log::info('Updating existing user', [
+                    'user_id' => $existingUser->id,
+                    'phone' => $userData['phone'] ?? null,
+                    'url' => $this->url
+                ]);
+
+                $existingUser->update([
+                    'first_name' => $userData['name'] ?? $existingUser->first_name,
+                    'last_name' => $userData['area'] ?? $existingUser->last_name,
+                    'name' => ($userData['name'] ?? 'Unknown') . ' - ' . ($userData['area'] ?? ''),
+                    'phone_number' => $userData['phone'] ?? $existingUser->phone_number,
+                    'phone_number_2' => $userData['phone'] ?? $existingUser->phone_number_2,
+                    'address' => $userData['location'] ?? $existingUser->address,
+                    'dob' => !empty($userData['age']) ? $this->calculate_dob_from_age($userData['age']) : $existingUser->dob,
+                    'avatar' => $userData['primary_photo'] ?? $existingUser->avatar,
+                    'bio' => ($userData['description'] ?? '') . "\n\nSource: " . $this->url,
+                    'external_profile_url' => $this->url,
+                    'import_source' => 'Uganda Hot Girls',
+                    'is_imported' => 'Yes',
+                    'imported_at' => now(),
+                ]);
+
+                $user = $existingUser;
+                $this->status = 'success';
+                $this->error_message = 'User updated (was duplicate)';
+                
+            } else {
+                // Create new user record
+                $user = User::create([
+                    'first_name' => $userData['name'] ?? 'Unknown',
+                    'last_name' => $userData['area'] ?? '',
+                    'name' => ($userData['name'] ?? 'Unknown') . ' - ' . ($userData['area'] ?? ''),
+                    'phone_number' => $userData['phone'] ?? null,
+                    'phone_number_2' => $userData['phone'] ?? null,
+                    'address' => $userData['location'] ?? '',
+                    'dob' => !empty($userData['age']) ? $this->calculate_dob_from_age($userData['age']) : null,
+                    'avatar' => $userData['primary_photo'] ?? null,
+                    'bio' => ($userData['description'] ?? '') . "\n\nSource: " . $this->url,
+                    'status' => 'Active',
+                    'app_type' => 'Dating Profile',
+                    'email' => 'user_' . uniqid() . '@ugandahotgirls.com',
+                    'username' => $userData['slug'] ?? uniqid('user_'),
+                    'password' => bcrypt(uniqid()),
+                    'is_imported' => 'Yes',
+                    'import_source' => 'Uganda Hot Girls',
+                    'external_profile_url' => $this->url,
+                    'imported_at' => now(),
+                ]);
+
+                $this->status = 'success';
+                $this->error_message = null;
+            }
+
+            // Store additional metadata in JSON field if available
+            if (!empty($userData['services'] ?? null) || !empty($userData['photos'] ?? null) || !empty($userData['badges'] ?? null)) {
+                $metadata = [
+                    'services' => $userData['services'] ?? [],
+                    'photos' => $userData['photos'] ?? [],
+                    'videos' => $userData['videos'] ?? [],
+                    'badges' => $userData['badges'] ?? [],
+                    'ethnicity' => $userData['ethnicity'] ?? null,
+                    'availability' => $userData['availability'] ?? null,
+                    'profile_views' => $userData['profile_views'] ?? null,
+                ];
+                
+                // Store in about field as JSON if possible, or append to about text
+                $user->bio = ($userData['description'] ?? '') . "\n\n" . json_encode($metadata, JSON_PRETTY_PRINT);
+                $user->save();
+            }
+
+            
+            $this->save();
+
+            Log::info('Uganda Hot Girls profile processed successfully', [
+                'url' => $this->url,
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'action' => $existingUser ? 'updated' : 'created'
+            ]);
+
+        } catch (\Exception $e) {
+            $this->status = 'error';
+            $this->error_message = $e->getMessage();
+            $this->save();
+
+            Log::error('Error processing Uganda Hot Girls profile', [
+                'url' => $this->url,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Extract user data from Uganda Hot Girls profile HTML
+     * 
+     * @param string $html Profile page HTML
+     * @return array Extracted user data
+     */
+    private function extract_ugandahotgirls_user_data($html)
+    {
+        $userData = [];
+
+        try {
+            // Extract name (from page title or h3 tag)
+            if (preg_match('/<h3[^>]*>([^<]+)<\/h3>/i', $html, $matches)) {
+                $userData['name'] = trim($matches[1]);
+            }
+
+            // Extract age (e.g., "24 year old Female")
+            if (preg_match('/(\d+)\s*year\s*old/i', $html, $matches)) {
+                $userData['age'] = (int)$matches[1];
+            }
+
+            // Extract gender
+            if (preg_match('/year\s*old\s*(Female|Male|Trans)/i', $html, $matches)) {
+                $userData['gender'] = $matches[1];
+            }
+
+            // Extract location (e.g., "Kibuye, Kampala")
+            if (preg_match('/from\s*<a[^>]*>([^<]+)<\/a>,\s*<a[^>]*>([^<]+)<\/a>/i', $html, $matches)) {
+                $userData['area'] = trim($matches[1]);
+                $userData['city'] = trim($matches[2]);
+                $userData['location'] = $userData['area'] . ', ' . $userData['city'];
+            }
+
+            // Extract phone number
+            if (preg_match('/Phone:\s*<a[^>]*tel:\s*([0-9+\s]+)[^>]*>([^<]+)<\/a>/i', $html, $matches)) {
+                $userData['phone'] = trim($matches[2]);
+            } elseif (preg_match('/Phone:\s*([0-9+\s]+)/i', $html, $matches)) {
+                $userData['phone'] = trim($matches[1]);
+            }
+
+            // Extract description (ABOUT ME section)
+            if (preg_match('/<h4[^>]*>ABOUT ME:<\/h4>\s*<p[^>]*>(.+?)<\/p>/is', $html, $matches)) {
+                $userData['description'] = trim(strip_tags($matches[1]));
+            }
+
+            // Extract badges (VIP, PREMIUM, VERIFIED)
+            $userData['badges'] = [];
+            if (stripos($html, 'VIP') !== false) {
+                $userData['badges'][] = 'VIP';
+            }
+            if (stripos($html, 'PREMIUM') !== false) {
+                $userData['badges'][] = 'PREMIUM';
+            }
+            if (stripos($html, 'VERIFIED') !== false) {
+                $userData['badges'][] = 'VERIFIED';
+            }
+
+            // Extract ethnicity
+            if (preg_match('/ETHNICITY\s*([A-Za-z]+)/i', $html, $matches)) {
+                $userData['ethnicity'] = trim($matches[1]);
+            }
+
+            // Extract availability
+            if (preg_match('/AVAILABILITY\s*([A-Za-z,\s]+)/i', $html, $matches)) {
+                $userData['availability'] = trim($matches[1]);
+            }
+
+            // Extract profile views
+            if (preg_match('/profile\s*viewed\s*(\d+)\s*times/i', $html, $matches)) {
+                $userData['profile_views'] = (int)$matches[1];
+            }
+
+            // Extract services (list items under SERVICES section)
+            $userData['services'] = [];
+            if (preg_match('/<h4[^>]*>SERVICES:<\/h4>(.+?)<\/ul>/is', $html, $matches)) {
+                preg_match_all('/<li[^>]*>([^<]+)<\/li>/i', $matches[1], $serviceMatches);
+                if (!empty($serviceMatches[1])) {
+                    $userData['services'] = array_map('trim', $serviceMatches[1]);
+                }
+            }
+
+            // Extract photo URLs
+            $userData['photos'] = [];
+            preg_match_all('/<img[^>]*src="(https:\/\/www\.ugandahotgirls\.com\/wp-content\/uploads\/[^"]+)"[^>]*>/i', $html, $photoMatches);
+            if (!empty($photoMatches[1])) {
+                $userData['photos'] = array_unique($photoMatches[1]);
+                $userData['primary_photo'] = $userData['photos'][0] ?? null;
+            }
+
+            // Extract video count (e.g., "Pics8Vids5")
+            if (preg_match('/Vids(\d+)/i', $html, $matches)) {
+                $userData['video_count'] = (int)$matches[1];
+                $userData['videos'] = []; // Actual video URLs would need additional extraction
+            }
+
+            // Extract slug from URL
+            $userData['slug'] = $this->extract_slug_from_profile_url($this->url);
+
+            return $userData;
+
+        } catch (\Exception $e) {
+            Log::error('Error extracting user data from HTML', [
+                'url' => $this->url,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Extract slug from profile URL
+     * 
+     * @param string $url Profile URL
+     * @return string Profile slug
+     */
+    private function extract_slug_from_profile_url($url)
+    {
+        preg_match('/\/escort\/([^\/]+)/', $url, $matches);
+        return $matches[1] ?? 'unknown_' . uniqid();
+    }
+
+    /**
+     * Calculate date of birth from age
+     * 
+     * @param int $age User age
+     * @return string Date of birth in Y-m-d format
+     */
+    private function calculate_dob_from_age($age)
+    {
+        if (empty($age) || !is_numeric($age)) {
+            return null;
+        }
+
+        $currentYear = date('Y');
+        $birthYear = $currentYear - (int)$age;
+        return $birthYear . '-01-01';
+    }
 }
+

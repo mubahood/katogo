@@ -32,6 +32,7 @@ class MovieCrawlerWebsite extends Model
     //constant for fetch status
     const MY_VJ = 'my-vj';
     const MUNOWATCH = 'munowatch';
+    const UGANDAHOTGIRLS = 'ugandahotgirls';
     /**
      * Fetches and processes the next page content from the movie crawler website.
      * 
@@ -487,4 +488,291 @@ class MovieCrawlerWebsite extends Model
             }
         }
     }
+
+    /**
+     * Crawl Uganda Hot Girls website to discover user profile URLs
+     * 
+     * This method crawls the homepage and city pages to extract individual user profile URLs.
+     * It handles pagination and stores discovered profile URLs in MovieCrawlerPage records.
+     * 
+     * @return array Statistics about crawled pages and discovered profiles
+     */
+    public function crawl_ugandahotgirls_pages($maxCities = 5)
+    {
+        if ($this->slug !== self::UGANDAHOTGIRLS) {
+            throw new \Exception('This method can only be called on ugandahotgirls website');
+        }
+
+        $stats = [
+            'pages_crawled' => 0,
+            'profiles_discovered' => 0,
+            'profiles_new' => 0,
+            'profiles_duplicate' => 0,
+            'errors' => [],
+            'cities_processed' => 0
+        ];
+
+        try {
+            // Start with homepage
+            Log::info('Starting Uganda Hot Girls page crawling');
+            echo "<p>📡 Fetching homepage...</p>";
+            flush();
+            
+            $this->fetch_status = 'in_progress';
+            $this->last_fetched_at = Carbon::now();
+            $this->save();
+
+            // Fetch homepage HTML first
+            $homepageHtml = Utils::get_url($this->url);
+            echo "<p>✅ Homepage fetched successfully</p>";
+            flush();
+            
+            // Crawl homepage for profile links
+            echo "<p>🔍 Extracting profiles from homepage...</p>";
+            flush();
+            $homepageStats = $this->crawl_single_page_for_profiles($this->url, $homepageHtml);
+            $stats['pages_crawled']++;
+            $stats['profiles_discovered'] += $homepageStats['profiles_found'];
+            $stats['profiles_new'] += $homepageStats['profiles_new'];
+            $stats['profiles_duplicate'] += $homepageStats['profiles_duplicate'];
+            echo "<p>✅ Homepage: Found {$homepageStats['profiles_found']} profiles ({$homepageStats['profiles_new']} new, {$homepageStats['profiles_duplicate']} duplicate)</p>";
+            flush();
+
+            // Extract city links from homepage
+            $cityLinks = $this->extract_city_links($homepageHtml);
+            unset($homepageHtml);
+            
+            $totalCities = count($cityLinks);
+            Log::info('Found ' . $totalCities . ' city links');
+            echo "<p>📍 Found {$totalCities} city pages to crawl (limiting to {$maxCities} per run)</p>";
+            echo "<hr>";
+            flush();
+
+            // Limit cities to process
+            $cityLinks = array_slice($cityLinks, 0, $maxCities);
+
+            // Crawl each city page
+            foreach ($cityLinks as $index => $cityLink) {
+                try {
+                    $cityNum = $index + 1;
+                    echo "<p><strong>🏙️ Processing City {$cityNum}/{$maxCities}: </strong>" . htmlspecialchars($cityLink) . "</p>";
+                    flush();
+                    
+                    $cityStats = $this->crawl_city_page($cityLink);
+                    $stats['pages_crawled'] += $cityStats['pages_crawled'];
+                    $stats['profiles_discovered'] += $cityStats['profiles_discovered'];
+                    $stats['profiles_new'] += $cityStats['profiles_new'];
+                    $stats['profiles_duplicate'] += $cityStats['profiles_duplicate'];
+                    $stats['cities_processed']++;
+                    
+                    echo "<p style='margin-left: 20px;'>✅ Found {$cityStats['profiles_discovered']} profiles ({$cityStats['profiles_new']} new, {$cityStats['profiles_duplicate']} duplicate) from {$cityStats['pages_crawled']} page(s)</p>";
+                    flush();
+                    
+                    // Small delay between cities
+                    if ($index < count($cityLinks) - 1) {
+                        usleep(500000);
+                    }
+                    
+                    gc_collect_cycles();
+                    
+                } catch (\Exception $e) {
+                    $stats['errors'][] = "City {$cityLink}: " . $e->getMessage();
+                    echo "<p style='margin-left: 20px; color: red;'>❌ Error: " . htmlspecialchars($e->getMessage()) . "</p>";
+                    flush();
+                    Log::error('Error crawling city page', [
+                        'city_link' => $cityLink,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            echo "<hr>";
+            $this->fetch_status = 'success';
+            $this->total_movies_found = $stats['profiles_discovered'];
+            $this->new_movies_found = $stats['profiles_new'];
+            $this->save();
+
+            Log::info('Uganda Hot Girls page crawling completed', $stats);
+            return $stats;
+
+        } catch (\Exception $e) {
+            $this->fetch_status = 'failed';
+            $this->error_message = $e->getMessage();
+            $this->save();
+            Log::error('Uganda Hot Girls page crawling failed', [
+                'error' => $e->getMessage(),
+                'stats' => $stats
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Crawl a single page for user profile links
+     * 
+     * @param string $url Page URL to crawl
+     * @param string|null $html Optional pre-fetched HTML content
+     * @return array Statistics about profiles found
+     */
+    private function crawl_single_page_for_profiles($url, $html = null)
+    {
+        $stats = [
+            'profiles_found' => 0,
+            'profiles_new' => 0,
+            'profiles_duplicate' => 0
+        ];
+
+        try {
+            // Fetch page content if not provided
+            if ($html === null) {
+                $html = Utils::get_url($url);
+                usleep(300000); // 0.3 second delay
+            }
+            
+            // Extract profile URLs using regex pattern: /escort/{slug}/
+            preg_match_all('/href="(https:\/\/www\.ugandahotgirls\.com\/escort\/[^"]+)"/', $html, $matches);
+            
+            if (!empty($matches[1])) {
+                $profileUrls = array_unique($matches[1]);
+                $stats['profiles_found'] = count($profileUrls);
+
+                foreach ($profileUrls as $profileUrl) {
+                    // Check if profile URL already exists
+                    $existing = MovieCrawlerPage::where('url', $profileUrl)
+                        ->where('movie_crawler_website_id', $this->id)
+                        ->first();
+
+                    if ($existing) {
+                        $stats['profiles_duplicate']++;
+                        continue;
+                    }
+
+                    // Create new MovieCrawlerPage record for this profile
+                    try {
+                        MovieCrawlerPage::create([
+                            'movie_crawler_website_id' => $this->id,
+                            'url' => $profileUrl,
+                            'title' => $this->extract_slug_from_url($profileUrl),
+                            'status' => 'pending',
+                            'is_muno' => 'No',
+                            'is_episode' => 'No',
+                            'type' => 'User Profile'
+                        ]);
+                        $stats['profiles_new']++;
+                    } catch (\Exception $e) {
+                        Log::error('Failed to create MovieCrawlerPage', [
+                            'url' => $profileUrl,
+                            'error' => $e->getMessage()
+                        ]);
+                        $stats['profiles_duplicate']++;
+                    }
+                }
+            }
+
+            return $stats;
+
+        } catch (\Exception $e) {
+            Log::error('Error crawling single page for profiles', [
+                'url' => $url,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Extract city links from homepage HTML
+     * 
+     * @param string $html Homepage HTML content
+     * @return array Array of city page URLs
+     */
+    private function extract_city_links($html)
+    {
+        $cityLinks = [];
+
+        // Extract city links: /escorts-from/kampala-escorts/, /escorts-from/jinja-escorts/, etc.
+        preg_match_all('/href="(https:\/\/www\.ugandahotgirls\.com\/escorts-from\/[^"]+)"/', $html, $matches);
+        
+        if (!empty($matches[1])) {
+            $cityLinks = array_unique($matches[1]);
+            // Filter to only main city pages (not neighborhood pages)
+            $cityLinks = array_filter($cityLinks, function($link) {
+                // Count slashes - main city pages have fewer slashes
+                return substr_count($link, '/') <= 5;
+            });
+        }
+
+        return array_values($cityLinks);
+    }
+
+    /**
+     * Crawl a city page and its pagination
+     * 
+     * @param string $cityUrl City page URL
+     * @return array Statistics about crawled pages
+     */
+    private function crawl_city_page($cityUrl)
+    {
+        $stats = [
+            'pages_crawled' => 0,
+            'profiles_discovered' => 0,
+            'profiles_new' => 0,
+            'profiles_duplicate' => 0
+        ];
+
+        try {
+            // Crawl first page
+            $pageStats = $this->crawl_single_page_for_profiles($cityUrl);
+            $stats['pages_crawled']++;
+            $stats['profiles_discovered'] += $pageStats['profiles_found'];
+            $stats['profiles_new'] += $pageStats['profiles_new'];
+            $stats['profiles_duplicate'] += $pageStats['profiles_duplicate'];
+
+            // Check for pagination links
+            $html = $this->response_data;
+            preg_match_all('/href="(' . preg_quote($cityUrl, '/') . 'page\/(\d+)\/)"/', $html, $matches);
+            
+            if (!empty($matches[1])) {
+                $paginationUrls = array_unique($matches[1]);
+                
+                foreach ($paginationUrls as $paginationUrl) {
+                    try {
+                        $pageStats = $this->crawl_single_page_for_profiles($paginationUrl);
+                        $stats['pages_crawled']++;
+                        $stats['profiles_discovered'] += $pageStats['profiles_found'];
+                        $stats['profiles_new'] += $pageStats['profiles_new'];
+                        $stats['profiles_duplicate'] += $pageStats['profiles_duplicate'];
+                    } catch (\Exception $e) {
+                        Log::error('Error crawling pagination page', [
+                            'url' => $paginationUrl,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+            }
+
+            return $stats;
+
+        } catch (\Exception $e) {
+            Log::error('Error crawling city page', [
+                'city_url' => $cityUrl,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Extract slug from profile URL
+     * 
+     * @param string $url Profile URL
+     * @return string Profile slug
+     */
+    private function extract_slug_from_url($url)
+    {
+        // Extract slug from URL like: https://www.ugandahotgirls.com/escort/nisha/
+        preg_match('/\/escort\/([^\/]+)/', $url, $matches);
+        return $matches[1] ?? 'unknown';
+    }
 }
+

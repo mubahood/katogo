@@ -90,6 +90,9 @@ Route::group([
 
     $router->resource('movie-crawler-websites', MovieCrawlerWebsiteController::class);
     $router->resource('movie-crawler-pages', MovieCrawlerPageController::class);
+    
+    // Imported Dating Users Routes
+    $router->resource('imported-users', ImportedUsersController::class);
 
     // Video Playback Failure Routes
     $router->resource('video-playback-failures', VideoPlaybackFailureController::class);
