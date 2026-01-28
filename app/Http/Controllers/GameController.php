@@ -43,12 +43,18 @@ class GameController extends Controller
         // Get search query
         $search = $request->get('search', '');
 
-        // Get users who were online in the last 5 minutes (excluding current user)
-        $fiveMinutesAgo = now()->subMinutes(5);
+        // Consider users "online" if active in last 15 minutes
+        $fifteenMinutesAgo = now()->subMinutes(15);
+        // Consider "recently online" for display within 30 minutes
+        $thirtyMinutesAgo = now()->subMinutes(30);
 
         $query = User::where('id', '!=', $currentUser->id)
-            ->where('last_online_at', '>=', $fiveMinutesAgo)
-            ->where('status', 1); // Active users only
+            ->where(function($q) use ($thirtyMinutesAgo) {
+                // Users active in last 30 minutes OR have any last_online_at set
+                $q->where('last_online_at', '>=', $thirtyMinutesAgo)
+                  ->orWhereNotNull('last_online_at');
+            })
+            ->where('status', 'Active'); // Active users only
 
         // Apply search filter
         if (!empty($search)) {
@@ -65,15 +71,30 @@ class GameController extends Controller
             ->get();
 
         // Format users for response
-        $formattedUsers = $users->map(function ($user) use ($fiveMinutesAgo) {
+        $formattedUsers = $users->map(function ($user) use ($fifteenMinutesAgo) {
+            $lastOnline = $user->last_online_at;
+            $lastOnlineStr = null;
+            $isOnline = false;
+
+            if ($lastOnline) {
+                // Handle both string and Carbon datetime
+                if ($lastOnline instanceof \Carbon\Carbon) {
+                    $lastOnlineStr = $lastOnline->toIso8601String();
+                    $isOnline = $lastOnline >= $fifteenMinutesAgo;
+                } else {
+                    $lastOnlineStr = $lastOnline;
+                    $isOnline = strtotime($lastOnline) >= $fifteenMinutesAgo->timestamp;
+                }
+            }
+
             return [
                 'id' => $user->id,
                 'name' => $user->name ?? $user->first_name ?? 'Player',
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
                 'avatar' => $user->avatar,
-                'last_online_at' => $user->last_online_at ? $user->last_online_at->toIso8601String() : null,
-                'is_online' => $user->last_online_at && $user->last_online_at >= $fiveMinutesAgo,
+                'last_online_at' => $lastOnlineStr,
+                'is_online' => $isOnline,
             ];
         });
 
@@ -470,6 +491,9 @@ class GameController extends Controller
         $player1Hand = array_splice($deck, 0, 5);
         $player2Hand = array_splice($deck, 0, 5);
 
+        // Cut card - first card from remaining deck, placed under draw pile
+        $cutCard = array_shift($deck);
+
         // Put one card on discard pile (ensure it's not a special card for start)
         $startCard = null;
         $attempts = 0;
@@ -503,6 +527,7 @@ class GameController extends Controller
             'player2_hand' => json_encode($player2Hand),
             'discard_pile' => json_encode($discardPile),
             'draw_pile' => json_encode($deck),
+            'cut_card' => json_encode($cutCard),
             'current_turn_user_id' => $firstPlayer,
             'current_suit' => $startCard['suit'],
             'draw_stack' => 0,
@@ -870,16 +895,30 @@ class GameController extends Controller
     private function formatSession(GameSession $session, $currentUserId): array
     {
         $isPlayer1 = $session->player1_id == $currentUserId;
+        
+        // Load player info
+        $player1 = User::find($session->player1_id);
+        $player2 = User::find($session->player2_id);
+
+        // Get opponent card count
+        $player1CardCount = count(json_decode($session->player1_hand ?? '[]', true) ?? []);
+        $player2CardCount = count(json_decode($session->player2_hand ?? '[]', true) ?? []);
 
         return [
             'id' => $session->id,
             'player1_id' => $session->player1_id,
+            'player1_name' => $player1 ? ($player1->name ?? $player1->first_name ?? 'Player 1') : 'Player 1',
+            'player1_avatar' => $player1->avatar ?? null,
             'player2_id' => $session->player2_id,
+            'player2_name' => $player2 ? ($player2->name ?? $player2->first_name ?? 'Player 2') : 'Player 2',
+            'player2_avatar' => $player2->avatar ?? null,
             'player1_hand' => $isPlayer1 ? $session->player1_hand : json_encode([]), // Only show own hand
             'player2_hand' => !$isPlayer1 ? $session->player2_hand : json_encode([]),
-            'player1_card_count' => count(json_decode($session->player1_hand ?? '[]', true) ?? []),
-            'player2_card_count' => count(json_decode($session->player2_hand ?? '[]', true) ?? []),
+            'player1_card_count' => $player1CardCount,
+            'player2_card_count' => $player2CardCount,
             'discard_pile' => $session->discard_pile,
+            'cut_card' => $session->cut_card,
+            'draw_pile_count' => count(json_decode($session->draw_pile ?? '[]', true) ?? []),
             'current_turn_user_id' => $session->current_turn_user_id,
             'current_suit' => $session->current_suit,
             'draw_stack' => $session->draw_stack,
@@ -897,8 +936,24 @@ class GameController extends Controller
             // Convenience fields
             'is_my_turn' => $session->current_turn_user_id == $currentUserId,
             'my_hand' => $session->getPlayerHand($currentUserId),
-            'my_info' => $session->getMyInfo($currentUserId),
-            'opponent_info' => $session->getOpponentInfo($currentUserId),
+            'my_info' => [
+                'id' => $currentUserId,
+                'name' => $isPlayer1 
+                    ? ($player1 ? ($player1->name ?? $player1->first_name ?? 'Player 1') : 'Player 1')
+                    : ($player2 ? ($player2->name ?? $player2->first_name ?? 'Player 2') : 'Player 2'),
+                'avatar' => $isPlayer1 ? ($player1->avatar ?? null) : ($player2->avatar ?? null),
+                'score' => $isPlayer1 ? $session->player1_score : $session->player2_score,
+                'card_count' => $isPlayer1 ? $player1CardCount : $player2CardCount,
+            ],
+            'opponent_info' => [
+                'id' => $isPlayer1 ? $session->player2_id : $session->player1_id,
+                'name' => $isPlayer1 
+                    ? ($player2 ? ($player2->name ?? $player2->first_name ?? 'Player 2') : 'Player 2')
+                    : ($player1 ? ($player1->name ?? $player1->first_name ?? 'Player 1') : 'Player 1'),
+                'avatar' => $isPlayer1 ? ($player2->avatar ?? null) : ($player1->avatar ?? null),
+                'score' => $isPlayer1 ? $session->player2_score : $session->player1_score,
+                'card_count' => $isPlayer1 ? $player2CardCount : $player1CardCount,
+            ],
         ];
     }
 }

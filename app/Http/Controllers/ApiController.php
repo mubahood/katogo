@@ -1636,7 +1636,9 @@ class ApiController extends BaseController
             return $this->error('Wrong credentials.');
         }
 
-
+        // Update last online timestamp
+        $user->last_online_at = now();
+        $user->save();
 
         // Add token to user object for API response (don't save to DB)
         $user_data = $user->toArray();

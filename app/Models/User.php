@@ -185,6 +185,7 @@ class User extends Administrator implements JWTSubject
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'last_online_at' => 'datetime',
     ];
 
 

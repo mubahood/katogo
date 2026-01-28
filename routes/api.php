@@ -138,11 +138,12 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
     Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
     Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
+});
 
-    // ========================================
-    // MULTIPLAYER GAME ROUTES
-    // ========================================
-    
+// ========================================
+// MULTIPLAYER GAME ROUTES (Higher rate limit for polling)
+// ========================================
+Route::middleware([JwtMiddleware::class, 'throttle:game'])->group(function () {
     // Online Users
     Route::get('game/online-users', [GameController::class, 'onlineUsers']);
     

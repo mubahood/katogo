@@ -24,8 +24,15 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // General API rate limit - increased for apps with polling
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+            return Limit::perMinute(300)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Higher rate limit for game endpoints (polling every 2 seconds)
+        RateLimiter::for('game', function (Request $request) {
+            $userKey = $request->user()?->id ?: $request->ip();
+            return Limit::perMinute(120)->by($userKey);
         });
 
         // Specific throttle for video progress saves: ~12 per minute (~once every 5s)

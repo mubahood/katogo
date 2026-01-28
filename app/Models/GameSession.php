@@ -16,6 +16,7 @@ class GameSession extends Model
         'player2_hand',
         'discard_pile',
         'draw_pile',
+        'cut_card',
         'current_turn_user_id',
         'current_suit',
         'draw_stack',
