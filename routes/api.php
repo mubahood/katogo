@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ApiController;
 use App\Http\Controllers\DynamicCrudController;
+use App\Http\Controllers\GameController;
 use App\Http\Controllers\ModerationController;
 use App\Http\Controllers\SubscriptionApiController;
 use App\Models\StockItem;
@@ -137,6 +138,26 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
     Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
     Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
+
+    // ========================================
+    // MULTIPLAYER GAME ROUTES
+    // ========================================
+    
+    // Online Users
+    Route::get('game/online-users', [GameController::class, 'onlineUsers']);
+    
+    // Game Invitations
+    Route::post('game/invite', [GameController::class, 'sendInvitation']);
+    Route::get('game/invitations', [GameController::class, 'getInvitations']);
+    Route::get('game/invite/{id}/status', [GameController::class, 'getInvitationStatus']);
+    Route::post('game/invite/{id}/accept', [GameController::class, 'acceptInvitation']);
+    Route::post('game/invite/{id}/decline', [GameController::class, 'declineInvitation']);
+    Route::post('game/invite/{id}/cancel', [GameController::class, 'cancelInvitation']);
+    
+    // Game Sessions
+    Route::get('game/session/{id}', [GameController::class, 'getSession']);
+    Route::post('game/session/{id}/action', [GameController::class, 'submitAction']);
+    Route::post('game/session/{id}/leave', [GameController::class, 'leaveSession']);
 });
 
 

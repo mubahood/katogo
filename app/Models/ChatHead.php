@@ -10,6 +10,13 @@ class ChatHead extends Model
 {
     use HasFactory;
 
+    protected $fillable = [
+        'product_owner_id',
+        'customer_id',
+        'type',
+        'product_id',
+    ];
+
     public function getCustomerUnreadMessagesCountAttribute()
     {
         return ChatMessage::where('chat_head_id', $this->id)
