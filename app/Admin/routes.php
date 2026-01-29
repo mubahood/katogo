@@ -102,6 +102,25 @@ Route::group([
     $router->get('video-transfers/{id}/retry', 'VideoTransferController@retry')->name('video-transfers.retry');
     $router->get('video-transfers/{id}/cancel', 'VideoTransferController@cancel')->name('video-transfers.cancel');
 
+    // ============================================
+    // GAME MODULE ROUTES
+    // ============================================
+    
+    // Game Dashboard (Statistics Overview)
+    $router->get('game-dashboard', 'GameDashboardController@index')->name('game-dashboard');
+    
+    // Matatu Game Sessions
+    $router->resource('game-sessions', GameSessionController::class);
+    
+    // Ludo Game Sessions
+    $router->resource('ludo-sessions', LudoSessionController::class);
+    
+    // Game Invitations
+    $router->resource('game-invitations', GameInvitationController::class);
+    
+    // Coin Transactions
+    $router->resource('coin-transactions', CoinTransactionController::class);
+
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound
     //https://omulimisa.org/api/v1/e-learning/events
 });

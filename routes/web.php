@@ -5102,3 +5102,116 @@ Route::get('/test-firebase-upload', function () {
         ]);
     }
 });
+
+// ============================================
+// GAME MODULE SEEDER ENDPOINT
+// ============================================
+// Visit this URL ONCE to add the Game Module menu items to admin panel
+// Safe to visit multiple times - will skip if already seeded
+Route::get('/run-game-menu-seeder', function () {
+    try {
+        // Check if already seeded
+        $existingParent = DB::table('admin_menu')
+            ->where('title', 'Game Module')
+            ->first();
+
+        if ($existingParent) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Game Module menu already exists. No action needed.',
+                'already_seeded' => true,
+                'parent_menu_id' => $existingParent->id,
+                'admin_urls' => [
+                    'dashboard' => url('/admin/game-dashboard'),
+                    'matatu_sessions' => url('/admin/game-sessions'),
+                    'ludo_sessions' => url('/admin/ludo-sessions'),
+                    'invitations' => url('/admin/game-invitations'),
+                    'coin_transactions' => url('/admin/coin-transactions'),
+                ],
+            ]);
+        }
+
+        // Get the maximum order value to place our menu at the end
+        $maxOrder = DB::table('admin_menu')->max('order') ?? 0;
+        $baseOrder = $maxOrder + 1;
+
+        // Create parent menu item: Game Module
+        $parentId = DB::table('admin_menu')->insertGetId([
+            'parent_id' => 0,
+            'order' => $baseOrder,
+            'title' => 'Game Module',
+            'icon' => 'fa-gamepad',
+            'uri' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Create child menu items
+        $menuItems = [
+            ['title' => '📊 Dashboard', 'icon' => 'fa-dashboard', 'uri' => 'game-dashboard', 'order' => 1],
+            ['title' => '🃏 Matatu Sessions', 'icon' => 'fa-th', 'uri' => 'game-sessions', 'order' => 2],
+            ['title' => '🎲 Ludo Sessions', 'icon' => 'fa-circle-o', 'uri' => 'ludo-sessions', 'order' => 3],
+            ['title' => '📨 Invitations', 'icon' => 'fa-envelope', 'uri' => 'game-invitations', 'order' => 4],
+            ['title' => '🪙 Coin Transactions', 'icon' => 'fa-bitcoin', 'uri' => 'coin-transactions', 'order' => 5],
+        ];
+
+        $createdMenus = [];
+        foreach ($menuItems as $item) {
+            $menuId = DB::table('admin_menu')->insertGetId([
+                'parent_id' => $parentId,
+                'order' => $item['order'],
+                'title' => $item['title'],
+                'icon' => $item['icon'],
+                'uri' => $item['uri'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $createdMenus[] = [
+                'id' => $menuId,
+                'title' => $item['title'],
+                'uri' => $item['uri'],
+            ];
+        }
+
+        // Clear the admin menu cache
+        try {
+            if (class_exists('\Encore\Admin\Auth\Database\Menu')) {
+                \Encore\Admin\Auth\Database\Menu::flushCache();
+            }
+        } catch (\Exception $e) {
+            // Cache clearing is optional
+        }
+
+        Log::info("Game Menu Seeder executed via web endpoint. Parent ID: {$parentId}");
+
+        return response()->json([
+            'success' => true,
+            'message' => '🎉 Game Module menu created successfully!',
+            'already_seeded' => false,
+            'parent_menu_id' => $parentId,
+            'created_menus' => $createdMenus,
+            'admin_urls' => [
+                'dashboard' => url('/admin/game-dashboard'),
+                'matatu_sessions' => url('/admin/game-sessions'),
+                'ludo_sessions' => url('/admin/ludo-sessions'),
+                'invitations' => url('/admin/game-invitations'),
+                'coin_transactions' => url('/admin/coin-transactions'),
+            ],
+            'instructions' => [
+                '1. Go to your admin panel',
+                '2. You should see "Game Module" in the sidebar menu',
+                '3. Click to expand and access all game management features',
+                '4. Visit /admin/game-dashboard for the full overview',
+            ],
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error("Game Menu Seeder failed: " . $e->getMessage());
+        
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ], 500);
+    }
+});
