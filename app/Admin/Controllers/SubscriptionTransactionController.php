@@ -64,7 +64,7 @@ class SubscriptionTransactionController extends AdminController
     protected function totalRevenueBox()
     {
         $total = SubscriptionTransaction::where('status', 'Completed')->sum('amount');
-        return new InfoBox('Total Revenue', 'money', 'green', '/admin/subscription-transactions?status=Completed', 'UGX ' . number_format($total));
+        return new InfoBox('Total Revenue', 'money', 'green', '/subscription-transactions?status=Completed', 'UGX ' . number_format($total));
     }
 
     /**
@@ -85,7 +85,7 @@ class SubscriptionTransactionController extends AdminController
     {
         $count = SubscriptionTransaction::where('status', 'Pending')->count();
         $amount = SubscriptionTransaction::where('status', 'Pending')->sum('amount');
-        return new InfoBox("Pending ({$count})", 'clock-o', 'yellow', '/admin/subscription-transactions?status=Pending', 'UGX ' . number_format($amount));
+        return new InfoBox("Pending ({$count})", 'clock-o', 'yellow', '/subscription-transactions?status=Pending', 'UGX ' . number_format($amount));
     }
 
     /**
@@ -94,7 +94,7 @@ class SubscriptionTransactionController extends AdminController
     protected function failedPaymentsBox()
     {
         $count = SubscriptionTransaction::where('status', 'Failed')->count();
-        return new InfoBox('Failed Payments', 'times-circle', 'red', '/admin/subscription-transactions?status=Failed', $count);
+        return new InfoBox('Failed Payments', 'times-circle', 'red', '/subscription-transactions?status=Failed', $count);
     }
 
     /**
@@ -103,7 +103,7 @@ class SubscriptionTransactionController extends AdminController
     protected function completedCountBox()
     {
         $count = SubscriptionTransaction::where('status', 'Completed')->count();
-        return new InfoBox('Completed Txns', 'check-circle', 'green', '/admin/subscription-transactions?status=Completed', number_format($count));
+        return new InfoBox('Completed Txns', 'check-circle', 'green', '/subscription-transactions?status=Completed', number_format($count));
     }
 
     /**
@@ -143,7 +143,7 @@ class SubscriptionTransactionController extends AdminController
     {
         $amount = SubscriptionTransaction::where('status', 'Refunded')->sum('amount');
         $count = SubscriptionTransaction::where('status', 'Refunded')->count();
-        return new InfoBox("Refunded ({$count})", 'undo', 'gray', '/admin/subscription-transactions?status=Refunded', 'UGX ' . number_format($amount));
+        return new InfoBox("Refunded ({$count})", 'undo', 'gray', '/subscription-transactions?status=Refunded', 'UGX ' . number_format($amount));
     }
 
     /**
@@ -223,6 +223,10 @@ class SubscriptionTransactionController extends AdminController
     {
         $grid = new Grid(new SubscriptionTransaction());
         $grid->model()->orderBy('id', 'desc');
+        //check if payment_status is not set by get
+        if (!request()->has('payment_status')) {
+            $grid->model()->whereIn('payment_status', ['Completed']);
+        }
 
         // Quick filters
         $grid->quickSearch('pesapal_tracking_id', 'merchant_reference', 'confirmation_code');
@@ -238,7 +242,7 @@ class SubscriptionTransactionController extends AdminController
             ->display(function ($user_id) {
                 $user = User::find($user_id);
                 if ($user) {
-                    return "<a href='/admin/users/{$user->id}'><strong>{$user->name}</strong></a><br><small class='text-muted'>{$user->email}</small>";
+                    return "<a href='/users/{$user->id}'><strong>{$user->name}</strong></a><br><small class='text-muted'>{$user->email}</small>";
                 }
                 return "<span class='text-danger'>User #{$user_id} not found</span>";
             });
@@ -246,7 +250,7 @@ class SubscriptionTransactionController extends AdminController
         $grid->column('subscription_id', __('Subscription'))
             ->display(function ($subscription_id) {
                 if ($subscription_id) {
-                    return "<a href='/admin/subscriptions/{$subscription_id}'>#{$subscription_id}</a>";
+                    return "<a href='/subscriptions/{$subscription_id}'>#{$subscription_id}</a>";
                 }
                 return '-';
             })->sortable();
