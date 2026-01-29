@@ -506,9 +506,9 @@ class VideoPlaybackFailureController extends AdminController
             $filter->like('error_message', 'Error Contains');
         });
 
-        // Batch actions
+        // Batch actions - disable delete since failures are logs
         $grid->batchActions(function ($batch) {
-            $batch->add(new \Encore\Admin\Grid\Tools\BatchAction('Mark as Resolved'));
+            $batch->disableDelete();
         });
 
         // Export
