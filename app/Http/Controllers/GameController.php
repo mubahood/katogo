@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ChatHead;
+use App\Models\CoinTransaction;
 use App\Models\GameInvitation;
 use App\Models\GameSession;
 use App\Models\User;
@@ -95,6 +96,9 @@ class GameController extends Controller
                 'avatar' => $user->avatar,
                 'last_online_at' => $lastOnlineStr,
                 'is_online' => $isOnline,
+                'game_coins_balance' => $user->game_coins_balance ?? 0,
+                'total_games_played' => $user->total_games_played ?? 0,
+                'total_games_won' => $user->total_games_won ?? 0,
             ];
         });
 
@@ -384,6 +388,43 @@ class GameController extends Controller
             return $this->error('You are not a player in this game', 403);
         }
 
+        // Track last poll time for this player
+        $isPlayer1 = $session->player1_id == $currentUser->id;
+        if ($isPlayer1) {
+            $session->player1_last_poll = now();
+        } else {
+            $session->player2_last_poll = now();
+        }
+        $session->save();
+
+        // Check if opponent seems to have abandoned (no poll in 30 seconds)
+        // Only check for active games, not completed ones
+        if ($session->status === 'active') {
+            $opponentLastPoll = $isPlayer1 ? $session->player2_last_poll : $session->player1_last_poll;
+            $opponentId = $isPlayer1 ? $session->player2_id : $session->player1_id;
+            
+            if ($opponentLastPoll !== null) {
+                $secondsSinceOpponentPoll = now()->diffInSeconds($opponentLastPoll);
+                
+                // If opponent hasn't polled in 30 seconds, mark them as forfeited
+                if ($secondsSinceOpponentPoll >= 30) {
+                    $session->status = 'completed';
+                    $session->winner_id = $currentUser->id;
+                    $session->forfeit_user_id = $opponentId;
+                    $session->ended_at = now();
+                    $session->save();
+
+                    // Award coins
+                    CoinTransaction::awardOnlineWin($currentUser->id, $session->id, $opponentId);
+                    CoinTransaction::deductForfeit($opponentId, $session->id, $currentUser->id);
+
+                    // Update game stats
+                    $this->updateGameStats($currentUser->id, true);  // Winner
+                    $this->updateGameStats($opponentId, false);  // Loser (forfeit/abandon)
+                }
+            }
+        }
+
         return $this->success(
             $this->formatSession($session, $currentUser->id),
             'Session retrieved'
@@ -469,8 +510,17 @@ class GameController extends Controller
 
         $session->status = 'completed';
         $session->winner_id = $winnerId;
+        $session->forfeit_user_id = $currentUser->id; // Track who forfeited
         $session->ended_at = now();
         $session->save();
+
+        // Award coins: Winner gets 10 coins, forfeiter loses 5 coins
+        CoinTransaction::awardOnlineWin($winnerId, $session->id, $currentUser->id);
+        CoinTransaction::deductForfeit($currentUser->id, $session->id, $winnerId);
+
+        // Update game stats for both players
+        $this->updateGameStats($winnerId, true);  // Winner
+        $this->updateGameStats($currentUser->id, false);  // Loser (forfeit)
 
         return $this->success(null, 'You have left the game');
     }
@@ -500,7 +550,8 @@ class GameController extends Controller
         while ($attempts < 10) {
             $startCard = array_pop($deck);
             // Avoid starting with Ace (1), 2, 8, or Jack (11) - special cards
-            if (!in_array($startCard['rank'], [1, 2, 8, 11])) {
+            // Avoid starting with special cards: Ace(1), 2, 7(cut), 8(skip), Jack(11)
+            if (!in_array($startCard['rank'], [1, 2, 7, 8, 11])) {
                 break;
             }
             // Put it back at a random position
@@ -646,6 +697,17 @@ class GameController extends Controller
             }
         }
 
+        // 7 - Cut logic: If 7 matches cut card's suit, round ends immediately
+        if ($cardRank === 7) {
+            $cutCard = json_decode($session->cut_card, true);
+            if ($cutCard && $card['suit'] === $cutCard['suit']) {
+                // 7 CUTS THE GAME! Round ends, count points, lower wins, winner gets x2
+                return $this->handleCutWin($session, $playerId, $card);
+            }
+            // If 7 doesn't match cut card suit, just give extra turn
+            $extraTurn = true;
+        }
+
         // 8 - Skip opponent (give extra turn in 2-player)
         if ($cardRank === 8) {
             $extraTurn = true;
@@ -722,6 +784,119 @@ class GameController extends Controller
     }
 
     /**
+     * Handle CUT win - when 7 matches cut card suit
+     * The player with LOWER hand value wins, winner gets x2 points
+     */
+    private function handleCutWin(GameSession $session, $cuttingPlayerId, $cuttingCard)
+    {
+        // Get both players' hands
+        $player1Hand = $session->getPlayerHand($session->player1_id);
+        $player2Hand = $session->getPlayerHand($session->player2_id);
+        
+        // Calculate hand values (the 7 that was played is already removed from cutter's hand)
+        $player1Points = $this->calculateHandPoints($player1Hand);
+        $player2Points = $this->calculateHandPoints($player2Hand);
+        
+        // The player with LOWER points wins the cut
+        // If tie, the one who played the 7 wins
+        $winnerId = null;
+        $loserId = null;
+        $winnerPoints = 0;
+        $loserPoints = 0;
+        
+        if ($player1Points < $player2Points) {
+            $winnerId = $session->player1_id;
+            $loserId = $session->player2_id;
+            $winnerPoints = $player1Points;
+            $loserPoints = $player2Points;
+        } elseif ($player2Points < $player1Points) {
+            $winnerId = $session->player2_id;
+            $loserId = $session->player1_id;
+            $winnerPoints = $player2Points;
+            $loserPoints = $player1Points;
+        } else {
+            // Tie - cutter wins
+            $winnerId = $cuttingPlayerId;
+            $loserId = $winnerId == $session->player1_id ? $session->player2_id : $session->player1_id;
+            $winnerPoints = $winnerId == $session->player1_id ? $player1Points : $player2Points;
+            $loserPoints = $winnerId == $session->player1_id ? $player2Points : $player1Points;
+        }
+        
+        // x2 points for cut win!
+        $pointsAwarded = $loserPoints * 2;
+        
+        // Update scores
+        if ($winnerId == $session->player1_id) {
+            $session->player1_score += $pointsAwarded;
+            $session->player1_rounds_won++;
+        } else {
+            $session->player2_score += $pointsAwarded;
+            $session->player2_rounds_won++;
+        }
+        
+        // Check for game win
+        $winnerScore = $winnerId == $session->player1_id
+            ? $session->player1_score
+            : $session->player2_score;
+            
+        if ($winnerScore >= $session->target_score) {
+            // Game over!
+            $session->status = 'completed';
+            $session->winner_id = $winnerId;
+            $session->ended_at = now();
+            $session->save();
+            
+            // Award coins to winner (10 coins for online win)
+            CoinTransaction::awardOnlineWin($winnerId, $session->id, $loserId);
+            
+            // Update game stats for both players
+            $this->updateGameStats($winnerId, true);  // Winner
+            $this->updateGameStats($loserId, false);  // Loser
+            
+            return $this->success(
+                $this->formatSession($session, $cuttingPlayerId),
+                "CUT! Game over! Winner gets x2 points!"
+            );
+        }
+        
+        // Start new round
+        $session->current_round++;
+        
+        // Re-deal cards
+        $deck = $this->createShuffledDeck();
+        $player1Hand = array_splice($deck, 0, 5);
+        $player2Hand = array_splice($deck, 0, 5);
+        
+        // New cut card
+        $newCutCard = array_shift($deck);
+        
+        // New start card
+        $startCard = array_pop($deck);
+        while (in_array($startCard['rank'], [1, 2, 7, 8, 11])) {
+            array_splice($deck, rand(0, count($deck)), 0, [$startCard]);
+            $startCard = array_pop($deck);
+        }
+        
+        $session->player1_hand = json_encode($player1Hand);
+        $session->player2_hand = json_encode($player2Hand);
+        $session->discard_pile = json_encode([$startCard]);
+        $session->draw_pile = json_encode($deck);
+        $session->cut_card = json_encode($newCutCard);
+        $session->current_suit = $startCard['suit'];
+        $session->draw_stack = 0;
+        
+        // Loser starts next round
+        $session->current_turn_user_id = $loserId;
+        
+        $session->save();
+        
+        return $this->success(
+            $this->formatSession($session, $cuttingPlayerId),
+            "CUT! +{$pointsAwarded} points (x2)! Round {$session->current_round} starting..."
+        );
+    }
+
+    /**
      * Handle round win
      */
     private function handleRoundWin(GameSession $session, $winnerId)
@@ -755,6 +930,13 @@ class GameController extends Controller
             $session->ended_at = now();
             $session->save();
 
+            // Award coins to winner (10 coins for online win)
+            CoinTransaction::awardOnlineWin($winnerId, $session->id, $loserId);
+            
+            // Update game stats for both players
+            $this->updateGameStats($winnerId, true);  // Winner
+            $this->updateGameStats($loserId, false);  // Loser
+
             return $this->success(
                 $this->formatSession($session, $winnerId),
                 'Game over! You won!'
@@ -771,7 +953,8 @@ class GameController extends Controller
 
         // New start card
         $startCard = array_pop($deck);
-        while (in_array($startCard['rank'], [1, 2, 8, 11])) {
+        // Avoid starting with special cards: Ace(1), 2, 7(cut), 8(skip), Jack(11)
+        while (in_array($startCard['rank'], [1, 2, 7, 8, 11])) {
             array_splice($deck, rand(0, count($deck)), 0, [$startCard]);
             $startCard = array_pop($deck);
         }
@@ -930,6 +1113,7 @@ class GameController extends Controller
             'target_score' => $session->target_score,
             'status' => $session->status,
             'winner_id' => $session->winner_id,
+            'forfeit_user_id' => $session->forfeit_user_id,
             'chat_head_id' => $session->chat_head_id,
             'started_at' => $session->started_at ? $session->started_at->toIso8601String() : null,
             'ended_at' => $session->ended_at ? $session->ended_at->toIso8601String() : null,
@@ -955,5 +1139,22 @@ class GameController extends Controller
                 'card_count' => $isPlayer1 ? $player2CardCount : $player1CardCount,
             ],
         ];
+    }
+
+    /**
+     * Update user game statistics
+     */
+    private function updateGameStats(int $userId, bool $won): void
+    {
+        $user = User::find($userId);
+        if (!$user) {
+            return;
+        }
+
+        $user->total_games_played = ($user->total_games_played ?? 0) + 1;
+        if ($won) {
+            $user->total_games_won = ($user->total_games_won ?? 0) + 1;
+        }
+        $user->save();
     }
 }

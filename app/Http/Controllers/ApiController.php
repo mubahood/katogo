@@ -685,6 +685,31 @@ class ApiController extends BaseController
             return $this->error('Chat head not found.');
         }
 
+        // Determine message type (text or audio)
+        $message_type = $r->type ?? 'text';
+        $message_body = $r->body ?? '';
+        $audio_url = null;
+        $audio_duration = null;
+        
+        // Handle audio message
+        if ($message_type === 'audio') {
+            if ($r->hasFile('audio')) {
+                // Upload audio file
+                $audio_file = $r->file('audio');
+                $audio_path = $audio_file->store('chat_audio', 'public');
+                $audio_url = url('storage/' . $audio_path);
+            } elseif ($r->audio_url) {
+                $audio_url = $r->audio_url;
+            }
+            
+            if (empty($audio_url)) {
+                return $this->error('Audio file or URL is required for audio messages.');
+            }
+            
+            $audio_duration = $r->audio_duration ?? 0;
+            $message_body = '🎵 Voice message';
+        }
+
         $chat_message = new ChatMessage();
         $chat_message->chat_head_id = $chat_head->id;
         $chat_message->sender_id = $sender->id;
@@ -693,11 +718,15 @@ class ApiController extends BaseController
         $chat_message->sender_photo = $sender->photo;
         $chat_message->receiver_name = $receiver->name;
         $chat_message->receiver_photo = $receiver->photo;
-        $chat_message->body = $r->body;
-        $chat_message->type = 'text';
+        $chat_message->body = $message_body;
+        $chat_message->type = $message_type;
+        $chat_message->audio_url = $audio_url;
+        $chat_message->audio_duration = $audio_duration;
         $chat_message->status = 'sent';
         $chat_message->save();
-        $chat_head->last_message_body = $r->body;
+        
+        $last_body = $message_type === 'audio' ? '🎵 Voice message' : $message_body;
+        $chat_head->last_message_body = $last_body;
         $chat_head->last_message_time = Carbon::now();
         $chat_head->last_message_status = 'sent';
         $chat_head->save();

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 
 class VideoPlaybackFailure extends Model
 {
@@ -64,6 +65,66 @@ class VideoPlaybackFailure extends Model
     ];
 
     /**
+     * Boot method - automatically deactivate movie when failure is reported
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::created(function ($failure) {
+            // Automatically mark the movie as Inactive when a playback failure is reported
+            $failure->deactivateRelatedMovie();
+        });
+    }
+
+    /**
+     * Deactivate the related movie
+     * Sets status to 'Inactive' and records the reason
+     */
+    public function deactivateRelatedMovie()
+    {
+        if (!$this->movie_id) {
+            return false;
+        }
+
+        try {
+            $movie = MovieModel::find($this->movie_id);
+            if ($movie && $movie->status !== 'Inactive') {
+                $previousStatus = $movie->status;
+                $movie->status = 'Inactive';
+                
+                // Record the failure details in muno_success field
+                $deactivationNote = "Auto-deactivated: Playback failure on " . now()->format('Y-m-d H:i:s');
+                $errorDetail = $this->error_message ?? $this->error_type ?? 'Unknown error';
+                $movie->muno_success = $deactivationNote . " - " . $errorDetail;
+                
+                // Also set error_message if available
+                if ($this->error_message) {
+                    $movie->error_message = "Playback failure: " . $this->error_message;
+                }
+                
+                $movie->save();
+
+                Log::info("Movie #{$this->movie_id} ({$this->movie_title}) auto-deactivated due to playback failure #{$this->id}. Previous status: {$previousStatus}");
+                
+                return true;
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to deactivate movie #{$this->movie_id} after playback failure: " . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Get the movie that failed to play
+     */
+    public function movie()
+    {
+        return $this->belongsTo(MovieModel::class, 'movie_id');
+    }
+
+    /**
      * Get the user that experienced the failure
      */
     public function user()
@@ -113,6 +174,28 @@ class VideoPlaybackFailure extends Model
             'resolved_at' => now(),
             'admin_notes' => $notes ?? $this->admin_notes,
         ]);
+    }
+
+    /**
+     * Mark failure as resolved and optionally reactivate the movie
+     */
+    public function markAsResolvedAndReactivateMovie($notes = null)
+    {
+        $this->markAsResolved($notes);
+        
+        if ($this->movie_id) {
+            $movie = MovieModel::find($this->movie_id);
+            if ($movie && $movie->status === 'Inactive') {
+                $movie->status = 'Active';
+                $movie->muno_success = "Reactivated: Issue resolved on " . now()->format('Y-m-d H:i:s');
+                $movie->error_message = null;
+                $movie->save();
+                
+                Log::info("Movie #{$this->movie_id} reactivated after resolving playback failure #{$this->id}");
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

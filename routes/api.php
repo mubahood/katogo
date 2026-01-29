@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\ApiController;
+use App\Http\Controllers\CoinController;
 use App\Http\Controllers\DynamicCrudController;
 use App\Http\Controllers\GameController;
+use App\Http\Controllers\LudoController;
 use App\Http\Controllers\ModerationController;
 use App\Http\Controllers\SubscriptionApiController;
 use App\Models\StockItem;
@@ -159,6 +161,26 @@ Route::middleware([JwtMiddleware::class, 'throttle:game'])->group(function () {
     Route::get('game/session/{id}', [GameController::class, 'getSession']);
     Route::post('game/session/{id}/action', [GameController::class, 'submitAction']);
     Route::post('game/session/{id}/leave', [GameController::class, 'leaveSession']);
+    
+    // Coins
+    Route::get('coins/balance', [CoinController::class, 'getBalance']);
+    Route::get('coins/history', [CoinController::class, 'getHistory']);
+    Route::post('coins/award-offline-win', [CoinController::class, 'awardOfflineWin']);
+    Route::get('coins/leaderboard', [CoinController::class, 'getLeaderboard']);
+    
+    // ========================================
+    // LUDO GAME ROUTES
+    // ========================================
+    // Game Invitations (Ludo-specific)
+    Route::post('ludo/invite', [LudoController::class, 'sendInvitation']);
+    Route::post('ludo/invite/{id}/accept', [LudoController::class, 'acceptInvitation']);
+    
+    // Ludo Sessions
+    Route::get('ludo/session/{id}', [LudoController::class, 'getSession']);
+    Route::post('ludo/session/{id}/roll', [LudoController::class, 'rollDice']);
+    Route::post('ludo/session/{id}/move', [LudoController::class, 'movePiece']);
+    Route::post('ludo/session/{id}/pass', [LudoController::class, 'passTurn']);
+    Route::post('ludo/session/{id}/leave', [LudoController::class, 'leaveGame']);
 });
 
 

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\VideoPlaybackFailure;
+use App\Models\MovieModel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class VideoPlaybackFailureController extends Controller
 {
@@ -105,12 +107,25 @@ class VideoPlaybackFailureController extends Controller
                 'status' => 'pending',
             ]);
 
+            // Note: Movie is automatically deactivated via the model's boot() hook
+            // But we also log it here for visibility
+            $movieDeactivated = false;
+            $movieId = $request->input('movie_id');
+            if ($movieId) {
+                $movie = MovieModel::find($movieId);
+                if ($movie) {
+                    $movieDeactivated = ($movie->status === 'Inactive');
+                    Log::info("Video playback failure reported for movie #{$movieId}. Movie status: {$movie->status}");
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Failure report recorded successfully',
                 'data' => [
                     'id' => $failure->id,
                     'created_at' => $failure->created_at,
+                    'movie_deactivated' => $movieDeactivated,
                 ],
             ], 201);
 

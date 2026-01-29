@@ -24,10 +24,13 @@ class GameSession extends Model
         'player2_score',
         'player1_rounds_won',
         'player2_rounds_won',
+        'player1_last_poll',
+        'player2_last_poll',
         'current_round',
         'target_score',
         'status',
         'winner_id',
+        'forfeit_user_id',
         'chat_head_id',
         'started_at',
         'ended_at',
@@ -36,6 +39,8 @@ class GameSession extends Model
     protected $casts = [
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
+        'player1_last_poll' => 'datetime',
+        'player2_last_poll' => 'datetime',
     ];
 
     /**
