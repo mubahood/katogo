@@ -184,7 +184,80 @@ class LudoSession extends Model
     public function getPiecesForPlayer($playerNum)
     {
         $field = "player{$playerNum}_pieces";
-        return $this->$field ?? $this->getDefaultPieces();
+        $pieces = $this->$field ?? $this->getDefaultPieces();
+        
+        // CRITICAL: Sanitize and validate pieces to prevent disappearing pieces bug
+        return $this->sanitizePieces($pieces);
+    }
+
+    /**
+     * Sanitize pieces array to ensure all 4 pieces have valid positions
+     * This prevents pieces from disappearing due to corrupted data
+     */
+    public function sanitizePieces($pieces)
+    {
+        $sanitized = [];
+        $existingIds = [];
+        
+        // Process existing pieces
+        if (is_array($pieces)) {
+            foreach ($pieces as $piece) {
+                if (!is_array($piece)) continue;
+                
+                $id = $piece['id'] ?? count($sanitized);
+                if (isset($existingIds[$id])) continue; // Skip duplicates
+                
+                $position = $piece['position'] ?? self::YARD_POSITION;
+                $inHomeColumn = $piece['in_home_column'] ?? false;
+                $homeColumnPos = $piece['home_column_position'] ?? -1;
+                
+                // Validate position is in expected range
+                // Valid: -1 (yard), 0-51 (track), or 99 (home)
+                // Home column is encoded via in_home_column flag
+                if ($position != self::YARD_POSITION && 
+                    $position != self::HOME_POSITION &&
+                    ($position < 0 || $position >= self::BOARD_SIZE) &&
+                    !$inHomeColumn) {
+                    // Invalid position - log and reset to yard
+                    \Log::warning("Ludo: Invalid piece position detected", [
+                        'piece' => $piece,
+                        'session_id' => $this->id,
+                    ]);
+                    $position = self::YARD_POSITION;
+                    $inHomeColumn = false;
+                    $homeColumnPos = -1;
+                }
+                
+                $sanitized[] = [
+                    'id' => $id,
+                    'position' => $position,
+                    'in_home_column' => $inHomeColumn,
+                    'home_column_position' => $homeColumnPos,
+                ];
+                $existingIds[$id] = true;
+            }
+        }
+        
+        // Ensure exactly 4 pieces (add missing ones in yard)
+        while (count($sanitized) < 4) {
+            $newId = count($sanitized);
+            while (isset($existingIds[$newId])) $newId++;
+            
+            \Log::warning("Ludo: Missing piece detected, adding default", [
+                'piece_id' => $newId,
+                'session_id' => $this->id,
+            ]);
+            
+            $sanitized[] = [
+                'id' => $newId,
+                'position' => self::YARD_POSITION,
+                'in_home_column' => false,
+                'home_column_position' => -1,
+            ];
+            $existingIds[$newId] = true;
+        }
+        
+        return $sanitized;
     }
 
     /**
@@ -255,8 +328,15 @@ class LudoSession extends Model
             return ['success' => false, 'message' => 'You must move a piece first'];
         }
 
-        // Roll the dice
-        $diceValue = rand(1, 6);
+        // Roll the dice with better randomness
+        // Use random_int for cryptographically secure random number generation
+        try {
+            $diceValue = random_int(1, 6);
+        } catch (\Exception $e) {
+            // Fallback to mt_rand if random_int fails (shouldn't happen)
+            $diceValue = mt_rand(1, 6);
+        }
+        
         $this->last_dice_roll = $diceValue;
 
         // Track consecutive sixes
@@ -664,14 +744,17 @@ class LudoSession extends Model
         // In 2-player, other player wins
         if ($this->game_type == '2_player') {
             $winnerNum = ($playerNum == 1) ? 2 : 1;
-            $this->status = 'completed';
+            $this->status = 'cancelled'; // Use cancelled to indicate forfeit
             $this->winner_player = $winnerNum;
             $this->winner_user_id = $this->{"player{$winnerNum}_id"};
             $this->ended_at = now();
-            $this->last_action = "Player {$playerNum} forfeited";
+            $this->last_action = "Player forfeited - Opponent wins!";
+            $this->last_action_player = $playerNum;
         } else {
             // 4-player: mark as forfeited, continue game
             $this->{"player{$playerNum}_id"} = null;
+            $this->last_action = "Player {$playerNum} left the game";
+            $this->last_action_player = $playerNum;
             
             // Check if game should end
             $activePlayers = 0;
@@ -684,7 +767,7 @@ class LudoSession extends Model
             }
             
             if ($activePlayers <= 1) {
-                $this->status = 'completed';
+                $this->status = 'cancelled';
                 $this->winner_player = $lastActivePlayer;
                 $this->winner_user_id = $this->{"player{$lastActivePlayer}_id"};
                 $this->ended_at = now();
@@ -730,7 +813,7 @@ class LudoSession extends Model
                     'id' => $this->player1_id,
                     'name' => $this->player1_name,
                     'avatar' => $this->player1_avatar,
-                    'pieces' => $this->player1_pieces,
+                    'pieces' => $this->getPiecesForPlayer(1), // Sanitized pieces
                     'finished_count' => $this->player1_finished_count,
                     'color' => 'red',
                 ],
@@ -738,7 +821,7 @@ class LudoSession extends Model
                     'id' => $this->player2_id,
                     'name' => $this->player2_name,
                     'avatar' => $this->player2_avatar,
-                    'pieces' => $this->player2_pieces,
+                    'pieces' => $this->getPiecesForPlayer(2), // Sanitized pieces
                     'finished_count' => $this->player2_finished_count,
                     'color' => 'green',
                 ],

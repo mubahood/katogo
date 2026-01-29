@@ -8,6 +8,7 @@ trait ApiResponser
     {
         return response()->json([
             'code' => 1,
+            'status' => 'success',
             'message' => $message,
             'data' => $data
         ]);
@@ -17,6 +18,7 @@ trait ApiResponser
     {
         $response = [
             'code' => 0,
+            'status' => 'error',
             'message' => $message,
             'data' => $additionalData ?: ""
         ];
