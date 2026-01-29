@@ -47,6 +47,12 @@ class SubscriptionController extends AdminController
                 $row->column(3, $this->churnRateBox());
             })
             ->row(function (Row $row) {
+                // LugaFlix Stats
+                $row->column(6, $this->lugaflixStatsBox());
+                // UGFlix Stats
+                $row->column(6, $this->ugflixStatsBox());
+            })
+            ->row(function (Row $row) {
                 $row->column(6, $this->revenueChartBox());
                 $row->column(6, $this->planBreakdownBox());
             })
@@ -55,6 +61,130 @@ class SubscriptionController extends AdminController
                 $row->column(6, $this->expiringSubscriptionsBox());
             })
             ->body($this->grid());
+    }
+
+    /**
+     * LugaFlix stats box
+     */
+    protected function lugaflixStatsBox()
+    {
+        $completed = Subscription::where('app_type', 'lugaflix')
+            ->where('payment_status', 'Completed');
+        
+        $totalRevenue = (clone $completed)->sum('amount_paid');
+        $totalSubs = (clone $completed)->count();
+        $activeSubs = Subscription::where('app_type', 'lugaflix')
+            ->where('status', 'Active')
+            ->where('payment_status', 'Completed')
+            ->count();
+        
+        $thisMonth = Subscription::where('app_type', 'lugaflix')
+            ->where('payment_status', 'Completed')
+            ->whereMonth('created_at', Carbon::now()->month)
+            ->whereYear('created_at', Carbon::now()->year)
+            ->sum('amount_paid');
+        
+        $today = Subscription::where('app_type', 'lugaflix')
+            ->where('payment_status', 'Completed')
+            ->whereDate('created_at', Carbon::today())
+            ->sum('amount_paid');
+        
+        $todayCount = Subscription::where('app_type', 'lugaflix')
+            ->where('payment_status', 'Completed')
+            ->whereDate('created_at', Carbon::today())
+            ->count();
+        
+        $pending = Subscription::where('app_type', 'lugaflix')
+            ->where('payment_status', 'Pending')
+            ->count();
+        
+        $processing = Subscription::where('app_type', 'lugaflix')
+            ->where('payment_status', 'Processing')
+            ->count();
+        
+        $failed = Subscription::where('app_type', 'lugaflix')
+            ->where('payment_status', 'Failed')
+            ->count();
+
+        $rows = [
+            ['💰 Total Revenue', 'UGX ' . number_format($totalRevenue)],
+            ['✅ Total Completed', number_format($totalSubs)],
+            ['🟢 Active Now', number_format($activeSubs)],
+            ['📅 This Month', 'UGX ' . number_format($thisMonth)],
+            ['⭐ Today (' . $todayCount . ' sales)', 'UGX ' . number_format($today)],
+            ['⏳ Pending', "<span class='label label-warning'>{$pending}</span>"],
+            ['🔄 Processing', "<span class='label label-info'>{$processing}</span>"],
+            ['❌ Failed', "<span class='label label-danger'>{$failed}</span>"],
+        ];
+
+        $table = new Table(['Metric', 'Value'], $rows);
+        $box = new Box('🎭 LugaFlix Stats', $table);
+        $box->style('primary');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
+     * UGFlix stats box
+     */
+    protected function ugflixStatsBox()
+    {
+        $completed = Subscription::where('app_type', 'ugflix')
+            ->where('payment_status', 'Completed');
+        
+        $totalRevenue = (clone $completed)->sum('amount_paid');
+        $totalSubs = (clone $completed)->count();
+        $activeSubs = Subscription::where('app_type', 'ugflix')
+            ->where('status', 'Active')
+            ->where('payment_status', 'Completed')
+            ->count();
+        
+        $thisMonth = Subscription::where('app_type', 'ugflix')
+            ->where('payment_status', 'Completed')
+            ->whereMonth('created_at', Carbon::now()->month)
+            ->whereYear('created_at', Carbon::now()->year)
+            ->sum('amount_paid');
+        
+        $today = Subscription::where('app_type', 'ugflix')
+            ->where('payment_status', 'Completed')
+            ->whereDate('created_at', Carbon::today())
+            ->sum('amount_paid');
+        
+        $todayCount = Subscription::where('app_type', 'ugflix')
+            ->where('payment_status', 'Completed')
+            ->whereDate('created_at', Carbon::today())
+            ->count();
+        
+        $pending = Subscription::where('app_type', 'ugflix')
+            ->where('payment_status', 'Pending')
+            ->count();
+        
+        $processing = Subscription::where('app_type', 'ugflix')
+            ->where('payment_status', 'Processing')
+            ->count();
+        
+        $failed = Subscription::where('app_type', 'ugflix')
+            ->where('payment_status', 'Failed')
+            ->count();
+
+        $rows = [
+            ['💰 Total Revenue', 'UGX ' . number_format($totalRevenue)],
+            ['✅ Total Completed', number_format($totalSubs)],
+            ['🟢 Active Now', number_format($activeSubs)],
+            ['📅 This Month', 'UGX ' . number_format($thisMonth)],
+            ['⭐ Today (' . $todayCount . ' sales)', 'UGX ' . number_format($today)],
+            ['⏳ Pending', "<span class='label label-warning'>{$pending}</span>"],
+            ['🔄 Processing', "<span class='label label-info'>{$processing}</span>"],
+            ['❌ Failed', "<span class='label label-danger'>{$failed}</span>"],
+        ];
+
+        $table = new Table(['Metric', 'Value'], $rows);
+        $box = new Box('🎬 UGFlix Stats', $table);
+        $box->style('success');
+        $box->solid();
+
+        return $box;
     }
 
     /**
@@ -297,7 +427,16 @@ class SubscriptionController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new Subscription());
-        $grid->model()->with(['user', 'plan'])->orderBy('id', 'desc');
+        
+        // Default filter: only show Completed payments unless another payment_status is specified
+        $grid->model()->with(['user', 'plan']);
+        
+        // Apply default filter for completed payments only (hide non-completed by default)
+        if (!request()->has('payment_status') && !request()->has('_pjax')) {
+            $grid->model()->where('payment_status', 'Completed');
+        }
+        
+        $grid->model()->orderBy('id', 'desc');
 
         // Quick search
         $grid->quickSearch(['user.name', 'user.email', 'pesapal_merchant_reference']);
@@ -321,7 +460,8 @@ class SubscriptionController extends AdminController
                     'Completed' => 'Completed',
                     'Failed' => 'Failed',
                     'Refunded' => 'Refunded',
-                ]);
+                    '' => '-- Show All --',
+                ])->default('Completed');
             });
 
             $filter->column(1/3, function ($filter) {
