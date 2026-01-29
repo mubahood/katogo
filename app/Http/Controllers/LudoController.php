@@ -305,6 +305,10 @@ class LudoController extends Controller
             $user->total_games_played = ($user->total_games_played ?? 0) + 1;
             $user->save();
         }
+        
+        // Mark both players as not busy
+        $this->markUserNotBusy($session->player1_id);
+        $this->markUserNotBusy($session->player2_id);
 
         return $this->success(null, 'You left the game');
     }
@@ -356,6 +360,10 @@ class LudoController extends Controller
         $invitation->status = 'accepted';
         $invitation->game_session_id = $session->id;
         $invitation->save();
+        
+        // Mark both players as busy in a game
+        $this->markUserBusy($invitation->sender_id);
+        $this->markUserBusy($invitation->receiver_id);
 
         return $this->success(
             $session->toApiFormat($currentUser->id),
@@ -363,6 +371,28 @@ class LudoController extends Controller
         );
     }
 
+    /**
+     * Mark user as busy (called when game starts)
+     */
+    private function markUserBusy($userId)
+    {
+        User::where('id', $userId)->update([
+            'is_busy_in_game' => true,
+            'busy_since' => now()
+        ]);
+    }
+    
+    /**
+     * Mark user as not busy (called when game ends/leaves)
+     */
+    private function markUserNotBusy($userId)
+    {
+        User::where('id', $userId)->update([
+            'is_busy_in_game' => false,
+            'busy_since' => null
+        ]);
+    }
+    
     /**
      * Send a Ludo game invitation
      * POST /api/ludo/invite

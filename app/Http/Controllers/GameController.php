@@ -39,6 +39,9 @@ class GameController extends Controller
         if ($user) {
             $user->last_online_at = now();
             $user->save();
+            
+            // Clean up busy state if stuck for more than 15 minutes
+            $this->cleanupStuckBusyUsers();
         }
 
         // Get search query
@@ -55,7 +58,8 @@ class GameController extends Controller
                 $q->where('last_online_at', '>=', $thirtyMinutesAgo)
                   ->orWhereNotNull('last_online_at');
             })
-            ->where('status', 'Active'); // Active users only
+            ->where('status', 'Active') // Active users only
+            ->where('is_busy_in_game', false); // Exclude users currently in an active game
 
         // Apply search filter
         if (!empty($search)) {
@@ -96,6 +100,7 @@ class GameController extends Controller
                 'avatar' => $user->avatar,
                 'last_online_at' => $lastOnlineStr,
                 'is_online' => $isOnline,
+                'is_busy_in_game' => $user->is_busy_in_game ?? false,
                 'game_coins_balance' => $user->game_coins_balance ?? 0,
                 'total_games_played' => $user->total_games_played ?? 0,
                 'total_games_won' => $user->total_games_won ?? 0,
@@ -103,6 +108,43 @@ class GameController extends Controller
         });
 
         return $this->success($formattedUsers, 'Online users retrieved');
+    }
+    
+    /**
+     * Clean up users stuck in busy state for more than 15 minutes
+     */
+    private function cleanupStuckBusyUsers()
+    {
+        $fifteenMinutesAgo = now()->subMinutes(15);
+        
+        User::where('is_busy_in_game', true)
+            ->where('busy_since', '<=', $fifteenMinutesAgo)
+            ->update([
+                'is_busy_in_game' => false,
+                'busy_since' => null
+            ]);
+    }
+    
+    /**
+     * Mark user as busy (called when game starts)
+     */
+    private function markUserBusy($userId)
+    {
+        User::where('id', $userId)->update([
+            'is_busy_in_game' => true,
+            'busy_since' => now()
+        ]);
+    }
+    
+    /**
+     * Mark user as not busy (called when game ends/leaves)
+     */
+    private function markUserNotBusy($userId)
+    {
+        User::where('id', $userId)->update([
+            'is_busy_in_game' => false,
+            'busy_since' => null
+        ]);
     }
 
     // ========================================
@@ -291,6 +333,10 @@ class GameController extends Controller
         $invitation->status = 'accepted';
         $invitation->game_session_id = $session->id;
         $invitation->save();
+        
+        // Mark both players as busy in a game
+        $this->markUserBusy($invitation->sender_id);
+        $this->markUserBusy($invitation->receiver_id);
 
         return $this->success(
             $this->formatSession($session, $currentUser->id),
@@ -521,6 +567,10 @@ class GameController extends Controller
         // Update game stats for both players
         $this->updateGameStats($winnerId, true);  // Winner
         $this->updateGameStats($currentUser->id, false);  // Loser (forfeit)
+        
+        // Mark both players as not busy
+        $this->markUserNotBusy($session->player1_id);
+        $this->markUserNotBusy($session->player2_id);
 
         return $this->success(null, 'You have left the game');
     }
@@ -936,6 +986,10 @@ class GameController extends Controller
             // Update game stats for both players
             $this->updateGameStats($winnerId, true);  // Winner
             $this->updateGameStats($loserId, false);  // Loser
+            
+            // Mark both players as not busy
+            $this->markUserNotBusy($session->player1_id);
+            $this->markUserNotBusy($session->player2_id);
 
             return $this->success(
                 $this->formatSession($session, $winnerId),
