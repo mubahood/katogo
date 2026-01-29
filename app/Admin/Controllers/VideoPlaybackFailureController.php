@@ -143,7 +143,7 @@ class VideoPlaybackFailureController extends AdminController
      */
     protected function topFailingMoviesBox()
     {
-        $movies = VideoPlaybackFailure::whereNotNull('movie_id')
+        $failures = VideoPlaybackFailure::whereNotNull('movie_id')
             ->selectRaw('movie_id, movie_title, COUNT(*) as failure_count')
             ->groupBy('movie_id', 'movie_title')
             ->orderByDesc('failure_count')
@@ -152,12 +152,20 @@ class VideoPlaybackFailureController extends AdminController
 
         $rows = [];
         $rank = 1;
-        foreach ($movies as $movie) {
+        foreach ($failures as $failure) {
+            // Try to get movie title from stored field or fetch from MovieModel
+            $movieTitle = $failure->movie_title;
+            if (empty($movieTitle) || $movieTitle === 'Unknown Movie') {
+                $movie = MovieModel::find($failure->movie_id);
+                $movieTitle = $movie ? $movie->title : 'Movie #' . $failure->movie_id;
+            }
+            
+            $displayTitle = mb_strlen($movieTitle) > 35 ? mb_substr($movieTitle, 0, 35) . '...' : $movieTitle;
             $statusClass = $rank <= 3 ? 'danger' : ($rank <= 6 ? 'warning' : 'default');
             $rows[] = [
                 "#{$rank}",
-                "<a href='/admin/movies/{$movie->movie_id}'>" . mb_substr($movie->movie_title ?? 'Unknown', 0, 35) . "</a>",
-                "<span class='label label-{$statusClass}'>{$movie->failure_count}</span>",
+                "<a href='/admin/movies/{$failure->movie_id}' title='" . htmlspecialchars($movieTitle) . "'>{$displayTitle}</a>",
+                "<span class='label label-{$statusClass}'>{$failure->failure_count}</span>",
             ];
             $rank++;
         }
@@ -306,7 +314,7 @@ class VideoPlaybackFailureController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new VideoPlaybackFailure());
-        $grid->model()->orderBy('created_at', 'desc');
+        $grid->model()->with(['user', 'movie'])->orderBy('created_at', 'desc');
 
         // Quick search
         $grid->quickSearch('user_name', 'user_email', 'movie_title', 'error_message');
@@ -315,20 +323,50 @@ class VideoPlaybackFailureController extends AdminController
         $grid->column('id', __('ID'))->sortable();
         
         $grid->column('user_name', __('User'))->display(function () {
-            $userName = $this->user_name ?? 'Unknown';
-            $userId = $this->user_id ? " <small class='text-muted'>(#{$this->user_id})</small>" : '';
+            // Try stored user_name first, then fall back to related user
+            $userName = $this->user_name;
+            if (empty($userName) || $userName === 'Unknown') {
+                if ($this->user) {
+                    $userName = $this->user->name;
+                }
+            }
+            $userName = $userName ?: 'Unknown';
+            
+            // Get email from stored field or related user
+            $email = $this->user_email;
+            if (empty($email) && $this->user) {
+                $email = $this->user->email;
+            }
+            
+            $userId = $this->user_id ? "(ID: {$this->user_id})" : '';
             $subscribed = $this->has_subscription ? '⭐' : '';
-            return "{$subscribed} <strong>{$userName}</strong>{$userId}";
+            $emailDisplay = $email ? "<br><small class='text-muted'>{$email}</small>" : '';
+            
+            if ($this->user_id && $userName !== 'Unknown') {
+                return "{$subscribed} <a href='/admin/users/{$this->user_id}'><strong>{$userName}</strong></a> <small class='text-muted'>{$userId}</small>{$emailDisplay}";
+            }
+            return "{$subscribed} <strong>{$userName}</strong> <small class='text-muted'>{$userId}</small>{$emailDisplay}";
         });
         
         $grid->column('movie_title', __('Movie'))->display(function () {
-            if ($this->movie_title) {
-                $title = mb_substr($this->movie_title, 0, 30);
-                $movieId = $this->movie_id ? " <small>(#{$this->movie_id})</small>" : '';
-                $link = $this->movie_id ? "<a href='/admin/movies/{$this->movie_id}'>{$title}</a>" : $title;
-                return $link . $movieId;
+            // Try stored movie_title first, then fall back to related movie
+            $title = $this->movie_title;
+            if (empty($title) || $title === 'Unknown Movie') {
+                if ($this->movie) {
+                    $title = $this->movie->title;
+                }
             }
-            return '<em class="text-muted">Unknown Movie</em>';
+            
+            if ($title) {
+                $displayTitle = mb_strlen($title) > 35 ? mb_substr($title, 0, 35) . '...' : $title;
+                $movieId = $this->movie_id ? " <small class='text-muted'>(ID: {$this->movie_id})</small>" : '';
+                
+                if ($this->movie_id) {
+                    return "<a href='/admin/movies/{$this->movie_id}' title='" . htmlspecialchars($title) . "'><strong>{$displayTitle}</strong></a>{$movieId}";
+                }
+                return "<strong>{$displayTitle}</strong>{$movieId}";
+            }
+            return '<em class="text-muted">Unknown Movie</em>' . ($this->movie_id ? " <small>(ID: {$this->movie_id})</small>" : '');
         });
         
         $grid->column('error_type', __('Error Type'))
