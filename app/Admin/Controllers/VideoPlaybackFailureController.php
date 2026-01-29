@@ -164,7 +164,7 @@ class VideoPlaybackFailureController extends AdminController
             $statusClass = $rank <= 3 ? 'danger' : ($rank <= 6 ? 'warning' : 'default');
             $rows[] = [
                 "#{$rank}",
-                "<a href='/admin/movies/{$failure->movie_id}' title='" . htmlspecialchars($movieTitle) . "'>{$displayTitle}</a>",
+                "<a href='movies-movies/{$failure->movie_id}' title='" . htmlspecialchars($movieTitle) . "'>{$displayTitle}</a>",
                 "<span class='label label-{$statusClass}'>{$failure->failure_count}</span>",
             ];
             $rank++;
@@ -343,7 +343,7 @@ class VideoPlaybackFailureController extends AdminController
             $emailDisplay = $email ? "<br><small class='text-muted'>{$email}</small>" : '';
             
             if ($this->user_id && $userName !== 'Unknown') {
-                return "{$subscribed} <a href='/admin/users/{$this->user_id}'><strong>{$userName}</strong></a> <small class='text-muted'>{$userId}</small>{$emailDisplay}";
+                return "{$subscribed} <a href='users/{$this->user_id}'><strong>{$userName}</strong></a> <small class='text-muted'>{$userId}</small>{$emailDisplay}";
             }
             return "{$subscribed} <strong>{$userName}</strong> <small class='text-muted'>{$userId}</small>{$emailDisplay}";
         });
@@ -362,7 +362,7 @@ class VideoPlaybackFailureController extends AdminController
                 $movieId = $this->movie_id ? " <small class='text-muted'>(ID: {$this->movie_id})</small>" : '';
                 
                 if ($this->movie_id) {
-                    return "<a href='/admin/movies/{$this->movie_id}' title='" . htmlspecialchars($title) . "'><strong>{$displayTitle}</strong></a>{$movieId}";
+                    return "<a href='movies-movies/{$this->movie_id}' title='" . htmlspecialchars($title) . "'><strong>{$displayTitle}</strong></a>{$movieId}";
                 }
                 return "<strong>{$displayTitle}</strong>{$movieId}";
             }
