@@ -153,7 +153,7 @@ class SubscriptionTransactionController extends AdminController
     {
         $days = [];
         $revenues = [];
-        
+
         for ($i = 6; $i >= 0; $i--) {
             $date = Carbon::today()->subDays($i);
             $days[] = $date->format('M d');
@@ -225,14 +225,14 @@ class SubscriptionTransactionController extends AdminController
         $grid->model()->orderBy('id', 'desc');
         //check if payment_status is not set by get
         if (!request()->has('payment_status')) {
-            $grid->model()->whereIn('payment_status', ['Completed']);
+            $grid->model()->where('payment_status', 'Completed');
         }
 
         // Quick filters
         $grid->quickSearch('pesapal_tracking_id', 'merchant_reference', 'confirmation_code');
 
         $grid->column('id', __('ID'))->sortable();
-        
+
         $grid->column('created_at', __('Date'))
             ->display(function ($created_at) {
                 return Carbon::parse($created_at)->format('M d, Y H:i');
@@ -349,14 +349,14 @@ class SubscriptionTransactionController extends AdminController
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
 
-            $filter->column(1/3, function ($filter) {
+            $filter->column(1 / 3, function ($filter) {
                 $filter->equal('status', 'Status')->select([
                     'Pending' => 'Pending',
                     'Completed' => 'Completed',
                     'Failed' => 'Failed',
                     'Refunded' => 'Refunded',
                 ]);
-                
+
                 $filter->equal('transaction_type', 'Type')->select([
                     'Initial' => 'Initial',
                     'Renewal' => 'Renewal',
@@ -365,13 +365,13 @@ class SubscriptionTransactionController extends AdminController
                 ]);
             });
 
-            $filter->column(1/3, function ($filter) {
+            $filter->column(1 / 3, function ($filter) {
                 $filter->equal('user_id', 'User ID');
                 $filter->equal('subscription_id', 'Subscription ID');
                 $filter->like('pesapal_tracking_id', 'Tracking ID');
             });
 
-            $filter->column(1/3, function ($filter) {
+            $filter->column(1 / 3, function ($filter) {
                 $filter->like('confirmation_code', 'Confirmation Code');
                 $filter->like('payment_method', 'Payment Method');
                 $filter->between('created_at', 'Date Range')->datetime();
@@ -471,7 +471,7 @@ class SubscriptionTransactionController extends AdminController
 
         $form->number('subscription_id', __('Subscription ID'));
         $form->number('user_id', __('User ID'));
-        
+
         $form->select('transaction_type', __('Transaction Type'))->options([
             'Initial' => 'Initial',
             'Renewal' => 'Renewal',
@@ -481,7 +481,7 @@ class SubscriptionTransactionController extends AdminController
 
         $form->decimal('amount', __('Amount'));
         $form->text('currency', __('Currency'))->default('UGX');
-        
+
         $form->select('status', __('Status'))->options([
             'Pending' => 'Pending',
             'Completed' => 'Completed',
@@ -514,4 +514,3 @@ class SubscriptionTransactionController extends AdminController
         return $form;
     }
 }
-
