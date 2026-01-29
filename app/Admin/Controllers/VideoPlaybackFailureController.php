@@ -465,6 +465,142 @@ class VideoPlaybackFailureController extends AdminController
                 return Carbon::parse($createdAt)->format('M d, H:i');
             })->sortable();
 
+        // Expandable row with full movie details
+        $grid->column('expand', __('Details'))->expand(function ($model) {
+            // Get movie from relationship or fetch by ID
+            $movie = $model->movie;
+            if (!$movie && $model->movie_id) {
+                $movie = \App\Models\MovieModel::find($model->movie_id);
+            }
+            
+            $html = '<div style="padding: 15px; background: #f9f9f9; border-radius: 8px;">';
+            
+            // === MOVIE INFORMATION ===
+            $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 8px;">🎬 Movie Information</h4>';
+            $html .= '<table class="table table-bordered" style="margin-bottom: 20px;">';
+            
+            if ($movie) {
+                $html .= '<tr><td style="width: 180px; font-weight: bold;">Movie Title</td><td>' . htmlspecialchars($movie->title ?? 'N/A') . '</td></tr>';
+                $html .= '<tr><td style="font-weight: bold;">Movie ID</td><td>' . ($movie->id ?? 'N/A') . '</td></tr>';
+                $html .= '<tr><td style="font-weight: bold;">Status</td><td><span class="label label-' . ($movie->status === 'Active' ? 'success' : 'danger') . '">' . ($movie->status ?? 'N/A') . '</span></td></tr>';
+                $html .= '<tr><td style="font-weight: bold;">Type</td><td>' . ($movie->type ?? 'N/A') . '</td></tr>';
+                
+                // Playback URL with clickable link
+                $playbackUrl = $movie->url ?? $model->original_url ?? $model->transformed_url;
+                if ($playbackUrl) {
+                    $html .= '<tr><td style="font-weight: bold;">🔗 Playback URL</td><td>';
+                    $html .= '<a href="' . htmlspecialchars($playbackUrl) . '" target="_blank" class="btn btn-sm btn-primary" style="margin-right: 10px;">';
+                    $html .= '<i class="fa fa-external-link"></i> Open Video</a>';
+                    $html .= '<code style="word-break: break-all; font-size: 11px;">' . htmlspecialchars($playbackUrl) . '</code>';
+                    $html .= '</td></tr>';
+                }
+                
+                // Thumbnail
+                if ($movie->thumbnail_url) {
+                    $html .= '<tr><td style="font-weight: bold;">Thumbnail</td><td>';
+                    $html .= '<img src="' . htmlspecialchars($movie->thumbnail_url) . '" style="max-width: 150px; max-height: 100px; border-radius: 4px;">';
+                    $html .= '</td></tr>';
+                }
+                
+                $html .= '<tr><td style="font-weight: bold;">Views</td><td>' . number_format($movie->views ?? 0) . '</td></tr>';
+                $html .= '<tr><td style="font-weight: bold;">Category</td><td>' . ($movie->Category ?? 'N/A') . '</td></tr>';
+            } else {
+                $html .= '<tr><td colspan="2" class="text-center text-muted">Movie not found in database</td></tr>';
+                
+                // Still show URLs from the failure record
+                if ($model->original_url) {
+                    $html .= '<tr><td style="font-weight: bold;">🔗 Original URL</td><td>';
+                    $html .= '<a href="' . htmlspecialchars($model->original_url) . '" target="_blank" class="btn btn-sm btn-warning">';
+                    $html .= '<i class="fa fa-external-link"></i> Open</a> ';
+                    $html .= '<code style="word-break: break-all; font-size: 11px;">' . htmlspecialchars($model->original_url) . '</code>';
+                    $html .= '</td></tr>';
+                }
+            }
+            $html .= '</table>';
+            
+            // === URL DETAILS ===
+            $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #28a745; padding-bottom: 8px;">🔗 URL Details (from failure report)</h4>';
+            $html .= '<table class="table table-bordered" style="margin-bottom: 20px;">';
+            
+            if ($model->original_url) {
+                $html .= '<tr><td style="width: 180px; font-weight: bold;">Original URL</td><td>';
+                $html .= '<a href="' . htmlspecialchars($model->original_url) . '" target="_blank" class="btn btn-xs btn-info"><i class="fa fa-external-link"></i></a> ';
+                $html .= '<code style="word-break: break-all; font-size: 11px;">' . htmlspecialchars($model->original_url) . '</code>';
+                $html .= '</td></tr>';
+            }
+            
+            if ($model->transformed_url) {
+                $html .= '<tr><td style="font-weight: bold;">Transformed URL</td><td>';
+                $html .= '<a href="' . htmlspecialchars($model->transformed_url) . '" target="_blank" class="btn btn-xs btn-success"><i class="fa fa-external-link"></i></a> ';
+                $html .= '<code style="word-break: break-all; font-size: 11px;">' . htmlspecialchars($model->transformed_url) . '</code>';
+                $html .= '</td></tr>';
+            }
+            $html .= '</table>';
+            
+            // === ERROR DETAILS ===
+            $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #dc3545; padding-bottom: 8px;">❌ Error Details</h4>';
+            $html .= '<table class="table table-bordered" style="margin-bottom: 20px;">';
+            $html .= '<tr><td style="width: 180px; font-weight: bold;">Error Type</td><td><span class="label label-danger">' . ucfirst($model->error_type ?? 'Unknown') . '</span></td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Error Code</td><td>' . ($model->error_code ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Error Message</td><td><pre style="white-space: pre-wrap; word-wrap: break-word; max-height: 200px; overflow-y: auto; background: #fff3cd; padding: 10px; border-radius: 4px;">' . htmlspecialchars($model->error_message ?? 'N/A') . '</pre></td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Retry Count</td><td>' . ($model->retry_count ?? 0) . '</td></tr>';
+            $html .= '</table>';
+            
+            // === USER DETAILS ===
+            $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #17a2b8; padding-bottom: 8px;">👤 User Details</h4>';
+            $html .= '<table class="table table-bordered" style="margin-bottom: 20px;">';
+            $html .= '<tr><td style="width: 180px; font-weight: bold;">User ID</td><td>' . ($model->user_id ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Name</td><td>' . htmlspecialchars($model->user_name ?? ($model->user->name ?? 'Unknown')) . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Email</td><td>' . htmlspecialchars($model->user_email ?? ($model->user->email ?? 'N/A')) . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Phone</td><td>' . htmlspecialchars($model->user_phone ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Has Subscription</td><td>' . ($model->has_subscription ? '<span class="label label-success">⭐ Yes</span>' : '<span class="label label-default">No</span>') . '</td></tr>';
+            if ($model->has_subscription) {
+                $html .= '<tr><td style="font-weight: bold;">Subscription Type</td><td>' . ($model->subscription_type ?? 'N/A') . '</td></tr>';
+                $html .= '<tr><td style="font-weight: bold;">Expires At</td><td>' . ($model->subscription_expires_at ? Carbon::parse($model->subscription_expires_at)->format('M d, Y H:i') : 'N/A') . '</td></tr>';
+            }
+            $html .= '</table>';
+            
+            // === DEVICE & APP INFO ===
+            $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #6c757d; padding-bottom: 8px;">📱 Device & App Info</h4>';
+            $html .= '<table class="table table-bordered" style="margin-bottom: 20px;">';
+            $html .= '<tr><td style="width: 180px; font-weight: bold;">Device Model</td><td>' . htmlspecialchars($model->device_model ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Device OS</td><td>' . htmlspecialchars($model->device_os ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">OS Version</td><td>' . htmlspecialchars($model->device_os_version ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">App Version</td><td>' . htmlspecialchars($model->app_version ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Player Type</td><td>' . htmlspecialchars($model->player_type ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Screen Name</td><td>' . htmlspecialchars($model->screen_name ?? 'N/A') . '</td></tr>';
+            $html .= '</table>';
+            
+            // === NETWORK INFO ===
+            $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #ffc107; padding-bottom: 8px;">🌐 Network Info</h4>';
+            $html .= '<table class="table table-bordered" style="margin-bottom: 20px;">';
+            $html .= '<tr><td style="width: 180px; font-weight: bold;">Network Type</td><td>' . htmlspecialchars($model->network_type ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">IP Address</td><td>' . htmlspecialchars($model->ip_address ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">User Agent</td><td><small>' . htmlspecialchars($model->user_agent ?? 'N/A') . '</small></td></tr>';
+            $html .= '</table>';
+            
+            // === RESOLUTION STATUS ===
+            $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #28a745; padding-bottom: 8px;">📋 Resolution Status</h4>';
+            $html .= '<table class="table table-bordered" style="margin-bottom: 20px;">';
+            $statusColors = ['pending' => 'warning', 'investigating' => 'info', 'resolved' => 'success', 'ignored' => 'default'];
+            $html .= '<tr><td style="width: 180px; font-weight: bold;">Status</td><td><span class="label label-' . ($statusColors[$model->status] ?? 'default') . '">' . ucfirst($model->status ?? 'N/A') . '</span></td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Admin Notes</td><td>' . htmlspecialchars($model->admin_notes ?? 'No notes yet') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Resolved At</td><td>' . ($model->resolved_at ? Carbon::parse($model->resolved_at)->format('M d, Y H:i') : 'Not resolved') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Created At</td><td>' . Carbon::parse($model->created_at)->format('M d, Y H:i:s') . '</td></tr>';
+            $html .= '<tr><td style="font-weight: bold;">Updated At</td><td>' . Carbon::parse($model->updated_at)->format('M d, Y H:i:s') . '</td></tr>';
+            $html .= '</table>';
+            
+            // === ADDITIONAL DATA ===
+            if ($model->additional_data) {
+                $html .= '<h4 style="margin-bottom: 15px; color: #333; border-bottom: 2px solid #6f42c1; padding-bottom: 8px;">📦 Additional Data</h4>';
+                $html .= '<pre style="white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; background: #e9ecef; padding: 10px; border-radius: 4px;">' . htmlspecialchars(json_encode($model->additional_data, JSON_PRETTY_PRINT)) . '</pre>';
+            }
+            
+            $html .= '</div>';
+            
+            return $html;
+        });
+
         // Filters
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
