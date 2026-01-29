@@ -3,10 +3,21 @@
 namespace App\Admin\Controllers;
 
 use App\Models\SubscriptionTransaction;
+use App\Models\Subscription;
+use App\Models\SubscriptionPlan;
+use App\Models\User;
+use Carbon\Carbon;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
 use Encore\Admin\Show;
+use Encore\Admin\Layout\Content;
+use Encore\Admin\Layout\Row;
+use Encore\Admin\Layout\Column;
+use Encore\Admin\Widgets\Box;
+use Encore\Admin\Widgets\InfoBox;
+use Encore\Admin\Widgets\Table;
+use Illuminate\Support\Facades\DB;
 
 class SubscriptionTransactionController extends AdminController
 {
@@ -15,7 +26,193 @@ class SubscriptionTransactionController extends AdminController
      *
      * @var string
      */
-    protected $title = 'SubscriptionTransaction';
+    protected $title = 'Payment Transactions';
+
+    /**
+     * Index interface with dashboard.
+     *
+     * @param Content $content
+     * @return Content
+     */
+    public function index(Content $content)
+    {
+        return $content
+            ->title('💳 Payment Transactions')
+            ->description('Monitor all subscription payments and transactions')
+            ->row(function (Row $row) {
+                $row->column(3, $this->totalRevenueBox());
+                $row->column(3, $this->todayRevenueBox());
+                $row->column(3, $this->pendingPaymentsBox());
+                $row->column(3, $this->failedPaymentsBox());
+            })
+            ->row(function (Row $row) {
+                $row->column(3, $this->completedCountBox());
+                $row->column(3, $this->mobileMoneyBox());
+                $row->column(3, $this->cardPaymentsBox());
+                $row->column(3, $this->refundedBox());
+            })
+            ->row(function (Row $row) {
+                $row->column(6, $this->revenueChartBox());
+                $row->column(6, $this->paymentMethodsBox());
+            })
+            ->body($this->grid());
+    }
+
+    /**
+     * Total revenue info box
+     */
+    protected function totalRevenueBox()
+    {
+        $total = SubscriptionTransaction::where('status', 'Completed')->sum('amount');
+        return new InfoBox('Total Revenue', 'money', 'green', '/admin/subscription-transactions?status=Completed', 'UGX ' . number_format($total));
+    }
+
+    /**
+     * Today's revenue info box
+     */
+    protected function todayRevenueBox()
+    {
+        $today = SubscriptionTransaction::where('status', 'Completed')
+            ->whereDate('created_at', Carbon::today())
+            ->sum('amount');
+        return new InfoBox("Today's Revenue", 'calendar', 'aqua', '#', 'UGX ' . number_format($today));
+    }
+
+    /**
+     * Pending payments info box
+     */
+    protected function pendingPaymentsBox()
+    {
+        $count = SubscriptionTransaction::where('status', 'Pending')->count();
+        $amount = SubscriptionTransaction::where('status', 'Pending')->sum('amount');
+        return new InfoBox("Pending ({$count})", 'clock-o', 'yellow', '/admin/subscription-transactions?status=Pending', 'UGX ' . number_format($amount));
+    }
+
+    /**
+     * Failed payments info box
+     */
+    protected function failedPaymentsBox()
+    {
+        $count = SubscriptionTransaction::where('status', 'Failed')->count();
+        return new InfoBox('Failed Payments', 'times-circle', 'red', '/admin/subscription-transactions?status=Failed', $count);
+    }
+
+    /**
+     * Completed count info box
+     */
+    protected function completedCountBox()
+    {
+        $count = SubscriptionTransaction::where('status', 'Completed')->count();
+        return new InfoBox('Completed Txns', 'check-circle', 'green', '/admin/subscription-transactions?status=Completed', number_format($count));
+    }
+
+    /**
+     * Mobile money info box
+     */
+    protected function mobileMoneyBox()
+    {
+        $amount = SubscriptionTransaction::where('status', 'Completed')
+            ->where(function ($q) {
+                $q->where('payment_method', 'like', '%mobile%')
+                    ->orWhere('payment_method', 'like', '%mtn%')
+                    ->orWhere('payment_method', 'like', '%airtel%');
+            })
+            ->sum('amount');
+        return new InfoBox('Mobile Money', 'mobile', 'purple', '#', 'UGX ' . number_format($amount));
+    }
+
+    /**
+     * Card payments info box
+     */
+    protected function cardPaymentsBox()
+    {
+        $amount = SubscriptionTransaction::where('status', 'Completed')
+            ->where(function ($q) {
+                $q->where('payment_method', 'like', '%card%')
+                    ->orWhere('payment_method', 'like', '%visa%')
+                    ->orWhere('payment_method', 'like', '%mastercard%');
+            })
+            ->sum('amount');
+        return new InfoBox('Card Payments', 'credit-card', 'blue', '#', 'UGX ' . number_format($amount));
+    }
+
+    /**
+     * Refunded info box
+     */
+    protected function refundedBox()
+    {
+        $amount = SubscriptionTransaction::where('status', 'Refunded')->sum('amount');
+        $count = SubscriptionTransaction::where('status', 'Refunded')->count();
+        return new InfoBox("Refunded ({$count})", 'undo', 'gray', '/admin/subscription-transactions?status=Refunded', 'UGX ' . number_format($amount));
+    }
+
+    /**
+     * Revenue chart box (last 7 days)
+     */
+    protected function revenueChartBox()
+    {
+        $days = [];
+        $revenues = [];
+        
+        for ($i = 6; $i >= 0; $i--) {
+            $date = Carbon::today()->subDays($i);
+            $days[] = $date->format('M d');
+            $revenues[] = SubscriptionTransaction::where('status', 'Completed')
+                ->whereDate('created_at', $date)
+                ->sum('amount');
+        }
+
+        $rows = [];
+        $maxRevenue = max($revenues) ?: 1;
+        foreach ($days as $idx => $day) {
+            $amount = $revenues[$idx];
+            $barLength = intval(($amount / $maxRevenue) * 20);
+            $bar = str_repeat('█', max(1, $barLength));
+            $rows[] = [$day, 'UGX ' . number_format($amount), "<span style='color:#28a745'>{$bar}</span>"];
+        }
+
+        $table = new Table(['Date', 'Revenue', 'Visual'], $rows);
+        $box = new Box('📈 Revenue Last 7 Days', $table);
+        $box->style('success');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
+     * Payment methods breakdown box
+     */
+    protected function paymentMethodsBox()
+    {
+        $methods = SubscriptionTransaction::where('status', 'Completed')
+            ->whereNotNull('payment_method')
+            ->where('payment_method', '!=', '')
+            ->selectRaw('payment_method, COUNT(*) as count, SUM(amount) as total')
+            ->groupBy('payment_method')
+            ->orderByDesc('total')
+            ->limit(10)
+            ->get();
+
+        $rows = [];
+        foreach ($methods as $method) {
+            $rows[] = [
+                ucfirst($method->payment_method ?? 'Unknown'),
+                number_format($method->count),
+                'UGX ' . number_format($method->total),
+            ];
+        }
+
+        if (empty($rows)) {
+            $rows[] = ['No data yet', '-', '-'];
+        }
+
+        $table = new Table(['Method', 'Txns', 'Total'], $rows);
+        $box = new Box('💳 Payment Methods Breakdown', $table);
+        $box->style('info');
+        $box->solid();
+
+        return $box;
+    }
 
     /**
      * Make a grid builder.
@@ -27,26 +224,77 @@ class SubscriptionTransactionController extends AdminController
         $grid = new Grid(new SubscriptionTransaction());
         $grid->model()->orderBy('id', 'desc');
 
-        $grid->column('id', __('Id'))->sortable();
-        $grid->column('created_at', __('Created at'))->sortable()
+        // Quick filters
+        $grid->quickSearch('pesapal_tracking_id', 'merchant_reference', 'confirmation_code');
+
+        $grid->column('id', __('ID'))->sortable();
+        
+        $grid->column('created_at', __('Date'))
             ->display(function ($created_at) {
-                return date('Y-m-d H:i:s', strtotime($created_at));
-            });
-        $grid->column('subscription_id', __('Subscription id'))->sortable();
+                return Carbon::parse($created_at)->format('M d, Y H:i');
+            })->sortable();
+
         $grid->column('user_id', __('User'))
             ->display(function ($user_id) {
-                $user = \App\Models\User::find($user_id);
+                $user = User::find($user_id);
                 if ($user) {
-                    return $user->name . " (ID: {$user->id})";
-                } else {
-                    return "N/A";
+                    return "<a href='/admin/users/{$user->id}'><strong>{$user->name}</strong></a><br><small class='text-muted'>{$user->email}</small>";
                 }
+                return "<span class='text-danger'>User #{$user_id} not found</span>";
+            });
+
+        $grid->column('subscription_id', __('Subscription'))
+            ->display(function ($subscription_id) {
+                if ($subscription_id) {
+                    return "<a href='/admin/subscriptions/{$subscription_id}'>#{$subscription_id}</a>";
+                }
+                return '-';
+            })->sortable();
+
+        $grid->column('transaction_type', __('Type'))
+            ->display(function ($type) {
+                $icons = [
+                    'Initial' => '🆕',
+                    'Renewal' => '🔄',
+                    'Upgrade' => '⬆️',
+                    'Refund' => '↩️',
+                ];
+                $icon = $icons[$type] ?? '📝';
+                return "{$icon} {$type}";
             })
-            ->sortable();
-        $grid->column('transaction_type', __('Transaction type'))->sortable();
-        $grid->column('amount', __('Amount'))->sortable();
-        // $grid->column('currency', __('Currency'));
+            ->label([
+                'Initial' => 'primary',
+                'Renewal' => 'success',
+                'Upgrade' => 'info',
+                'Refund' => 'warning',
+            ])
+            ->filter([
+                'Initial' => 'Initial',
+                'Renewal' => 'Renewal',
+                'Upgrade' => 'Upgrade',
+                'Refund' => 'Refund',
+            ]);
+
+        $grid->column('amount', __('Amount'))
+            ->display(function ($amount) {
+                $currency = $this->currency ?? 'UGX';
+                $color = $this->status === 'Completed' ? 'green' : ($this->status === 'Failed' ? 'red' : 'orange');
+                return "<strong style='color:{$color}'>{$currency} " . number_format($amount) . "</strong>";
+            })->sortable()
+            ->totalRow(function ($amount) {
+                return '<strong>Total: UGX ' . number_format($amount) . '</strong>';
+            });
+
         $grid->column('status', __('Status'))
+            ->display(function ($status) {
+                $icons = [
+                    'Pending' => '⏳',
+                    'Completed' => '✅',
+                    'Failed' => '❌',
+                    'Refunded' => '↩️',
+                ];
+                return ($icons[$status] ?? '') . ' ' . $status;
+            })
             ->label([
                 'Pending' => 'warning',
                 'Completed' => 'success',
@@ -60,19 +308,82 @@ class SubscriptionTransactionController extends AdminController
                 'Failed' => 'Failed',
                 'Refunded' => 'Refunded',
             ]);
-        $grid->column('pesapal_tracking_id', __('Pesapal tracking id'))->sortable();
-        $grid->column('merchant_reference', __('Merchant reference'))->sortable();
-        $grid->column('payment_method', __('Payment method'))->sortable();
-        $grid->column('confirmation_code', __('Confirmation code'))->sortable();
-        $grid->column('payment_account', __('Payment account'))->sortable();
-        $grid->column('request_payload', __('Request payload'))->sortable();
-        $grid->column('response_payload', __('Response payload'))->sortable();
-        $grid->column('error_message', __('Error message'))->sortable();
-        $grid->column('ip_address', __('Ip address'))->sortable();
-        $grid->column('user_agent', __('User agent'))->sortable()->sortable();
-        $grid->column('refunded_by', __('Refunded by'))->sortable();
-        $grid->column('refunded_at', __('Refunded at'))->sortable();
-        $grid->column('refund_reason', __('Refund reason'))->sortable();
+
+        $grid->column('payment_method', __('Method'))
+            ->display(function ($method) {
+                if (!$method) return '-';
+                $lower = strtolower($method);
+                if (strpos($lower, 'mtn') !== false) return '📱 MTN';
+                if (strpos($lower, 'airtel') !== false) return '📱 Airtel';
+                if (strpos($lower, 'mobile') !== false) return '📱 Mobile';
+                if (strpos($lower, 'visa') !== false) return '💳 Visa';
+                if (strpos($lower, 'mastercard') !== false) return '💳 MC';
+                if (strpos($lower, 'card') !== false) return '💳 Card';
+                return ucfirst($method);
+            })->sortable();
+
+        $grid->column('pesapal_tracking_id', __('Tracking ID'))
+            ->copyable()
+            ->display(function ($id) {
+                return $id ? "<code>{$id}</code>" : '-';
+            });
+
+        $grid->column('confirmation_code', __('Conf. Code'))
+            ->copyable()
+            ->display(function ($code) {
+                return $code ? "<code class='text-success'>{$code}</code>" : '-';
+            });
+
+        $grid->column('error_message', __('Error'))
+            ->display(function ($error) {
+                if (!$error) return '-';
+                $short = mb_substr($error, 0, 40);
+                return "<span class='text-danger' title='" . htmlspecialchars($error) . "'>{$short}...</span>";
+            })->hide();
+
+        // Filters
+        $grid->filter(function ($filter) {
+            $filter->disableIdFilter();
+
+            $filter->column(1/3, function ($filter) {
+                $filter->equal('status', 'Status')->select([
+                    'Pending' => 'Pending',
+                    'Completed' => 'Completed',
+                    'Failed' => 'Failed',
+                    'Refunded' => 'Refunded',
+                ]);
+                
+                $filter->equal('transaction_type', 'Type')->select([
+                    'Initial' => 'Initial',
+                    'Renewal' => 'Renewal',
+                    'Upgrade' => 'Upgrade',
+                    'Refund' => 'Refund',
+                ]);
+            });
+
+            $filter->column(1/3, function ($filter) {
+                $filter->equal('user_id', 'User ID');
+                $filter->equal('subscription_id', 'Subscription ID');
+                $filter->like('pesapal_tracking_id', 'Tracking ID');
+            });
+
+            $filter->column(1/3, function ($filter) {
+                $filter->like('confirmation_code', 'Confirmation Code');
+                $filter->like('payment_method', 'Payment Method');
+                $filter->between('created_at', 'Date Range')->datetime();
+            });
+
+            $filter->between('amount', 'Amount Range');
+        });
+
+        // Export
+        $grid->export(function ($export) {
+            $export->filename('Transactions_' . date('Y-m-d_H-i'));
+            $export->except(['actions']);
+        });
+
+        // Disable create (transactions are auto-generated)
+        $grid->disableCreateButton();
 
         return $grid;
     }
@@ -87,28 +398,55 @@ class SubscriptionTransactionController extends AdminController
     {
         $show = new Show(SubscriptionTransaction::findOrFail($id));
 
-        $show->field('id', __('Id'));
-        $show->field('created_at', __('Created at'));
-        $show->field('updated_at', __('Updated at'));
-        $show->field('subscription_id', __('Subscription id'));
-        $show->field('user_id', __('User id'));
-        $show->field('transaction_type', __('Transaction type'));
-        $show->field('amount', __('Amount'));
+        $show->panel()->title('Transaction Details');
+
+        $show->field('id', __('Transaction ID'));
+        $show->field('created_at', __('Date'))->as(function ($date) {
+            return Carbon::parse($date)->format('F j, Y \a\t H:i:s');
+        });
+
+        $show->divider();
+
+        $show->field('user_id', __('User'))->as(function ($user_id) {
+            $user = User::find($user_id);
+            return $user ? "{$user->name} ({$user->email})" : "User #{$user_id} not found";
+        });
+        $show->field('subscription_id', __('Subscription ID'));
+
+        $show->divider();
+
+        $show->field('transaction_type', __('Transaction Type'));
+        $show->field('amount', __('Amount'))->as(function ($amount) {
+            $currency = $this->currency ?? 'UGX';
+            return "{$currency} " . number_format($amount, 2);
+        });
         $show->field('currency', __('Currency'));
         $show->field('status', __('Status'));
-        $show->field('pesapal_tracking_id', __('Pesapal tracking id'));
-        $show->field('merchant_reference', __('Merchant reference'));
-        $show->field('payment_method', __('Payment method'));
-        $show->field('confirmation_code', __('Confirmation code'));
-        $show->field('payment_account', __('Payment account'));
-        $show->field('request_payload', __('Request payload'));
-        $show->field('response_payload', __('Response payload'));
-        $show->field('error_message', __('Error message'));
-        $show->field('ip_address', __('Ip address'));
-        $show->field('user_agent', __('User agent'));
-        $show->field('refunded_by', __('Refunded by'));
-        $show->field('refunded_at', __('Refunded at'));
-        $show->field('refund_reason', __('Refund reason'));
+
+        $show->divider();
+
+        $show->field('payment_method', __('Payment Method'));
+        $show->field('pesapal_tracking_id', __('Pesapal Tracking ID'));
+        $show->field('merchant_reference', __('Merchant Reference'));
+        $show->field('confirmation_code', __('Confirmation Code'));
+        $show->field('payment_account', __('Payment Account'));
+
+        $show->divider();
+
+        $show->field('error_message', __('Error Message'));
+        $show->field('request_payload', __('Request Payload'));
+        $show->field('response_payload', __('Response Payload'));
+
+        $show->divider();
+
+        $show->field('ip_address', __('IP Address'));
+        $show->field('user_agent', __('User Agent'));
+
+        $show->divider();
+
+        $show->field('refunded_by', __('Refunded By'));
+        $show->field('refunded_at', __('Refunded At'));
+        $show->field('refund_reason', __('Refund Reason'));
 
         return $show;
     }
@@ -122,25 +460,54 @@ class SubscriptionTransactionController extends AdminController
     {
         $form = new Form(new SubscriptionTransaction());
 
-        $form->number('subscription_id', __('Subscription id'));
-        $form->number('user_id', __('User id'));
-        $form->text('transaction_type', __('Transaction type'))->default('Initial');
+        $form->display('id', __('Transaction ID'));
+        $form->display('created_at', __('Date'));
+
+        $form->divider('Transaction Details');
+
+        $form->number('subscription_id', __('Subscription ID'));
+        $form->number('user_id', __('User ID'));
+        
+        $form->select('transaction_type', __('Transaction Type'))->options([
+            'Initial' => 'Initial',
+            'Renewal' => 'Renewal',
+            'Upgrade' => 'Upgrade',
+            'Refund' => 'Refund',
+        ])->default('Initial');
+
         $form->decimal('amount', __('Amount'));
         $form->text('currency', __('Currency'))->default('UGX');
-        $form->text('status', __('Status'))->default('Pending');
-        $form->text('pesapal_tracking_id', __('Pesapal tracking id'));
-        $form->text('merchant_reference', __('Merchant reference'));
-        $form->text('payment_method', __('Payment method'));
-        $form->text('confirmation_code', __('Confirmation code'));
-        $form->textarea('payment_account', __('Payment account'));
-        // $form->text('request_payload', __('Request payload'));
-        // $form->text('response_payload', __('Response payload'));
-        // $form->textarea('error_message', __('Error message'));
-        // $form->text('ip_address', __('Ip address'));
-        // $form->textarea('user_agent', __('User agent'));
-        // $form->number('refunded_by', __('Refunded by'));
-        // $form->datetime('refunded_at', __('Refunded at'))->default(date('Y-m-d H:i:s'));
-        // $form->textarea('refund_reason', __('Refund reason'));
+        
+        $form->select('status', __('Status'))->options([
+            'Pending' => 'Pending',
+            'Completed' => 'Completed',
+            'Failed' => 'Failed',
+            'Refunded' => 'Refunded',
+        ])->default('Pending');
+
+        $form->divider('Payment Details');
+
+        $form->text('payment_method', __('Payment Method'));
+        $form->text('pesapal_tracking_id', __('Pesapal Tracking ID'));
+        $form->text('merchant_reference', __('Merchant Reference'));
+        $form->text('confirmation_code', __('Confirmation Code'));
+        $form->text('payment_account', __('Payment Account'));
+
+        $form->divider('Refund (Admin Only)');
+
+        $form->textarea('refund_reason', __('Refund Reason'));
+        $form->datetime('refunded_at', __('Refunded At'));
+
+        $form->saving(function (Form $form) {
+            if ($form->status === 'Refunded' && !$form->model()->refunded_by) {
+                $form->refunded_by = \Admin::user()->id;
+                if (!$form->refunded_at) {
+                    $form->refunded_at = now();
+                }
+            }
+        });
+
         return $form;
     }
 }
+

@@ -3,10 +3,19 @@
 namespace App\Admin\Controllers;
 
 use App\Models\VideoPlaybackFailure;
+use App\Models\MovieModel;
+use App\Models\User;
+use Carbon\Carbon;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
 use Encore\Admin\Show;
+use Encore\Admin\Layout\Content;
+use Encore\Admin\Layout\Row;
+use Encore\Admin\Widgets\Box;
+use Encore\Admin\Widgets\InfoBox;
+use Encore\Admin\Widgets\Table;
+use Illuminate\Support\Facades\DB;
 
 class VideoPlaybackFailureController extends AdminController
 {
@@ -18,6 +27,278 @@ class VideoPlaybackFailureController extends AdminController
     protected $title = 'Video Playback Failures';
 
     /**
+     * Index interface with dashboard.
+     *
+     * @param Content $content
+     * @return Content
+     */
+    public function index(Content $content)
+    {
+        return $content
+            ->title('🎬 Video Playback Failures')
+            ->description('Monitor and resolve video playback issues')
+            ->row(function (Row $row) {
+                $row->column(3, $this->totalFailuresBox());
+                $row->column(3, $this->pendingBox());
+                $row->column(3, $this->todayFailuresBox());
+                $row->column(3, $this->resolvedBox());
+            })
+            ->row(function (Row $row) {
+                $row->column(3, $this->networkErrorsBox());
+                $row->column(3, $this->playbackErrorsBox());
+                $row->column(3, $this->httpErrorsBox());
+                $row->column(3, $this->subscribedUsersBox());
+            })
+            ->row(function (Row $row) {
+                $row->column(6, $this->topFailingMoviesBox());
+                $row->column(6, $this->errorTypeBreakdownBox());
+            })
+            ->row(function (Row $row) {
+                $row->column(6, $this->deviceBreakdownBox());
+                $row->column(6, $this->failuresTrendBox());
+            })
+            ->body($this->grid());
+    }
+
+    /**
+     * Total failures info box
+     */
+    protected function totalFailuresBox()
+    {
+        $count = VideoPlaybackFailure::count();
+        return new InfoBox('Total Failures', 'exclamation-triangle', 'red', '/admin/video-playback-failures', number_format($count));
+    }
+
+    /**
+     * Pending failures info box
+     */
+    protected function pendingBox()
+    {
+        $count = VideoPlaybackFailure::where('status', 'pending')->count();
+        return new InfoBox('Pending Review', 'clock-o', 'yellow', '/admin/video-playback-failures?status=pending', number_format($count));
+    }
+
+    /**
+     * Today's failures info box
+     */
+    protected function todayFailuresBox()
+    {
+        $count = VideoPlaybackFailure::whereDate('created_at', Carbon::today())->count();
+        $yesterday = VideoPlaybackFailure::whereDate('created_at', Carbon::yesterday())->count();
+        $trend = $count > $yesterday ? '↑' : ($count < $yesterday ? '↓' : '→');
+        return new InfoBox("Today {$trend}", 'calendar', 'aqua', '#', number_format($count));
+    }
+
+    /**
+     * Resolved failures info box
+     */
+    protected function resolvedBox()
+    {
+        $count = VideoPlaybackFailure::where('status', 'resolved')->count();
+        $total = VideoPlaybackFailure::count() ?: 1;
+        $percent = round(($count / $total) * 100, 1);
+        return new InfoBox("Resolved ({$percent}%)", 'check-circle', 'green', '/admin/video-playback-failures?status=resolved', number_format($count));
+    }
+
+    /**
+     * Network errors info box
+     */
+    protected function networkErrorsBox()
+    {
+        $count = VideoPlaybackFailure::where('error_type', 'network')->count();
+        return new InfoBox('Network Errors', 'wifi', 'red', '/admin/video-playback-failures?error_type=network', number_format($count));
+    }
+
+    /**
+     * Playback errors info box
+     */
+    protected function playbackErrorsBox()
+    {
+        $count = VideoPlaybackFailure::where('error_type', 'playback')->count();
+        return new InfoBox('Playback Errors', 'play-circle', 'orange', '/admin/video-playback-failures?error_type=playback', number_format($count));
+    }
+
+    /**
+     * HTTP errors info box
+     */
+    protected function httpErrorsBox()
+    {
+        $count = VideoPlaybackFailure::where('error_type', 'http_error')->count();
+        return new InfoBox('HTTP Errors', 'server', 'maroon', '/admin/video-playback-failures?error_type=http_error', number_format($count));
+    }
+
+    /**
+     * Subscribed users failures info box
+     */
+    protected function subscribedUsersBox()
+    {
+        $count = VideoPlaybackFailure::where('has_subscription', true)->count();
+        $total = VideoPlaybackFailure::count() ?: 1;
+        $percent = round(($count / $total) * 100, 1);
+        return new InfoBox("Subscribers ({$percent}%)", 'star', 'purple', '/admin/video-playback-failures?has_subscription=1', number_format($count));
+    }
+
+    /**
+     * Top failing movies box
+     */
+    protected function topFailingMoviesBox()
+    {
+        $movies = VideoPlaybackFailure::whereNotNull('movie_id')
+            ->selectRaw('movie_id, movie_title, COUNT(*) as failure_count')
+            ->groupBy('movie_id', 'movie_title')
+            ->orderByDesc('failure_count')
+            ->limit(10)
+            ->get();
+
+        $rows = [];
+        $rank = 1;
+        foreach ($movies as $movie) {
+            $statusClass = $rank <= 3 ? 'danger' : ($rank <= 6 ? 'warning' : 'default');
+            $rows[] = [
+                "#{$rank}",
+                "<a href='/admin/movies/{$movie->movie_id}'>" . mb_substr($movie->movie_title ?? 'Unknown', 0, 35) . "</a>",
+                "<span class='label label-{$statusClass}'>{$movie->failure_count}</span>",
+            ];
+            $rank++;
+        }
+
+        if (empty($rows)) {
+            $rows[] = ['-', 'No data yet', '-'];
+        }
+
+        $table = new Table(['#', 'Movie', 'Failures'], $rows);
+        $box = new Box('🎬 Top Failing Movies (Fix These First!)', $table);
+        $box->style('danger');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
+     * Error type breakdown box
+     */
+    protected function errorTypeBreakdownBox()
+    {
+        $types = VideoPlaybackFailure::selectRaw('error_type, COUNT(*) as count')
+            ->groupBy('error_type')
+            ->orderByDesc('count')
+            ->get();
+
+        $total = $types->sum('count') ?: 1;
+        $rows = [];
+        $icons = [
+            'network' => '📡',
+            'playback' => '▶️',
+            'timeout' => '⏱️',
+            'http_error' => '🌐',
+            'format' => '📁',
+            'unknown' => '❓',
+        ];
+
+        foreach ($types as $type) {
+            $icon = $icons[$type->error_type] ?? '❓';
+            $percent = round(($type->count / $total) * 100, 1);
+            $bar = str_repeat('█', intval($percent / 5));
+            $rows[] = [
+                $icon . ' ' . ucfirst($type->error_type ?? 'Unknown'),
+                number_format($type->count),
+                "{$percent}%",
+                "<span style='color:#dc3545'>{$bar}</span>",
+            ];
+        }
+
+        if (empty($rows)) {
+            $rows[] = ['No data', '-', '-', '-'];
+        }
+
+        $table = new Table(['Type', 'Count', '%', 'Distribution'], $rows);
+        $box = new Box('📊 Error Type Breakdown', $table);
+        $box->style('warning');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
+     * Device breakdown box
+     */
+    protected function deviceBreakdownBox()
+    {
+        $devices = VideoPlaybackFailure::selectRaw('device_os, COUNT(*) as count')
+            ->groupBy('device_os')
+            ->orderByDesc('count')
+            ->limit(10)
+            ->get();
+
+        $rows = [];
+        $icons = [
+            'android' => '🤖',
+            'ios' => '🍎',
+            'windows' => '🪟',
+            'macos' => '🍏',
+            'linux' => '🐧',
+        ];
+
+        foreach ($devices as $device) {
+            $os = strtolower($device->device_os ?? '');
+            $icon = '📱';
+            foreach ($icons as $key => $emoji) {
+                if (strpos($os, $key) !== false) {
+                    $icon = $emoji;
+                    break;
+                }
+            }
+            $rows[] = [
+                $icon . ' ' . ucfirst($device->device_os ?? 'Unknown'),
+                number_format($device->count),
+            ];
+        }
+
+        if (empty($rows)) {
+            $rows[] = ['No data', '-'];
+        }
+
+        $table = new Table(['Device OS', 'Failures'], $rows);
+        $box = new Box('📱 Device Breakdown', $table);
+        $box->style('info');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
+     * Failures trend (last 7 days) box
+     */
+    protected function failuresTrendBox()
+    {
+        $days = [];
+        $counts = [];
+
+        for ($i = 6; $i >= 0; $i--) {
+            $date = Carbon::today()->subDays($i);
+            $days[] = $date->format('M d');
+            $counts[] = VideoPlaybackFailure::whereDate('created_at', $date)->count();
+        }
+
+        $maxCount = max($counts) ?: 1;
+        $rows = [];
+        foreach ($days as $idx => $day) {
+            $count = $counts[$idx];
+            $barLength = intval(($count / $maxCount) * 20);
+            $bar = str_repeat('█', max(1, $barLength));
+            $color = $count > ($maxCount * 0.7) ? '#dc3545' : ($count > ($maxCount * 0.4) ? '#ffc107' : '#28a745');
+            $rows[] = [$day, number_format($count), "<span style='color:{$color}'>{$bar}</span>"];
+        }
+
+        $table = new Table(['Date', 'Failures', 'Trend'], $rows);
+        $box = new Box('📈 Failures Trend (Last 7 Days)', $table);
+        $box->style('default');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
      * Make a grid builder.
      *
      * @return Grid
@@ -25,95 +306,53 @@ class VideoPlaybackFailureController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new VideoPlaybackFailure());
-
-        // Default sort by latest first
         $grid->model()->orderBy('created_at', 'desc');
+
+        // Quick search
+        $grid->quickSearch('user_name', 'user_email', 'movie_title', 'error_message');
 
         // Columns
         $grid->column('id', __('ID'))->sortable();
         
         $grid->column('user_name', __('User'))->display(function () {
             $userName = $this->user_name ?? 'Unknown';
-            $userId = $this->user_id ? " (ID: {$this->user_id})" : '';
-            return $userName . $userId;
-        })->width(150);
+            $userId = $this->user_id ? " <small class='text-muted'>(#{$this->user_id})</small>" : '';
+            $subscribed = $this->has_subscription ? '⭐' : '';
+            return "{$subscribed} <strong>{$userName}</strong>{$userId}";
+        });
         
         $grid->column('movie_title', __('Movie'))->display(function () {
             if ($this->movie_title) {
-                $movieId = $this->movie_id ? " (ID: {$this->movie_id})" : '';
-                return "<strong>{$this->movie_title}</strong>{$movieId}";
+                $title = mb_substr($this->movie_title, 0, 30);
+                $movieId = $this->movie_id ? " <small>(#{$this->movie_id})</small>" : '';
+                $link = $this->movie_id ? "<a href='/admin/movies/{$this->movie_id}'>{$title}</a>" : $title;
+                return $link . $movieId;
             }
-            return '<em>Unknown Movie</em>';
-        })->width(200);
+            return '<em class="text-muted">Unknown Movie</em>';
+        });
         
-        $grid->column('error_type', __('Error Type'))->label([
-            'network' => 'danger',
-            'playback' => 'warning',
-            'timeout' => 'info',
-            'http_error' => 'danger',
-            'format' => 'warning',
-            'unknown' => 'default',
-        ])->sortable()->filter([
-            'network' => 'Network',
-            'playback' => 'Playback',
-            'timeout' => 'Timeout',
-            'http_error' => 'HTTP Error',
-            'format' => 'Format',
-            'unknown' => 'Unknown',
-        ]);
-        
-        $grid->column('error_message', __('Error Message'))->display(function ($message) {
-            if (!$message) return '-';
-            $short = mb_substr($message, 0, 60);
-            return $short . (mb_strlen($message) > 60 ? '...' : '');
-        })->width(250);
-        
-        $grid->column('device_os', __('Device'))->display(function () {
-            $os = $this->device_os ?? 'Unknown';
-            $model = $this->device_model ?? '';
-            return "{$os}<br><small>{$model}</small>";
-        })->width(120);
-        
-        $grid->column('player_type', __('Player'))->label([
-            'full_screen' => 'primary',
-            'preview' => 'success',
-            'mini' => 'info',
-        ])->sortable();
-        
-        $grid->column('has_subscription', __('Subscribed'))->bool()->sortable()->filter([
-            1 => 'Yes',
-            0 => 'No',
-        ]);
-        
-        $grid->column('status', __('Status'))->select([
-            'pending' => 'Pending',
-            'investigating' => 'Investigating',
-            'resolved' => 'Resolved',
-            'ignored' => 'Ignored',
-        ])->sortable()->filter([
-            'pending' => 'Pending',
-            'investigating' => 'Investigating',
-            'resolved' => 'Resolved',
-            'ignored' => 'Ignored',
-        ]);
-        
-        $grid->column('created_at', __('Failed At'))->display(function ($createdAt) {
-            return date('Y-m-d H:i:s', strtotime($createdAt));
-        })->sortable();
-
-        // Filters
-        $grid->filter(function ($filter) {
-            // Remove the default id filter
-            $filter->disableIdFilter();
-
-            // Add filters
-            $filter->like('user_name', 'User Name');
-            $filter->like('user_email', 'User Email');
-            $filter->like('movie_title', 'Movie Title');
-            $filter->equal('movie_id', 'Movie ID');
-            $filter->equal('user_id', 'User ID');
-            
-            $filter->equal('error_type', 'Error Type')->select([
+        $grid->column('error_type', __('Error Type'))
+            ->display(function ($type) {
+                $icons = [
+                    'network' => '📡',
+                    'playback' => '▶️',
+                    'timeout' => '⏱️',
+                    'http_error' => '🌐',
+                    'format' => '📁',
+                    'unknown' => '❓',
+                ];
+                return ($icons[$type] ?? '❓') . ' ' . ucfirst($type ?? 'Unknown');
+            })
+            ->label([
+                'network' => 'danger',
+                'playback' => 'warning',
+                'timeout' => 'info',
+                'http_error' => 'danger',
+                'format' => 'warning',
+                'unknown' => 'default',
+            ])
+            ->sortable()
+            ->filter([
                 'network' => 'Network',
                 'playback' => 'Playback',
                 'timeout' => 'Timeout',
@@ -121,29 +360,130 @@ class VideoPlaybackFailureController extends AdminController
                 'format' => 'Format',
                 'unknown' => 'Unknown',
             ]);
-            
-            $filter->equal('status', 'Status')->select([
+        
+        $grid->column('error_message', __('Error'))->display(function ($message) {
+            if (!$message) return '-';
+            $short = mb_substr($message, 0, 50);
+            $full = htmlspecialchars($message);
+            return "<span title='{$full}'>{$short}" . (mb_strlen($message) > 50 ? '...' : '') . "</span>";
+        });
+        
+        $grid->column('device_os', __('Device'))->display(function () {
+            $os = $this->device_os ?? 'Unknown';
+            $model = $this->device_model ?? '';
+            $icons = ['android' => '🤖', 'ios' => '🍎'];
+            $icon = '📱';
+            foreach ($icons as $key => $emoji) {
+                if (stripos($os, $key) !== false) {
+                    $icon = $emoji;
+                    break;
+                }
+            }
+            return "{$icon} {$os}" . ($model ? "<br><small>{$model}</small>" : '');
+        });
+        
+        $grid->column('retry_count', __('Retries'))
+            ->display(function ($count) {
+                $color = $count > 3 ? 'danger' : ($count > 1 ? 'warning' : 'default');
+                return "<span class='label label-{$color}'>{$count}</span>";
+            })->sortable();
+        
+        $grid->column('has_subscription', __('Sub'))
+            ->display(function ($has) {
+                return $has ? '⭐ Yes' : 'No';
+            })
+            ->sortable()
+            ->filter([
+                1 => 'Subscribed',
+                0 => 'Free User',
+            ]);
+        
+        $grid->column('status', __('Status'))
+            ->display(function ($status) {
+                $icons = [
+                    'pending' => '⏳',
+                    'investigating' => '🔍',
+                    'resolved' => '✅',
+                    'ignored' => '🚫',
+                ];
+                return ($icons[$status] ?? '') . ' ' . ucfirst($status);
+            })
+            ->editable('select', [
+                'pending' => 'Pending',
+                'investigating' => 'Investigating',
+                'resolved' => 'Resolved',
+                'ignored' => 'Ignored',
+            ])
+            ->sortable()
+            ->filter([
                 'pending' => 'Pending',
                 'investigating' => 'Investigating',
                 'resolved' => 'Resolved',
                 'ignored' => 'Ignored',
             ]);
-            
-            $filter->equal('has_subscription', 'Has Subscription')->select([
-                1 => 'Yes',
-                0 => 'No',
-            ]);
-            
-            $filter->between('created_at', 'Failed Date')->datetime();
+        
+        $grid->column('created_at', __('Failed At'))
+            ->display(function ($createdAt) {
+                return Carbon::parse($createdAt)->format('M d, H:i');
+            })->sortable();
+
+        // Filters
+        $grid->filter(function ($filter) {
+            $filter->disableIdFilter();
+
+            $filter->column(1/3, function ($filter) {
+                $filter->like('user_name', 'User Name');
+                $filter->like('user_email', 'User Email');
+                $filter->equal('user_id', 'User ID');
+            });
+
+            $filter->column(1/3, function ($filter) {
+                $filter->like('movie_title', 'Movie Title');
+                $filter->equal('movie_id', 'Movie ID');
+                $filter->equal('error_type', 'Error Type')->select([
+                    'network' => 'Network',
+                    'playback' => 'Playback',
+                    'timeout' => 'Timeout',
+                    'http_error' => 'HTTP Error',
+                    'format' => 'Format',
+                    'unknown' => 'Unknown',
+                ]);
+            });
+
+            $filter->column(1/3, function ($filter) {
+                $filter->equal('status', 'Status')->select([
+                    'pending' => 'Pending',
+                    'investigating' => 'Investigating',
+                    'resolved' => 'Resolved',
+                    'ignored' => 'Ignored',
+                ]);
+                $filter->equal('has_subscription', 'Subscription')->select([
+                    1 => 'Subscribed',
+                    0 => 'Free User',
+                ]);
+                $filter->between('created_at', 'Date Range')->datetime();
+            });
+
+            $filter->like('device_os', 'Device OS');
+            $filter->like('error_message', 'Error Contains');
         });
 
-        // Actions
-        $grid->actions(function ($actions) {
-            $actions->disableDelete();
+        // Batch actions
+        $grid->batchActions(function ($batch) {
+            $batch->add(new \Encore\Admin\Grid\Tools\BatchAction('Mark as Resolved'));
         });
+
+        // Export
+        $grid->export(function ($export) {
+            $export->filename('VideoFailures_' . date('Y-m-d_H-i'));
+        });
+
+        // Disable create (failures are auto-logged)
+        $grid->disableCreateButton();
 
         return $grid;
     }
+
 
     /**
      * Make a show builder.
@@ -197,7 +537,7 @@ class VideoPlaybackFailureController extends AdminController
         // Subscription Status
         $show->divider('Subscription Status');
         $show->field('has_subscription', __('Has Subscription'))->as(function ($value) {
-            return $value ? 'Yes' : 'No';
+            return $value ? '⭐ Yes (Subscribed User)' : 'No (Free User)';
         });
         $show->field('subscription_type', __('Subscription Type'));
         $show->field('subscription_expires_at', __('Subscription Expires'));
@@ -209,7 +549,10 @@ class VideoPlaybackFailureController extends AdminController
 
         // Resolution Status
         $show->divider('Resolution Status');
-        $show->field('status', __('Status'))->label();
+        $show->field('status', __('Status'))->as(function ($status) {
+            $icons = ['pending' => '⏳', 'investigating' => '🔍', 'resolved' => '✅', 'ignored' => '🚫'];
+            return ($icons[$status] ?? '') . ' ' . ucfirst($status);
+        });
         $show->field('admin_notes', __('Admin Notes'));
         $show->field('resolved_at', __('Resolved At'));
 
@@ -230,24 +573,44 @@ class VideoPlaybackFailureController extends AdminController
     {
         $form = new Form(new VideoPlaybackFailure());
 
-        // Only allow editing status and admin notes
-        $form->select('status', __('Status'))->options([
-            'pending' => 'Pending',
-            'investigating' => 'Investigating',
-            'resolved' => 'Resolved',
-            'ignored' => 'Ignored',
-        ])->default('pending');
+        $form->tab('Resolution', function ($form) {
+            $form->select('status', __('Status'))->options([
+                'pending' => '⏳ Pending',
+                'investigating' => '🔍 Investigating',
+                'resolved' => '✅ Resolved',
+                'ignored' => '🚫 Ignored',
+            ])->default('pending');
 
-        $form->textarea('admin_notes', __('Admin Notes'))->rows(5);
+            $form->textarea('admin_notes', __('Admin Notes'))
+                ->rows(5)
+                ->help('Add notes about the investigation or resolution');
 
-        $form->datetime('resolved_at', __('Resolved At'))->help('Leave empty for auto-fill when status is "Resolved"');
+            $form->datetime('resolved_at', __('Resolved At'))
+                ->help('Auto-filled when status is set to "Resolved"');
+        });
 
-        // Display read-only fields
-        $form->display('id', __('ID'));
-        $form->display('user_name', __('User'));
-        $form->display('movie_title', __('Movie'));
-        $form->display('error_message', __('Error Message'));
-        $form->display('created_at', __('Failed At'));
+        $form->tab('Failure Details (Read-Only)', function ($form) {
+            $form->display('id', __('ID'));
+            $form->display('user_name', __('User'));
+            $form->display('user_email', __('Email'));
+            $form->display('movie_title', __('Movie'));
+            $form->display('error_type', __('Error Type'));
+            $form->display('error_message', __('Error Message'));
+            $form->display('error_code', __('Error Code'));
+            $form->display('retry_count', __('Retry Count'));
+            $form->display('device_os', __('Device OS'));
+            $form->display('device_model', __('Device Model'));
+            $form->display('app_version', __('App Version'));
+            $form->display('has_subscription', __('Has Subscription'))->with(function ($value) {
+                return $value ? 'Yes' : 'No';
+            });
+            $form->display('created_at', __('Failed At'));
+        });
+
+        $form->tab('URLs (Read-Only)', function ($form) {
+            $form->display('original_url', __('Original URL'));
+            $form->display('transformed_url', __('Transformed URL'));
+        });
 
         // Auto-fill resolved_at when status is resolved
         $form->saving(function (Form $form) {
