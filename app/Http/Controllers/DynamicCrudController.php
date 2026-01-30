@@ -1891,18 +1891,20 @@ class DynamicCrudController extends Controller
                 'duration' => $duration,
                 'percentage' => $percentage,
                 'status' => $progress->status ?? 'Active',
-                'last_watched_at' => $progress->updated_at ? $progress->updated_at->toISOString() : null,
+                'last_watched_at' => $progress->updated_at ? (is_string($progress->updated_at) ? $progress->updated_at : $progress->updated_at->toISOString()) : null,
                 'device' => $progress->device ?? null,
                 'platform' => $progress->platform ?? null,
                 'browser' => $progress->browser ?? null,
             ], 'Progress retrieved');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             \Log::error('get_video_progress error', [
                 'movie_id' => $movie_id ?? null,
                 'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return $this->error('Failed to get progress => : ' . $e->getMessage(), 500);
+            return $this->error('Failed to get progress: ' . $e->getMessage(), 500);
         }
     }
 
