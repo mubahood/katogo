@@ -1748,10 +1748,11 @@ class DynamicCrudController extends Controller
                 'duration' => 'required|numeric|min:0',
             ]);
 
-            // Calculate additional fields
-            $progress = floatval($request->input('progress'));
-            $duration = floatval($request->input('duration'));
-            $percentage = $duration > 0 ? round(($progress / $duration) * 100, 2) : 0;
+            // Calculate additional fields with safety checks
+            $progress = is_numeric($request->input('progress')) ? floatval($request->input('progress')) : 0;
+            $duration = is_numeric($request->input('duration')) ? floatval($request->input('duration')) : 0;
+            $percentage = ($duration > 0 && $progress > 0) ? round(($progress / $duration) * 100, 2) : 0;
+            if ($percentage > 100) $percentage = 100;
             $maxProgress = max($progress, 0);
 
             // De-duplication guard: Avoid excessive writes if called too frequently with minimal change
@@ -1760,31 +1761,42 @@ class DynamicCrudController extends Controller
                 ->first();
 
             if ($existing) {
-                $secondsSinceUpdate = now()->diffInSeconds($existing->updated_at);
-                $progressDelta = abs($progress - floatval($existing->progress));
+                $secondsSinceUpdate = $existing->updated_at ? now()->diffInSeconds($existing->updated_at) : 999;
+                $existingProgress = is_numeric($existing->progress) ? floatval($existing->progress) : 0;
+                $existingMaxProgress = is_numeric($existing->max_progress) ? floatval($existing->max_progress) : 0;
+                $progressDelta = abs($progress - $existingProgress);
+                
                 if ($secondsSinceUpdate < 4 && $progressDelta < 3) {
                     // Too soon with tiny change: skip DB write and return current state
+                    $existingPercentage = ($duration > 0 && $existingProgress > 0) ? round(($existingProgress / $duration) * 100, 2) : 0;
+                    if ($existingPercentage > 100) $existingPercentage = 100;
+                    
                     return $this->success([
                         'id' => $existing->id,
-                        'progress' => floatval($existing->progress),
-                        'max_progress' => floatval($existing->max_progress),
-                        'percentage' => $duration > 0 ? round(($existing->progress / $duration) * 100, 2) : 0,
-                        'status' => $existing->status,
+                        'progress' => $existingProgress,
+                        'max_progress' => $existingMaxProgress,
+                        'percentage' => $existingPercentage,
+                        'status' => $existing->status ?? 'Active',
                         'message' => 'Skipped duplicate progress update'
                     ], 'Progress unchanged');
                 }
             }
 
+            // Get existing max_progress for comparison
+            $existingMaxProgress = MovieView::where('movie_model_id', $request->input('movie_model_id'))
+                ->where('user_id', $user->id)
+                ->value('max_progress');
+            $existingMaxProgress = is_numeric($existingMaxProgress) ? floatval($existingMaxProgress) : 0;
+
             // Create or update movie view record
             $movieView = MovieView::updateOrCreate(
                 [
-                    'movie_model_id' => $request->input('movie_model_id'),
+                    'movie_model_id' => intval($request->input('movie_model_id')),
                     'user_id' => $user->id,
                 ],
                 [
                     'progress' => $progress,
-                    'max_progress' => max($maxProgress, MovieView::where('movie_model_id', $request->input('movie_model_id'))
-                        ->where('user_id', $user->id)->value('max_progress') ?? 0),
+                    'max_progress' => max($maxProgress, $existingMaxProgress),
                     'ip_address' => $request->ip(),
                     'device' => $request->input('device', 'Unknown'),
                     'platform' => $request->input('platform', 'Web'),
@@ -1795,15 +1807,21 @@ class DynamicCrudController extends Controller
                 ]
             );
 
+            $savedMaxProgress = is_numeric($movieView->max_progress) ? floatval($movieView->max_progress) : 0;
+
             return $this->success([
                 'id' => $movieView->id,
                 'progress' => $progress,
-                'max_progress' => $movieView->max_progress,
+                'max_progress' => $savedMaxProgress,
                 'percentage' => $percentage,
-                'status' => $movieView->status,
+                'status' => $movieView->status ?? 'Active',
                 'message' => 'Video progress saved successfully'
             ], 'Progress saved');
         } catch (\Exception $e) {
+            \Log::error('save_video_progress error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return $this->error('Failed to save progress: ' . $e->getMessage(), 500);
         }
     }
@@ -1814,6 +1832,13 @@ class DynamicCrudController extends Controller
     public function get_video_progress(Request $request, $movie_id)
     {
         try {
+            // Validate movie_id is numeric
+            if (!is_numeric($movie_id)) {
+                return $this->error('Invalid movie ID', 400);
+            }
+            
+            $movie_id = intval($movie_id);
+            
             // Get authenticated user
             $user = Utils::get_user($request);
             if (!$user) {
@@ -1832,22 +1857,50 @@ class DynamicCrudController extends Controller
 
             // Get movie details for duration if not stored
             $movie = MovieModel::find($movie_id);
-            $duration = $progress->duration ?? ($movie ? $movie->duration : 0);
+            
+            // Safely get numeric values with proper fallbacks
+            $progressValue = is_numeric($progress->progress) ? floatval($progress->progress) : 0;
+            $maxProgressValue = is_numeric($progress->max_progress) ? floatval($progress->max_progress) : 0;
+            
+            // Get duration - try multiple sources
+            $duration = 0;
+            if (isset($progress->duration) && is_numeric($progress->duration) && $progress->duration > 0) {
+                $duration = floatval($progress->duration);
+            } elseif ($maxProgressValue > 0) {
+                $duration = $maxProgressValue;
+            } elseif ($movie && isset($movie->duration) && is_numeric($movie->duration) && $movie->duration > 0) {
+                $duration = floatval($movie->duration);
+            }
+            
+            // Calculate percentage safely
+            $percentage = 0;
+            if ($duration > 0 && $progressValue > 0) {
+                $percentage = round(($progressValue / $duration) * 100, 2);
+                // Cap at 100%
+                if ($percentage > 100) {
+                    $percentage = 100;
+                }
+            }
 
             return $this->success([
                 'id' => $progress->id,
-                'movie_model_id' => $progress->movie_model_id,
-                'progress' => floatval($progress->progress),
-                'max_progress' => floatval($progress->max_progress),
-                'duration' => floatval($duration),
-                'percentage' => $duration > 0 ? round(($progress->progress / $duration) * 100, 2) : 0,
-                'status' => $progress->status,
-                'last_watched_at' => $progress->updated_at->toISOString(),
-                'device' => $progress->device,
-                'platform' => $progress->platform,
-                'browser' => $progress->browser,
+                'movie_model_id' => intval($progress->movie_model_id),
+                'progress' => $progressValue,
+                'max_progress' => $maxProgressValue,
+                'duration' => $duration,
+                'percentage' => $percentage,
+                'status' => $progress->status ?? 'Active',
+                'last_watched_at' => $progress->updated_at ? $progress->updated_at->toISOString() : null,
+                'device' => $progress->device ?? null,
+                'platform' => $progress->platform ?? null,
+                'browser' => $progress->browser ?? null,
             ], 'Progress retrieved');
         } catch (\Exception $e) {
+            \Log::error('get_video_progress error', [
+                'movie_id' => $movie_id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return $this->error('Failed to get progress: ' . $e->getMessage(), 500);
         }
     }
@@ -1864,8 +1917,12 @@ class DynamicCrudController extends Controller
                 return $this->error('Authentication required', 401);
             }
 
-            $page = $request->input('page', 1);
-            $limit = $request->input('limit', 100);
+            $page = intval($request->input('page', 1));
+            $limit = intval($request->input('limit', 100));
+            
+            // Ensure valid pagination values
+            if ($page < 1) $page = 1;
+            if ($limit < 1 || $limit > 100) $limit = 100;
 
             // Get watch history with movie details
             $history = MovieView::where('user_id', $user->id)
@@ -1881,23 +1938,33 @@ class DynamicCrudController extends Controller
                 $movie = $view->movie;
                 if (!$movie) return null;
 
+                // Safely get numeric values
+                $progressValue = is_numeric($view->progress) ? floatval($view->progress) : 0;
+                $maxProgressValue = is_numeric($view->max_progress) ? floatval($view->max_progress) : 0;
+                
+                // Calculate percentage safely
+                $percentage = 0;
+                if ($maxProgressValue > 0 && $progressValue > 0) {
+                    $percentage = round(($progressValue / $maxProgressValue) * 100, 2);
+                    if ($percentage > 100) $percentage = 100;
+                }
+
                 return [
                     'id' => $view->id,
                     'movie_id' => $movie->id,
-                    'movie_title' => $movie->title,
+                    'movie_title' => $movie->title ?? 'Unknown',
                     'movie_thumbnail' => $movie->thumbnail_url,
                     'movie_year' => $movie->year,
                     'movie_type' => $movie->type,
                     'movie_category' => $movie->category,
                     'episode_number' => $movie->episode_number,
-                    'progress' => floatval($view->progress),
-                    'max_progress' => floatval($view->max_progress),
-                    'percentage' => $view->progress && $view->max_progress ?
-                        round(($view->progress / $view->max_progress) * 100, 2) : 0,
-                    'status' => $view->status,
-                    'last_watched_at' => $view->updated_at->toISOString(),
-                    'device' => $view->device,
-                    'platform' => $view->platform,
+                    'progress' => $progressValue,
+                    'max_progress' => $maxProgressValue,
+                    'percentage' => $percentage,
+                    'status' => $view->status ?? 'Active',
+                    'last_watched_at' => $view->updated_at ? $view->updated_at->toISOString() : null,
+                    'device' => $view->device ?? null,
+                    'platform' => $view->platform ?? null,
                 ];
             })->filter()->values();
 
@@ -1909,6 +1976,10 @@ class DynamicCrudController extends Controller
                 'per_page' => $history->perPage(),
             ], 'Watch history retrieved');
         } catch (\Exception $e) {
+            \Log::error('get_watch_history error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return $this->error('Failed to get watch history: ' . $e->getMessage(), 500);
         }
     }
@@ -1919,6 +1990,13 @@ class DynamicCrudController extends Controller
     public function delete_video_progress(Request $request, $movie_id)
     {
         try {
+            // Validate movie_id is numeric
+            if (!is_numeric($movie_id)) {
+                return $this->error('Invalid movie ID', 400);
+            }
+            
+            $movie_id = intval($movie_id);
+            
             // Get authenticated user
             $user = Utils::get_user($request);
             if (!$user) {
@@ -1936,6 +2014,11 @@ class DynamicCrudController extends Controller
                 return $this->success(['deleted' => false], 'No progress found to delete');
             }
         } catch (\Exception $e) {
+            \Log::error('delete_video_progress error', [
+                'movie_id' => $movie_id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return $this->error('Failed to delete progress: ' . $e->getMessage(), 500);
         }
     }

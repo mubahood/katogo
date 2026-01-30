@@ -247,8 +247,14 @@ class MovieViewController extends AdminController
                     $m = \App\Models\MovieModel::find($movie_model_id);
                 }
                 if ($m) {
-                    $title = strlen($m->title) <= 45 ? $m->title : substr($m->title, 0, 45) . '...';
-                    return "<a href='movies-movies/{$movie_model_id}' title='" . htmlspecialchars($m->title) . "'><strong>{$title}</strong></a> <small class='text-muted'>(ID: {$movie_model_id})</small>";
+                    $title = strlen($m->title) <= 35 ? $m->title : substr($m->title, 0, 35) . '...';
+                    $status = ($m->status ?? '') === 'Active' ? '<span class="label label-success">Active</span>' : '<span class="label label-danger">' . ($m->status ?? 'N/A') . '</span>';
+                    $type = $m->type ?? 'N/A';
+                    
+                    $html = "<a href='movies-movies/{$movie_model_id}' title='" . htmlspecialchars($m->title ?? '') . "'><strong>{$title}</strong></a>";
+                    $html .= "<br><small class='text-muted'>ID: {$movie_model_id} | {$type} | {$status}</small>";
+                    
+                    return $html;
                 }
                 return '<em class="text-muted">Deleted</em>';
             })->sortable();
@@ -279,8 +285,25 @@ class MovieViewController extends AdminController
                 return 'Deleted';
             });
 
+        // Video URL column
+        $grid->column('video_url', __('Video Link'))->display(function () {
+            $movie = $this->movie;
+            if (!$movie) {
+                $movie = \App\Models\MovieModel::find($this->movie_model_id);
+            }
+            if ($movie) {
+                $videoUrl = $movie->url ?? $movie->external_url ?? null;
+                if ($videoUrl) {
+                    return '<a href="' . htmlspecialchars($videoUrl) . '" target="_blank" class="btn btn-xs btn-primary"><i class="fa fa-play"></i> Play</a>';
+                }
+            }
+            return '<span class="text-muted">-</span>';
+        });
+
         // Expandable row with full movie details and video link
-        $grid->column('expand', __('Details'))->expand(function ($model) {
+        $grid->column('details', __('Details'))->display(function () {
+            return '<i class="fa fa-chevron-down"></i>';
+        })->expand(function ($model) {
             // Get movie from relationship or fetch by ID
             $movie = $model->movie;
             if (!$movie && $model->movie_model_id) {
