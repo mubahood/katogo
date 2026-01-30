@@ -721,7 +721,7 @@ class SubscriptionController extends AdminController
             return ($icons[strtolower($value ?? '')] ?? '📱') . " " . ucfirst($value ?? 'Unknown');
         });
 
-        $show->field('pesapal_order_tracking_id', __('Pesapal Order ID'))->as(function ($value) {
+        $show->field('pesapal_tracking_id', __('Pesapal Tracking ID'))->as(function ($value) {
             return "🔗 " . ($value ?? 'N/A');
         });
         
@@ -821,7 +821,7 @@ class SubscriptionController extends AdminController
         });
 
         $form->tab('💳 Payment Reference', function ($form) {
-            $form->text('pesapal_order_tracking_id', __('🔗 Pesapal Order ID'))
+            $form->text('pesapal_tracking_id', __('🔗 Pesapal Tracking ID'))
                 ->help('Payment gateway order tracking ID');
             
             $form->text('pesapal_merchant_reference', __('📝 Merchant Reference'))
