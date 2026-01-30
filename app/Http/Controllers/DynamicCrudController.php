@@ -1897,14 +1897,12 @@ class DynamicCrudController extends Controller
                 'browser' => $progress->browser ?? null,
             ], 'Progress retrieved');
         } catch (\Exception $e) {
-            //return as success
-            return $this->success(null, 'No progress found');
             \Log::error('get_video_progress error', [
                 'movie_id' => $movie_id ?? null,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return $this->error('Failed to get progress: ' . $e->getMessage(), 500);
+            return $this->error('Failed to get progress => : ' . $e->getMessage(), 500);
         }
     }
 
