@@ -53,4 +53,9 @@ class MovieView extends Model
     public function movie(){
         return $this->belongsTo(MovieModel::class, 'movie_model_id');
     }
+
+    //belongs to user
+    public function user(){
+        return $this->belongsTo(User::class, 'user_id');
+    }
 }
