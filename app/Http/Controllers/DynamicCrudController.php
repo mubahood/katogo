@@ -1856,7 +1856,8 @@ class DynamicCrudController extends Controller
             }
 
             // Get movie details for duration if not stored
-            $movie = MovieModel::find($movie_id);
+            // Use select to avoid loading appended attributes that might cause issues
+            $movie = MovieModel::select(['id', 'title', 'duration', 'status'])->find($movie_id);
             
             // Safely get numeric values with proper fallbacks
             $progressValue = is_numeric($progress->progress) ? floatval($progress->progress) : 0;
