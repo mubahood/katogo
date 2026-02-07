@@ -49,9 +49,8 @@ class VideoPlaybackFailureController extends AdminController
                         ->count();
         $fixed      = VideoPlaybackFailure::where('fix_status', 'FIXED')->count();
         $fixFailed  = VideoPlaybackFailure::where('fix_status', 'FAILED')->count();
-        $pending    = VideoPlaybackFailure::where('status', 'pending')
-                        ->where(function ($q) { $q->whereNull('fix_status')->orWhere('fix_status', ''); })
-                        ->count();
+        $fixPending = VideoPlaybackFailure::where('fix_status', 'PENDING')->count();
+        $neverAttempted = VideoPlaybackFailure::where(function ($q) { $q->whereNull('fix_status')->orWhere('fix_status', ''); })->count();
         $today      = VideoPlaybackFailure::whereDate('created_at', Carbon::today())->count();
         $yesterday  = VideoPlaybackFailure::whereDate('created_at', Carbon::yesterday())->count();
         $subscribers = VideoPlaybackFailure::where('has_subscription', true)
@@ -59,7 +58,8 @@ class VideoPlaybackFailureController extends AdminController
 
         $todayTrend = $today > $yesterday ? '▲' : ($today < $yesterday ? '▼' : '—');
         $todayColor = $today > $yesterday ? '#e74c3c' : ($today < $yesterday ? '#27ae60' : '#95a5a6');
-        $fixRate    = $total > 0 ? round(($fixed / $total) * 100) : 0;
+        $fixAttempted = $fixed + $fixFailed + $fixPending;
+        $fixRate    = $fixAttempted > 0 ? round(($fixed / $fixAttempted) * 100) : 0;
 
         // ── Error type breakdown (unfixed only) ──
         $errorTypes = VideoPlaybackFailure::where('status', '!=', 'resolved')
@@ -124,7 +124,7 @@ class VideoPlaybackFailureController extends AdminController
         $html .= '<div class="sf-row">';
         $cards = [
             ['val'=>number_format($unfixed), 'lbl'=>'Unfixed', 'color'=>'#e74c3c', 'icon'=>'fa-exclamation-circle'],
-            ['val'=>number_format($pending), 'lbl'=>'Never Attempted', 'color'=>'#e67e22', 'icon'=>'fa-question-circle'],
+            ['val'=>number_format($neverAttempted), 'lbl'=>'Never Attempted', 'color'=>'#e67e22', 'icon'=>'fa-question-circle'],
             ['val'=>number_format($today)." <small style='font-size:12px;color:{$todayColor}'>{$todayTrend}</small>", 'lbl'=>'Today', 'color'=>'#3498db', 'icon'=>'fa-clock-o'],
             ['val'=>number_format($fixFailed), 'lbl'=>'Fix Failed', 'color'=>'#c0392b', 'icon'=>'fa-times'],
             ['val'=>number_format($fixed), 'lbl'=>'Auto-Fixed', 'color'=>'#27ae60', 'icon'=>'fa-check'],
@@ -170,7 +170,7 @@ class VideoPlaybackFailureController extends AdminController
         $fixStatusData = [
             ['label' => 'Fixed',   'cnt' => $fixed,    'color' => '#27ae60'],
             ['label' => 'Failed',  'cnt' => $fixFailed, 'color' => '#e74c3c'],
-            ['label' => 'Pending', 'cnt' => $pending,   'color' => '#e67e22'],
+            ['label' => 'Pending', 'cnt' => $fixPending, 'color' => '#e67e22'],
         ];
         $fsTotal = array_sum(array_column($fixStatusData, 'cnt')) ?: 1;
         $html .= '<div class="sf-chart-box">';
