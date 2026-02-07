@@ -469,12 +469,29 @@ var UgflixDebugPlayer = (function () {
     function _renderMovieInfo(data) {
         var el = document.getElementById('ugflix-dp-info');
         if (!el) return;
+        var isSeries = data.type === 'Series';
         var fields = [
-            ['ID', data.id], ['Title', data.title], ['Type', data.type],
-            ['Status', data.status], ['Genre', data.genre], ['VJ', data.vj],
-            ['Category', data.category], ['Episode', data.episode_number],
-            ['Platform', data.platform_type || 'All'], ['Views', data.views_count || 0]
+            ['ID', data.id], ['Title', data.title],
+            ['Type', isSeries ? '\uD83D\uDCFA Series Episode' : (data.type || 'Movie')],
+            ['Status', data.status], ['Genre', data.genre], ['VJ', data.vj]
         ];
+        // Series-specific fields
+        if (isSeries) {
+            fields.push(['Series', data.series_title || data.category || '']);
+            fields.push(['Season', data.season_number || 1]);
+            fields.push(['Episode #', data.episode_number || '']);
+            fields.push(['Ep. Title', data.episode_title || '']);
+            if (data.series_total_episodes) fields.push(['Total Eps', data.series_total_episodes]);
+            if (data.series_total_seasons) fields.push(['Seasons', data.series_total_seasons]);
+            if (data.series_code) fields.push(['Series Code', data.series_code]);
+        } else {
+            fields.push(['Category', data.category]);
+        }
+        fields.push(['Duration', data.duration || '']);
+        fields.push(['Year', data.year || '']);
+        fields.push(['Language', data.language || '']);
+        fields.push(['Platform', data.platform_type || 'All']);
+        fields.push(['Views', data.views_count || 0]);
         var html = '';
         for (var i = 0; i < fields.length; i++) {
             var val = fields[i][1];
@@ -484,6 +501,13 @@ var UgflixDebugPlayer = (function () {
             }
         }
         el.innerHTML = html;
+
+        // Update panel title
+        var panelTitle = el.closest('.dp-panel');
+        if (panelTitle) {
+            var titleEl = panelTitle.querySelector('.dp-panel-title');
+            if (titleEl) titleEl.textContent = isSeries ? 'Episode Info' : 'Movie Info';
+        }
     }
 
     function _renderUrlAnalysis(data) {
@@ -865,7 +889,15 @@ var UgflixDebugPlayer = (function () {
                         _renderUrlAnalysis(resp.movie);
 
                         var titleEl = document.getElementById('ugflix-dp-title');
-                        if (titleEl) titleEl.textContent = resp.movie.title || 'Unknown Movie';
+                        if (titleEl) {
+                            var displayTitle = resp.movie.title || 'Unknown Movie';
+                            if (resp.movie.type === 'Series') {
+                                var epNum = resp.movie.episode_number ? ' EP ' + resp.movie.episode_number : '';
+                                var sNum = resp.movie.season_number ? 'S' + resp.movie.season_number : '';
+                                displayTitle = (resp.movie.series_title || displayTitle) + (sNum || epNum ? ' (' + sNum + epNum + ')' : '');
+                            }
+                            titleEl.textContent = displayTitle;
+                        }
                     }
 
                     _setStatus('FIXED', 'success');
@@ -989,12 +1021,26 @@ var UgflixDebugPlayer = (function () {
         _log('info', '[OPEN] Debug Player v3.0');
         _log('info', '  Movie: ' + (movieData.title || 'Unknown'));
         _log('info', '  ID: ' + movieData.id);
+        if (movieData.type === 'Series') {
+            _log('info', '  Type: Series Episode');
+            _log('info', '  Series: ' + (movieData.series_title || movieData.category || 'Unknown'));
+            _log('info', '  Season: ' + (movieData.season_number || 1) + ', Episode: ' + (movieData.episode_number || '?'));
+            if (movieData.episode_title) _log('info', '  Episode Title: ' + movieData.episode_title);
+        }
         _log('info', '  Policy: Referrer-Policy: no-referrer');
 
         _createModal();
 
         var titleEl = document.getElementById('ugflix-dp-title');
-        if (titleEl) titleEl.textContent = movieData.title || 'Unknown Movie';
+        if (titleEl) {
+            var displayTitle = movieData.title || 'Unknown Movie';
+            if (movieData.type === 'Series') {
+                var epNum = movieData.episode_number ? ' EP ' + movieData.episode_number : '';
+                var sNum = movieData.season_number ? 'S' + movieData.season_number : '';
+                displayTitle = (movieData.series_title || displayTitle) + (sNum || epNum ? ' (' + sNum + epNum + ')' : '');
+            }
+            titleEl.textContent = displayTitle;
+        }
         var idEl = document.getElementById('ugflix-dp-id');
         if (idEl) idEl.textContent = '#' + movieData.id;
 

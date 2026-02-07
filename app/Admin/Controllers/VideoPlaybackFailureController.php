@@ -424,6 +424,16 @@ class VideoPlaybackFailureController extends AdminController
                 'content_type' => $movie->content_type,
                 'content_is_video' => $movie->content_is_video,
                 'firebase_transfer_successful' => $movie->firebase_transfer_successful,
+                'category' => $movie->category,
+                'episode_number' => $movie->episode_number,
+                'season_number' => $movie->season_number,
+                'series_title' => $movie->series_title,
+                'episode_title' => $movie->episode_title,
+                'duration' => $movie->duration,
+                'year' => $movie->year,
+                'language' => $movie->language,
+                'munowatch_id' => $movie->munowatch_id,
+                'views_count' => $movie->views_count,
             ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
             return '<button class="btn btn-xs btn-primary ugflix-debug-play-btn" data-movie="' . htmlspecialchars($movieData, ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-play"></i></button>';
         });

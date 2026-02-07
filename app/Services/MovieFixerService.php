@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\MovieCrawlerPage;
 use App\Models\MovieCrawlerWebsite;
 use App\Models\MovieModel;
+use App\Models\SeriesMovie;
 use App\Models\Utils;
 use App\Models\VideoPlaybackFailure;
 use Illuminate\Support\Facades\Log;
@@ -161,17 +162,29 @@ class MovieFixerService
     // ─────────────────────────────────────────────
 
     /**
+     * Check if a movie is a series episode.
+     */
+    protected function isSeries(MovieModel $movie): bool
+    {
+        return $movie->type === 'Series';
+    }
+
+    /**
      * Core fix logic for a single movie.
      *
      * Fetches fresh data from the original server and saves it exactly as received.
      * The video URL (playingUrl) is stored as-is — no modification, no fallback construction.
+     *
+     * Series-aware: For episodes (type='Series'), protects category_id (FK to SeriesMovie),
+     * episode_number, season_number, series_title, episode_title, is_first_episode, and type.
      */
     protected function fixMovie(MovieModel $movie): array
     {
-        $movieId = $movie->id;
-        $oldUrl  = $movie->getRawOriginal('url') ?? $movie->url;
+        $movieId  = $movie->id;
+        $oldUrl   = $movie->getRawOriginal('url') ?? $movie->url;
+        $isSeries = $this->isSeries($movie);
 
-        Log::info("[MovieFixer] Starting fix for movie #{$movieId}: {$movie->title}");
+        Log::info("[MovieFixer] Starting fix for " . ($isSeries ? 'series episode' : 'movie') . " #{$movieId}: {$movie->title}");
 
         // Increment fix attempts on all related failures FIRST
         $this->incrementFixAttempts($movieId);
@@ -203,7 +216,13 @@ class MovieFixerService
             Log::info("[MovieFixer] #{$movieId}: Got URL from server: {$newUrl}");
 
             // Step 4: Apply fresh data to the movie record (URL saved exactly as fetched)
-            $changes = $this->applyFreshData($movie, $preview, $newUrl);
+            // Series-aware: protects series FK and episode fields
+            $changes = $this->applyFreshData($movie, $preview, $newUrl, $isSeries);
+
+            // Step 4b: For series episodes, sync series-level metadata to parent SeriesMovie
+            if ($isSeries) {
+                $this->syncSeriesMetadata($movie, $preview);
+            }
 
             // Step 5: Mark movie as active and processed, save raw response from external server
             $movie->status         = 'Active';
@@ -620,13 +639,18 @@ class MovieFixerService
      * Apply fresh preview data onto a MovieModel, tracking what changed.
      *
      * Only overwrites fields where the new data is non-empty and different.
+     * Series-aware: For episodes (type='Series'), NEVER overwrites:
+     *   - category_id (FK to SeriesMovie parent)
+     *   - category (series title)
+     *   - type, episode_number, season_number, series_title, episode_title, is_first_episode
      *
      * @param  MovieModel $movie
-     * @param  array      $preview  Fresh data from the API
-     * @param  string     $newUrl   Validated video URL
-     * @return array                Map of changed fields => ['old' => ..., 'new' => ...]
+     * @param  array      $preview   Fresh data from the API
+     * @param  string     $newUrl    Validated video URL
+     * @param  bool       $isSeries  Whether this movie is a series episode
+     * @return array                 Map of changed fields => ['old' => ..., 'new' => ...]
      */
-    protected function applyFreshData(MovieModel $movie, array $preview, string $newUrl): array
+    protected function applyFreshData(MovieModel $movie, array $preview, string $newUrl, bool $isSeries = false): array
     {
         $changes = [];
 
@@ -665,11 +689,15 @@ class MovieFixerService
         }
 
         // ── Genre ──
+        // For series episodes: update genre but NEVER overwrite category (it holds the series title)
         $newGenre = trim($preview['genre'] ?? '');
         if (!empty($newGenre) && $newGenre !== ($movie->genre ?? '')) {
             $changes['genre'] = ['old' => $movie->genre, 'new' => $newGenre];
-            $movie->genre    = $newGenre;
-            $movie->category = $newGenre;
+            $movie->genre = $newGenre;
+            if (!$isSeries) {
+                // Only update category for standalone movies — series episodes use category for series title
+                $movie->category = $newGenre;
+            }
         }
 
         // ── Duration ──
@@ -720,6 +748,7 @@ class MovieFixerService
         }
 
         // ── Munowatch ID (if not set) ──
+        // For series episodes: munowatch_id should be the episode's video ID, NOT the series_code
         $videoId = $preview['id'] ?? null;
         if (!empty($videoId) && empty($movie->munowatch_id)) {
             $movie->munowatch_id = $videoId;
@@ -728,10 +757,46 @@ class MovieFixerService
         }
 
         // ── Category ID ──
-        $newCatId = $preview['category_id'] ?? null;
-        if (!empty($newCatId) && $newCatId !== ($movie->category_id ?? null)) {
-            $changes['category_id'] = ['old' => $movie->category_id, 'new' => $newCatId];
-            $movie->category_id = $newCatId;
+        // CRITICAL: For series episodes, category_id is the FK to series_movies.id — NEVER overwrite!
+        // The munowatch API returns category_id as a content category (e.g. 5 = TV Series), which
+        // is completely different from our local FK usage.
+        if (!$isSeries) {
+            $newCatId = $preview['category_id'] ?? null;
+            if (!empty($newCatId) && $newCatId !== ($movie->category_id ?? null)) {
+                $changes['category_id'] = ['old' => $movie->category_id, 'new' => $newCatId];
+                $movie->category_id = $newCatId;
+            }
+        } else {
+            Log::info("[MovieFixer] #{$movie->id}: Series episode — skipping category_id update (protected FK to SeriesMovie #{$movie->category_id})");
+        }
+
+        // ── Series-specific fields from preview data ──
+        if ($isSeries) {
+            // Update episode_title if the API returns a more specific title
+            $apiTitle = trim($preview['video_title'] ?? '');
+            if (!empty($apiTitle) && empty($movie->episode_title)) {
+                $movie->episode_title = $apiTitle;
+                $changes['episode_title'] = ['old' => null, 'new' => $apiTitle];
+            }
+
+            // Extract episode number from API if missing locally
+            // Munowatch sometimes puts "EPS 3" in nxt_eps or episode info
+            if (empty($movie->episode_number)) {
+                $epNum = $this->extractEpisodeNumber($preview);
+                if ($epNum) {
+                    $movie->episode_number = $epNum;
+                    $changes['episode_number'] = ['old' => null, 'new' => $epNum];
+                }
+            }
+
+            // Extract season number if available and missing locally
+            if (empty($movie->season_number) || $movie->season_number == 1) {
+                $seasonNum = $this->extractSeasonNumber($preview);
+                if ($seasonNum && $seasonNum > 1) {
+                    $movie->season_number = $seasonNum;
+                    $changes['season_number'] = ['old' => $movie->season_number ?? 1, 'new' => $seasonNum];
+                }
+            }
         }
 
         // ── Rating ──
@@ -870,10 +935,11 @@ class MovieFixerService
 
     /**
      * Convert a MovieModel to a flat array for the debug player UI.
+     * Includes series-specific fields when the movie is a series episode.
      */
     protected function movieToArray(MovieModel $movie): array
     {
-        return [
+        $data = [
             'id'             => $movie->id,
             'title'          => $movie->title,
             'url'            => $movie->url,
@@ -885,12 +951,137 @@ class MovieFixerService
             'thumbnail_url'  => $movie->thumbnail_url,
             'category'       => $movie->category,
             'episode_number' => $movie->episode_number,
+            'season_number'  => $movie->season_number,
+            'series_title'   => $movie->series_title,
+            'episode_title'  => $movie->episode_title,
             'views_count'    => $movie->views_count,
             'munowatch_id'   => $movie->munowatch_id,
             'duration'       => $movie->duration,
             'year'           => $movie->year,
             'language'       => $movie->language,
         ];
+
+        // Add parent series info if this is an episode
+        if ($this->isSeries($movie) && !empty($movie->category_id)) {
+            $series = SeriesMovie::find($movie->category_id);
+            if ($series) {
+                $data['series_id']            = $series->id;
+                $data['series_title']         = $data['series_title'] ?: $series->title;
+                $data['series_total_episodes'] = $series->total_episodes;
+                $data['series_total_seasons']  = $series->total_seasons;
+                $data['series_code']           = $series->series_code ?? $series->munowatch_id;
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Extract episode number from munowatch preview data.
+     *
+     * Looks at: title patterns ("EP 3", "EPS 3", "Episode 3"), nxt_eps field, etc.
+     */
+    protected function extractEpisodeNumber(array $preview): ?int
+    {
+        // Check video_title for episode patterns like "S01E03", "EP 3", "EPS 3", "Episode 3"
+        $title = $preview['video_title'] ?? '';
+        if (preg_match('/\bS\d+E(\d+)\b/i', $title, $m)) return (int) $m[1];
+        if (preg_match('/\b(?:EP|EPS|Episode)\s*(\d+)\b/i', $title, $m)) return (int) $m[1];
+
+        // Check nxt_eps field (format like "EPS   3")
+        $nxtEps = trim($preview['nxt_eps'] ?? '');
+        if (!empty($nxtEps) && preg_match('/(\d+)/', $nxtEps, $m)) {
+            // nxt_eps is the NEXT episode, so current is nxt - 1 (if > 0)
+            $next = (int) $m[1];
+            return $next > 1 ? $next - 1 : null; // uncertain if it's current or next
+        }
+
+        // Check episode_state or other fields
+        if (!empty($preview['episode_number'])) return (int) $preview['episode_number'];
+
+        return null;
+    }
+
+    /**
+     * Extract season number from munowatch preview data.
+     *
+     * Looks at title patterns ("S02E05", "Season 2") or could be in metadata.
+     */
+    protected function extractSeasonNumber(array $preview): ?int
+    {
+        $title = $preview['video_title'] ?? '';
+        if (preg_match('/\bS(\d+)E\d+\b/i', $title, $m)) return (int) $m[1];
+        if (preg_match('/\bSeason\s*(\d+)\b/i', $title, $m)) return (int) $m[1];
+
+        // Some APIs return season info
+        if (!empty($preview['season_number'])) return (int) $preview['season_number'];
+        if (!empty($preview['season'])) return (int) $preview['season'];
+
+        return null;
+    }
+
+    /**
+     * Sync metadata from API preview back to the parent SeriesMovie record.
+     *
+     * Updates the parent series with fresh data from munowatch without
+     * breaking any existing episode relationships.
+     */
+    protected function syncSeriesMetadata(MovieModel $movie, array $preview): void
+    {
+        if (empty($movie->category_id)) return;
+
+        $series = SeriesMovie::find($movie->category_id);
+        if (!$series) {
+            Log::info("[MovieFixer] #{$movie->id}: Series episode but parent SeriesMovie #{$movie->category_id} not found — skipping sync");
+            return;
+        }
+
+        $updated = false;
+
+        // Update VJ if set on the preview and missing on the series
+        $vjName = trim($preview['vjname'] ?? '');
+        if (!empty($vjName) && empty($series->vj)) {
+            $series->vj = $vjName;
+            $updated = true;
+        }
+
+        // Update total_episodes if API reports more than what we have
+        $apiEpisodes = (int) ($preview['episodes'] ?? 0);
+        if ($apiEpisodes > 0 && $apiEpisodes > (int) $series->total_episodes) {
+            $series->total_episodes = $apiEpisodes;
+            $updated = true;
+        }
+
+        // Update thumbnail if missing on series but present in preview
+        $newThumb = trim($preview['thumbnail'] ?? '');
+        if (!empty($newThumb) && empty($series->thumbnail)) {
+            $series->thumbnail = $newThumb;
+            $series->poster_url = $newThumb;
+            $updated = true;
+        }
+
+        // Update description if missing
+        $newDesc = trim($preview['description'] ?? '');
+        if (!empty($newDesc) && empty($series->description)) {
+            $series->description = $newDesc;
+            $updated = true;
+        }
+
+        // Store series_code from API if not yet set
+        $seriesCode = $preview['series_code'] ?? $preview['seriesCode'] ?? null;
+        if (!empty($seriesCode) && empty($series->series_code)) {
+            $series->series_code = $seriesCode;
+            $updated = true;
+        }
+        if (!empty($seriesCode) && empty($series->munowatch_id)) {
+            $series->munowatch_id = $seriesCode;
+            $updated = true;
+        }
+
+        if ($updated) {
+            $series->save();
+            Log::info("[MovieFixer] #{$movie->id}: Synced metadata to parent SeriesMovie #{$series->id} ({$series->title})");
+        }
     }
 
     /**

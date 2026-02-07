@@ -308,6 +308,16 @@ class MovieModelController extends AdminController
                 'content_type' => $this->content_type,
                 'content_is_video' => $this->content_is_video,
                 'firebase_transfer_successful' => $this->firebase_transfer_successful,
+                'category' => $this->category,
+                'episode_number' => $this->episode_number,
+                'season_number' => $this->season_number,
+                'series_title' => $this->series_title,
+                'episode_title' => $this->episode_title,
+                'duration' => $this->duration,
+                'year' => $this->year,
+                'language' => $this->language,
+                'munowatch_id' => $this->munowatch_id,
+                'views_count' => $this->views_count,
             ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
             return '<button class="btn btn-xs btn-primary ugflix-debug-play-btn" data-movie="' . htmlspecialchars($movieData, ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-play"></i> Play</button>';
         });
