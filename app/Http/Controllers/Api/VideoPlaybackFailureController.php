@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\VideoPlaybackFailure;
 use App\Models\MovieModel;
+use App\Jobs\AutoFixMovie;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
@@ -107,15 +108,17 @@ class VideoPlaybackFailureController extends Controller
                 'status' => 'pending',
             ]);
 
-            // Note: Movie is automatically deactivated via the model's boot() hook
-            // But we also log it here for visibility
+            // Note: Movie is automatically deactivated via the model's boot() hook.
+            // Auto-fix is also scheduled in the model's boot() hook to run after response.
             $movieDeactivated = false;
+            $autoFixScheduled = false;
             $movieId = $request->input('movie_id');
             if ($movieId) {
                 $movie = MovieModel::find($movieId);
                 if ($movie) {
                     $movieDeactivated = ($movie->status === 'Inactive');
-                    Log::info("Video playback failure reported for movie #{$movieId}. Movie status: {$movie->status}");
+                    $autoFixScheduled = true; // Scheduled via model hook
+                    Log::info("Video playback failure reported for movie #{$movieId}. Movie status: {$movie->status}. Auto-fix scheduled.");
                 }
             }
 
@@ -126,6 +129,7 @@ class VideoPlaybackFailureController extends Controller
                     'id' => $failure->id,
                     'created_at' => $failure->created_at,
                     'movie_deactivated' => $movieDeactivated,
+                    'auto_fix_scheduled' => $autoFixScheduled,
                 ],
             ], 201);
 

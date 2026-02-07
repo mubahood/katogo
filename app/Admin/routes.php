@@ -121,6 +121,18 @@ Route::group([
     // Coin Transactions
     $router->resource('coin-transactions', CoinTransactionController::class);
 
+    // Debug Player Proxy (server-side cURL video URL testing — requires admin session)
+    $router->post('debug-player/proxy', 'DebugPlayerProxyController@proxy');
+    // Debug Player Fix Movie (re-fetch from source, repair broken records — requires admin session)
+    $router->post('debug-player/fix-movie', 'DebugPlayerProxyController@fixMovie');
+
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound
     //https://omulimisa.org/api/v1/e-learning/events
 });
+
+// Debug Player Stream — OUTSIDE admin middleware so <video> element can fetch without session auth.
+// Protected by a signed token (HMAC) instead — only admin panel JS can generate valid URLs.
+Route::get(
+    config('admin.route.prefix') . '/debug-player/stream',
+    '\App\Admin\Controllers\DebugPlayerProxyController@stream'
+)->name('debug-player.stream');

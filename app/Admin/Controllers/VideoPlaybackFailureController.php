@@ -11,10 +11,6 @@ use Encore\Admin\Form;
 use Encore\Admin\Grid;
 use Encore\Admin\Show;
 use Encore\Admin\Layout\Content;
-use Encore\Admin\Layout\Row;
-use Encore\Admin\Widgets\Box;
-use Encore\Admin\Widgets\InfoBox;
-use Encore\Admin\Widgets\Table;
 use Illuminate\Support\Facades\DB;
 
 class VideoPlaybackFailureController extends AdminController
@@ -35,277 +31,193 @@ class VideoPlaybackFailureController extends AdminController
     public function index(Content $content)
     {
         return $content
-            ->title('🎬 Video Playback Failures')
+            ->title('Video Playback Failures')
             ->description('Monitor and resolve video playback issues')
-            ->row(function (Row $row) {
-                $row->column(3, $this->totalFailuresBox());
-                $row->column(3, $this->pendingBox());
-                $row->column(3, $this->todayFailuresBox());
-                $row->column(3, $this->resolvedBox());
-            })
-            ->row(function (Row $row) {
-                $row->column(3, $this->networkErrorsBox());
-                $row->column(3, $this->playbackErrorsBox());
-                $row->column(3, $this->httpErrorsBox());
-                $row->column(3, $this->subscribedUsersBox());
-            })
-            ->row(function (Row $row) {
-                $row->column(6, $this->topFailingMoviesBox());
-                $row->column(6, $this->errorTypeBreakdownBox());
-            })
-            ->row(function (Row $row) {
-                $row->column(6, $this->deviceBreakdownBox());
-                $row->column(6, $this->failuresTrendBox());
-            })
+            ->body($this->compactDashboard())
             ->body($this->grid());
     }
 
     /**
-     * Total failures info box
+     * Compact dashboard — small stat cards + charts, focused on unfixed failures.
      */
-    protected function totalFailuresBox()
+    protected function compactDashboard(): string
     {
-        $count = VideoPlaybackFailure::count();
-        return new InfoBox('Total Failures', 'exclamation-triangle', 'red', '/admin/video-playback-failures', number_format($count));
-    }
+        // ── Gather all stats in one go ──
+        $total      = VideoPlaybackFailure::count();
+        $unfixed    = VideoPlaybackFailure::where('status', '!=', 'resolved')
+                        ->where(function ($q) { $q->where('fix_status', '!=', 'FIXED')->orWhereNull('fix_status'); })
+                        ->count();
+        $fixed      = VideoPlaybackFailure::where('fix_status', 'FIXED')->count();
+        $fixFailed  = VideoPlaybackFailure::where('fix_status', 'FAILED')->count();
+        $pending    = VideoPlaybackFailure::where('status', 'pending')
+                        ->where(function ($q) { $q->whereNull('fix_status')->orWhere('fix_status', ''); })
+                        ->count();
+        $today      = VideoPlaybackFailure::whereDate('created_at', Carbon::today())->count();
+        $yesterday  = VideoPlaybackFailure::whereDate('created_at', Carbon::yesterday())->count();
+        $subscribers = VideoPlaybackFailure::where('has_subscription', true)
+                        ->where('status', '!=', 'resolved')->count();
 
-    /**
-     * Pending failures info box
-     */
-    protected function pendingBox()
-    {
-        $count = VideoPlaybackFailure::where('status', 'pending')->count();
-        return new InfoBox('Pending Review', 'clock-o', 'yellow', '/admin/video-playback-failures?status=pending', number_format($count));
-    }
+        $todayTrend = $today > $yesterday ? '▲' : ($today < $yesterday ? '▼' : '—');
+        $todayColor = $today > $yesterday ? '#e74c3c' : ($today < $yesterday ? '#27ae60' : '#95a5a6');
+        $fixRate    = $total > 0 ? round(($fixed / $total) * 100) : 0;
 
-    /**
-     * Today's failures info box
-     */
-    protected function todayFailuresBox()
-    {
-        $count = VideoPlaybackFailure::whereDate('created_at', Carbon::today())->count();
-        $yesterday = VideoPlaybackFailure::whereDate('created_at', Carbon::yesterday())->count();
-        $trend = $count > $yesterday ? '↑' : ($count < $yesterday ? '↓' : '→');
-        return new InfoBox("Today {$trend}", 'calendar', 'aqua', '#', number_format($count));
-    }
+        // ── Error type breakdown (unfixed only) ──
+        $errorTypes = VideoPlaybackFailure::where('status', '!=', 'resolved')
+            ->where(function ($q) { $q->where('fix_status', '!=', 'FIXED')->orWhereNull('fix_status'); })
+            ->selectRaw('COALESCE(error_type, "unknown") as etype, COUNT(*) as cnt')
+            ->groupBy('etype')->orderByDesc('cnt')->get();
+        $etColors = ['network'=>'#e74c3c','playback'=>'#e67e22','http_error'=>'#9b59b6','timeout'=>'#3498db','format'=>'#1abc9c','unknown'=>'#95a5a6'];
 
-    /**
-     * Resolved failures info box
-     */
-    protected function resolvedBox()
-    {
-        $count = VideoPlaybackFailure::where('status', 'resolved')->count();
-        $total = VideoPlaybackFailure::count() ?: 1;
-        $percent = round(($count / $total) * 100, 1);
-        return new InfoBox("Resolved ({$percent}%)", 'check-circle', 'green', '/admin/video-playback-failures?status=resolved', number_format($count));
-    }
-
-    /**
-     * Network errors info box
-     */
-    protected function networkErrorsBox()
-    {
-        $count = VideoPlaybackFailure::where('error_type', 'network')->count();
-        return new InfoBox('Network Errors', 'wifi', 'red', '/admin/video-playback-failures?error_type=network', number_format($count));
-    }
-
-    /**
-     * Playback errors info box
-     */
-    protected function playbackErrorsBox()
-    {
-        $count = VideoPlaybackFailure::where('error_type', 'playback')->count();
-        return new InfoBox('Playback Errors', 'play-circle', 'orange', '/admin/video-playback-failures?error_type=playback', number_format($count));
-    }
-
-    /**
-     * HTTP errors info box
-     */
-    protected function httpErrorsBox()
-    {
-        $count = VideoPlaybackFailure::where('error_type', 'http_error')->count();
-        return new InfoBox('HTTP Errors', 'server', 'maroon', '/admin/video-playback-failures?error_type=http_error', number_format($count));
-    }
-
-    /**
-     * Subscribed users failures info box
-     */
-    protected function subscribedUsersBox()
-    {
-        $count = VideoPlaybackFailure::where('has_subscription', true)->count();
-        $total = VideoPlaybackFailure::count() ?: 1;
-        $percent = round(($count / $total) * 100, 1);
-        return new InfoBox("Subscribers ({$percent}%)", 'star', 'purple', '/admin/video-playback-failures?has_subscription=1', number_format($count));
-    }
-
-    /**
-     * Top failing movies box
-     */
-    protected function topFailingMoviesBox()
-    {
-        $failures = VideoPlaybackFailure::whereNotNull('movie_id')
-            ->selectRaw('movie_id, movie_title, COUNT(*) as failure_count')
-            ->groupBy('movie_id', 'movie_title')
-            ->orderByDesc('failure_count')
-            ->limit(10)
-            ->get();
-
-        $rows = [];
-        $rank = 1;
-        foreach ($failures as $failure) {
-            // Try to get movie title from stored field or fetch from MovieModel
-            $movieTitle = $failure->movie_title;
-            if (empty($movieTitle) || $movieTitle === 'Unknown Movie') {
-                $movie = MovieModel::find($failure->movie_id);
-                $movieTitle = $movie ? $movie->title : 'Movie #' . $failure->movie_id;
-            }
-            
-            $displayTitle = mb_strlen($movieTitle) > 35 ? mb_substr($movieTitle, 0, 35) . '...' : $movieTitle;
-            $statusClass = $rank <= 3 ? 'danger' : ($rank <= 6 ? 'warning' : 'default');
-            $rows[] = [
-                "#{$rank}",
-                "<a href='movies-movies/{$failure->movie_id}' title='" . htmlspecialchars($movieTitle) . "'>{$displayTitle}</a>",
-                "<span class='label label-{$statusClass}'>{$failure->failure_count}</span>",
-            ];
-            $rank++;
-        }
-
-        if (empty($rows)) {
-            $rows[] = ['-', 'No data yet', '-'];
-        }
-
-        $table = new Table(['#', 'Movie', 'Failures'], $rows);
-        $box = new Box('🎬 Top Failing Movies (Fix These First!)', $table);
-        $box->style('danger');
-        $box->solid();
-
-        return $box;
-    }
-
-    /**
-     * Error type breakdown box
-     */
-    protected function errorTypeBreakdownBox()
-    {
-        $types = VideoPlaybackFailure::selectRaw('error_type, COUNT(*) as count')
-            ->groupBy('error_type')
-            ->orderByDesc('count')
-            ->get();
-
-        $total = $types->sum('count') ?: 1;
-        $rows = [];
-        $icons = [
-            'network' => '📡',
-            'playback' => '▶️',
-            'timeout' => '⏱️',
-            'http_error' => '🌐',
-            'format' => '📁',
-            'unknown' => '❓',
-        ];
-
-        foreach ($types as $type) {
-            $icon = $icons[$type->error_type] ?? '❓';
-            $percent = round(($type->count / $total) * 100, 1);
-            $bar = str_repeat('█', intval($percent / 5));
-            $rows[] = [
-                $icon . ' ' . ucfirst($type->error_type ?? 'Unknown'),
-                number_format($type->count),
-                "{$percent}%",
-                "<span style='color:#dc3545'>{$bar}</span>",
-            ];
-        }
-
-        if (empty($rows)) {
-            $rows[] = ['No data', '-', '-', '-'];
-        }
-
-        $table = new Table(['Type', 'Count', '%', 'Distribution'], $rows);
-        $box = new Box('📊 Error Type Breakdown', $table);
-        $box->style('warning');
-        $box->solid();
-
-        return $box;
-    }
-
-    /**
-     * Device breakdown box
-     */
-    protected function deviceBreakdownBox()
-    {
-        $devices = VideoPlaybackFailure::selectRaw('device_os, COUNT(*) as count')
-            ->groupBy('device_os')
-            ->orderByDesc('count')
-            ->limit(10)
-            ->get();
-
-        $rows = [];
-        $icons = [
-            'android' => '🤖',
-            'ios' => '🍎',
-            'windows' => '🪟',
-            'macos' => '🍏',
-            'linux' => '🐧',
-        ];
-
-        foreach ($devices as $device) {
-            $os = strtolower($device->device_os ?? '');
-            $icon = '📱';
-            foreach ($icons as $key => $emoji) {
-                if (strpos($os, $key) !== false) {
-                    $icon = $emoji;
-                    break;
-                }
-            }
-            $rows[] = [
-                $icon . ' ' . ucfirst($device->device_os ?? 'Unknown'),
-                number_format($device->count),
-            ];
-        }
-
-        if (empty($rows)) {
-            $rows[] = ['No data', '-'];
-        }
-
-        $table = new Table(['Device OS', 'Failures'], $rows);
-        $box = new Box('📱 Device Breakdown', $table);
-        $box->style('info');
-        $box->solid();
-
-        return $box;
-    }
-
-    /**
-     * Failures trend (last 7 days) box
-     */
-    protected function failuresTrendBox()
-    {
-        $days = [];
-        $counts = [];
-
+        // ── 7-day trend (unfixed only) ──
+        $trendDays = []; $trendCounts = [];
         for ($i = 6; $i >= 0; $i--) {
-            $date = Carbon::today()->subDays($i);
-            $days[] = $date->format('M d');
-            $counts[] = VideoPlaybackFailure::whereDate('created_at', $date)->count();
+            $d = Carbon::today()->subDays($i);
+            $trendDays[] = $d->format('D');
+            $trendCounts[] = VideoPlaybackFailure::whereDate('created_at', $d)
+                ->where(function ($q) { $q->where('fix_status', '!=', 'FIXED')->orWhereNull('fix_status'); })
+                ->count();
         }
+        $trendMax = max($trendCounts) ?: 1;
 
-        $maxCount = max($counts) ?: 1;
-        $rows = [];
-        foreach ($days as $idx => $day) {
-            $count = $counts[$idx];
-            $barLength = intval(($count / $maxCount) * 20);
-            $bar = str_repeat('█', max(1, $barLength));
-            $color = $count > ($maxCount * 0.7) ? '#dc3545' : ($count > ($maxCount * 0.4) ? '#ffc107' : '#28a745');
-            $rows[] = [$day, number_format($count), "<span style='color:{$color}'>{$bar}</span>"];
+        // ── Top 8 failing movies (unfixed only) ──
+        $topMovies = VideoPlaybackFailure::whereNotNull('movie_id')
+            ->where('status', '!=', 'resolved')
+            ->where(function ($q) { $q->where('fix_status', '!=', 'FIXED')->orWhereNull('fix_status'); })
+            ->selectRaw('movie_id, movie_title, COUNT(*) as cnt')
+            ->groupBy('movie_id', 'movie_title')
+            ->orderByDesc('cnt')->limit(8)->get();
+
+        // ── Device breakdown (unfixed only) ──
+        $devices = VideoPlaybackFailure::where('status', '!=', 'resolved')
+            ->where(function ($q) { $q->where('fix_status', '!=', 'FIXED')->orWhereNull('fix_status'); })
+            ->selectRaw('COALESCE(device_os, "Unknown") as os, COUNT(*) as cnt')
+            ->groupBy('os')->orderByDesc('cnt')->limit(5)->get();
+        $devTotal = $devices->sum('cnt') ?: 1;
+        $devColors = ['#3498db','#e67e22','#2ecc71','#9b59b6','#e74c3c'];
+
+        // ── Build HTML ──
+        $html = '<style>
+.sf-row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.sf-card{flex:1;min-width:130px;background:#fff;border-radius:6px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,.08);border-left:3px solid #ddd;position:relative}
+.sf-card .sf-val{font-size:22px;font-weight:700;line-height:1.1}
+.sf-card .sf-lbl{font-size:11px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
+.sf-card .sf-icon{position:absolute;right:12px;top:12px;font-size:18px;opacity:.4}
+.sf-chart-box{background:#fff;border-radius:6px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.sf-chart-title{font-size:12px;font-weight:600;color:#555;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px}
+.sf-bar-row{display:flex;align-items:center;margin-bottom:6px;font-size:12px}
+.sf-bar-label{width:70px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sf-bar-track{flex:1;height:16px;background:#f0f0f0;border-radius:3px;margin:0 8px;overflow:hidden}
+.sf-bar-fill{height:100%;border-radius:3px;transition:width .3s}
+.sf-bar-val{width:35px;text-align:right;color:#333;font-weight:600}
+.sf-pie-wrap{display:flex;align-items:center;gap:16px}
+.sf-pie-legend{font-size:11px;line-height:1.8}
+.sf-pie-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.sf-movie-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f5f5f5;font-size:12px}
+.sf-movie-row:last-child{border:0}
+.sf-movie-title{color:#333;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sf-movie-cnt{font-weight:700;color:#e74c3c}
+.sf-dev-row{display:flex;align-items:center;margin-bottom:5px;font-size:12px}
+.sf-dev-bar{height:10px;border-radius:2px;margin:0 8px}
+</style>';
+
+        // ── Row 1: Key stat cards ──
+        $html .= '<div class="sf-row">';
+        $cards = [
+            ['val'=>number_format($unfixed), 'lbl'=>'Unfixed', 'color'=>'#e74c3c', 'icon'=>'fa-exclamation-circle'],
+            ['val'=>number_format($pending), 'lbl'=>'Never Attempted', 'color'=>'#e67e22', 'icon'=>'fa-question-circle'],
+            ['val'=>number_format($today)." <small style='font-size:12px;color:{$todayColor}'>{$todayTrend}</small>", 'lbl'=>'Today', 'color'=>'#3498db', 'icon'=>'fa-clock-o'],
+            ['val'=>number_format($fixFailed), 'lbl'=>'Fix Failed', 'color'=>'#c0392b', 'icon'=>'fa-times'],
+            ['val'=>number_format($fixed), 'lbl'=>'Auto-Fixed', 'color'=>'#27ae60', 'icon'=>'fa-check'],
+            ['val'=>"{$fixRate}%", 'lbl'=>'Fix Rate', 'color'=>'#2ecc71', 'icon'=>'fa-wrench'],
+            ['val'=>number_format($subscribers), 'lbl'=>'Subscribers ⭐', 'color'=>'#8e44ad', 'icon'=>'fa-star'],
+            ['val'=>number_format($total), 'lbl'=>'Total All Time', 'color'=>'#95a5a6', 'icon'=>'fa-database'],
+        ];
+        foreach ($cards as $c) {
+            $html .= "<div class='sf-card' style='border-left-color:{$c['color']}'>";
+            $html .= "<i class='fa {$c['icon']} sf-icon'></i>";
+            $html .= "<div class='sf-val' style='color:{$c['color']}'>{$c['val']}</div>";
+            $html .= "<div class='sf-lbl'>{$c['lbl']}</div>";
+            $html .= "</div>";
         }
+        $html .= '</div>';
 
-        $table = new Table(['Date', 'Failures', 'Trend'], $rows);
-        $box = new Box('📈 Failures Trend (Last 7 Days)', $table);
-        $box->style('default');
-        $box->solid();
+        // ── Row 2: Charts (3 columns) ──
+        $html .= '<div class="sf-row">';
 
-        return $box;
+        // ── Col 1: Error Type Pie Chart (CSS conic-gradient) ──
+        $html .= '<div class="sf-chart-box" style="flex:1;min-width:220px">';
+        $html .= '<div class="sf-chart-title">Error Types (Unfixed)</div>';
+        $etTotal = $errorTypes->sum('cnt') ?: 1;
+        $conicParts = []; $legendHtml = ''; $cumPct = 0;
+        foreach ($errorTypes as $et) {
+            $pct = round(($et->cnt / $etTotal) * 100, 1);
+            $color = $etColors[$et->etype] ?? '#bdc3c7';
+            $conicParts[] = "{$color} {$cumPct}% " . ($cumPct + $pct) . "%";
+            $cumPct += $pct;
+            $name = ucfirst($et->etype);
+            $legendHtml .= "<div><span class='sf-pie-dot' style='background:{$color}'></span>{$name} <b>{$et->cnt}</b> ({$pct}%)</div>";
+        }
+        $conicStr = implode(', ', $conicParts);
+        $html .= "<div class='sf-pie-wrap'>";
+        $html .= "<div style='width:90px;height:90px;border-radius:50%;background:conic-gradient({$conicStr});flex-shrink:0'></div>";
+        $html .= "<div class='sf-pie-legend'>{$legendHtml}</div>";
+        $html .= "</div></div>";
+
+        // ── Col 2: 7-Day Trend Bar Chart ──
+        $html .= '<div class="sf-chart-box" style="flex:1.2;min-width:240px">';
+        $html .= '<div class="sf-chart-title">7-Day Trend (Unfixed)</div>';
+        foreach ($trendDays as $i => $day) {
+            $cnt = $trendCounts[$i];
+            $pct = round(($cnt / $trendMax) * 100);
+            $barColor = $cnt > ($trendMax * 0.7) ? '#e74c3c' : ($cnt > ($trendMax * 0.4) ? '#e67e22' : '#3498db');
+            $html .= "<div class='sf-bar-row'>";
+            $html .= "<div class='sf-bar-label'>{$day}</div>";
+            $html .= "<div class='sf-bar-track'><div class='sf-bar-fill' style='width:{$pct}%;background:{$barColor}'></div></div>";
+            $html .= "<div class='sf-bar-val'>{$cnt}</div>";
+            $html .= "</div>";
+        }
+        $html .= '</div>';
+
+        // ── Col 3: Top Failing Movies + Device Split ──
+        $html .= '<div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:10px">';
+
+        // Top failing movies
+        $html .= '<div class="sf-chart-box" style="flex:1">';
+        $html .= '<div class="sf-chart-title">Top Failing Movies (Unfixed)</div>';
+        if ($topMovies->isEmpty()) {
+            $html .= '<div style="color:#aaa;font-size:12px;text-align:center;padding:10px">No unfixed failures</div>';
+        } else {
+            foreach ($topMovies as $tm) {
+                $title = $tm->movie_title ?: 'Movie #' . $tm->movie_id;
+                $displayTitle = mb_strlen($title) > 28 ? mb_substr($title, 0, 28) . '…' : $title;
+                $html .= "<div class='sf-movie-row'>";
+                $html .= "<a class='sf-movie-title' href='movies-movies/{$tm->movie_id}' title='" . htmlspecialchars($title) . "'>{$displayTitle}</a>";
+                $html .= "<span class='sf-movie-cnt'>{$tm->cnt}</span>";
+                $html .= "</div>";
+            }
+        }
+        $html .= '</div>';
+
+        // Device breakdown mini
+        $html .= '<div class="sf-chart-box">';
+        $html .= '<div class="sf-chart-title">Devices (Unfixed)</div>';
+        foreach ($devices as $di => $dev) {
+            $pct = round(($dev->cnt / $devTotal) * 100);
+            $dc = $devColors[$di] ?? '#bdc3c7';
+            $osIcon = stripos($dev->os, 'android') !== false ? '🤖' : (stripos($dev->os, 'ios') !== false ? '🍎' : '📱');
+            $html .= "<div class='sf-dev-row'>";
+            $html .= "<span style='width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{$osIcon} {$dev->os}</span>";
+            $html .= "<div class='sf-dev-bar' style='flex:1;background:{$dc};width:{$pct}%;max-width:{$pct}%'></div>";
+            $html .= "<span style='width:50px;text-align:right;font-weight:600'>{$dev->cnt}</span>";
+            $html .= "</div>";
+        }
+        $html .= '</div>';
+
+        $html .= '</div>'; // end col 3
+        $html .= '</div>'; // end row 2
+
+        return $html;
     }
-
     /**
      * Make a grid builder.
      *
@@ -460,6 +372,62 @@ class VideoPlaybackFailureController extends AdminController
                 'ignored' => 'Ignored',
             ]);
         
+        // Fix status columns
+        $grid->column('fix_status', __('Fix Status'))
+            ->display(function ($status) {
+                $icons = ['FIXED' => '✅', 'FAILED' => '❌', 'PENDING' => '⏳'];
+                $colors = ['FIXED' => 'success', 'FAILED' => 'danger', 'PENDING' => 'warning'];
+                if (empty($status)) return '<span class="label label-default">—</span>';
+                $icon = $icons[$status] ?? '';
+                $color = $colors[$status] ?? 'default';
+                return "<span class='label label-{$color}'>{$icon} {$status}</span>";
+            })
+            ->sortable()
+            ->filter([
+                'FIXED' => 'Fixed',
+                'FAILED' => 'Failed',
+                'PENDING' => 'Pending',
+            ]);
+
+        $grid->column('number_of_fix_attempts', __('Fix Tries'))
+            ->display(function ($count) {
+                if (!$count) return '<span class="text-muted">0</span>';
+                $color = $count > 3 ? 'danger' : ($count > 1 ? 'warning' : 'info');
+                return "<span class='label label-{$color}'>{$count}</span>";
+            })->sortable();
+
+        $grid->column('last_fix_attempt_at', __('Last Fix'))
+            ->display(function ($val) {
+                if (!$val) return '<span class="text-muted">—</span>';
+                return Carbon::parse($val)->format('M d, H:i');
+            })->sortable();
+
+        // Debug Player — Play button to test the movie's video URL
+        $grid->column('debug_play', __('Debug Play'))->display(function () {
+            if (!$this->movie_id) return '<span class="text-muted">—</span>';
+            $movie = $this->movie;
+            if (!$movie) $movie = \App\Models\MovieModel::find($this->movie_id);
+            if (!$movie) return '<span class="text-muted">No movie</span>';
+
+            $movieData = json_encode([
+                'id' => $movie->id,
+                'title' => $movie->title,
+                'url' => $movie->url,
+                'external_url' => $movie->external_url,
+                'firebase_video_url' => $movie->firebase_video_url,
+                'old_video_url' => $movie->old_video_url,
+                'type' => $movie->type,
+                'status' => $movie->status,
+                'genre' => $movie->genre,
+                'vj' => $movie->vj,
+                'thumbnail_url' => $movie->thumbnail_url,
+                'content_type' => $movie->content_type,
+                'content_is_video' => $movie->content_is_video,
+                'firebase_transfer_successful' => $movie->firebase_transfer_successful,
+            ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+            return '<button class="btn btn-xs btn-primary ugflix-debug-play-btn" data-movie="' . htmlspecialchars($movieData, ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-play"></i></button>';
+        });
+
         $grid->column('created_at', __('Failed At'))
             ->display(function ($createdAt) {
                 return Carbon::parse($createdAt)->format('M d, H:i');
@@ -642,10 +610,15 @@ class VideoPlaybackFailureController extends AdminController
             $filter->like('error_message', 'Error Contains');
         });
 
-        // Batch actions - disable delete since failures are logs
+        // Batch actions
         $grid->batchActions(function ($batch) {
             $batch->disableDelete();
+            $batch->add(new \App\Admin\Actions\BatchFixFailureMovies());
+            $batch->add(new \App\Admin\Actions\BatchResolveFailures());
+            $batch->add(new \App\Admin\Actions\BatchIgnoreFailures());
         });
+
+        $grid->perPages([10, 20, 50, 100, 200, 500]);
 
         // Export
         $grid->export(function ($export) {

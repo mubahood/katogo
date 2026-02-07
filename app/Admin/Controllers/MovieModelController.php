@@ -30,7 +30,7 @@ class MovieModelController extends AdminController
 
         $grid = new Grid(new MovieModel());
         $grid->model()->orderBy('id', 'desc');
-/*
+        /*
         $url_segs = explode('/', request()->url());
         if (in_array('movies-active', $url_segs)) {
             $grid->model()->where('status', 'Active');
@@ -84,6 +84,7 @@ class MovieModelController extends AdminController
         $grid->perPages([10, 20, 50, 100, 200, 500, 1000]);
         $grid->batchActions(function ($batch) {
             $batch->add(new \App\Admin\Actions\Post\MovieStatusChange());
+            $batch->add(new \App\Admin\Actions\Post\BatchFixMovies());
         });
         $grid->filter(function ($filter) {
             // $filter->disableIdFilter();
@@ -144,7 +145,7 @@ class MovieModelController extends AdminController
             ])->sortable();
 
         //url link
-        $grid->column('url_link', __('Url'))
+        $grid->column('url', __('Url'))
             ->display(function ($url) {
                 return '<a href="' . $this->url . '" target="_blank">' . $this->url . '</a>';
             })->width(200)
@@ -224,14 +225,15 @@ class MovieModelController extends AdminController
             })->width(200)
             ->hide();
 
-        $grid->column('url', __('url'))
+        /*         $grid->column('url', __('url'))
             ->display(function ($url) {
                 if (empty($url) || is_null($url)) {
                     return '<span class="text-muted">No video URL</span>';
                 }
                 return $url;
             })
-            ->video(['videoWidth' => 720, 'videoHeight' => 480])->sortable();
+            ->hide()
+            ->video(['videoWidth' => 720, 'videoHeight' => 480])->sortable(); */
         /* 
         $this->content_type_processed = 'Yes';
         $this->content_type_processed_time = date('Y-m-d H:i:s');
@@ -287,8 +289,28 @@ class MovieModelController extends AdminController
         $grid->column('dislikes_count', __('Dislikes count'))->hide();
         $grid->column('comments_count', __('Comments count'))->hide();
         $grid->column('comments', __('Comments'))->hide();
+        $grid->column('muno_message', __('Muno Message'))->sortable();
         //is_processed
-
+        // Debug Player — Play button that mimics mobile app playback
+        $grid->column('debug_play', __('Debug Play'))->display(function () {
+            $movieData = json_encode([
+                'id' => $this->id,
+                'title' => $this->title,
+                'url' => $this->url,
+                'external_url' => $this->external_url,
+                'firebase_video_url' => $this->firebase_video_url,
+                'old_video_url' => $this->old_video_url,
+                'type' => $this->type,
+                'status' => $this->status,
+                'genre' => $this->genre,
+                'vj' => $this->vj,
+                'thumbnail_url' => $this->thumbnail_url,
+                'content_type' => $this->content_type,
+                'content_is_video' => $this->content_is_video,
+                'firebase_transfer_successful' => $this->firebase_transfer_successful,
+            ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
+            return '<button class="btn btn-xs btn-primary ugflix-debug-play-btn" data-movie="' . htmlspecialchars($movieData, ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-play"></i> Play</button>';
+        });
 
         $grid->column('video_is_downloaded_to_server', __('Downloaded'))->sortable()
             ->filter([
@@ -412,13 +434,14 @@ class MovieModelController extends AdminController
             ->filter([
                 'Yes' => 'Yes',
                 'FIX-FAIL' => 'FIX-FAIL',
-                'FIX-PASS' => 'FIX-PASS', 
+                'FIX-PASS' => 'FIX-PASS',
                 'No' => 'No'
-            ]);
+            ])->hide();
 
         $grid->column('firebase_transfer_failure_reason', __('Firebase Transfer Failure Reason'))
             ->editable('text')
             ->sortable()
+            ->hide()
             ->filter('like');
 
         $grid->column('firebase_transfer_path', __('Firebase Transfer Path'))
@@ -467,6 +490,8 @@ class MovieModelController extends AdminController
             ->sortable()
             ->hide()
             ->filter('like');
+
+
 
         return $grid;
 

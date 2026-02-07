@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\AutoFixMovie;
 
 class VideoPlaybackFailure extends Model
 {
@@ -54,13 +55,21 @@ class VideoPlaybackFailure extends Model
         'status',
         'admin_notes',
         'resolved_at',
+
+        // Fix tracking
+        'fix_status',
+        'fix_status_message',
+        'number_of_fix_attempts',
+        'last_fix_attempt_at',
     ];
 
     protected $casts = [
         'has_subscription' => 'boolean',
         'retry_count' => 'integer',
+        'number_of_fix_attempts' => 'integer',
         'subscription_expires_at' => 'datetime',
         'resolved_at' => 'datetime',
+        'last_fix_attempt_at' => 'datetime',
         'additional_data' => 'array',
     ];
 
@@ -72,8 +81,20 @@ class VideoPlaybackFailure extends Model
         parent::boot();
 
         static::created(function ($failure) {
-            // Automatically mark the movie as Inactive when a playback failure is reported
+            // Step 1: Automatically mark the movie as Inactive when a playback failure is reported
             $failure->deactivateRelatedMovie();
+
+            // Step 2: Schedule auto-fix to run AFTER the HTTP response is sent.
+            // This re-fetches movie data from the external server and repairs the record.
+            // Guarded by cooldown (5 min per movie) and re-entry prevention.
+            if ($failure->movie_id && !AutoFixMovie::isInProgress()) {
+                try {
+                    AutoFixMovie::scheduleAfterResponse((int) $failure->movie_id, (int) $failure->id);
+                } catch (\Throwable $e) {
+                    // Never let auto-fix scheduling break failure creation
+                    Log::error("[AutoFixMovie] Failed to schedule for movie #{$failure->movie_id}: " . $e->getMessage());
+                }
+            }
         });
     }
 
