@@ -144,8 +144,11 @@ class VideoPlaybackFailureController extends AdminController
         // ── Row 2: Charts (3 columns) ──
         $html .= '<div class="sf-row">';
 
-        // ── Col 1: Error Type Pie Chart (CSS conic-gradient) ──
-        $html .= '<div class="sf-chart-box" style="flex:1;min-width:220px">';
+        // ── Col 1: Error Type Pie + Fix Status Pie (stacked) ──
+        $html .= '<div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:10px">';
+
+        // Error Type Pie
+        $html .= '<div class="sf-chart-box">';
         $html .= '<div class="sf-chart-title">Error Types (Unfixed)</div>';
         $etTotal = $errorTypes->sum('cnt') ?: 1;
         $conicParts = []; $legendHtml = ''; $cumPct = 0;
@@ -159,9 +162,33 @@ class VideoPlaybackFailureController extends AdminController
         }
         $conicStr = implode(', ', $conicParts);
         $html .= "<div class='sf-pie-wrap'>";
-        $html .= "<div style='width:90px;height:90px;border-radius:50%;background:conic-gradient({$conicStr});flex-shrink:0'></div>";
+        $html .= "<div style='width:80px;height:80px;border-radius:50%;background:conic-gradient({$conicStr});flex-shrink:0'></div>";
         $html .= "<div class='sf-pie-legend'>{$legendHtml}</div>";
         $html .= "</div></div>";
+
+        // Fix Status Pie
+        $fixStatusData = [
+            ['label' => 'Fixed',   'cnt' => $fixed,    'color' => '#27ae60'],
+            ['label' => 'Failed',  'cnt' => $fixFailed, 'color' => '#e74c3c'],
+            ['label' => 'Pending', 'cnt' => $pending,   'color' => '#e67e22'],
+        ];
+        $fsTotal = array_sum(array_column($fixStatusData, 'cnt')) ?: 1;
+        $html .= '<div class="sf-chart-box">';
+        $html .= '<div class="sf-chart-title">Fix Status</div>';
+        $fsConic = []; $fsLegend = ''; $fsCum = 0;
+        foreach ($fixStatusData as $fs) {
+            $fsPct = round(($fs['cnt'] / $fsTotal) * 100, 1);
+            $fsConic[] = "{$fs['color']} {$fsCum}% " . ($fsCum + $fsPct) . "%";
+            $fsCum += $fsPct;
+            $fsLegend .= "<div><span class='sf-pie-dot' style='background:{$fs['color']}'></span>{$fs['label']} <b>{$fs['cnt']}</b> ({$fsPct}%)</div>";
+        }
+        $fsConicStr = implode(', ', $fsConic);
+        $html .= "<div class='sf-pie-wrap'>";
+        $html .= "<div style='width:80px;height:80px;border-radius:50%;background:conic-gradient({$fsConicStr});flex-shrink:0'></div>";
+        $html .= "<div class='sf-pie-legend'>{$fsLegend}</div>";
+        $html .= "</div></div>";
+
+        $html .= '</div>'; // end col 1
 
         // ── Col 2: 7-Day Trend Bar Chart ──
         $html .= '<div class="sf-chart-box" style="flex:1.2;min-width:240px">';
