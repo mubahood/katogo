@@ -177,6 +177,10 @@ class MovieFixerService
      *
      * Series-aware: For episodes (type='Series'), protects category_id (FK to SeriesMovie),
      * episode_number, season_number, series_title, episode_title, is_first_episode, and type.
+     *
+     * Misclassification reversal: If a movie is currently type='Series' but fresh data shows
+     * it's actually a standalone movie, reverses it back to type='Movie' and removes it from
+     * its parent series.
      */
     protected function fixMovie(MovieModel $movie): array
     {
@@ -205,6 +209,13 @@ class MovieFixerService
             }
 
             $preview = $freshData['preview'];
+
+            // Step 2b: MISCLASSIFICATION CHECK — if currently Series but fresh data says Movie, reverse it
+            if ($isSeries && $this->shouldReverseToMovie($movie, $preview)) {
+                $reversalChanges = $this->reverseToMovie($movie, $preview);
+                $isSeries = false; // No longer a series episode
+                Log::info("[MovieFixer] #{$movieId}: REVERSED from Series to Movie. Changes: " . json_encode(array_keys($reversalChanges)));
+            }
 
             // Step 3: Extract the video URL exactly as the server returned it
             $newUrl = $this->extractBestVideoUrl($preview);
@@ -865,6 +876,159 @@ class MovieFixerService
                 'fix_status'         => 'FAILED',
                 'fix_status_message' => 'Fix failed on ' . now()->format('Y-m-d H:i:s') . ': ' . $reason,
             ]);
+    }
+
+    // ─────────────────────────────────────────────
+    //  SERIES → MOVIE REVERSAL
+    // ─────────────────────────────────────────────
+
+    /**
+     * Determine if a movie currently typed as 'Series' should be reversed back to 'Movie'.
+     *
+     * Uses the SAME signal logic as process_munowatch_intelligent() to re-evaluate classification
+     * with fresh data. A movie should be reversed if the cumulative series signal strength is < 3.
+     *
+     * Key insight: On munowatch, every video has series_code = its own ID. That's NOT a series
+     * indicator. Only series_code pointing to a DIFFERENT show counts.
+     *
+     * @param  MovieModel $movie    The movie currently typed as 'Series'
+     * @param  array      $preview  Fresh API data
+     * @return bool                 true if the movie should be reversed to type='Movie'
+     */
+    protected function shouldReverseToMovie(MovieModel $movie, array $preview): bool
+    {
+        $signalStrength = 0;
+        $signals = [];
+
+        $videoId    = $preview['id'] ?? $preview['vid'] ?? $movie->munowatch_id ?? null;
+        $seriesCode = $preview['series_code'] ?? $preview['seriesCode'] ?? '';
+        $genre      = strtolower($preview['genre'] ?? '');
+        $episodes   = (int)($preview['episodes'] ?? 0);
+        $epState    = strtoupper($preview['episode_state'] ?? '');
+        $nxtEpsId   = (int)($preview['nxt_eps_id'] ?? 0);
+
+        // Signal 1: Genre contains "series" (weight 3)
+        if (strpos($genre, 'series') !== false) {
+            $signalStrength += 3;
+            $signals[] = 'genre_series';
+        }
+
+        // Signal 2: Multiple episodes (weight 3)
+        if ($episodes > 1) {
+            $signalStrength += 3;
+            $signals[] = "multi_episode({$episodes})";
+        }
+
+        // Signal 3: series_code differs from own video ID (weight 2)
+        // CRITICAL: if series_code == videoId, it's just a self-reference, NOT a series indicator
+        if (!empty($seriesCode) && (string)$seriesCode !== (string)$videoId) {
+            $signalStrength += 2;
+            $signals[] = "has_series_code({$seriesCode}≠{$videoId})";
+        }
+
+        // Signal 4: episode_state is NEXT/PREV (weight 2)
+        if (in_array($epState, ['NEXT', 'PREV'])) {
+            $signalStrength += 2;
+            $signals[] = "episode_state({$epState})";
+        }
+
+        // Signal 5: nxt_eps_id > 0 and != own ID (weight 2)
+        if ($nxtEpsId > 0 && $nxtEpsId != (int)($videoId ?? 0)) {
+            $signalStrength += 2;
+            $signals[] = "has_nxt_eps_id({$nxtEpsId})";
+        }
+
+        $shouldReverse = $signalStrength < 3;
+
+        Log::info("[MovieFixer] #{$movie->id}: Series reversal check — strength={$signalStrength}, signals=[" . implode(', ', $signals) . "], reverse=" . ($shouldReverse ? 'YES' : 'NO'));
+
+        return $shouldReverse;
+    }
+
+    /**
+     * Reverse a wrongly-classified Series episode back to a standalone Movie.
+     *
+     * Steps:
+     *  1. Record the old series parent (category_id → SeriesMovie)
+     *  2. Set type = 'Movie'
+     *  3. Clear all series-specific fields (category_id, episode_number, season_number, etc.)
+     *  4. Update the parent SeriesMovie episode count (decrement)
+     *  5. Update any associated crawler page type
+     *
+     * @param  MovieModel $movie    The movie to reverse
+     * @param  array      $preview  Fresh API data (used for restoring correct genre/category)
+     * @return array                Map of changed fields
+     */
+    protected function reverseToMovie(MovieModel $movie, array $preview): array
+    {
+        $changes = [];
+        $oldSeriesId = $movie->category_id;
+
+        // ── Change type from Series to Movie ──
+        $changes['type'] = ['old' => $movie->type, 'new' => 'Movie'];
+        $movie->type = 'Movie';
+
+        // ── Clear series-specific fields ──
+        if (!empty($movie->category_id)) {
+            $changes['category_id'] = ['old' => $movie->category_id, 'new' => null];
+            $movie->category_id = null;
+        }
+        if (!empty($movie->episode_number)) {
+            $changes['episode_number'] = ['old' => $movie->episode_number, 'new' => null];
+            $movie->episode_number = null;
+        }
+        if (!empty($movie->season_number)) {
+            $changes['season_number'] = ['old' => $movie->season_number, 'new' => null];
+            $movie->season_number = null;
+        }
+        if (!empty($movie->series_title)) {
+            $changes['series_title'] = ['old' => $movie->series_title, 'new' => null];
+            $movie->series_title = null;
+        }
+        if (!empty($movie->episode_title)) {
+            $changes['episode_title'] = ['old' => $movie->episode_title, 'new' => null];
+            $movie->episode_title = null;
+        }
+        if (!empty($movie->is_first_episode)) {
+            $changes['is_first_episode'] = ['old' => $movie->is_first_episode, 'new' => null];
+            $movie->is_first_episode = null;
+        }
+
+        // ── Restore genre-based category from fresh data ──
+        $newGenre = trim($preview['genre'] ?? '');
+        if (!empty($newGenre)) {
+            $movie->category = $newGenre;
+            $movie->genre = $newGenre;
+        }
+
+        // ── Update parent SeriesMovie: decrement episode count ──
+        if (!empty($oldSeriesId)) {
+            $parentSeries = SeriesMovie::find($oldSeriesId);
+            if ($parentSeries) {
+                // Recount actual episodes remaining under this series
+                $remainingEpisodes = MovieModel::where('category_id', $oldSeriesId)
+                    ->where('type', 'Series')
+                    ->where('id', '!=', $movie->id) // exclude the one being reversed
+                    ->count();
+
+                $parentSeries->total_episodes = $remainingEpisodes;
+                $parentSeries->save();
+
+                Log::info("[MovieFixer] #{$movie->id}: Removed from SeriesMovie #{$oldSeriesId} ({$parentSeries->title}). Remaining episodes: {$remainingEpisodes}");
+            }
+        }
+
+        // ── Update associated crawler page type ──
+        $crawlerPage = $this->findCrawlerPage($movie);
+        if ($crawlerPage) {
+            $crawlerPage->type = 'Movie';
+            $crawlerPage->notes = ($crawlerPage->notes ?? '') . ' | REVERSED to Movie by fixer on ' . now()->format('Y-m-d H:i:s');
+            $crawlerPage->save();
+        }
+
+        Log::info("[MovieFixer] #{$movie->id}: REVERSED '{$movie->title}' from Series to Movie. Cleared series fields, updated parent.");
+
+        return $changes;
     }
 
     // ─────────────────────────────────────────────

@@ -473,9 +473,11 @@ class MovieCrawlerPage extends Model
                     $signalStrength += 3;
                 }
 
-                // Signal 3: series_code is non-empty — moderate
-                if (!empty($seriesCode) && strlen($seriesCode) > 0) {
-                    $detectionSignals[] = "has_series_code({$seriesCode})";
+                // Signal 3: series_code differs from own video ID — moderate
+                // On munowatch, EVERY video has series_code set to its own ID (self-reference).
+                // This is NOT a series indicator. Only count when series_code points to a DIFFERENT show.
+                if (!empty($seriesCode) && strlen($seriesCode) > 0 && (string)$seriesCode !== (string)$showId) {
+                    $detectionSignals[] = "has_series_code({$seriesCode}≠{$showId})";
                     $signalStrength += 2;
                 }
 
@@ -799,7 +801,6 @@ class MovieCrawlerPage extends Model
                     //throw $th;
                 }
                 return;
-                $movie->type = 'Series';
             }
             $types = ['movie', 'series'];
             //if not in types make type movie
