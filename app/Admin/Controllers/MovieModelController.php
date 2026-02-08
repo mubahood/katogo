@@ -289,7 +289,7 @@ class MovieModelController extends AdminController
         $grid->column('dislikes_count', __('Dislikes count'))->hide();
         $grid->column('comments_count', __('Comments count'))->hide();
         $grid->column('comments', __('Comments'))->hide();
-        $grid->column('muno_message', __('Muno Message'))->sortable();
+        $grid->column('muno_message', __('Muno Message'))->sortable()->hide(); 
         //is_processed
         // Debug Player — Play button that mimics mobile app playback
         $grid->column('debug_play', __('Debug Play'))->display(function () {
