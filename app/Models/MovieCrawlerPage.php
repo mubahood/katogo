@@ -384,16 +384,18 @@ class MovieCrawlerPage extends Model
 
 
     /**
-     * INTELLIGENT MUNOWATCH CONTENT PROCESSOR 🧠✨
+     * INTELLIGENT MUNOWATCH CONTENT PROCESSOR v2.0
      * 
-     * Automatically detects whether the content is a movie or series
-     * and routes to the appropriate specialized processor.
-     * 
-     * Detection criteria:
-     * - Presence of 'series' key in JSON response
-     * - Multiple episodes in response data  
-     * - Series-specific metadata fields
-     * - Episode arrays or episode counts > 1
+     * Detects whether content is a movie or series using multiple signals,
+     * then routes to the appropriate processor.
+     *
+     * Detection signals (ordered by reliability):
+     *  1. genre contains "series"
+     *  2. episode_count > 1
+     *  3. series_code is non-empty
+     *  4. episode_state is "NEXT" or "PREV" (implies series navigation)
+     *  5. nxt_eps_id > 0 (next episode chain exists)
+     *  6. Live episodes/range API verification (most reliable, costly)
      */
     public function process_munowatch_intelligent()
     {
@@ -401,9 +403,10 @@ class MovieCrawlerPage extends Model
             $this->process_munowatch_series();
             return;
         }
+
+        // Ensure page content is loaded
         if ($this->page_content == null || strlen(trim($this->page_content)) < 10) {
             try {
-                //check if url is reachable again
                 if (strpos($this->url, 'munowatch.org/api/') !== false) {
                     $this->fetch_page_content(false);
                 } else {
@@ -417,7 +420,6 @@ class MovieCrawlerPage extends Model
                 $this->error_message = 'Failed to fetch page content: ' . $th->getMessage();
                 $this->save();
                 return;
-                //throw $th;
             }
         }
 
@@ -429,101 +431,110 @@ class MovieCrawlerPage extends Model
         }
 
         try {
-            $jsonData = null;
-            // Parse JSON response to determine content type
-            try {
-                $jsonData = json_decode($this->page_content, true);
-            } catch (\Throwable $th) {
-                $this->status = 'error';
-                $this->error_message = 'Failed to parse JSON response: ' . $th->getMessage();
-                $this->save();
-                throw new \Exception('Failed to parse JSON response: ' . $th->getMessage());
-            }
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
+            $jsonData = @json_decode($this->page_content, true);
+            if (!is_array($jsonData) || json_last_error() !== JSON_ERROR_NONE) {
                 $this->status = 'error';
                 $this->error_message = 'Failed to parse JSON response: ' . json_last_error_msg();
                 $this->save();
-                throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
+                return;
             }
 
-            // ===== ENHANCED SERIES DETECTION USING MULTIPLE SIGNALS =====
+            if (!isset($jsonData['preview']) || !is_array($jsonData['preview'])) {
+                $this->status = 'error';
+                $this->error_message = 'Invalid munowatch response: missing preview data';
+                $this->save();
+                return;
+            }
 
+            // ── MULTI-SIGNAL SERIES DETECTION ──
             $isSeries = false;
             $seriesCode = null;
             $showId = null;
             $detectionSignals = [];
+            $signalStrength = 0; // cumulative weight
 
-            if (!isset($jsonData['preview']) || !is_array($jsonData['preview'])) {
-                $this->status = 'error';
-                $this->error_message = 'Invalid munowatch response structure - missing preview data';
-                $this->save();
-                throw new \Exception('Invalid munowatch response structure - missing preview data');
-            }
-
-            // Extract movie data from various possible structures
             $movieData = $this->extractMovieDataFromResponse($jsonData);
 
             if ($movieData) {
-                // dd($movieData);
-                // ===== SIGNAL 1: SERIES_CODE PRESENCE =====
                 $seriesCode = $movieData['series_code'] ?? $movieData['seriesCode'] ?? '';
                 $showId = $movieData['id'] ?? $movieData['vid'] ?? null;
 
-                //base on genre to be Series
+                // Signal 1: Genre contains "series" — very strong
                 $genre = strtolower($movieData['genre'] ?? '');
                 if (strpos($genre, 'series') !== false) {
                     $detectionSignals[] = "genre_series";
-                    $isSeries = true;
+                    $signalStrength += 3;
                 }
 
-                // ===== SIGNAL 2: EPISODE COUNT INDICATORS =====
-                $episodeCount = $movieData['episodes'] ?? 0;
+                // Signal 2: Episode count > 1 — strong
+                $episodeCount = (int)($movieData['episodes'] ?? 0);
                 if ($episodeCount > 1) {
-                    $detectionSignals[] = "multi_episode_count";
+                    $detectionSignals[] = "multi_episode({$episodeCount})";
+                    $signalStrength += 3;
+                }
+
+                // Signal 3: series_code is non-empty — moderate
+                if (!empty($seriesCode) && strlen($seriesCode) > 0) {
+                    $detectionSignals[] = "has_series_code({$seriesCode})";
+                    $signalStrength += 2;
+                }
+
+                // Signal 4: episode_state is NEXT/PREV — moderate
+                $episodeState = strtoupper($movieData['episode_state'] ?? '');
+                if (in_array($episodeState, ['NEXT', 'PREV'])) {
+                    $detectionSignals[] = "episode_state({$episodeState})";
+                    $signalStrength += 2;
+                }
+
+                // Signal 5: nxt_eps_id > 0 — moderate (chain exists)
+                $nxtEpsId = (int)($movieData['nxt_eps_id'] ?? 0);
+                if ($nxtEpsId > 0 && $nxtEpsId != ($showId ?? 0)) {
+                    $detectionSignals[] = "has_nxt_eps_id({$nxtEpsId})";
+                    $signalStrength += 2;
+                }
+
+                // If cumulative strength >= 3, classify as series
+                // (genre alone = 3, episode_count alone = 3, series_code+nxt = 4, etc.)
+                if ($signalStrength >= 3) {
                     $isSeries = true;
                 }
 
-
-                // ===== SIGNAL 6: LIVE EPISODES API VERIFICATION =====
-                // Only check episodes API if we have strong signals to avoid unnecessary calls
-                if (!empty($seriesCode) && !empty($showId) && ($isSeries || $episodeCount > 0)) {
+                // Signal 6: Live API check — only if borderline (strength 1-2) and we have needed data
+                if (!$isSeries && $signalStrength > 0 && !empty($seriesCode) && !empty($showId)) {
                     if ($this->checkEpisodesExist($showId, $seriesCode)) {
                         $detectionSignals[] = "episodes_api_confirmed";
+                        $signalStrength += 5;
                         $isSeries = true;
                     }
                 }
             }
 
-
+            $signalStr = implode(', ', $detectionSignals);
 
             if ($isSeries) {
-                // Strong series signals - route to series processor
-                $this->type = 'Series'; // Update the type field
-                $this->notes = "SERIES DETECTED: (seriesCode: $seriesCode, showId: $showId)";
+                $this->type = 'Series';
+                $this->notes = "SERIES DETECTED [strength={$signalStrength}]: {$signalStr} (code: {$seriesCode}, showId: {$showId})";
                 $this->muno_processed = 'Yes';
                 $this->muno_success = 'No';
-                $this->muno_message = 'Series detected, pending processing 1';
+                $this->muno_message = 'Series detected, pending processing';
 
-                //get movie with this external url
+                // Mark any existing movie record as series-pending
                 $existing_post = MovieModel::where('external_url', $this->url)->first();
-                if ($existing_post != null) {
-                    if ($existing_post->muno_processed != 'Yes') {
-                        $existing_post->error_message = 'Series for muno are on pending processing';
-                        $existing_post->status = 'error';
-                        $existing_post->muno_processed = 'Yes';
-                        $existing_post->muno_success = 'No';
-                        $existing_post->muno_message = 'Series detected, pending processing 2';
-                        $existing_post->save();
-                    }
+                if ($existing_post != null && $existing_post->muno_processed != 'Yes') {
+                    $existing_post->error_message = 'Reclassified as series';
+                    $existing_post->status = 'error';
+                    $existing_post->muno_processed = 'Yes';
+                    $existing_post->muno_success = 'No';
+                    $existing_post->muno_message = 'Series detected, pending processing';
+                    $existing_post->save();
                 }
+
                 $this->save();
                 $this->process_munowatch_series();
                 return;
             } else {
-                // Movie or weak series signals - route to movie processor
-                $this->type = 'Movie'; // Update the type field
-                $this->notes = "MOVIE DETECTED: (treating as standalone movie)";
+                $this->type = 'Movie';
+                $this->notes = "MOVIE DETECTED [strength={$signalStrength}]: " . ($signalStr ?: 'no series signals');
                 $this->save();
                 return $this->process_munowatch_movie();
             }
@@ -532,13 +543,12 @@ class MovieCrawlerPage extends Model
             $this->error_message = 'Error in intelligent content detection: ' . $th->getMessage();
             $this->save();
 
-            // Fallback to standard movie processor
+            // Fallback to movie processor
             try {
                 return $this->process_munowatch_movie();
             } catch (\Throwable $fallbackError) {
                 $this->error_message = 'Both series and movie processing failed: ' . $fallbackError->getMessage();
                 $this->save();
-                throw $fallbackError;
             }
         }
     }
@@ -870,506 +880,220 @@ class MovieCrawlerPage extends Model
     }
 
     /**
-     * FLUTTER APP PATTERN MUNOWATCH SERIES PROCESSOR 🎬✨
+     * MUNOWATCH SERIES PROCESSOR — v2.0 (uses SeriesFixerService)
      * 
-     * Processes series detected via Flutter app pattern:
-     * - Series identified by successful episodes API call
-     * - Fetches episodes using episodes/range/{showId}/{seriesCode}/{seasonNumber}
-     * - Creates series entry and associated episode records
-     * 
-     * Features:
-     * - Follows exact Flutter app logic for series processing
-     * - Fetches episodes from episodes API like Flutter app
-     * - Comprehensive series metadata extraction
-     * - Perfect episode sequencing and organization  
-     * - Robust duplicate detection and handling
-     * - Full integration with existing series system
+     * Detects/creates the SeriesMovie, then delegates episode syncing to
+     * the robust SeriesFixerService (range API + chain traversal).
+     *
+     * Duplicate prevention: multi-step lookup using cleaned title, munowatch_id,
+     * series_code, and external_url before creating a new SeriesMovie.
+     *
+     * Flow:
+     *  1. Parse preview data from page_content
+     *  2. Find or create SeriesMovie (robust dedup)
+     *  3. Delegate full episode sync to SeriesFixerService
+     *  4. Update crawler page status
      */
     public function process_munowatch_series()
     {
         try {
+            // ── Step 0: Ensure page content is available ──
             if ($this->page_content == null || strlen($this->page_content) < 10) {
                 try {
                     $this->fetch_page_content(false);
                 } catch (\Throwable $th) {
-                    $this->status = 'failed';
-                    $this->muno_series_processed = 'Yes';
-                    $this->muno_series_success = 'No';
-                    $this->error_message = 'Failed to fetch page content: ' . $th->getMessage();
-                    $this->save();
+                    $this->markSeriesFailed('Failed to fetch page content: ' . $th->getMessage());
+                    return;
                 }
-
-                //check again if $this->page_content is valid
                 if ($this->page_content == null || strlen($this->page_content) < 10) {
-                    $this->status = 'failed';
-                    $this->muno_series_processed = 'Yes';
-                    $this->muno_series_success = 'No';
-                    $this->error_message = 'Page content is empty or too short after fetch attempt';
-                    $this->save();
+                    $this->markSeriesFailed('Page content is empty or too short after fetch attempt');
+                    return;
                 }
             }
 
-
-            $jsonData = null;
-            try {
-                // Parse JSON response from munowatch API
-                $jsonData = json_decode($this->page_content, true);
-            } catch (\Throwable $th) {
-                //throw $th;
+            // ── Step 1: Parse JSON ──
+            $jsonData = @json_decode($this->page_content, true);
+            if (!is_array($jsonData) || !isset($jsonData['preview'])) {
+                $this->markSeriesFailed('Invalid JSON or missing preview: ' . json_last_error_msg());
+                return;
             }
 
-            if ($jsonData == null || !is_array($jsonData)) {
-                $this->status = 'failed';
-                $this->muno_series_processed = 'Yes';
-                $this->muno_series_success = 'No';
-                $this->error_message = 'Failed to parse JSON response: ' . json_last_error_msg();
-                $this->save();
-            }
-
-            if (!isset($jsonData['preview'])) {
-                $this->status = 'failed';
-                $this->muno_series_processed = 'Yes';
-                $this->muno_series_success = 'No';
-                $this->error_message = 'Preview data not set';
-                $this->save();
-            }
             $preview = $jsonData['preview'];
-            if (!isset($preview['series_code'])) {
-                $this->status = 'failed';
-                $this->muno_series_processed = 'Yes';
-                $this->muno_series_success = 'No';
-                $this->error_message = 'Series code not set';
-                $this->save();
-            }
-            $series_code = $preview['series_code'];
+            $series_code = $preview['series_code'] ?? '';
+            $showId = $preview['id'] ?? null;
+            $rawTitle = trim($preview['video_title'] ?? '');
+            $vjname = trim($preview['vjname'] ?? 'Munowatch API');
 
-            if ($series_code == null || strlen($series_code) < 1) {
-                $this->status = 'failed';
-                $this->muno_series_processed = 'Yes';
-                $this->muno_series_success = 'No';
-                $this->error_message = 'Series code is empty    ';
-                $this->save();
+            if (empty($series_code)) {
+                $this->markSeriesFailed('Series code is empty');
+                return;
+            }
+            if (empty($rawTitle)) {
+                $this->markSeriesFailed('Title is empty');
+                return;
             }
 
-            // dd( 'Searching for related pages with series_code: ' . $series_code);
-            // dd( '%"series_code":"' . $series_code . '"%');
-            // dd($series_code);
+            // ── Step 2: Find or create SeriesMovie (robust duplicate detection) ──
+            $fixer = new \App\Services\SeriesFixerService();
+            $cleanTitle = $fixer->cleanSeriesTitle($rawTitle);
 
-            //where page_content contains "series_code":"$series_code","
-            $related_pages =  MovieCrawlerPage::where('page_content', 'like', '%"series_code":"' . $series_code . '"%')
-                ->get();
-            //if empty
-            if ($related_pages->count() < 1) {
-                $this->status = 'failed';
-                $this->muno_series_processed = 'Yes';
-                $this->muno_series_success = 'No';
-                $this->error_message = 'Related series not found';
-                $this->save();
-            }
+            $seriesMovie = $this->findExistingSeriesMovie($series_code, $cleanTitle, $showId);
 
-            foreach ($related_pages as $key => $related_page) {
-                if ($related_page->page_content == null) {
-                    continue;
-                }
-                if (strlen($related_page->page_content) < 10) {
-                    continue;
-                }
-                $_page_content = null;
+            if ($seriesMovie == null) {
+                $seriesMovie = new SeriesMovie();
+                $seriesMovie->title = $cleanTitle;
+                $seriesMovie->description = $preview['description'] ?? '';
+                $seriesMovie->external_url = $this->url;
+                $seriesMovie->thumbnail = $preview['thumbnail'] ?? '';
+                $seriesMovie->poster_url = $preview['thumbnail'] ?? '';
+                $seriesMovie->genre = $preview['genre'] ?? '';
+                $seriesMovie->Category = $preview['genre'] ?? '';
+                $seriesMovie->is_active = 'No'; // Will be activated after sync
+                $seriesMovie->muno_processed = 'Yes';
+                $seriesMovie->is_muno = 'Yes';
+                $seriesMovie->is_premium = 'Yes';
+                $seriesMovie->vj = $vjname;
+                $seriesMovie->status = 'Active';
+                $seriesMovie->munowatch_id = $series_code;
+                $seriesMovie->series_code = $series_code;
                 try {
-                    $_page_content = json_decode($related_page->page_content, true);
+                    $seriesMovie->save();
+                    Log::info("[CrawlerSeries] Created new series: '{$cleanTitle}' (ID: {$seriesMovie->id}, code: {$series_code})");
                 } catch (\Throwable $th) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Failed to parse data: ' . $th->getMessage();
-                    $related_page->save();
-                    continue;
+                    $this->markSeriesFailed('Failed to save series: ' . $th->getMessage());
+                    return;
                 }
-                if (!isset($_page_content['preview'])) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Preview data not set';
-                    $related_page->save();
-                    continue;
+            } else {
+                // Update series_code if missing
+                if (empty($seriesMovie->series_code) && !empty($series_code)) {
+                    $seriesMovie->series_code = $series_code;
                 }
-                $_preview = $_page_content['preview'];
-                if (!isset($_preview['series_code'])) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Series code not set';
-                    $related_page->save();
-                    continue;
-                }
-                $series_code = $_preview['series_code'];
-                if ($series_code == null || strlen($series_code) < 1) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Series code is empty    ';
-                    $related_page->save();
-                    continue;
-                }
-
-                //check for $_preview['id']
-                if (!isset($_preview['id'])) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'ID not set';
-                    $related_page->save();
-                    continue;
-                }
-
-                $title = $_preview['video_title'];
-                $title = trim($title);
-                if ($title == null || strlen($title) < 1) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Title is empty    ';
-                    $related_page->save();
-                    continue;
-                }
-                $vjname = $_preview['vjname'] ?? 'Munowatch API';
-                $vjname = trim($vjname);
-                $seriesMovie = null;
-
-                $playingUrl = $_preview['playingUrl'] ?? '';
-                //check if $playingUrl is valid url
-                if ($playingUrl == null || strlen($playingUrl) < 5) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Playing URL is empty or too short';
-                    $related_page->save();
-                    continue;
-                }
-                $seriesMovie = SeriesMovie::where([
-                    'is_muno' => 'Yes',
-                    'munowatch_id' => $series_code
-                ])->first();
-
-                if ($seriesMovie == null && $this->series_id != null && (($this->series_id) > 0)) {
-                    $seriesMovie = SeriesMovie::find($this->series_id);
-                }
-
-
-                if ($seriesMovie == null) {
-                    $seriesMovie = new SeriesMovie();
-                    $seriesMovie->title = $title;
-                    $seriesMovie->description = $_preview['description'] ?? '';
-                    $seriesMovie->external_url = $related_page->url;
-                    $seriesMovie->thumbnail = $_preview['thumbnail'] ?? '';
-                    $seriesMovie->poster_url = $_preview['thumbnail'] ?? '';
-                    $seriesMovie->genre = $_preview['genre'] ?? '';
-                    $seriesMovie->Category = $_preview['genre'] ?? '';
-                    $seriesMovie->is_active = 'Yes';
-                    $seriesMovie->muno_processed = 'Yes';
-                    $seriesMovie->is_muno = 'Yes';
-                    $seriesMovie->is_premium = 'Yes';
-                    $seriesMovie->vj = $vjname;
-                    $seriesMovie->status = 'Active';
+                if (empty($seriesMovie->munowatch_id) && !empty($series_code)) {
                     $seriesMovie->munowatch_id = $series_code;
-                    try {
-                        $seriesMovie->save();
-                    } catch (\Throwable $th) {
-                        $related_page->status = 'failed';
-                        $related_page->muno_series_processed = 'Yes';
-                        $related_page->muno_series_success = 'No';
-                        $related_page->error_message = 'Failed to save series movie: ' . $th->getMessage();
-                        $related_page->save();
-                        continue;
-                    }
                 }
-
-                $seriesMovie->refresh();
-
-                if ($this->is_episode == "Yes") {
-                    $this->series_id = $seriesMovie->id;
-                    $episode = MovieModel::where('external_url', $related_page->url)
-                        ->first();
-                    if ($episode == null) {
-                        $episode = MovieModel::where('url', $playingUrl)
-                            ->first();
-                    }
-                    if ($episode == null) {
-                        $episode = MovieModel::where('munowatch_id', $_preview['id'])
-                            ->first();
-                    }
-                    if ($episode == null) {
-                        $episode = new MovieModel();
-                    }
-                    $titleSplits = explode(' ', $this->title);
-                    $ep = end($titleSplits);
-                    $ep = (int)($ep);
-                    $episode->title = $this->title;
-                    
+                if (empty($seriesMovie->thumbnail) && !empty($preview['thumbnail'])) {
+                    $seriesMovie->thumbnail = $preview['thumbnail'];
+                    $seriesMovie->poster_url = $preview['thumbnail'];
                 }
-  /*  
-    "video_name" => "THE HAUNTED PALACE EP 2.mp4"
-    "filehistory" => ""
-    "openload" => "0"
-    "embedurl" => ""
-    "serverhost" => "66"
-    "allow_openload" => "0"
-    "full_video_name" => ""
-    "duration" => "32h 44m"
-    "thumbnail" => "https://munoapp.org/munowatch-api/laba/yo/naki/Ng1bUnca1l3766.jpg"
-    "tfilehistory" => ""
-    "category_id" => 5
-    "language_id" => 1
-    "recording_date" => "2025-10-08"
-    "age_id" => "18 +"
-    "location" => 1
-    "tab_category_id" => 5
-    "series_code" => "28051"
-    "access" => "1"
-    "paid_for" => "1"
-    "new_movie" => "1"
-    "priority" => "No"
-    "size" => "272.41 MB"
-    "create_date" => "2025-10-08 16:10:22"
-    "schedule_date" => "08.10.2025 04:18:03 PM"
-    "user_id" => 169464
-    "vj_id" => 37
-    "video_status_id" => 0
-    "network_id" => "45.221.10.185"
-    "user_access" => "deny"
-    "notification" => ""
-    "secduration" => "117840.000000"
-    "issubscriber" => true
-    "download" => "0"
-    "genre" => "Series"
-    "vjname" => "Vj KS"
-    "episodes" => 31
-    "episode_state" => "NEXT"
-    "nxt_eps" => "EPS   3"
-    "nxt_eps_id" => 59738
-    "nxt_eps_title" => "The Haunted Palace 3"
-    "nxt_ldur" => 0
-    "nxt_playing_url" => "http://munoserver55.club/simo/simo22/THE HAUNTED PALACE EP 3.mp4"
-    "playingUrl" => "http://munoserver55.club/simo/simo22/THE HAUNTED PALACE EP 2.mp4"
-    "ldur" => 0
-    "session_id" => "51ca288bbec537a2da5ced8b0b828f74"
-    "device" => "android"
-    "lang_name" => "English to Luganda"
-    "vjrelease" => "23 hrs ago"
-    "mstatus" => false
-    "kstatus" => ""
-    "substatus" => "FAILED"
-                */
-    
-                /* 
-                    "id" => 2968
-    "created_at" => "2025-10-09 22:17:01"
-    "updated_at" => "2025-10-26 00:45:06"
-    "movie_crawler_website_id" => 2
-    "title" => "The Haunted Palace 2"
-    "slug" => "59248"
-    "url" => "https://munowatch.org/api/preview/v2/59766/3664"
-    "movie_id" => null
-    "page_content" => "        {"preview":{"id":59737,"video_title":"The Haunted Palace 2","description":"The story takes place in the royal palace, where a conspiracy summons an evil ▶"
-    "error_message" => "Call to undefined method App\Models\SeriesMovie::refrsh()"
-    "status" => "error"
-    "last_fetched_at" => null
-    "type" => "Series"
-    "row_id" => "59737"
-    "img_port_muno_file_name" => null
-    "bunny_file_name" => null
-    "tmdb_poster_path" => null
-    "vj" => "Munowatch API"
-    "notes" => "SERIES DETECTED: (seriesCode: 28051, showId: 59737)"
-    "series_id" => 2691
-    "is_muno" => "Yes"
-    "muno_processed" => "Yes"
-    "munowatch_id" => "59737"
-    "muno_success" => "No"
-    "muno_message" => "Series detected, pending processing 1"
-    "muno_series_processed" => "Yes"
-    "muno_series_success" => "Yes"
-    "muno_series_group_id" => "83524"
-    "is_generated" => "No"
-    "is_episode" => "Yes"
-    "episodes_data_fetched" => "Error"
-    "episode_data" => "      
-                */
-
-
-
-              
-
-                if (isset($_preview['thumbnail']) && filter_var($_preview['thumbnail'], FILTER_VALIDATE_URL)) {
-                    $seriesMovie->thumbnail = $_preview['thumbnail'];
-                    $seriesMovie->poster_url = $_preview['thumbnail'];
-                }
-
-                $munowatch_id = $_preview['id'];
-                //if is $munowatch_id is null or less than 1
-                if ($munowatch_id == null || $munowatch_id < 1) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Invalid munowatch ID';
-                    $related_page->save();
-                    continue;
-                }
-
-                //check $_page_content['items'] is set and is array
-                if (!isset($_page_content['items']) || !is_array($_page_content['items'])) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'Items data not set or invalid';
-                    $related_page->save();
-                    continue;
-                }
-
-                $items = $_page_content['items'] ?? [];
-
-                //if $items is not array or empty
-                if (!is_array($items) || count($items) < 1) {
-                    $related_page->status = 'failed';
-                    $related_page->muno_series_processed = 'Yes';
-                    $related_page->muno_series_success = 'No';
-                    $related_page->error_message = 'No items found in series';
-                    $related_page->save();
-                    continue;
-                }
-
-
-
-                $ep_number = 1;
-                foreach ($items as $key1 => $item) {
-                    $id = $item['id'] ?? 0;
-                    if ($id < 1) {
-                        continue;
-                    }
-                    $url = $item['playingurl'] ?? '';
-                    if ($url == null || strlen($url) < 5) {
-                        continue;
-                    }
-
-                    $ep_title = $item['title'] ?? 'Unknown Title';
-                    $hasTitleInEp = false;
-                    if (stripos($ep_title, $seriesMovie->title) !== false) {
-                        $hasTitleInEp = true;
-                    }
-
-                    if (!$hasTitleInEp) {
-                        $ep_title = $seriesMovie->title . ' - ' . $ep_title;
-                    }
-                    if ($ep_title == $seriesMovie->title) {
-                        $ep_title = $seriesMovie->title . ' - ' . $ep_number;
-                    }
-                    $playingUrl = $item['playingurl'] ?? '';
-                    $encodedPlayingUrl = str_replace(' ', '%20', $playingUrl);
-                    $encodedPlayingUrl = str_replace('http://', 'https://', $encodedPlayingUrl);
-                    $external_id = $item['id'] ?? '';
-                    if ($external_id == null || strlen($external_id) < 1) {
-                        $external_id = $playingUrl;
-                    }
-
-                    $size = $item['size'] ?? '';
-                    $duration = $item['duration'] ?? '';
-                    $description = $item['description'] ?? '';
-                    $munowatch_id  = $external_id;
-
-
-                    $episode = MovieModel::where('external_url', $encodedPlayingUrl)->first();
-                    if ($episode == null) {
-                        $episode = MovieModel::where('page_source_url', $encodedPlayingUrl)->first();
-                    }
-                    if ($episode == null) {
-                        $episode = MovieModel::where('is_muno', 'Yes')
-                            ->where('munowatch_id', $munowatch_id)
-                            ->first();
-                    }
-
-                    if ($episode == null) {
-                        $episode = MovieModel::where('is_muno', 'Yes')
-                            ->where('url', $playingUrl)
-                            ->first();
-                    }
-
-                    if ($episode == null) {
-                        $episode = MovieModel::where('is_muno', 'Yes')
-                            ->where('external_url', $playingUrl)
-                            ->first();
-                    }
-
-                    if ($episode == null) {
-                        $episode = MovieModel::where('is_muno', 'Yes')
-                            ->where('old_video_url', $playingUrl)
-                            ->first();
-                    }
-
-                    if ($episode == null) {
-                        $episode = new MovieModel(); //validate new episode
-                    }
-                    $episode->title = $title;
-                    $episode->description = $_preview['description'] ?? '';
-                    $episode->munowatch_id = $munowatch_id;
-                    $episode->is_muno = 'Yes';
-                    $episode->muno_processed = 'Yes';
-                    $episode->is_processed = 'Yes';
-                    $episode->external_url = $playingUrl;
-                    $episode->page_source_url = $playingUrl;
-                    $episode->url = $encodedPlayingUrl;
-                    $episode->old_video_url = $playingUrl;
-                    $episode->image_url = $seriesMovie->thumbnail;
-                    $episode->thumbnail_url = $seriesMovie->thumbnail;
-                    $episode->description = $seriesMovie->description;
-                    $episode->duration = $duration;
-                    $episode->genre = $seriesMovie->genre;
-                    $episode->size = (int) $size;
-                    $episode->type = 'Series';
-                    $episode->status = 'Active';
-                    $episode->category = $seriesMovie->genre;
-                    $episode->category_id = $seriesMovie->id;
-                    $episode->vj = $seriesMovie->vj;
-                    $episode->content_type = "Video";
-                    $episode->content_is_video = "Yes";
-                    $episode->content_type_processed = "Yes";
-                    $episode->muno_success = "Yes";
-                    $episode->is_muno = "Yes";
-                    $episode->content_type_processed_time = now();
-                    $episode->episode_title = $ep_title;
-                    $episode->episode_number = $ep_number;
-                    $episode->series_title = $seriesMovie->title;
-                    if ($ep_number == 1) {
-                        $episode->is_first_episode = 'Yes';
-                    } else {
-                        $episode->is_first_episode = 'No';
-                    }
-                    try {
-                        $episode->save();
-                        //increment ep_number
-                        $ep_number++;
-                    } catch (\Throwable $th) {
-                        $related_page->status = 'failed';
-                        $related_page->muno_series_processed = 'Yes';
-                        $related_page->muno_series_success = 'No';
-                        $related_page->error_message = 'Failed to save episode: ' . $th->getMessage();
-                        $related_page->save();
-                        continue;
-                    }
-                }
-                $related_page->status = 'success';
-                $related_page->muno_series_processed = 'Yes';
-                $related_page->muno_series_success = 'Yes';
-                $related_page->error_message = null;
-                $related_page->title = $title;
-                $related_page->series_id = $seriesMovie->id;
-                $related_page->save();
+                $seriesMovie->save();
+                Log::info("[CrawlerSeries] Found existing series: '{$seriesMovie->title}' (ID: {$seriesMovie->id})");
             }
+
+            // ── Step 3: Delegate episode syncing to SeriesFixerService ──
+            // This uses the robust range API + chain traversal (nxt_eps_id).
+            try {
+                $syncResult = $fixer->syncAllEpisodes((int) $seriesMovie->id);
+                $created = $syncResult['created'] ?? 0;
+                $updated = $syncResult['updated'] ?? 0;
+                $syncMsg = $syncResult['message'] ?? '';
+                Log::info("[CrawlerSeries] Sync for series #{$seriesMovie->id}: {$syncMsg}");
+            } catch (\Throwable $th) {
+                Log::warning("[CrawlerSeries] Sync failed for series #{$seriesMovie->id}: " . $th->getMessage());
+                // Continue — we still created the series even if sync failed
+            }
+
+            // ── Step 4: Activate series if it has episodes ──
+            try {
+                $fixer->checkAndActivateSeries((int) $seriesMovie->id);
+            } catch (\Throwable $th) {
+                Log::warning("[CrawlerSeries] Activation check failed: " . $th->getMessage());
+            }
+
+            // ── Step 5: Update this crawler page and related crawler pages ──
+            $this->status = 'success';
+            $this->muno_series_processed = 'Yes';
+            $this->muno_series_success = 'Yes';
+            $this->series_id = $seriesMovie->id;
+            $this->series_code = $series_code;
+            $this->error_message = null;
+            $this->save();
+
+            // Mark related crawler pages (same series_code) as processed
+            $this->markRelatedCrawlerPages($series_code, $seriesMovie->id);
+
         } catch (\Throwable $th) {
             $this->status = 'error';
-            $this->error_message = 'Error processing munowatch series data: ' . $th->getMessage();
+            $this->error_message = 'Error processing munowatch series: ' . $th->getMessage();
             $this->save();
-            throw $th;
+            Log::error("[CrawlerSeries] Fatal error: " . $th->getMessage());
         }
+    }
+
+    /**
+     * Find an existing SeriesMovie using multi-step robust duplicate detection.
+     * Uses: munowatch_id match, series_code match, cleaned title match, crawler page link.
+     */
+    protected function findExistingSeriesMovie(string $seriesCode, string $cleanTitle, ?string $showId = null): ?SeriesMovie
+    {
+        // 1. Direct munowatch_id (= series_code) match — most specific
+        $found = SeriesMovie::where('is_muno', 'Yes')
+            ->where('munowatch_id', $seriesCode)
+            ->first();
+        if ($found) return $found;
+
+        // 2. By series_code
+        $found = SeriesMovie::where('series_code', $seriesCode)->first();
+        if ($found) return $found;
+
+        // 3. Linked from crawler page
+        if ($this->series_id && $this->series_id > 0) {
+            $found = SeriesMovie::find($this->series_id);
+            if ($found) return $found;
+        }
+
+        // 4. By cleaned title (case-insensitive) for muno series
+        if (strlen($cleanTitle) > 2) {
+            $found = SeriesMovie::where('is_muno', 'Yes')
+                ->whereRaw('LOWER(title) = ?', [strtolower($cleanTitle)])
+                ->first();
+            if ($found) return $found;
+        }
+
+        // 5. By external_url
+        if (!empty($this->url)) {
+            $found = SeriesMovie::where('external_url', $this->url)->first();
+            if ($found) return $found;
+        }
+
+        return null;
+    }
+
+    /**
+     * Mark related crawler pages (same series_code) as series-processed.
+     */
+    protected function markRelatedCrawlerPages(string $seriesCode, int $seriesId): void
+    {
+        try {
+            $related = MovieCrawlerPage::where('page_content', 'like', '%"series_code":"' . $seriesCode . '"%')
+                ->where('id', '!=', $this->id)
+                ->get();
+
+            foreach ($related as $page) {
+                $page->series_id = $seriesId;
+                $page->muno_series_processed = 'Yes';
+                $page->muno_series_success = 'Yes';
+                $page->series_code = $seriesCode;
+                $page->save();
+            }
+            if ($related->count() > 0) {
+                Log::info("[CrawlerSeries] Marked {$related->count()} related pages for series #{$seriesId}");
+            }
+        } catch (\Throwable $th) {
+            Log::warning("[CrawlerSeries] Failed to mark related pages: " . $th->getMessage());
+        }
+    }
+
+    /**
+     * Helper: mark this crawler page as failed for series processing.
+     */
+    protected function markSeriesFailed(string $message): void
+    {
+        $this->status = 'failed';
+        $this->muno_series_processed = 'Yes';
+        $this->muno_series_success = 'No';
+        $this->error_message = $message;
+        $this->save();
+        Log::warning("[CrawlerSeries] Page #{$this->id} failed: {$message}");
     }
 
     /**
@@ -1504,82 +1228,65 @@ class MovieCrawlerPage extends Model
     }
 
     /**
-     * INDEPENDENT MUNOWATCH SERIES PROCESSOR 🎬
+     * INDEPENDENT MUNOWATCH SERIES PROCESSOR
      * 
-     * Dedicated method for processing munowatch series using Flutter app pattern.
-     * Does NOT interfere with existing movie processing logic.
-     * 
-     * Features:
-     * - Uses episodes API to verify series status
-     * - Creates series records in series_movies table
-     * - Independent of movie processing workflow
-     * - Follows exact Flutter app detection pattern
+     * Dedicated method for processing munowatch series using SeriesFixerService.
+     * Uses robust duplicate detection and delegates to SeriesFixerService for
+     * episode syncing via range API + chain traversal.
      */
     public function process_munowatch_series_independent()
     {
         try {
-            // Parse JSON response
             $jsonData = json_decode($this->page_content, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
             }
 
-            // Extract movie data from dashboard structure
             $movieData = $this->extractMovieDataFromResponse($jsonData);
             if (!$movieData) {
                 throw new \Exception('No movie/series data found in API response');
             }
 
-            // Extract series identification data
             $seriesCode = $movieData['series_code'] ?? $movieData['seriesCode'] ?? '';
             $showId = $movieData['id'] ?? $movieData['vid'] ?? null;
 
             if (empty($seriesCode) || empty($showId)) {
-                throw new \Exception('Missing series_code or show ID - cannot process as series');
+                throw new \Exception('Missing series_code or show ID');
             }
 
-            // Verify this is actually a series by checking episodes
-            $episodesData = $this->fetchEpisodesForSeries($showId, $seriesCode);
-            if (empty($episodesData)) {
-                throw new \Exception('No episodes found - not a series');
-            }
+            $fixer = new \App\Services\SeriesFixerService();
 
-            // Extract series metadata
-            $seriesTitle = $movieData['video_title'] ?? $movieData['title'] ?? 'Unknown Series';
-            $seriesDescription = $movieData['description'] ?? $movieData['plot'] ?? '';
-            $seriesThumbnail = $movieData['thumbnail'] ?? $movieData['poster'] ?? '';
-            $seriesGenre = $movieData['genre'] ?? $movieData['category'] ?? '';
-            $seriesYear = $movieData['year'] ?? $movieData['release_year'] ?? '';
+            // Clean title
+            $rawTitle = $movieData['video_title'] ?? $movieData['title'] ?? 'Unknown Series';
+            $cleanTitle = $fixer->cleanSeriesTitle(trim($rawTitle));
 
-            // Check for existing series 
-            $existingSeries = SeriesMovie::where('external_id', $showId)->first();
+            // Robust duplicate detection
+            $series = $this->findExistingSeriesMovie($seriesCode, $cleanTitle, $showId);
 
-            // Create or update series
-            if (!$existingSeries) {
+            if (!$series) {
                 $series = new SeriesMovie();
-                $isNewSeries = true;
-            } else {
-                $series = $existingSeries;
-                $isNewSeries = false;
             }
 
             // Set series data
-            $series->title = $seriesTitle;
-            $series->description = $seriesDescription;
+            $series->title = $cleanTitle;
+            $series->description = $movieData['description'] ?? $movieData['plot'] ?? '';
             $series->external_url = $this->url;
             $series->external_id = $showId;
-            $series->Category = $seriesGenre;
-            $series->thumbnail = $seriesThumbnail;
-            $series->total_episodes = count($episodesData);
-            $series->total_seasons = 0; // Default, can be updated
-            $series->year = $seriesYear;
-            $series->genre = $seriesGenre;
+            $series->Category = $movieData['genre'] ?? $movieData['category'] ?? '';
+            $series->thumbnail = $movieData['thumbnail'] ?? $movieData['poster'] ?? '';
+            $series->genre = $movieData['genre'] ?? '';
             $series->status = 'Active';
-            $series->is_active = 'Yes';
-            $series->is_premium = 'No';
-            $series->vj = 'Munowatch API';
-
+            $series->is_active = 'No'; // Will activate after sync
+            $series->is_muno = 'Yes';
+            $series->munowatch_id = $seriesCode;
+            $series->series_code = $seriesCode;
+            $series->vj = $movieData['vjname'] ?? 'Munowatch API';
             $series->save();
+
+            // Delegate episode syncing to SeriesFixerService
+            $syncResult = $fixer->syncAllEpisodes((int) $series->id);
+            $fixer->checkAndActivateSeries((int) $series->id);
+            $series->refresh();
 
             // Update page status
             $this->movie_id = $series->id;
@@ -1587,7 +1294,7 @@ class MovieCrawlerPage extends Model
             $this->status = 'success';
             $this->muno_processed = 'Yes';
             $this->error_message = null;
-            $this->notes = "Series processed successfully: {$seriesTitle} ({$series->total_episodes} episodes)";
+            $this->notes = "Series processed: {$cleanTitle} ({$series->total_episodes} episodes)";
             $this->save();
 
             return $series;
@@ -1632,281 +1339,125 @@ class MovieCrawlerPage extends Model
     }
 
 
+    /**
+     * Generate series episodes using SeriesFixerService (robust range API + chain traversal).
+     *
+     * This replaces the old approach that incorrectly parsed eps_range as
+     * EPISODE_X__EPISODE_Y (they are actually video IDs like 39531__39550).
+     *
+     * Now delegates entirely to SeriesFixerService which:
+     *  - Calls episodes/range API to get all ranges
+     *  - Traverses each range via nxt_eps_id chain
+     *  - Creates episode records directly in movies table
+     *  - Handles non-contiguous video IDs correctly
+     *
+     * @param MovieCrawlerPage $seriesPage
+     * @return SeriesMovie
+     */
     public static function generate_series_episodes($seriesPage)
     {
-
         if ($seriesPage->is_episode == 'Yes') {
             throw new \Exception("Episodes cannot be generated for an episode page.");
         }
-        if ($seriesPage->muno_series_processed == 'Yes') {
-            throw new \Exception("Episodes already processed for this series page.");
-        }
-        if ($seriesPage->episode_data == null && strlen(trim($seriesPage->episode_data)) < 10) {
-            if ($seriesPage->page_content == null || strlen(trim($seriesPage->page_content)) < 10) {
-                $seriesPage->fetch_page_content(false);
-            }
+
+        // ── Parse page content to get preview data ──
+        if ($seriesPage->page_content == null || strlen(trim($seriesPage->page_content)) < 10) {
+            $seriesPage->fetch_page_content(false);
             $seriesPage->refresh();
-            if ($seriesPage->page_content == null || strlen(trim($seriesPage->page_content)) < 10) {
-                throw new \Exception("Failed to fetch series page content.");
-            }
-            $page_content = null;
-
-            try {
-                $page_content = json_decode($seriesPage->page_content, true);
-            } catch (\Throwable $th) {
-                throw $th;
-            }
-
-            if (!isset($page_content['preview'])) {
-                throw new \Exception("Preview data not found in page content.");
-            }
-            $preview = $page_content['preview'];
-            if (!isset($preview['series_code']) || !isset($preview['id'])) {
-                throw new \Exception("Required preview fields missing.");
-            }
-            try {
-                $series_code = $preview['series_code'];
-                $id = $preview['id'];
-                $season_number = 1;
-                $url = 'https://munowatch.org/api/episodes/range/' . $id . '/' . $series_code . '/' . $season_number;
-
-                $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
-                $headers = [
-                    'Authorization' => 'Bearer ' . $baseToken,
-                    'X-Api-Key' => $baseToken,
-                    'User-Agent' => 'okhttp/4.9.0'
-                ];
-                $data = Utils::get_url_with_auth($url, $headers);
-                $seriesPage->episode_data = $data;
-                $seriesPage->save();
-            } catch (\Throwable $th) {
-                throw $th;
-            }
         }
-        $seriesPage->refresh();
-        if ($seriesPage->episode_data == null || strlen(trim($seriesPage->episode_data)) < 10) {
-            throw new \Exception("Failed to fetch episode data.");
-        }
-        $data = null;
-        try {
-            $data = json_decode($seriesPage->episode_data, true);
-        } catch (\Throwable $th) {
-            throw $th;
+        if ($seriesPage->page_content == null || strlen(trim($seriesPage->page_content)) < 10) {
+            throw new \Exception("Failed to fetch series page content.");
         }
 
-        $page_content = null;
-
-        try {
-            $page_content = json_decode($seriesPage->page_content, true);
-        } catch (\Throwable $th) {
-            throw $th;
-        }
-
+        $page_content = @json_decode($seriesPage->page_content, true);
         if (!isset($page_content['preview'])) {
             throw new \Exception("Preview data not found in page content.");
         }
+
         $preview = $page_content['preview'];
         if (!isset($preview['series_code']) || !isset($preview['id'])) {
-            throw new \Exception("Required preview fields missing.");
+            throw new \Exception("Required preview fields missing (series_code or id).");
         }
 
+        $series_code = $preview['series_code'];
+        $showId = $preview['id'];
 
-        $episodes_ids = [];
-        $count = 0;
-        foreach ($data as $key => $ep) {
-            if (!isset($ep['eps_range'])) continue;
-            $eps_range = explode('__', $ep['eps_range']);
-            $ep_min = 0;
-            $ep_max = 0;
-            if (isset($eps_range[0])) {
-                $ep_min = (int) str_replace('EPISODE_', '', $eps_range[0]);
-            }
-            if (isset($eps_range[1])) {
-                $ep_max = (int) str_replace('EPISODE_', '', $eps_range[1]);
-            }
-            //if check if ep invalid
-            if ($ep_min <= 0 || $ep_max <= 0 || $ep_max < $ep_min) {
-                continue;
-            }
-            for ($i = $ep_min; $i <= $ep_max; $i++) {
-                $count++;
-                $_ep['id'] = $i;
-                $_ep['number'] =  $count;
-                $_ep['video_title'] = 'Episode ' . $count;
-                $episodes_ids[] = $_ep;
-            }
-        }
+        // ── Clean the series title using SeriesFixerService ──
+        $fixer = new \App\Services\SeriesFixerService();
+        $rawTitle = trim($preview['video_title'] ?? 'Unknown Series');
+        $cleanTitle = $fixer->cleanSeriesTitle($rawTitle);
 
-        //count $episodes_ids
-        if (count($episodes_ids) == 0) {
-            throw new \Exception("No episodes found in episode data.");
-        }
-        $video_title = null;
+        // ── Find or create the SeriesMovie (robust dedup) ──
+        $existingSerie = null;
 
-        if (
-            isset($preview['video_title']) &&
-            isset($preview['nxt_eps']) &&
-            is_string($preview['video_title']) &&
-            is_string($preview['nxt_eps'])
-        ) {
-            $this_title = trim($preview['video_title']);
-            $this_nxt_eps = trim($preview['nxt_eps']);
-
-            // Safely split and get next episode number
-            $next_ep_splits = explode('EPS', $this_nxt_eps);
-            if (!empty($next_ep_splits)) {
-                $last_ep_seg = trim(end($next_ep_splits));
-                $prev_num = (int) filter_var($last_ep_seg, FILTER_SANITIZE_NUMBER_INT);
-
-                // Only process if we have a valid episode number greater than 1
-                if ($prev_num > 1) {
-                    $prev_num_adjusted = $prev_num - 1;
-                    // Replace last instance of previous episode number from title
-                    $last_pos = strrpos($this_title, (string) $prev_num_adjusted);
-                    if ($last_pos !== false) {
-                        $video_title = substr_replace($this_title, '', $last_pos, strlen((string) $prev_num_adjusted));
-                        $video_title = trim($video_title);
-                    } else {
-                        $video_title = $this_title;
-                    }
-                } else {
-                    $video_title = $this_title;
-                }
-            } else {
-                $video_title = $this_title;
-            }
-        } else {
-            $video_title = null;
-        }
-
-        //check if is null , video_title and just use the defaut title
-        if (is_null($video_title)) {
-            if (isset($preview['video_title'])) {
-                $video_title = $preview['video_title'];
-            }
-        }
-
-
-        // Check if title contains episode indicators and clean it up
-        if ($video_title != null) {
-            // Case-insensitive check for episode indicators
-            $lowerTitle = strtolower($video_title);
-
-            // Check for various episode patterns (ep, episode, etc.)
-            if (preg_match('/(ep\s*\d+|episode\s*\d+)/i', $video_title, $matches)) {
-                // Find position of the match
-                $pos = stripos($video_title, $matches[0]);
-                if ($pos !== false) {
-                    // Extract everything before the episode indicator
-                    $video_title = trim(substr($video_title, 0, $pos));
-                }
-            }
-        }
-
-        //if $video_title contains ep or episode , then use the original title
-        if ($video_title != null) {
-            $lowerTitle = strtolower($video_title);
-            if (strpos($lowerTitle, 'ep') !== false || strpos($lowerTitle, 'episode') !== false) {
-                if (isset($preview['video_title'])) {
-                    $video_title = $preview['video_title'];
-                }
-            }
-        }
-
-        $existingSerie = SeriesMovie::where('title', $video_title)
-            ->where('is_muno', 'Yes')
-            ->first();
-
-        $munowatch_id = null;
-        $series_code = null;
-        if (isset($preview['id'])) {
-            $munowatch_id = $preview['id'];
-        }
-
-        if (isset($preview['series_code'])) {
-            $series_code = $preview['series_code'];
-        }
-
-        if ($munowatch_id == null) {
-            throw new \Exception("Munowatch ID not found in preview data.");
-        }
-
-        if ($existingSerie == null) {
-            $existingSerie = SeriesMovie::where('munowatch_id', $munowatch_id)
+        // 1. By cleaned title + is_muno
+        if (strlen($cleanTitle) > 2) {
+            $existingSerie = SeriesMovie::where('is_muno', 'Yes')
+                ->whereRaw('LOWER(title) = ?', [strtolower($cleanTitle)])
                 ->first();
         }
 
+        // 2. By munowatch_id (= series_code)
         if ($existingSerie == null) {
-            $existingSerie = SeriesMovie::where('series_code', $series_code)
-                ->first();
+            $existingSerie = SeriesMovie::where('munowatch_id', $series_code)->first();
         }
 
+        // 3. By series_code
         if ($existingSerie == null) {
-            $existingSerie = SeriesMovie::where('external_url', $seriesPage->url)
-                ->first();
+            $existingSerie = SeriesMovie::where('series_code', $series_code)->first();
+        }
+
+        // 4. By external_url
+        if ($existingSerie == null && !empty($seriesPage->url)) {
+            $existingSerie = SeriesMovie::where('external_url', $seriesPage->url)->first();
+        }
+
+        // 5. Linked from crawler page
+        if ($existingSerie == null && $seriesPage->series_id && $seriesPage->series_id > 0) {
+            $existingSerie = SeriesMovie::find($seriesPage->series_id);
         }
 
         if ($existingSerie == null) {
             $existingSerie = new SeriesMovie();
         }
 
-        $existingSerie->munowatch_id = $munowatch_id;
-        $existingSerie->title = $video_title;
-        $existingSerie->Category = $preview['vjname'] ?? 'Drama';
-        $existingSerie->description = $preview['description'] ?? '';
-        $existingSerie->thumbnail = $preview['thumbnail'] ?? null;
-        $existingSerie->total_episodes = 0;
-        $existingSerie->total_views = 0;
-        $existingSerie->total_rating = 0;
-        $existingSerie->external_id = $munowatch_id;
+        // ── Update series metadata ──
+        $existingSerie->munowatch_id = $series_code;
+        if (empty($existingSerie->title) || $existingSerie->title === 'Unknown Series') {
+            $existingSerie->title = $cleanTitle;
+        }
+        $existingSerie->Category = $preview['vjname'] ?? $preview['genre'] ?? 'Drama';
+        $existingSerie->description = $preview['description'] ?? $existingSerie->description ?? '';
+        $existingSerie->thumbnail = $preview['thumbnail'] ?? $existingSerie->thumbnail ?? null;
+        $existingSerie->external_id = $showId;
         $existingSerie->series_code = $series_code;
         $existingSerie->is_muno = 'Yes';
-        $existingSerie->muno_processed = 'No';
+        $existingSerie->muno_processed = 'No'; // Will be set to Yes after sync
         $existingSerie->is_active = 'No';
-        $existingSerie->vj = $preview['vjname'] ?? null;
-        $existingSerie->genre = $preview['genre'] ?? null;
+        $existingSerie->vj = $preview['vjname'] ?? $existingSerie->vj ?? null;
+        $existingSerie->genre = $preview['genre'] ?? $existingSerie->genre ?? null;
         $existingSerie->save();
 
+        // ── Delegate episode syncing to SeriesFixerService ──
+        // This uses the robust chain traversal (nxt_eps_id) instead of broken
+        // EPISODE_X__EPISODE_Y parsing. It creates real episode records in movies table.
+        $syncResult = $fixer->syncAllEpisodes((int) $existingSerie->id);
+        $created = $syncResult['created'] ?? 0;
+        $updated = $syncResult['updated'] ?? 0;
 
+        Log::info("[generate_series_episodes] Series #{$existingSerie->id} '{$cleanTitle}': {$created} created, {$updated} updated");
 
-        $user_id = 3664; //admin user
-        foreach ($episodes_ids as $key => $episode) {
-            $munowatch_id = $preview['id'];
-            $page_url = "https://munowatch.org/api/preview/v2/{$episode['id']}/" . $user_id;
-            $existingPage = MovieCrawlerPage::where('url', $page_url)
-                ->first();
-            if ($existingPage == null) {
-                //serach by $munowatch_id
-                $existingPage = MovieCrawlerPage::where('munowatch_id', $munowatch_id)
-                    ->first();
-            }
-            if ($existingPage == null) {
-                $existingPage = new MovieCrawlerPage();
-            }
+        // ── Activate series if it has episodes ──
+        $fixer->checkAndActivateSeries((int) $existingSerie->id);
 
-            $existingPage->movie_crawler_website_id = 2;
-            $existingPage->url = $page_url;
-            $existingPage->title = $existingSerie->title;
-            $existingPage->slug = $munowatch_id;
-            $existingPage->type = 'Series';
-            $existingPage->series_id = $existingSerie->id;
-            $existingPage->is_muno = 'Yes';
-            $existingPage->status = 'success';
-            $existingPage->is_episode = 'Yes';
-            $existingPage->muno_processed = 'No';
-            $existingPage->is_generated = 'No';
-            $existingPage->muno_series_processed = 'Yes';
-            $existingPage->episodes_data_fetched = 'No';
-            $existingPage->series_code = $series_code;
-            $existingPage->muno_series_group_id = $series_code;
-            $existingPage->save();
-        }
+        // ── Update crawler page ──
         $existingSerie->refresh();
-        $existingSerie->status = 'Active';
-        $existingSerie->save();
         $seriesPage->series_id = $existingSerie->id;
         $seriesPage->muno_series_processed = 'Yes';
+        $seriesPage->muno_series_success = 'Yes';
+        $seriesPage->series_code = $series_code;
         $seriesPage->save();
+
         return $existingSerie;
     }
 

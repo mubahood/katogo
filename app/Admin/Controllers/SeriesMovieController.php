@@ -140,6 +140,7 @@ class SeriesMovieController extends AdminController
         $grid->batchActions(function ($batch) {
             $batch->add(new \App\Admin\Actions\Post\SeriesMovieStatusChange());
             $batch->add(new \App\Admin\Actions\Post\BatchFixSeries());
+            $batch->add(new \App\Admin\Actions\Post\BatchResolveDuplicateSeries());
         });
 
         $grid->quickSearch('title')->placeholder('Search by title');

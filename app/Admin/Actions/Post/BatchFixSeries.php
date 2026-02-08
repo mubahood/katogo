@@ -2,6 +2,7 @@
 
 namespace App\Admin\Actions\Post;
 
+use App\Models\MovieCrawlerPage;
 use App\Services\SeriesFixerService;
 use Encore\Admin\Actions\BatchAction;
 use Illuminate\Database\Eloquent\Collection;
@@ -12,11 +13,13 @@ use Illuminate\Support\Facades\Log;
  * Batch Fix Series — syncs episodes from remote and fixes them.
  *
  * For each selected series:
- *  1. Fetches remote episodes from munowatch API
+ *  1. Fetches remote episodes from munowatch API (all ranges, chain traversal)
  *  2. Creates any missing local episode records
- *  3. Fixes each episode (re-fetches video URLs)
+ *  3. Fixes up to 20 episodes per series (video URL repair)
+ *  4. Updates related crawler page records
+ *  5. Cleans series title and activates if ready
  *
- * Max 50 series per batch (each series can have many episodes).
+ * Max 20 series per batch. Max 20 episode fixes per series to stay within time limits.
  */
 class BatchFixSeries extends BatchAction
 {
@@ -29,11 +32,12 @@ class BatchFixSeries extends BatchAction
      */
     public function handle(Collection $collection, Request $request)
     {
-        set_time_limit(3600);              // 60 minutes — series can be large
+        set_time_limit(3600);
         ini_set('memory_limit', '512M');
 
-        $maxSeries = 50;
-        $total     = $collection->count();
+        $maxSeries     = 20;
+        $maxEpPerSeries = 20;
+        $total         = $collection->count();
 
         if ($total > $maxSeries) {
             return $this->response()
@@ -45,42 +49,57 @@ class BatchFixSeries extends BatchAction
             return $this->response()->error('No series selected.')->refresh();
         }
 
-        Log::info("[BatchFixSeries] Starting batch fix for {$total} series.");
+        Log::info("[BatchFixSeries] Starting batch fix for {$total} series (max {$maxEpPerSeries} eps/series).");
 
         $fixer         = new SeriesFixerService();
         $fixedSeries   = 0;
         $failedSeries  = 0;
         $totalEpFixed  = 0;
         $totalEpFailed = 0;
+        $totalSynced   = 0;
+        $titlesClean   = 0;
         $errors        = [];
 
         foreach ($collection as $series) {
             try {
-                $result = $fixer->fixSeries((int) $series->id, 200);
+                // Step 1: Sync + Fix (capped at 20 episodes)
+                $result = $fixer->fixSeries((int) $series->id, $maxEpPerSeries);
 
-                if (isset($result['error'])) {
+                if (isset($result['error']) && !isset($result['success'])) {
                     $failedSeries++;
                     $errors[] = "#{$series->id} ({$series->title}): {$result['error']}";
                 } else {
                     $fixedSeries++;
                     $totalEpFixed  += $result['episodes_fixed'] ?? 0;
                     $totalEpFailed += $result['episodes_failed'] ?? 0;
+                    $totalSynced   += ($result['sync']['created'] ?? 0) + ($result['sync']['updated'] ?? 0);
                 }
+
+                // Step 2: Clean title and activate if ready
+                $activation = $fixer->checkAndActivateSeries((int) $series->id);
+                if ($activation['title_cleaned'] ?? false) {
+                    $titlesClean++;
+                }
+
+                // Step 3: Update related crawler pages
+                $this->updateCrawlerPages($series);
+
             } catch (\Throwable $e) {
                 $failedSeries++;
                 $errors[] = "#{$series->id} ({$series->title}): " . $e->getMessage();
                 Log::error("[BatchFixSeries] Exception fixing series #{$series->id}: " . $e->getMessage());
             }
 
-            // Pause between series to avoid overwhelming the API
             if ($total > 3) {
-                usleep(500_000); // 500ms
+                usleep(500_000); // 500ms between series
             }
         }
 
-        Log::info("[BatchFixSeries] Batch complete: {$fixedSeries} series processed, {$failedSeries} failed. Episodes: {$totalEpFixed} fixed, {$totalEpFailed} failed.");
+        Log::info("[BatchFixSeries] Batch complete: {$fixedSeries}/{$total} series, {$totalSynced} synced, {$totalEpFixed} fixed, {$totalEpFailed} failed, {$titlesClean} titles cleaned.");
 
-        $msg = "Batch fix complete: {$fixedSeries}/{$total} series processed. Episodes: {$totalEpFixed} fixed, {$totalEpFailed} failed.";
+        $msg = "Batch fix: {$fixedSeries}/{$total} series processed.\n"
+             . "Synced: {$totalSynced} | Fixed: {$totalEpFixed} | Failed: {$totalEpFailed}"
+             . ($titlesClean > 0 ? " | Titles cleaned: {$titlesClean}" : "");
 
         if (!empty($errors)) {
             $shownErrors = array_slice($errors, 0, 5);
@@ -100,10 +119,74 @@ class BatchFixSeries extends BatchAction
     }
 
     /**
+     * Update crawler page records to reflect the fix results.
+     * Marks series-related crawler pages as processed so the crawler knows they're done.
+     */
+    protected function updateCrawlerPages($series): void
+    {
+        try {
+            $seriesCode = $series->series_code;
+            $munowatchId = $series->munowatch_id;
+
+            if (empty($seriesCode) && empty($munowatchId)) return;
+
+            // Find crawler pages for this series by series_code or munowatch_id
+            $query = MovieCrawlerPage::query();
+            $query->where(function ($q) use ($seriesCode, $munowatchId, $series) {
+                if ($seriesCode) {
+                    $q->orWhere('series_code', $seriesCode);
+                    $q->orWhere('muno_series_group_id', $seriesCode);
+                }
+                if ($munowatchId) {
+                    $q->orWhere('munowatch_id', $munowatchId);
+                }
+                $q->orWhere('series_id', $series->id);
+            });
+
+            $pages = $query->get();
+            $updated = 0;
+
+            foreach ($pages as $page) {
+                $changed = false;
+
+                // Link to series if not already linked
+                if (empty($page->series_id) || $page->series_id != $series->id) {
+                    $page->series_id = $series->id;
+                    $changed = true;
+                }
+
+                // Mark as series-processed
+                if ($page->muno_series_processed !== 'Yes') {
+                    $page->muno_series_processed = 'Yes';
+                    $page->muno_series_success = 'Yes';
+                    $changed = true;
+                }
+
+                // Set series_code on the page
+                if ($seriesCode && $page->series_code !== $seriesCode) {
+                    $page->series_code = $seriesCode;
+                    $changed = true;
+                }
+
+                if ($changed) {
+                    $page->save();
+                    $updated++;
+                }
+            }
+
+            if ($updated > 0) {
+                Log::info("[BatchFixSeries] Updated {$updated} crawler pages for series #{$series->id}");
+            }
+        } catch (\Throwable $e) {
+            Log::warning("[BatchFixSeries] Failed to update crawler pages for series #{$series->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
      * Confirmation dialog before processing.
      */
     public function dialog()
     {
-        $this->confirm('Fix selected series? This will sync episodes from remote APIs and fix each episode. Max 50 series per batch.');
+        $this->confirm('Fix selected series? Syncs episodes from remote + fixes up to 20 episodes per series. Max 20 series per batch.');
     }
 }
