@@ -8,6 +8,8 @@ Encore\Admin\Form::forget(['map', 'editor']);
 // UGFlix Debug Video Player — mimics mobile app playback logic for admin testing
 // Cache-bust: append version timestamp to force browser to reload updated JS
 Encore\Admin\Admin::js('/vendor/ugflix-debug-player/ugflix-debug-player.js?v=' . filemtime(public_path('vendor/ugflix-debug-player/ugflix-debug-player.js')));
+// UGFlix Series Debug Player — series/TV-show player with episode sidebar
+Encore\Admin\Admin::js('/vendor/ugflix-debug-player/ugflix-series-player.js?v=' . filemtime(public_path('vendor/ugflix-debug-player/ugflix-series-player.js')));
 // Inject the app base URL and stream token for debug player proxy/stream endpoints
 Encore\Admin\Admin::script('window.__KATOGO_BASE_URL = ' . json_encode(rtrim(config('app.url'), '/')) . ';');
 Encore\Admin\Admin::script('window.__KATOGO_STREAM_TOKEN = ' . json_encode(substr(sha1('debug-stream-' . config('app.key')), 0, 32)) . ';');

@@ -3,6 +3,7 @@
 namespace App\Admin\Controllers;
 
 use App\Services\MovieFixerService;
+use App\Services\SeriesFixerService;
 use App\Services\VideoUrlTester;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -236,5 +237,103 @@ class DebugPlayerProxyController extends Controller
             curl_exec($ch);
             curl_close($ch);
         }, $statusCode, $headers);
+    }
+
+    // ─────────────────────────────────────────────
+    //  SERIES DEBUG PLAYER ENDPOINTS
+    // ─────────────────────────────────────────────
+
+    /**
+     * Get full series info: series metadata + all episodes grouped by season.
+     * Used by the series debug player to populate the sidebar.
+     *
+     * POST debug-player/series-info  { series_id: int }
+     */
+    public function seriesInfo(Request $request)
+    {
+        $seriesId = $request->input('series_id');
+        if (empty($seriesId)) {
+            return response()->json(['success' => false, 'error' => 'No series_id provided']);
+        }
+
+        $fixer = new SeriesFixerService();
+        $result = $fixer->getSeriesInfo((int) $seriesId);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fetch remote episodes from munowatch API for a series.
+     * Does NOT modify local DB — returns what the server says.
+     *
+     * POST debug-player/series-remote-episodes  { series_id: int }
+     */
+    public function seriesRemoteEpisodes(Request $request)
+    {
+        $seriesId = $request->input('series_id');
+        if (empty($seriesId)) {
+            return response()->json(['success' => false, 'error' => 'No series_id provided']);
+        }
+
+        $fixer = new SeriesFixerService();
+        $result = $fixer->fetchRemoteEpisodes((int) $seriesId);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fix a complete series: sync remote episodes + fix all local episodes.
+     *
+     * POST debug-player/fix-series  { series_id: int, max_episodes?: int }
+     */
+    public function fixSeries(Request $request)
+    {
+        $seriesId = $request->input('series_id');
+        if (empty($seriesId)) {
+            return response()->json(['success' => false, 'error' => 'No series_id provided']);
+        }
+
+        $maxEpisodes = $request->input('max_episodes', 200);
+
+        $fixer = new SeriesFixerService();
+        $result = $fixer->fixSeries((int) $seriesId, (int) $maxEpisodes);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fix a single episode within a series.
+     *
+     * POST debug-player/fix-episode  { movie_id: int }
+     */
+    public function fixEpisode(Request $request)
+    {
+        $movieId = $request->input('movie_id');
+        if (empty($movieId)) {
+            return response()->json(['success' => false, 'error' => 'No movie_id provided']);
+        }
+
+        $fixer = new SeriesFixerService();
+        $result = $fixer->fixEpisode((int) $movieId);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Sync episodes from remote API into local DB (discover new episodes).
+     *
+     * POST debug-player/sync-series  { series_id: int }
+     */
+    public function syncSeries(Request $request)
+    {
+        $seriesId = $request->input('series_id');
+        if (empty($seriesId)) {
+            return response()->json(['success' => false, 'error' => 'No series_id provided']);
+        }
+
+        $fixer = new SeriesFixerService();
+        $result = $fixer->syncEpisodesFromRemote((int) $seriesId);
+
+        return response()->json($result);
     }
 }

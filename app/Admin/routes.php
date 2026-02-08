@@ -126,6 +126,13 @@ Route::group([
     // Debug Player Fix Movie (re-fetch from source, repair broken records — requires admin session)
     $router->post('debug-player/fix-movie', 'DebugPlayerProxyController@fixMovie');
 
+    // Series Debug Player API (admin session required)
+    $router->post('debug-player/series-info', 'DebugPlayerProxyController@seriesInfo');
+    $router->post('debug-player/series-remote-episodes', 'DebugPlayerProxyController@seriesRemoteEpisodes');
+    $router->post('debug-player/fix-series', 'DebugPlayerProxyController@fixSeries');
+    $router->post('debug-player/fix-episode', 'DebugPlayerProxyController@fixEpisode');
+    $router->post('debug-player/sync-series', 'DebugPlayerProxyController@syncSeries');
+
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound
     //https://omulimisa.org/api/v1/e-learning/events
 });
