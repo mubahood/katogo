@@ -1,14 +1,16 @@
 /**
- * UGFlix Series Debug Player v1.0
+ * UGFlix Series Debug Player v2.0
  *
  * A robust series/TV-show debug player for the admin panel.
  * Features:
- *  - Video player with episode sidebar
+ *  - Video player with episode sidebar (episodes LEFT, player RIGHT)
  *  - Season tabs, episode list with status indicators
- *  - Fix Series / Fix Episode / Sync buttons
+ *  - Pagination-aware range fetching from munowatch API
+ *  - "Fetch Range" buttons per pagination range with progress
+ *  - Fix Series / Fix Episode / Sync All buttons
  *  - Auto-play cascading with CDN fallback
  *  - Series metadata display
- *  - Remote episode comparison
+ *  - Remote episode comparison with range breakdown
  *
  * Loaded globally on all admin pages via bootstrap.php.
  * Activated when a .ugflix-series-play-btn is clicked.
@@ -74,7 +76,10 @@
         isPlaying: false,
         isLoading: false,
         isFixing: false,
+        isFetchingRange: false,
         logs: [],
+        ranges: null,       // Remote range data from fetchRemoteRanges
+        rangesVisible: false,
     };
 
     // ─── LOGGING ───
@@ -106,9 +111,9 @@
         <span id="sfx-badge" style="background:#7c3aed;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;display:none"></span>\
       </div>\
       <div style="display:flex;gap:6px">\
-        <button id="sfx-btn-sync" class="sfx-btn sfx-btn-blue" title="Sync episodes from remote API">🔄 Sync</button>\
+        <button id="sfx-btn-ranges" class="sfx-btn sfx-btn-purple" title="Show episode ranges from remote API for selective fetching">📦 Ranges</button>\
+        <button id="sfx-btn-sync" class="sfx-btn sfx-btn-blue" title="Sync ALL episodes from remote API (all ranges)">🔄 Sync All</button>\
         <button id="sfx-btn-fix-series" class="sfx-btn sfx-btn-green" title="Fix entire series">🔧 Fix Series</button>\
-        <button id="sfx-btn-remote" class="sfx-btn sfx-btn-purple" title="Compare with remote API">🌐 Remote</button>\
         <button id="sfx-btn-close" class="sfx-btn sfx-btn-red" title="Close">✕</button>\
       </div>\
     </div>\
@@ -131,6 +136,16 @@
         <div id="sfx-season-tabs" style="display:flex;gap:0;border-bottom:1px solid #2a2a4a;overflow-x:auto;flex-shrink:0"></div>\
         <!-- Episode List -->\
         <div id="sfx-ep-list" style="flex:1;overflow-y:auto;padding:6px"></div>\
+        <!-- Ranges Panel (hidden by default, shown when "Ranges" is clicked) -->\
+        <div id="sfx-ranges-panel" style="display:none;flex:1;overflow-y:auto;padding:10px;background:#0d1117">\
+          <div id="sfx-ranges-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">\
+            <span style="color:#d1d5db;font-size:12px;font-weight:600">📦 Episode Ranges</span>\
+            <button id="sfx-ranges-back" class="sfx-btn sfx-btn-sm" style="background:#374151">← Episodes</button>\
+          </div>\
+          <div id="sfx-ranges-summary" style="color:#7c8da6;font-size:11px;margin-bottom:8px"></div>\
+          <div id="sfx-ranges-list"></div>\
+          <div id="sfx-ranges-actions" style="margin-top:10px;text-align:center"></div>\
+        </div>\
         <!-- Sidebar Footer -->\
         <div id="sfx-sidebar-footer" style="padding:6px 12px;border-top:1px solid #2a2a4a;background:#0a0a1a">\
           <div id="sfx-ep-count" style="color:#7c8da6;font-size:11px;text-align:center"></div>\
@@ -186,6 +201,8 @@
 .sfx-season-tab.sfx-tab-active{color:#3b82f6;border-bottom-color:#3b82f6}\
 .sfx-spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sfx-spin .6s linear infinite}\
 @keyframes sfx-spin{to{transform:rotate(360deg)}}\
+.sfx-range-card{transition:all .15s}\
+.sfx-range-card:hover{filter:brightness(1.1)}\
 </style>';
 
         $('body').append(css + html);
@@ -194,7 +211,8 @@
         $('#sfx-btn-close').on('click', function() { _close(); });
         $('#sfx-btn-sync').on('click', function() { _syncSeries(); });
         $('#sfx-btn-fix-series').on('click', function() { _fixSeries(); });
-        $('#sfx-btn-remote').on('click', function() { _fetchRemote(); });
+        $('#sfx-btn-ranges').on('click', function() { _toggleRangesPanel(); });
+        $('#sfx-ranges-back').on('click', function() { _hideRangesPanel(); });
 
         // ESC to close
         $(document).on('keydown.sfx', function(e) {
@@ -216,7 +234,10 @@
             isPlaying: false,
             isLoading: true,
             isFixing: false,
+            isFetchingRange: false,
             logs: [],
+            ranges: null,
+            rangesVisible: false,
         };
 
         // Show modal
@@ -589,48 +610,188 @@
         });
     }
 
-    // ─── SYNC SERIES (discover new episodes) ───
+    // ─── SYNC SERIES (fetch all ranges, batched per range) ───
     function _syncSeries() {
         if (!_state.series || _state.isFixing) return;
+        if (!confirm('Sync ALL episodes for "' + _state.series.title + '" from remote API?\nThis will fetch every range in batches of 3 episodes per request.')) return;
 
-        var $btn = $('#sfx-btn-sync');
-        $btn.prop('disabled', true).html('<span class="sfx-spinner"></span> Syncing...');
-        _log('Syncing episodes from remote API...', 'fix');
+        // First, fetch ranges if we don't have them
+        if (!_state.ranges) {
+            _log('Loading ranges first before full sync...', 'info');
+            var $btn = $('#sfx-btn-sync');
+            $btn.prop('disabled', true).html('<span class="sfx-spinner"></span> Loading...');
 
-        $.ajax({
-            url: _getBase() + '/debug-player/sync-series',
-            method: 'POST',
-            data: {series_id: _state.series.id, _token: LA.token},
-            dataType: 'json',
-            timeout: 120000,
-            success: function(resp) {
-                $btn.prop('disabled', false).html('🔄 Sync');
-
-                if (resp.success) {
-                    _log('Sync complete: ' + (resp.created || 0) + ' created, ' + (resp.updated || 0) + ' updated (remote: ' + (resp.remote_total || 0) + ')', 'success');
-                    if (resp.errors && resp.errors.length) {
-                        resp.errors.forEach(function(e) { _log('Sync error: ' + e, 'warn'); });
+            $.ajax({
+                url: _getBase() + '/debug-player/series-remote-episodes',
+                method: 'POST',
+                data: {series_id: _state.series.id, _token: LA.token},
+                dataType: 'json',
+                timeout: 60000,
+                success: function(resp) {
+                    if (resp.success) {
+                        _state.ranges = resp;
+                        _doFullSync();
+                    } else {
+                        $btn.prop('disabled', false).html('🔄 Sync All');
+                        _log('Failed to load ranges: ' + (resp.error || 'Unknown'), 'error');
                     }
-                    // Reload
-                    _fetchSeriesInfo(_state.series.id);
-                } else {
-                    _log('Sync failed: ' + (resp.error || 'Unknown'), 'error');
+                },
+                error: function(xhr) {
+                    $btn.prop('disabled', false).html('🔄 Sync All');
+                    _log('Range load error: ' + xhr.status, 'error');
                 }
-            },
-            error: function(xhr) {
-                $btn.prop('disabled', false).html('🔄 Sync');
-                _log('Sync request error: ' + xhr.status, 'error');
-            }
-        });
+            });
+        } else {
+            _doFullSync();
+        }
     }
 
-    // ─── FETCH REMOTE EPISODES (compare) ───
-    function _fetchRemote() {
+    function _doFullSync() {
+        if (!_state.ranges || !_state.ranges.ranges) return;
+
+        _state.isFixing = true;
+        var $btn = $('#sfx-btn-sync');
+        var allRanges = [];
+        for (var i = 0; i < _state.ranges.ranges.length; i++) allRanges.push(i);
+
+        var totalRanges = allRanges.length;
+        var current = 0;
+        var grandCreated = 0, grandUpdated = 0, grandSkipped = 0;
+        var anyChainEnded = false;
+
+        $btn.prop('disabled', true).html('<span class="sfx-spinner"></span> 0/' + totalRanges);
+        _log('Full sync: ' + totalRanges + ' ranges to process (batched)...', 'fix');
+
+        function syncNextRange() {
+            if (current >= totalRanges) {
+                _state.isFixing = false;
+                $btn.prop('disabled', false).html('🔄 Sync All');
+                _log('Full sync complete! Created: ' + grandCreated + ', Updated: ' + grandUpdated + ', Skipped: ' + grandSkipped, 'success');
+                _fetchSeriesInfo(_state.series.id);
+                _state.ranges = null;
+                if (anyChainEnded) _checkAndActivateSeries();
+                $('#sfx-log-content').show();
+                return;
+            }
+
+            var ridx = allRanges[current];
+            var range = _state.ranges.ranges[ridx];
+            var label = 'Eps ' + range.start_ep + '–' + range.end_ep;
+            $btn.html('<span class="sfx-spinner"></span> ' + (current + 1) + '/' + totalRanges);
+            _log('Sync range ' + (current + 1) + '/' + totalRanges + ': ' + label, 'fix');
+
+            var continueFrom = null, continueEp = null, rangeEndEp = null, batchNum = 0;
+
+            // Pre-initialize from range data for FAST PATH
+            if (range) {
+                continueFrom = String(range.start_video_id);
+                continueEp = range.start_ep;
+                rangeEndEp = range.end_ep;
+            }
+
+            function fetchBatch() {
+                batchNum++;
+                $btn.html('<span class="sfx-spinner"></span> ' + (current + 1) + '/' + totalRanges + ': ' + label + ' B' + batchNum);
+                var postData = {
+                    series_id: _state.series.id,
+                    range_index: ridx,
+                    season: _state.currentSeason,
+                    batch_size: 3,
+                    _token: LA.token
+                };
+                if (continueFrom) postData.continue_from = continueFrom;
+                if (continueEp !== null) postData.continue_ep = continueEp;
+                if (rangeEndEp !== null) postData.range_end_ep = rangeEndEp;
+
+                $.ajax({
+                    url: _getBase() + '/debug-player/fetch-range',
+                    method: 'POST',
+                    data: postData,
+                    dataType: 'json',
+                    timeout: 60000,
+                    success: function(resp) {
+                        if (resp.success) {
+                            grandCreated += (resp.created || 0);
+                            grandUpdated += (resp.updated || 0);
+                            grandSkipped += (resp.skipped || 0);
+                            if (resp.range_end_ep) rangeEndEp = resp.range_end_ep;
+                            if (resp.chain_ended) anyChainEnded = true;
+
+                            // Live-update sidebar
+                            if (resp.series_info) {
+                                _state.series = resp.series_info.series || _state.series;
+                                _state.episodes = resp.series_info.episodes || _state.episodes;
+                                _state.seasons = resp.series_info.seasons || _state.seasons;
+                                _renderSidebar();
+                                _renderSeriesHeader();
+                            }
+
+                            if (resp.has_more && resp.next_video_id) {
+                                continueFrom = resp.next_video_id;
+                                continueEp = resp.next_ep_num;
+                                fetchBatch();
+                            } else {
+                                _log('  ' + label + ' ✓', 'info');
+                                current++;
+                                syncNextRange();
+                            }
+                        } else {
+                            _log('  ' + label + ' failed: ' + (resp.error || ''), 'error');
+                            current++;
+                            syncNextRange();
+                        }
+                    },
+                    error: function(xhr) {
+                        _log('  ' + label + ' error: ' + xhr.status, 'error');
+                        current++;
+                        syncNextRange();
+                    }
+                });
+            }
+
+            fetchBatch();
+        }
+
+        syncNextRange();
+    }
+
+    // ─── RANGES PANEL: Toggle Visibility ───
+    function _toggleRangesPanel() {
+        if (_state.rangesVisible) {
+            _hideRangesPanel();
+        } else {
+            _showRangesPanel();
+        }
+    }
+
+    function _showRangesPanel() {
+        _state.rangesVisible = true;
+        $('#sfx-ep-list').hide();
+        $('#sfx-season-tabs').hide();
+        $('#sfx-ranges-panel').show();
+        $('#sfx-btn-ranges').html('📋 Episodes').attr('title', 'Back to episode list');
+
+        if (!_state.ranges) {
+            _fetchRangesData();
+        } else {
+            _renderRangesList();
+        }
+    }
+
+    function _hideRangesPanel() {
+        _state.rangesVisible = false;
+        $('#sfx-ranges-panel').hide();
+        $('#sfx-ep-list').show();
+        $('#sfx-season-tabs').show();
+        $('#sfx-btn-ranges').html('📦 Ranges').attr('title', 'Show episode ranges from remote API');
+    }
+
+    // ─── FETCH RANGES DATA from remote ───
+    function _fetchRangesData() {
         if (!_state.series) return;
 
-        var $btn = $('#sfx-btn-remote');
-        $btn.prop('disabled', true).html('<span class="sfx-spinner"></span> Fetching...');
-        _log('Fetching remote episodes from munowatch API...', 'info');
+        $('#sfx-ranges-list').html('<div style="text-align:center;padding:20px"><span class="sfx-spinner"></span><div style="color:#7c8da6;font-size:11px;margin-top:8px">Loading ranges from remote API...</div></div>');
+        _log('Fetching episode ranges from munowatch API...', 'info');
 
         $.ajax({
             url: _getBase() + '/debug-player/series-remote-episodes',
@@ -639,41 +800,409 @@
             dataType: 'json',
             timeout: 60000,
             success: function(resp) {
-                $btn.prop('disabled', false).html('🌐 Remote');
-
                 if (resp.success) {
-                    var remote = resp.episodes || [];
-                    _log('Remote API returned ' + remote.length + ' episodes', 'success');
-                    if (resp.api_url) _log('API: ' + resp.api_url, 'info');
-
-                    // Show comparison
-                    var localCount = _state.episodes.length;
-                    var diff = remote.length - localCount;
-                    if (diff > 0) {
-                        _log('⚠️ Remote has ' + diff + ' more episodes than local. Use "Sync" to import them.', 'warn');
-                    } else if (diff < 0) {
-                        _log('Local has ' + Math.abs(diff) + ' more episodes than remote.', 'info');
-                    } else {
-                        _log('Episode count matches (local=' + localCount + ', remote=' + remote.length + ')', 'success');
-                    }
-
-                    // Log first few remote episodes
-                    remote.slice(0, 5).forEach(function(ep, i) {
-                        _log('  Remote [' + (i+1) + ']: ' + (ep.title || 'EP ' + (i+1)) + ' → ' + (ep.playingUrl ? '✅ has URL' : '❌ no URL'), 'info');
-                    });
-                    if (remote.length > 5) _log('  ... and ' + (remote.length - 5) + ' more', 'info');
+                    _state.ranges = resp;
+                    _log('Loaded ' + resp.total_ranges + ' ranges (' + resp.total_remote_episodes + ' remote eps, ' + resp.local_episode_count + ' local)', 'success');
+                    _renderRangesList();
                 } else {
-                    _log('Remote fetch failed: ' + (resp.error || 'Unknown'), 'error');
+                    _log('Failed to load ranges: ' + (resp.error || 'Unknown'), 'error');
+                    $('#sfx-ranges-list').html('<div style="color:#f87171;text-align:center;padding:20px;font-size:12px">Error: ' + _escHtml(resp.error || 'Unknown error') + '</div>');
                 }
-
-                // Show log panel
                 $('#sfx-log-content').show();
             },
             error: function(xhr) {
-                $btn.prop('disabled', false).html('🌐 Remote');
-                _log('Remote fetch error: ' + xhr.status, 'error');
+                _log('Range fetch error: ' + xhr.status, 'error');
+                $('#sfx-ranges-list').html('<div style="color:#f87171;text-align:center;padding:20px;font-size:12px">Network error loading ranges</div>');
             }
         });
+    }
+
+    // ─── RENDER RANGES LIST ───
+    function _renderRangesList() {
+        var data = _state.ranges;
+        if (!data || !data.ranges) return;
+
+        // Summary
+        var summaryHtml = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px">';
+        summaryHtml += '<span>Remote: <b style="color:#f59e0b">' + data.total_remote_episodes + '</b> eps</span>';
+        summaryHtml += '<span>Local: <b style="color:#3b82f6">' + data.local_episode_count + '</b> eps</span>';
+        if (data.total_from_preview) summaryHtml += '<span>Preview: <b style="color:#8b5cf6">' + data.total_from_preview + '</b></span>';
+        summaryHtml += '</div>';
+        if (data.series_code) summaryHtml += '<div style="opacity:.6;font-size:10px">Series Code: ' + data.series_code + ' • Show ID: ' + data.show_id + '</div>';
+        $('#sfx-ranges-summary').html(summaryHtml);
+
+        // Range cards
+        var $list = $('#sfx-ranges-list').empty();
+        var allComplete = true;
+
+        data.ranges.forEach(function(range, idx) {
+            var pct = range.episode_count > 0 ? Math.round((range.local_count / range.episode_count) * 100) : 0;
+            var isComplete = range.is_complete;
+            if (!isComplete) allComplete = false;
+
+            // Color based on completion
+            var barColor = isComplete ? '#16a34a' : (range.local_count > 0 ? '#f59e0b' : '#dc2626');
+            var statusIcon = isComplete ? '✅' : (range.local_count > 0 ? '🟡' : '🔴');
+            var bgColor = isComplete ? 'rgba(22,163,106,.08)' : 'rgba(245,158,11,.05)';
+
+            var html = '<div class="sfx-range-card" data-range="' + idx + '" style="background:' + bgColor + ';border:1px solid ' + barColor + '33;border-radius:8px;padding:10px;margin-bottom:6px">';
+
+            // Header row
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+            html += '<div style="display:flex;align-items:center;gap:6px">';
+            html += '<span style="font-size:12px">' + statusIcon + '</span>';
+            html += '<span style="color:#d1d5db;font-size:12px;font-weight:600">Eps ' + range.start_ep + '–' + range.end_ep + '</span>';
+            html += '<span style="color:#6b7280;font-size:10px">(' + range.episode_count + ' eps)</span>';
+            html += '</div>';
+            html += '<span style="color:' + barColor + ';font-size:10px;font-weight:700">' + range.local_count + '/' + range.episode_count + '</span>';
+            html += '</div>';
+
+            // Progress bar
+            html += '<div style="height:4px;background:#1f2937;border-radius:2px;overflow:hidden;margin-bottom:6px">';
+            html += '<div class="sfx-range-progress-fill" style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:2px;transition:width .3s"></div>';
+            html += '</div>';
+
+            // Details row
+            html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+            html += '<span style="color:#6b7280;font-size:9px">VIDs: ' + range.start_video_id + '→' + range.end_video_id;
+            if (!range.is_contiguous) html += ' <span style="color:#f59e0b" title="Non-contiguous: video IDs have gaps, requires chain traversal">⚡ chain</span>';
+            html += '</span>';
+
+            // Fetch button
+            if (!isComplete) {
+                html += '<button class="sfx-btn sfx-btn-sm sfx-range-fetch" data-range-idx="' + idx + '" style="background:#2563eb;font-size:10px">⬇ Fetch</button>';
+            } else {
+                html += '<button class="sfx-btn sfx-btn-sm sfx-range-fetch" data-range-idx="' + idx + '" style="background:#374151;font-size:10px">↻ Re-fetch</button>';
+            }
+            html += '</div>';
+
+            html += '</div>';
+            $list.append(html);
+        });
+
+        // Fetch All button at bottom
+        var $actions = $('#sfx-ranges-actions').empty();
+        if (!allComplete) {
+            $actions.append('<button id="sfx-fetch-all-ranges" class="sfx-btn sfx-btn-blue" style="width:100%;padding:8px">⬇ Fetch All Missing Ranges</button>');
+            $('#sfx-fetch-all-ranges').on('click', function() { _fetchAllMissingRanges(); });
+        } else {
+            $actions.append('<div style="color:#16a34a;font-size:11px;padding:8px">✅ All ranges are fully synced!</div>');
+        }
+
+        // Bind fetch buttons
+        $list.find('.sfx-range-fetch').on('click', function(e) {
+            e.stopPropagation();
+            var ridx = parseInt($(this).data('range-idx'));
+            _fetchSingleRange(ridx, $(this));
+        });
+    }
+
+    // ─── FETCH SINGLE RANGE (batched — 3 eps per request to avoid MAMP 30s timeout) ───
+    function _fetchSingleRange(rangeIdx, $btn) {
+        if (_state.isFetchingRange) {
+            _log('Already fetching a range, please wait...', 'warn');
+            return;
+        }
+        _state.isFetchingRange = true;
+
+        var range = _state.ranges && _state.ranges.ranges ? _state.ranges.ranges[rangeIdx] : null;
+        var label = range ? ('Eps ' + range.start_ep + '–' + range.end_ep) : ('Range #' + rangeIdx);
+        var totalExpected = range ? range.episode_count : 0;
+
+        var origHtml = $btn.html();
+        $btn.prop('disabled', true);
+        _log('Fetching ' + label + ' in batches of 3...', 'fix');
+        $('#sfx-log-content').show();
+
+        var totalCreated = 0, totalUpdated = 0, totalSkipped = 0, totalFetched = 0, batchNum = 0;
+        var chainEnded = false;
+        // Pre-initialize from range data so first batch also uses FAST PATH (skips resolve+ranges API calls)
+        var continueFrom = range ? String(range.start_video_id) : null;
+        var continueEp = range ? range.start_ep : null;
+        var rangeEndEp = range ? range.end_ep : null;
+
+        // Find the progress bar for this range card
+        var $card = $btn.closest('.sfx-range-card');
+        var $progressBar = $card.find('.sfx-range-progress-fill');
+        var $statusText = $card.find('.sfx-range-status');
+
+        function _updateProgress() {
+            var pct = totalExpected > 0 ? Math.min(100, Math.round((totalFetched / totalExpected) * 100)) : 0;
+            if ($progressBar.length) $progressBar.css('width', pct + '%');
+            $btn.html('<span class="sfx-spinner"></span> ' + totalFetched + '/' + totalExpected);
+            if ($statusText.length) $statusText.text(totalFetched + '/' + totalExpected);
+        }
+
+        function fetchBatch() {
+            batchNum++;
+            _updateProgress();
+
+            var postData = {
+                series_id: _state.series.id,
+                range_index: rangeIdx,
+                season: _state.currentSeason,
+                batch_size: 3,
+                _token: LA.token
+            };
+            if (continueFrom) postData.continue_from = continueFrom;
+            if (continueEp !== null) postData.continue_ep = continueEp;
+            if (rangeEndEp !== null) postData.range_end_ep = rangeEndEp;
+
+            $.ajax({
+                url: _getBase() + '/debug-player/fetch-range',
+                method: 'POST',
+                data: postData,
+                dataType: 'json',
+                timeout: 60000,
+                success: function(resp) {
+                    if (resp.success) {
+                        totalCreated += (resp.created || 0);
+                        totalUpdated += (resp.updated || 0);
+                        totalSkipped += (resp.skipped || 0);
+                        totalFetched += (resp.created || 0) + (resp.updated || 0) + (resp.skipped || 0);
+                        _log('  Batch ' + batchNum + ': ' + resp.message, 'info');
+
+                        if (resp.errors && resp.errors.length) {
+                            resp.errors.forEach(function(e) { _log('  ⚠️ ' + e, 'warn'); });
+                        }
+
+                        // Live-update sidebar with latest episode data
+                        if (resp.series_info) {
+                            _state.series = resp.series_info.series || _state.series;
+                            _state.episodes = resp.series_info.episodes || _state.episodes;
+                            _state.seasons = resp.series_info.seasons || _state.seasons;
+                            _renderSidebar();
+                            _renderSeriesHeader();
+                        }
+
+                        // Store range_end_ep for fast continuation
+                        if (resp.range_end_ep) rangeEndEp = resp.range_end_ep;
+
+                        // Detect end of episode chain
+                        if (resp.chain_ended) {
+                            chainEnded = true;
+                            _log('🏁 Reached end of episode chain!', 'success');
+                        }
+
+                        _updateProgress();
+
+                        // Continue fetching if more batches remain
+                        if (resp.has_more && resp.next_video_id) {
+                            continueFrom = resp.next_video_id;
+                            continueEp = resp.next_ep_num;
+                            fetchBatch();
+                        } else {
+                            // Done with this range
+                            _finishRangeFetch(label, totalCreated, totalUpdated, totalSkipped, origHtml, $btn, chainEnded);
+                        }
+                    } else {
+                        _log('Fetch failed for ' + label + ': ' + (resp.error || 'Unknown'), 'error');
+                        _state.isFetchingRange = false;
+                        $btn.prop('disabled', false).html(origHtml);
+                        $('#sfx-log-content').show();
+                    }
+                },
+                error: function(xhr) {
+                    _log('Fetch request error for ' + label + ' (batch ' + batchNum + '): ' + xhr.status + ' ' + xhr.statusText, 'error');
+                    // If we already fetched some batches, still finish gracefully
+                    if (batchNum > 1) {
+                        _finishRangeFetch(label, totalCreated, totalUpdated, totalSkipped, origHtml, $btn, chainEnded);
+                    } else {
+                        _state.isFetchingRange = false;
+                        $btn.prop('disabled', false).html(origHtml);
+                    }
+                    $('#sfx-log-content').show();
+                }
+            });
+        }
+
+        fetchBatch();
+    }
+
+    function _finishRangeFetch(label, totalCreated, totalUpdated, totalSkipped, origHtml, $btn, chainEnded) {
+        _state.isFetchingRange = false;
+        $btn.prop('disabled', false).html(origHtml);
+
+        _log(label + ' complete: ' + totalCreated + ' created, ' + totalUpdated + ' updated, ' + totalSkipped + ' skipped', 'success');
+
+        // Live-refresh sidebar and header
+        _renderSidebar();
+        _renderSeriesHeader();
+
+        // If chain ended (last episode reached), check if we should activate the series
+        if (chainEnded) {
+            _checkAndActivateSeries();
+        }
+
+        // Force re-fetch ranges data to update completion status
+        _state.ranges = null;
+        _fetchRangesData();
+        $('#sfx-log-content').show();
+    }
+
+    /**
+     * Call backend to check if the series should be activated (all episodes fetched).
+     * Also triggers title cleaning.
+     */
+    function _checkAndActivateSeries() {
+        if (!_state.series) return;
+        _log('Checking if series should be activated...', 'info');
+
+        $.ajax({
+            url: _getBase() + '/debug-player/check-activation',
+            method: 'POST',
+            data: { series_id: _state.series.id, _token: LA.token },
+            dataType: 'json',
+            timeout: 15000,
+            success: function(resp) {
+                if (resp.success) {
+                    if (resp.activated) {
+                        _log('✨ Series activated! ' + resp.reason, 'success');
+                    }
+                    if (resp.title_cleaned) {
+                        _log('📝 Title cleaned: → ' + resp.new_title, 'success');
+                    }
+                    if (resp.series_info) {
+                        _state.series = resp.series_info.series || _state.series;
+                        _state.episodes = resp.series_info.episodes || _state.episodes;
+                        _state.seasons = resp.series_info.seasons || _state.seasons;
+                        _renderSidebar();
+                        _renderSeriesHeader();
+                    }
+                }
+            },
+            error: function() { /* silent fail */ }
+        });
+    }
+
+    // ─── FETCH ALL MISSING RANGES (sequential, batched per range) ───
+    function _fetchAllMissingRanges() {
+        if (!_state.ranges || !_state.ranges.ranges) return;
+        if (_state.isFetchingRange) {
+            _log('Already fetching, please wait...', 'warn');
+            return;
+        }
+
+        var missing = [];
+        _state.ranges.ranges.forEach(function(r, idx) {
+            if (!r.is_complete) missing.push(idx);
+        });
+
+        if (missing.length === 0) {
+            _log('All ranges are already complete!', 'success');
+            return;
+        }
+
+        _log('Fetching ' + missing.length + ' incomplete range(s) sequentially (batched)...', 'fix');
+
+        var $allBtn = $('#sfx-fetch-all-ranges');
+        $allBtn.prop('disabled', true).html('<span class="sfx-spinner"></span> Fetching 0/' + missing.length + '...');
+
+        var current = 0;
+        var anyChainEnded = false;
+
+        function fetchNextRange() {
+            if (current >= missing.length) {
+                $allBtn.prop('disabled', false).html('⬇ Fetch All Missing Ranges');
+                _log('All ' + missing.length + ' ranges fetched!', 'success');
+                // Reload everything
+                _fetchSeriesInfo(_state.series.id);
+                _state.ranges = null;
+                if (anyChainEnded) _checkAndActivateSeries();
+                if (_state.rangesVisible) {
+                    setTimeout(function() { _fetchRangesData(); }, 1500);
+                }
+                return;
+            }
+
+            var ridx = missing[current];
+            var range = _state.ranges.ranges[ridx];
+            var label = 'Eps ' + range.start_ep + '–' + range.end_ep;
+
+            $allBtn.html('<span class="sfx-spinner"></span> ' + (current + 1) + '/' + missing.length + ': ' + label);
+            _log('Batch fetch ' + (current + 1) + '/' + missing.length + ': ' + label + '...', 'fix');
+
+            var $cardBtn = $('.sfx-range-fetch[data-range-idx="' + ridx + '"]');
+            var origCardHtml = $cardBtn.html();
+            $cardBtn.prop('disabled', true).html('<span class="sfx-spinner"></span>');
+
+            // Batched fetch for this range
+            // Pre-initialize from range data so first batch also uses FAST PATH
+            var continueFrom = range ? String(range.start_video_id) : null;
+            var continueEp = range ? range.start_ep : null;
+            var rangeEndEp = range ? range.end_ep : null;
+            var batchNum = 0;
+
+            function fetchRangeBatch() {
+                batchNum++;
+                $cardBtn.html('<span class="sfx-spinner"></span> B' + batchNum);
+
+                var postData = {
+                    series_id: _state.series.id,
+                    range_index: ridx,
+                    season: _state.currentSeason,
+                    batch_size: 3,
+                    _token: LA.token
+                };
+                if (continueFrom) postData.continue_from = continueFrom;
+                if (continueEp !== null) postData.continue_ep = continueEp;
+                if (rangeEndEp !== null) postData.range_end_ep = rangeEndEp;
+
+                $.ajax({
+                    url: _getBase() + '/debug-player/fetch-range',
+                    method: 'POST',
+                    data: postData,
+                    dataType: 'json',
+                    timeout: 60000,
+                    success: function(resp) {
+                        if (resp.success) {
+                            _log('  ' + label + ' batch ' + batchNum + ': ' + resp.message, 'info');
+                            if (resp.range_end_ep) rangeEndEp = resp.range_end_ep;
+                            if (resp.chain_ended) anyChainEnded = true;
+
+                            // Live-update sidebar
+                            if (resp.series_info) {
+                                _state.series = resp.series_info.series || _state.series;
+                                _state.episodes = resp.series_info.episodes || _state.episodes;
+                                _state.seasons = resp.series_info.seasons || _state.seasons;
+                                _renderSidebar();
+                                _renderSeriesHeader();
+                            }
+
+                            if (resp.has_more && resp.next_video_id) {
+                                continueFrom = resp.next_video_id;
+                                continueEp = resp.next_ep_num;
+                                fetchRangeBatch();
+                            } else {
+                                // This range done
+                                $cardBtn.prop('disabled', false).html(origCardHtml);
+                                var $card = $cardBtn.closest('.sfx-range-card');
+                                $card.css({'background': 'rgba(22,163,106,.08)', 'border-color': 'rgba(22,163,106,.3)'});
+                                $cardBtn.css('background', '#374151').html('↻ Re-fetch');
+                                _log(label + ' complete ✓', 'success');
+                                current++;
+                                fetchNextRange();
+                            }
+                        } else {
+                            _log(label + ' failed: ' + (resp.error || 'Unknown'), 'error');
+                            $cardBtn.prop('disabled', false).html(origCardHtml);
+                            current++;
+                            fetchNextRange();
+                        }
+                    },
+                    error: function(xhr) {
+                        _log(label + ' request error: ' + xhr.status, 'error');
+                        $cardBtn.prop('disabled', false).html(origCardHtml);
+                        current++;
+                        fetchNextRange();
+                    }
+                });
+            }
+
+            fetchRangeBatch();
+        }
+
+        fetchNextRange();
     }
 
     // ─── HELPERS ───

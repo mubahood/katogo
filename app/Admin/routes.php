@@ -132,6 +132,8 @@ Route::group([
     $router->post('debug-player/fix-series', 'DebugPlayerProxyController@fixSeries');
     $router->post('debug-player/fix-episode', 'DebugPlayerProxyController@fixEpisode');
     $router->post('debug-player/sync-series', 'DebugPlayerProxyController@syncSeries');
+    $router->post('debug-player/fetch-range', 'DebugPlayerProxyController@fetchRange');
+    $router->post('debug-player/check-activation', 'DebugPlayerProxyController@checkActivation');
 
     //https://omulimisa.org/api/v1/e-learning/inbound-outbound
     //https://omulimisa.org/api/v1/e-learning/events

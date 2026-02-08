@@ -264,7 +264,7 @@ class DebugPlayerProxyController extends Controller
 
     /**
      * Fetch remote episodes from munowatch API for a series.
-     * Does NOT modify local DB — returns what the server says.
+     * Returns pagination ranges with sync status for each.
      *
      * POST debug-player/series-remote-episodes  { series_id: int }
      */
@@ -276,7 +276,72 @@ class DebugPlayerProxyController extends Controller
         }
 
         $fixer = new SeriesFixerService();
-        $result = $fixer->fetchRemoteEpisodes((int) $seriesId);
+        $result = $fixer->fetchRemoteRanges((int) $seriesId);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fetch episodes for a specific pagination range (batched).
+     * Supports continuation: JS calls this in a loop with batch_size=3 until has_more=false.
+     * Each batch takes ~10-15s, well within MAMP's 30s FastCGI idle timeout.
+     *
+     * POST debug-player/fetch-range  { series_id, range_index, season?, batch_size?, continue_from?, continue_ep?, range_end_ep? }
+     */
+    public function fetchRange(Request $request)
+    {
+        $seriesId = $request->input('series_id');
+        $rangeIndex = $request->input('range_index');
+        $season = $request->input('season', 1);
+        $batchSize = $request->input('batch_size', 3); // Default 3 episodes per request (~10-15s)
+        $continueFrom = $request->input('continue_from'); // Video ID to resume from
+        $continueEp = $request->input('continue_ep');     // Episode number to resume from
+        $rangeEndEp = $request->input('range_end_ep');     // End episode of the range (for fast continuation)
+
+        if (empty($seriesId) || $rangeIndex === null || $rangeIndex === '') {
+            return response()->json(['success' => false, 'error' => 'series_id and range_index are required']);
+        }
+
+        $fixer = new SeriesFixerService();
+        $result = $fixer->fetchEpisodesForRange(
+            (int) $seriesId,
+            (int) $rangeIndex,
+            (int) $season,
+            (int) $batchSize,
+            $continueFrom ? (string) $continueFrom : null,
+            $continueEp !== null ? (int) $continueEp : null,
+            $rangeEndEp !== null ? (int) $rangeEndEp : null
+        );
+
+        // After fetching, return refreshed series info so the UI can update
+        if ($result['success'] ?? false) {
+            $seriesInfo = $fixer->getSeriesInfo((int) $seriesId);
+            $result['series_info'] = $seriesInfo;
+        }
+
+        return response()->json($result);
+    }
+
+    /**
+     * Check if series is fully synced and activate it if so.
+     * Also cleans the series title (removes trailing episode numbers).
+     *
+     * POST debug-player/check-activation  { series_id: int }
+     */
+    public function checkActivation(Request $request)
+    {
+        $seriesId = $request->input('series_id');
+        if (empty($seriesId)) {
+            return response()->json(['success' => false, 'error' => 'No series_id provided']);
+        }
+
+        $fixer = new SeriesFixerService();
+        $result = $fixer->checkAndActivateSeries((int) $seriesId);
+
+        // Return refreshed series info
+        $seriesInfo = $fixer->getSeriesInfo((int) $seriesId);
+        $result['series_info'] = $seriesInfo;
+        $result['success'] = true;
 
         return response()->json($result);
     }
