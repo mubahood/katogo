@@ -176,7 +176,7 @@ class MovieModelController extends AdminController
                 return $category->title;
             }
             return 'N/A';
-        })->sortable()->hide();
+        })->sortable();
 
         //is_first_episode
         $grid->column('is_first_episode', __('Is first episode'))
