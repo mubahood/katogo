@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
  * for the movies referenced by selected failure records.
  *
  * Deduplicates movie IDs (multiple failures may reference the same movie).
- * Max 50 unique movies per batch to avoid timeouts.
+ * Max 200 unique movies per batch to avoid timeouts.
  * Updates video_playback_failures for each movie individually (no deadlocks).
  */
 class BatchFixFailureMovies extends BatchAction
@@ -44,7 +44,7 @@ class BatchFixFailureMovies extends BatchAction
             return $this->response()->error('None of the selected failures have a linked movie ID.')->refresh();
         }
 
-        $maxMovies = 50;
+        $maxMovies = 200;
         if (count($movieIds) > $maxMovies) {
             return $this->response()
                 ->error("Too many unique movies (" . count($movieIds) . "). Please select failures for at most {$maxMovies} unique movies at a time.")
@@ -108,6 +108,6 @@ class BatchFixFailureMovies extends BatchAction
      */
     public function dialog()
     {
-        $this->confirm('Fix movies for selected failures? This will re-fetch data from external servers and update each unique movie. Related failure records will be marked as FIXED on success. Max 50 unique movies per batch.');
+        $this->confirm('Fix movies for selected failures? This will re-fetch data from external servers and update each unique movie. Related failure records will be marked as FIXED on success. Max 200 unique movies per batch.');
     }
 }

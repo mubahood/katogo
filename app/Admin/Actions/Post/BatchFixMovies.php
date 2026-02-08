@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
  * Batch Fix Movies — re-fetches movie data from the original source server
  * (munowatch, myvj) and repairs broken records one by one.
  *
- * Max 50 movies per batch to avoid timeouts.
+ * Max 200 movies per batch to avoid timeouts.
  * Updates video_playback_failures for each movie individually (no deadlocks).
  */
 class BatchFixMovies extends BatchAction
@@ -42,7 +42,7 @@ class BatchFixMovies extends BatchAction
         ini_set('memory_limit', '512M');   // 512 MB
 
         // Enforce max 50
-        $maxMovies = 50;
+        $maxMovies = 200;
         $total     = $collection->count();
 
         if ($total > $maxMovies) {
@@ -113,6 +113,6 @@ class BatchFixMovies extends BatchAction
      */
     public function dialog()
     {
-        $this->confirm('Fix selected movies? This will re-fetch data from the original external servers (munowatch/myvj) and update each movie record. Max 50 movies per batch.');
+        $this->confirm('Fix selected movies? This will re-fetch data from the original external servers (munowatch/myvj) and update each movie record. Max 200 movies per batch.');
     }
 }
