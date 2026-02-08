@@ -648,12 +648,7 @@ class VideoPlaybackFailureController extends AdminController
             });
 
             $filter->column(1/3, function ($filter) {
-                $filter->equal('status', 'Status')->select([
-                    'pending' => 'Pending',
-                    'investigating' => 'Investigating',
-                    'resolved' => 'Resolved',
-                    'ignored' => 'Ignored',
-                ]);
+            
                 $filter->equal('has_subscription', 'Subscription')->select([
                     1 => 'Subscribed',
                     0 => 'Free User',
