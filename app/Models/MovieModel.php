@@ -118,6 +118,14 @@ class MovieModel extends Model
             }
             if ($model->type == 'Movie') {
                 $model->actor = '--';
+                // ENFORCE: Movies must NOT be linked to any series
+                $model->category_id = null;
+                $model->episode_number = null;
+                $model->season_number = null;
+                $model->series_title = null;
+                $model->episode_title = null;
+                $model->is_first_episode = null;
+
                 //get same movie with external_url
                 $existing = MovieModel::where('external_url', $model->external_url)
                     ->where('status', 'Active')
@@ -150,6 +158,15 @@ class MovieModel extends Model
 
         static::updating(function ($model) {
 
+            // ENFORCE: Movies must NOT be linked to any series
+            if ($model->type == 'Movie') {
+                $model->category_id = null;
+                $model->episode_number = null;
+                $model->season_number = null;
+                $model->series_title = null;
+                $model->episode_title = null;
+                $model->is_first_episode = null;
+            }
 
             if ($model->type == 'Series' && $model->category_id != null && $model->category_id != '' && $model->category_id != 0) {
                 $series = SeriesMovie::find($model->category_id);

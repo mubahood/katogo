@@ -759,7 +759,10 @@ class MovieCrawlerPage extends Model
             // Genre and category
             $movie->genre = $genre;
             $movie->category = $genre; // Use genre as category
-            $movie->category_id = $categoryId;
+            // NOTE: Do NOT set category_id from munowatch API for Movies.
+            // The munowatch category_id is a content type ID (e.g. 5 = TV Series),
+            // but in our DB category_id is the FK to series_movies.id.
+            // Only series episodes should have category_id set (done in SeriesFixerService).
 
             // Duration (convert to consistent format)
             $movie->duration = $duration; // Keep original format like "01h 28m"
@@ -807,6 +810,17 @@ class MovieCrawlerPage extends Model
             if (!in_array(strtolower($movie->type), $types)) {
                 $movie->type = 'Movie';
             }
+
+            // If this is a Movie, ensure it has NO series linkage
+            if ($movie->type === 'Movie') {
+                $movie->category_id = null;
+                $movie->episode_number = null;
+                $movie->season_number = null;
+                $movie->series_title = null;
+                $movie->episode_title = null;
+                $movie->is_first_episode = null;
+            }
+
             // Status (Set to Inactive for munowatch content)
             $movie->status = 'Active';
 
