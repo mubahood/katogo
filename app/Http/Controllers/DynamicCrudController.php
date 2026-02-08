@@ -704,6 +704,12 @@ class DynamicCrudController extends Controller
         }
 
         $perPage = (int) $request->get('per_page', 21);
+
+        // ── SAFETY: Cap per_page for MovieModel to prevent massive responses ──
+        if ($modelName == 'MovieModel' && $perPage > 100) {
+            $perPage = 100;
+        }
+
         $results = $query->paginate($perPage);
 
         $fields = $request->query('fields');

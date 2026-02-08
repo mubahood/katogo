@@ -37,12 +37,12 @@ class BatchFixMovies extends BatchAction
     public function handle(Collection $collection, Request $request)
     {
         // Allocate enough resources — each movie fix does an external HTTP call
-        // that can take up to 30s. For 50 movies: ~25 min worst case.
+        // that can take up to 30s. For 500 movies: ~250 min worst case.
         set_time_limit(1800);              // 30 minutes
         ini_set('memory_limit', '512M');   // 512 MB
 
-        // Enforce max 50
-        $maxMovies = 200;
+        // Enforce max 500 movies per batch to prevent server overload and timeouts.
+        $maxMovies = 500;
         $total     = $collection->count();
 
         if ($total > $maxMovies) {
@@ -113,6 +113,6 @@ class BatchFixMovies extends BatchAction
      */
     public function dialog()
     {
-        $this->confirm('Fix selected movies? This will re-fetch data from the original external servers (munowatch/myvj) and update each movie record. Max 200 movies per batch.');
+        $this->confirm('Fix selected movies? This will re-fetch data from the original external servers (munowatch/myvj) and update each movie record. Max 500 movies per batch.');
     }
 }
