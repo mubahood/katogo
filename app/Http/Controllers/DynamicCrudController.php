@@ -253,17 +253,66 @@ class DynamicCrudController extends Controller
 
             //check if category_id is set and not empty
             if ($request->filled('category_id')) {
-                $movies = MovieModel::where('category_id', $request->get('category_id'))->where('status', 'Active')->get();
-                $responseData = [
-                    'items' => $movies,
+                // ── OPTIMIZED SERIES EPISODES RESPONSE ──
+                // When category_id is provided, the mobile app is requesting episodes
+                // for a specific series. Return only essential fields, properly ordered,
+                // and deduplicated — instead of dumping every column from the table.
+
+                $categoryId = $request->get('category_id');
+
+                // Only select fields the mobile app actually uses for episode display
+                $episodeFields = [
+                    'id', 'title', 'url', 'thumbnail_url', 'image_url',
+                    'description', 'year', 'rating', 'duration', 'size',
+                    'genre', 'type', 'status', 'category', 'category_id',
+                    'vj', 'actor', 'episode_number', 'season_number',
+                    'is_premium', 'views_count', 'likes_count',
+                    'munowatch_id', 'is_first_episode', 'episode_title',
+                    'series_title', 'is_muno', 'language', 'country',
+                ];
+
+                $episodes = MovieModel::select($episodeFields)
+                    ->where('category_id', $categoryId)
+                    ->where('status', 'Active')
+                    ->where('type', 'Series')
+                    ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
+                    ->orderBy('id', 'asc')
+                    ->get();
+
+                // Deduplicate episodes by episode_number (keep lowest id = first inserted)
+                $seen = [];
+                $unique = $episodes->filter(function ($ep) use (&$seen) {
+                    $epNum = trim($ep->episode_number ?? '');
+                    if (empty($epNum) || $epNum === '0') {
+                        return true; // Keep unnumbered episodes (let the app handle them)
+                    }
+                    $seasonKey = ($ep->season_number ?? '1') . '-' . $epNum;
+                    if (isset($seen[$seasonKey])) {
+                        return false; // Skip duplicate
+                    }
+                    $seen[$seasonKey] = true;
+                    return true;
+                });
+
+                // Apply URL encoding (matches the existing URL encoding logic below)
+                $items = $unique->values()->map(function ($item) {
+                    $data = $item->toArray();
+                    if (!empty($data['url'])) {
+                        $data['url'] = str_replace(' ', '%20', $data['url']);
+                        $data['url'] = preg_replace('/^http:/i', 'https:', $data['url']);
+                    }
+                    return $data;
+                });
+
+                return $this->success([
+                    'items' => $items,
                     'pagination' => [
                         'current_page' => 1,
-                        'per_page' => count($movies),
-                        'total' => count($movies),
-                        'last_page' => 1,
+                        'per_page'     => $items->count(),
+                        'total'        => $items->count(),
+                        'last_page'    => 1,
                     ]
-                ];
-                return $this->success($responseData, "Data retrieved successfully.");
+                ], "Episodes retrieved successfully.");
             }
 
 
