@@ -308,6 +308,24 @@ class VideoPlaybackFailureController extends AdminController
             return '<em class="text-muted">Unknown Movie</em>' . ($this->movie_id ? " <small>(ID: {$this->movie_id})</small>" : '');
         });
         
+        $grid->column('url', __('Video URL'))->display(function () {
+            $movie = $this->movie;
+            if (!$movie && $this->movie_id) $movie = \App\Models\MovieModel::find($this->movie_id);
+            $url = $movie->url ?? null;
+            if (!$url) return '<span class="text-muted">—</span>';
+            $short = mb_strlen($url) > 40 ? mb_substr($url, 0, 40) . '…' : $url;
+            return "<a href='" . htmlspecialchars($url) . "' target='_blank' title='" . htmlspecialchars($url) . "' style='font-size:11px;word-break:break-all'>{$short}</a>";
+        });
+
+        $grid->column('external_url', __('Page URL'))->display(function () {
+            $movie = $this->movie;
+            if (!$movie && $this->movie_id) $movie = \App\Models\MovieModel::find($this->movie_id);
+            $url = $movie->external_url ?? null;
+            if (!$url) return '<span class="text-muted">—</span>';
+            $short = mb_strlen($url) > 40 ? mb_substr($url, 0, 40) . '…' : $url;
+            return "<a href='" . htmlspecialchars($url) . "' target='_blank' title='" . htmlspecialchars($url) . "' style='font-size:11px;word-break:break-all'>{$short}</a>";
+        });
+
         $grid->column('error_type', __('Error Type'))
             ->display(function ($type) {
                 $icons = [
