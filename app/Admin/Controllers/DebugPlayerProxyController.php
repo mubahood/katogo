@@ -293,7 +293,7 @@ class DebugPlayerProxyController extends Controller
         $seriesId = $request->input('series_id');
         $rangeIndex = $request->input('range_index');
         $season = $request->input('season', 1);
-        $batchSize = $request->input('batch_size', 3); // Default 3 episodes per request (~10-15s)
+        $batchSize = $request->input('batch_size', 20); // Default 20 episodes per request
         $continueFrom = $request->input('continue_from'); // Video ID to resume from
         $continueEp = $request->input('continue_ep');     // Episode number to resume from
         $rangeEndEp = $request->input('range_end_ep');     // End episode of the range (for fast continuation)

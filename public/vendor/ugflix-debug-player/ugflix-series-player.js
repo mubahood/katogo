@@ -696,7 +696,7 @@
                     series_id: _state.series.id,
                     range_index: ridx,
                     season: _state.currentSeason,
-                    batch_size: 3,
+                    batch_size: 20,
                     _token: LA.token
                 };
                 if (continueFrom) postData.continue_from = continueFrom;
@@ -708,7 +708,7 @@
                     method: 'POST',
                     data: postData,
                     dataType: 'json',
-                    timeout: 60000,
+                    timeout: 120000,
                     success: function(resp) {
                         if (resp.success) {
                             grandCreated += (resp.created || 0);
@@ -941,7 +941,7 @@
                 series_id: _state.series.id,
                 range_index: rangeIdx,
                 season: _state.currentSeason,
-                batch_size: 3,
+                batch_size: 20,
                 _token: LA.token
             };
             if (continueFrom) postData.continue_from = continueFrom;
@@ -953,7 +953,7 @@
                 method: 'POST',
                 data: postData,
                 dataType: 'json',
-                timeout: 60000,
+                timeout: 120000,
                 success: function(resp) {
                     if (resp.success) {
                         totalCreated += (resp.created || 0);
@@ -1141,7 +1141,7 @@
                     series_id: _state.series.id,
                     range_index: ridx,
                     season: _state.currentSeason,
-                    batch_size: 3,
+                    batch_size: 20,
                     _token: LA.token
                 };
                 if (continueFrom) postData.continue_from = continueFrom;
@@ -1153,7 +1153,7 @@
                     method: 'POST',
                     data: postData,
                     dataType: 'json',
-                    timeout: 60000,
+                    timeout: 120000,
                     success: function(resp) {
                         if (resp.success) {
                             _log('  ' + label + ' batch ' + batchNum + ': ' + resp.message, 'info');

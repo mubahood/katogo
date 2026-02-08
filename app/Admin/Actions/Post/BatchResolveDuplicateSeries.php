@@ -16,23 +16,22 @@ use Illuminate\Support\Facades\Log;
  *
  * Finds and merges duplicate series entries WITHOUT losing any episodes.
  *
- * How duplicates are detected:
- *  - Same cleaned title (case-insensitive) + is_muno = 'Yes'
- *  - Same munowatch_id
- *  - Same series_code
+ * SAFE duplicate detection (never merges different shows):
+ *  TIER 1 — Same munowatch_id (strongest signal, always safe)
+ *  TIER 2 — Same cleaned title + one/both have empty munowatch_id (orphan cleanup)
+ *
+ * NEVER merged:
+ *  - Two series with DIFFERENT non-empty munowatch_ids (even if same title)
+ *    These are different shows/seasons that happen to share a name.
  *
  * Merge strategy (for each duplicate group):
- *  1. Pick the WINNER: the one with the most episodes, then oldest ID as tiebreaker
- *  2. For each LOSER in the group:
- *     a. Reassign all episodes (movies.category_id) from loser → winner
- *     b. Copy any metadata the winner is missing (thumbnail, series_code, etc.)
- *     c. Delete the loser series record
- *  3. Refresh winner metadata (episode count, title cleaning, activation)
+ *  1. Pick the WINNER: most episodes, then oldest ID as tiebreaker
+ *  2. For each LOSER: reassign episodes → winner, copy metadata, delete loser
+ *  3. Refresh winner (episode count, title cleaning, activation)
  *
  * Safety:
  *  - Max 50 series per batch
  *  - All moves are logged
- *  - Dry-run mode via dialog checkbox
  *  - Never drops episodes
  */
 class BatchResolveDuplicateSeries extends BatchAction
@@ -68,13 +67,11 @@ class BatchResolveDuplicateSeries extends BatchAction
         $mergedGroups = 0;
         $losersRemoved = 0;
         $episodesMoved = 0;
+        $skippedDiffShows = 0;
         $errors = [];
 
-        // Step 1: Group selected series by cleaned title
-        $groups = $this->groupByCleanedTitle($collection, $fixer);
-
-        // Step 2: Also group by munowatch_id (same munowatch_id = same series)
-        $groups = $this->mergeGroupsByMunowatchId($groups);
+        // Build duplicate groups with SAFE logic
+        $groups = $this->buildSafeGroups($collection, $fixer);
 
         foreach ($groups as $groupKey => $members) {
             if (count($members) < 2) {
@@ -119,45 +116,139 @@ class BatchResolveDuplicateSeries extends BatchAction
     }
 
     /**
-     * Group selected series by their cleaned title (case-insensitive).
+     * Build safe duplicate groups using a two-tier approach:
+     *
+     * TIER 1: Group by munowatch_id (exact match, non-empty).
+     *         Same munowatch_id = definitely the same show.
+     *
+     * TIER 2: For series NOT yet grouped (no munowatch_id or unique munowatch_id),
+     *         group by cleaned title ONLY if they can be safely merged:
+     *         - Both have the SAME non-empty munowatch_id (already handled by tier 1)
+     *         - One or both have EMPTY munowatch_id (orphan that belongs to this title)
+     *
+     *         NEVER group two series with DIFFERENT non-empty munowatch_ids.
      */
-    protected function groupByCleanedTitle(Collection $collection, SeriesFixerService $fixer): array
+    protected function buildSafeGroups(Collection $collection, SeriesFixerService $fixer): array
     {
         $groups = [];
+        $assignedIds = []; // series ID → group key (prevent double-assignment)
 
+        // Index all series with their metadata
+        $seriesData = [];
         foreach ($collection as $series) {
             $cleanTitle = strtolower(trim($fixer->cleanSeriesTitle($series->title)));
             if (strlen($cleanTitle) < 2) {
                 $cleanTitle = strtolower(trim($series->title));
             }
-            $groups[$cleanTitle][] = $series;
+            $seriesData[$series->id] = [
+                'model' => $series,
+                'clean_title' => $cleanTitle,
+                'muno_id' => trim($series->munowatch_id ?? ''),
+                'series_code' => trim($series->series_code ?? ''),
+            ];
         }
 
-        return $groups;
-    }
+        // TIER 1: Group by munowatch_id (strongest signal)
+        $byMunoId = [];
+        foreach ($seriesData as $sid => $data) {
+            if ($data['muno_id'] !== '') {
+                $byMunoId[$data['muno_id']][] = $sid;
+            }
+        }
 
-    /**
-     * Further merge groups that share the same munowatch_id.
-     * E.g., "Loki" (munowatch_id=76080) and "Loki" (munowatch_id=76080) from different title groups.
-     */
-    protected function mergeGroupsByMunowatchId(array $groups): array
-    {
-        // Build a munowatch_id → group_key mapping
-        $munoIdToGroup = [];
+        foreach ($byMunoId as $munoId => $sids) {
+            if (count($sids) >= 2) {
+                $groupKey = 'muno_' . $munoId;
+                $groups[$groupKey] = [];
+                foreach ($sids as $sid) {
+                    $groups[$groupKey][] = $seriesData[$sid]['model'];
+                    $assignedIds[$sid] = $groupKey;
+                }
+                Log::info("[ResolveDuplicates] TIER1 group '{$groupKey}': " . count($sids) . " series with same munowatch_id={$munoId}");
+            }
+        }
 
-        foreach ($groups as $groupKey => $members) {
-            foreach ($members as $series) {
-                $munoId = $series->munowatch_id;
-                if (!empty($munoId)) {
-                    if (isset($munoIdToGroup[$munoId]) && $munoIdToGroup[$munoId] !== $groupKey) {
-                        // This munowatch_id appears in a different title group — merge them
-                        $otherGroupKey = $munoIdToGroup[$munoId];
-                        if (isset($groups[$otherGroupKey])) {
-                            $groups[$groupKey] = array_merge($groups[$groupKey], $groups[$otherGroupKey]);
-                            unset($groups[$otherGroupKey]);
+        // TIER 2: Group remaining by cleaned title, but ONLY merge if safe
+        // Safe = one or both have empty munowatch_id (orphan cleanup)
+        $unassigned = array_filter($seriesData, fn($d, $sid) => !isset($assignedIds[$sid]), ARRAY_FILTER_USE_BOTH);
+
+        $byTitle = [];
+        foreach ($unassigned as $sid => $data) {
+            $byTitle[$data['clean_title']][] = $sid;
+        }
+
+        foreach ($byTitle as $title => $sids) {
+            if (count($sids) < 2) continue;
+
+            // Check safety: collect all non-empty munowatch_ids in this title group
+            $munoIds = [];
+            foreach ($sids as $sid) {
+                $mid = $seriesData[$sid]['muno_id'];
+                if ($mid !== '') $munoIds[$mid] = true;
+            }
+
+            if (count($munoIds) > 1) {
+                // DIFFERENT non-empty munowatch_ids → NOT duplicates, skip
+                Log::info("[ResolveDuplicates] SKIP title '{$title}': " . count($munoIds) . " different munowatch_ids — these are different shows");
+                continue;
+            }
+
+            if (count($munoIds) === 1) {
+                // All have the same munowatch_id (or empty). Safe to merge.
+                // But only include those with matching munowatch_id or empty munowatch_id
+                $targetMunoId = array_key_first($munoIds);
+                $safeSids = [];
+                foreach ($sids as $sid) {
+                    $mid = $seriesData[$sid]['muno_id'];
+                    if ($mid === '' || $mid === $targetMunoId) {
+                        $safeSids[] = $sid;
+                    }
+                }
+                if (count($safeSids) >= 2) {
+                    $groupKey = 'title_' . $title;
+                    $groups[$groupKey] = [];
+                    foreach ($safeSids as $sid) {
+                        if (!isset($assignedIds[$sid])) {
+                            $groups[$groupKey][] = $seriesData[$sid]['model'];
+                            $assignedIds[$sid] = $groupKey;
                         }
                     }
-                    $munoIdToGroup[$munoId] = $groupKey;
+                    Log::info("[ResolveDuplicates] TIER2 group '{$groupKey}': " . count($groups[$groupKey]) . " series (same title + compatible muno_id)");
+                }
+            } else {
+                // count($munoIds) === 0: ALL have empty munowatch_id. Safe to merge by title.
+                $groupKey = 'title_' . $title;
+                $groups[$groupKey] = [];
+                foreach ($sids as $sid) {
+                    if (!isset($assignedIds[$sid])) {
+                        $groups[$groupKey][] = $seriesData[$sid]['model'];
+                        $assignedIds[$sid] = $groupKey;
+                    }
+                }
+                Log::info("[ResolveDuplicates] TIER2 group '{$groupKey}': " . count($groups[$groupKey]) . " series (same title, all empty muno_id)");
+            }
+        }
+
+        // Also check: can any TIER 1 group absorb orphans from unassigned by title match?
+        $stillUnassigned = array_filter($seriesData, fn($d, $sid) => !isset($assignedIds[$sid]), ARRAY_FILTER_USE_BOTH);
+        foreach ($stillUnassigned as $sid => $data) {
+            if ($data['muno_id'] !== '') continue; // Has a unique munowatch_id, leave alone
+
+            // This orphan has no munowatch_id — check if any existing group has the same clean title
+            foreach ($groups as $groupKey => $members) {
+                $groupTitle = null;
+                foreach ($members as $member) {
+                    $memberData = $seriesData[$member->id] ?? null;
+                    if ($memberData) {
+                        $groupTitle = $memberData['clean_title'];
+                        break;
+                    }
+                }
+                if ($groupTitle === $data['clean_title']) {
+                    $groups[$groupKey][] = $data['model'];
+                    $assignedIds[$sid] = $groupKey;
+                    Log::info("[ResolveDuplicates] Absorbed orphan #{$sid} '{$data['model']->title}' into group '{$groupKey}'");
+                    break;
                 }
             }
         }
@@ -173,6 +264,17 @@ class BatchResolveDuplicateSeries extends BatchAction
         $episodesMoved = 0;
         $losersRemoved = 0;
         $errors = [];
+
+        // Deduplicate models by ID (prevent self-merge)
+        $unique = [];
+        foreach ($members as $m) {
+            $unique[$m->id] = $m;
+        }
+        $members = array_values($unique);
+
+        if (count($members) < 2) {
+            return ['episodes_moved' => 0, 'losers_removed' => 0, 'errors' => []];
+        }
 
         // Sort by episode count DESC, then by ID ASC (oldest first as tiebreaker)
         usort($members, function ($a, $b) {
@@ -192,28 +294,49 @@ class BatchResolveDuplicateSeries extends BatchAction
         Log::info("[ResolveDuplicates] Winner: #{$winnerId} '{$winnerTitle}' ({$winnerEpCount} eps). Losers: " . count($losers));
 
         foreach ($losers as $loser) {
+            // SAFETY: Never merge a series with itself
+            if ($loser->id === $winnerId) {
+                Log::warning("[ResolveDuplicates] Skipping self-merge for #{$winnerId}");
+                continue;
+            }
+
             try {
                 $loserEpCount = MovieModel::where('category_id', $loser->id)->count();
                 Log::info("[ResolveDuplicates] Processing loser #{$loser->id} '{$loser->title}' ({$loserEpCount} eps)");
 
-                // Step A: Reassign episodes from loser → winner
-                // Use munowatch_id dedup to avoid duplicate episodes after merge
+                // Build a lookup of what episodes the winner already has
+                $winnerEpisodes = MovieModel::where('category_id', $winnerId)->get();
+                $winnerMunoIds = [];
+                $winnerExtUrls = [];
+                foreach ($winnerEpisodes as $we) {
+                    if (!empty($we->munowatch_id)) $winnerMunoIds[$we->munowatch_id] = true;
+                    if (!empty($we->external_url)) $winnerExtUrls[trim($we->external_url)] = true;
+                }
+
+                // Reassign episodes from loser → winner
                 $loserEpisodes = MovieModel::where('category_id', $loser->id)->get();
                 $movedCount = 0;
+                $dupCount = 0;
 
                 foreach ($loserEpisodes as $ep) {
-                    // Check if winner already has this episode (by munowatch_id)
+                    // Check if winner already has this episode
                     $existsInWinner = false;
-                    if (!empty($ep->munowatch_id)) {
-                        $existsInWinner = MovieModel::where('category_id', $winnerId)
-                            ->where('munowatch_id', $ep->munowatch_id)
-                            ->exists();
+
+                    // Check by munowatch_id
+                    if (!empty($ep->munowatch_id) && isset($winnerMunoIds[$ep->munowatch_id])) {
+                        $existsInWinner = true;
+                    }
+
+                    // Check by external_url
+                    if (!$existsInWinner && !empty($ep->external_url) && isset($winnerExtUrls[trim($ep->external_url)])) {
+                        $existsInWinner = true;
                     }
 
                     if ($existsInWinner) {
                         // Winner already has this episode — delete the duplicate
                         Log::info("[ResolveDuplicates] Duplicate ep #{$ep->id} (muno:{$ep->munowatch_id}) exists in winner, removing");
                         $ep->delete();
+                        $dupCount++;
                     } else {
                         // Move episode to winner
                         $ep->category_id = $winnerId;
@@ -221,11 +344,15 @@ class BatchResolveDuplicateSeries extends BatchAction
                         $ep->series_title = $winnerTitle;
                         $ep->save();
                         $movedCount++;
+
+                        // Update lookup so next episodes can check against newly moved ones
+                        if (!empty($ep->munowatch_id)) $winnerMunoIds[$ep->munowatch_id] = true;
+                        if (!empty($ep->external_url)) $winnerExtUrls[trim($ep->external_url)] = true;
                     }
                 }
 
                 $episodesMoved += $movedCount;
-                Log::info("[ResolveDuplicates] Moved {$movedCount} episodes from #{$loser->id} → #{$winnerId}");
+                Log::info("[ResolveDuplicates] Moved {$movedCount} episodes, removed {$dupCount} dups from #{$loser->id} → #{$winnerId}");
 
                 // Step B: Copy metadata from loser to winner if winner is missing it
                 $this->copyMissingMetadata($winner, $loser);
