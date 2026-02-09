@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +22,34 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // ──────────────────────────────────────────────────────────────
+        // CLEANUP: Ensure all Movie-type records have null category_id
+        // category_id is a FK to series_movies.id — only Series episodes
+        // should have a value. Movies must NEVER have this set.
+        // Runs once per day (cached) to avoid overhead on every request.
+        // ──────────────────────────────────────────────────────────────
+        Cache::remember('movie_category_id_cleanup_v1', 86400, function () {
+            try {
+                $affected = DB::update("
+                    UPDATE movie_models 
+                    SET category_id = NULL,
+                        episode_number = NULL,
+                        season_number = NULL,
+                        series_title = NULL,
+                        episode_title = NULL,
+                        is_first_episode = NULL
+                    WHERE type = 'Movie' 
+                      AND (category_id IS NOT NULL 
+                           OR episode_number IS NOT NULL 
+                           OR season_number IS NOT NULL)
+                ");
+                if ($affected > 0) {
+                    Log::info("[AppServiceProvider] Cleaned {$affected} Movie records that had stale series fields (category_id, episode_number, etc.)");
+                }
+            } catch (\Exception $e) {
+                Log::warning("[AppServiceProvider] Movie cleanup failed: " . $e->getMessage());
+            }
+            return true;
+        });
     }
 }

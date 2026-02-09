@@ -771,11 +771,12 @@ class MovieFixerService
         // CRITICAL: For series episodes, category_id is the FK to series_movies.id — NEVER overwrite!
         // The munowatch API returns category_id as a content category (e.g. 5 = TV Series), which
         // is completely different from our local FK usage.
+        // For non-series (Movie type): category_id must ALWAYS be null — never set from API.
         if (!$isSeries) {
-            $newCatId = $preview['category_id'] ?? null;
-            if (!empty($newCatId) && $newCatId !== ($movie->category_id ?? null)) {
-                $changes['category_id'] = ['old' => $movie->category_id, 'new' => $newCatId];
-                $movie->category_id = $newCatId;
+            // Movies must NOT have a category_id — it's a FK to series_movies only
+            if (!empty($movie->category_id)) {
+                $changes['category_id'] = ['old' => $movie->category_id, 'new' => null];
+                $movie->category_id = null;
             }
         } else {
             Log::info("[MovieFixer] #{$movie->id}: Series episode — skipping category_id update (protected FK to SeriesMovie #{$movie->category_id})");
