@@ -41,6 +41,29 @@ class BatchFixSeriesType extends BatchAction
     protected const MUNOWATCH_JWT      = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
 
     // ──────────────────────────────────
+    //  MODEL RESOLUTION (override findOrFail → find)
+    // ──────────────────────────────────
+
+    /**
+     * Override parent's retrieveModel to use lenient find() instead of findOrFail().
+     * This prevents 404 errors when some selected IDs no longer exist in the DB
+     * (e.g. already deleted by a previous batch run, or stale page cache).
+     */
+    public function retrieveModel(Request $request)
+    {
+        if (!$key = $request->get('_key')) {
+            return false;
+        }
+
+        if (is_string($key)) {
+            $key = explode(',', $key);
+        }
+
+        // Use find() — returns only records that exist, silently skips missing IDs
+        return SeriesMovie::find($key);
+    }
+
+    // ──────────────────────────────────
     //  ENTRY POINT
     // ──────────────────────────────────
 
