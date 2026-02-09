@@ -223,10 +223,6 @@ class BatchFixSeriesType extends BatchAction
                         skipped++;
                         $('#bfst-skipped').text(skipped);
                         logLine('<span style="color:#ff9800">  SKIP #' + seriesId + ' "' + shortTitle + '" has ' + (resp.episode_count||0) + ' ep(s)</span>');
-                    } else if (resp.action === 'skipped_no_muno_info') {
-                        skipped++;
-                        $('#bfst-skipped').text(skipped);
-                        logLine('<span style="color:#555">  SKIP #' + seriesId + ' "' + shortTitle + '" no munowatch info</span>');
                     } else if (resp.action === 'kept_is_series') {
                         kept++;
                         $('#bfst-kept').text(kept);
@@ -342,19 +338,25 @@ SCRIPT;
         $videoId = $this->resolveVideoId($series);
 
         if (empty($videoId)) {
+            // Check if series_code yields remote episodes before deleting
             if (!empty($series->series_code)) {
                 $rangeResult = $this->checkEpisodesRangeApi($series->series_code, $series->series_code);
-                if (!$rangeResult['has_episodes']) {
-                    Log::info("[BatchFixSeriesType] #{$seriesId}: 0 local eps, no video ID, range API no episodes. Deleting.");
-                    $this->deleteSeries($series);
+                if ($rangeResult['has_episodes']) {
                     return [
-                        'action'  => 'deleted',
-                        'score'   => 0,
-                        'signals' => 'no_video_id, range_api_no_episodes, 0_local_eps',
+                        'action'  => 'kept_is_series',
+                        'score'   => 3,
+                        'signals' => 'range_api_has_episodes(' . $rangeResult['episode_count'] . '), 0_local_eps',
                     ];
                 }
             }
-            return ['action' => 'skipped_no_muno_info'];
+            // Not munowatch + 0 local episodes → delete
+            Log::info("[BatchFixSeriesType] #{$seriesId}: 0 local eps, not munowatch. Deleting.");
+            $this->deleteSeries($series);
+            return [
+                'action'  => 'deleted',
+                'score'   => 0,
+                'signals' => 'not_munowatch, 0_local_eps',
+            ];
         }
 
         $previewResult = $this->fetchMunowatchPreview($videoId);
