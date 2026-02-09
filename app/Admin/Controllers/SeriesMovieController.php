@@ -141,6 +141,7 @@ class SeriesMovieController extends AdminController
             $batch->add(new \App\Admin\Actions\Post\SeriesMovieStatusChange());
             $batch->add(new \App\Admin\Actions\Post\BatchFixSeries());
             $batch->add(new \App\Admin\Actions\Post\BatchResolveDuplicateSeries());
+            $batch->add(new \App\Admin\Actions\Post\BatchFixSeriesType());
         });
 
         $grid->quickSearch('title')->placeholder('Search by title');
@@ -174,7 +175,7 @@ class SeriesMovieController extends AdminController
                     $this->total_episodes = $real;
                     $this->save();
                 }
-                $url = url('movies?category_id=' . $this->id);
+                $url = url('movies-movies?category_id=' . $this->id);
                 $color = $real > 0 ? '#27ae60' : '#e74c3c';
                 return "<a href='{$url}' target='_blank' style='color:{$color};font-weight:600'>{$real}</a>";
             });
