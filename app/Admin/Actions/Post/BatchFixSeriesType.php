@@ -56,61 +56,93 @@ class BatchFixSeriesType extends BatchAction
         $('body').append(
             '<div class="modal fade" id="bfst-modal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">' +
                 '<div class="modal-dialog modal-lg" role="document">' +
-                    '<div class="modal-content" style="border-radius:8px;overflow:hidden">' +
-                        '<div class="modal-header" style="background:#2c3e50;color:#fff;padding:12px 20px;border:0">' +
-                            '<h4 class="modal-title" style="font-size:15px;font-weight:600">' +
-                                '<i class="fa fa-cogs"></i>&nbsp; Fix Series Type — Detecting Movies' +
+                    '<div class="modal-content" style="border-radius:0;overflow:hidden;background:#0d0d1a;border:1px solid #23233a;box-shadow:0 8px 32px rgba(0,0,0,.6)">' +
+
+                        /* ── Header ── */
+                        '<div class="modal-header" style="background:#111126;color:#e2e8f0;padding:10px 16px;border:0;border-bottom:1px solid #23233a;display:flex;align-items:center;justify-content:space-between">' +
+                            '<h4 class="modal-title" style="font-size:13px;font-weight:600;color:#4fc3f7;margin:0;letter-spacing:.3px">' +
+                                '<i class="fa fa-cogs" style="margin-right:6px;opacity:.7"></i>FIX SERIES TYPE' +
                             '</h4>' +
+                            '<span id="bfst-header-count" style="font-size:11px;color:#555;font-weight:500">0 selected</span>' +
                         '</div>' +
-                        '<div class="modal-body" style="padding:16px 20px">' +
-                            '<div id="bfst-summary" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
-                                '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#f8f9fa;border-radius:6px;border-left:3px solid #3498db">' +
-                                    '<div style="font-size:18px;font-weight:700;color:#3498db" id="bfst-total">0</div>' +
-                                    '<div style="font-size:10px;color:#888;text-transform:uppercase">Total</div>' +
+
+                        '<div class="modal-body" style="padding:0">' +
+
+                            /* ── Stat cards row ── */
+                            '<div id="bfst-summary" style="display:flex;gap:0;border-bottom:1px solid #23233a">' +
+                                '<div style="flex:1;text-align:center;padding:10px 8px;border-right:1px solid #23233a">' +
+                                    '<div style="font-size:20px;font-weight:700;color:#4fc3f7;line-height:1" id="bfst-total">0</div>' +
+                                    '<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;font-weight:500">Total</div>' +
                                 '</div>' +
-                                '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#f8f9fa;border-radius:6px;border-left:3px solid #f39c12">' +
-                                    '<div style="font-size:18px;font-weight:700;color:#f39c12" id="bfst-processing">0</div>' +
-                                    '<div style="font-size:10px;color:#888;text-transform:uppercase">Remaining</div>' +
+                                '<div style="flex:1;text-align:center;padding:10px 8px;border-right:1px solid #23233a">' +
+                                    '<div style="font-size:20px;font-weight:700;color:#ff9800;line-height:1" id="bfst-processing">0</div>' +
+                                    '<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;font-weight:500">Queue</div>' +
                                 '</div>' +
-                                '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#f8f9fa;border-radius:6px;border-left:3px solid #e74c3c">' +
-                                    '<div style="font-size:18px;font-weight:700;color:#e74c3c" id="bfst-deleted">0</div>' +
-                                    '<div style="font-size:10px;color:#888;text-transform:uppercase">Deleted</div>' +
+                                '<div style="flex:1;text-align:center;padding:10px 8px;border-right:1px solid #23233a">' +
+                                    '<div style="font-size:20px;font-weight:700;color:#ef5350;line-height:1" id="bfst-deleted">0</div>' +
+                                    '<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;font-weight:500">Deleted</div>' +
                                 '</div>' +
-                                '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#f8f9fa;border-radius:6px;border-left:3px solid #27ae60">' +
-                                    '<div style="font-size:18px;font-weight:700;color:#27ae60" id="bfst-kept">0</div>' +
-                                    '<div style="font-size:10px;color:#888;text-transform:uppercase">Kept</div>' +
+                                '<div style="flex:1;text-align:center;padding:10px 8px;border-right:1px solid #23233a">' +
+                                    '<div style="font-size:20px;font-weight:700;color:#4caf50;line-height:1" id="bfst-kept">0</div>' +
+                                    '<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;font-weight:500">Kept</div>' +
                                 '</div>' +
-                                '<div style="flex:1;min-width:80px;text-align:center;padding:8px;background:#f8f9fa;border-radius:6px;border-left:3px solid #95a5a6">' +
-                                    '<div style="font-size:18px;font-weight:700;color:#95a5a6" id="bfst-skipped">0</div>' +
-                                    '<div style="font-size:10px;color:#888;text-transform:uppercase">Skipped</div>' +
+                                '<div style="flex:1;text-align:center;padding:10px 8px">' +
+                                    '<div style="font-size:20px;font-weight:700;color:#666;line-height:1" id="bfst-skipped">0</div>' +
+                                    '<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;font-weight:500">Skipped</div>' +
                                 '</div>' +
                             '</div>' +
-                            '<div style="background:#ecf0f1;border-radius:4px;height:22px;overflow:hidden;margin-bottom:10px;position:relative">' +
-                                '<div id="bfst-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#3498db,#2ecc71);transition:width 0.3s;border-radius:4px"></div>' +
-                                '<span id="bfst-progress-text" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:600;color:#2c3e50">0 / 0</span>' +
+
+                            /* ── Progress bar ── */
+                            '<div style="padding:10px 16px 0;border-bottom:1px solid #23233a;padding-bottom:10px">' +
+                                '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+                                    '<div id="bfst-current" style="font-size:11px;color:#888;min-height:14px;font-weight:500">Ready...</div>' +
+                                    '<span id="bfst-progress-text" style="font-size:11px;font-weight:600;color:#4fc3f7">0 / 0</span>' +
+                                '</div>' +
+                                '<div style="background:#1a1a2e;height:3px;overflow:hidden">' +
+                                    '<div id="bfst-progress-bar" style="height:100%;width:0%;background:#4fc3f7;transition:width 0.3s"></div>' +
+                                '</div>' +
                             '</div>' +
-                            '<div id="bfst-current" style="font-size:12px;color:#7f8c8d;margin-bottom:10px;min-height:18px">Ready to start...</div>' +
-                            '<div id="bfst-log" style="background:#1e1e1e;color:#d4d4d4;font-family:Courier New,monospace;font-size:11px;line-height:1.6;padding:10px 12px;border-radius:6px;max-height:320px;overflow-y:auto;min-height:120px"></div>' +
+
+                            /* ── Log area ── */
+                            '<div id="bfst-log" style="background:#060612;color:#d4d4d4;font-family:SF Mono,Fira Code,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 16px;max-height:340px;overflow-y:auto;min-height:140px"></div>' +
+
                         '</div>' +
-                        '<div class="modal-footer" style="padding:10px 20px;border-top:1px solid #eee">' +
-                            '<span id="bfst-status" style="float:left;font-size:12px;color:#95a5a6">Waiting...</span>' +
-                            '<button type="button" class="btn btn-default btn-sm" id="bfst-close-btn" disabled onclick="$(\'#bfst-modal\').modal(\'hide\');$.admin.reload();">Close &amp; Refresh</button>' +
+
+                        /* ── Footer ── */
+                        '<div class="modal-footer" style="padding:8px 16px;border-top:1px solid #23233a;background:#0a0a18;display:flex;align-items:center;justify-content:space-between">' +
+                            '<span id="bfst-status" style="font-size:11px;color:#555;font-weight:500">Waiting...</span>' +
+                            '<button type="button" id="bfst-close-btn" disabled onclick="$(\'#bfst-modal\').modal(\'hide\');$.admin.reload();" ' +
+                                'style="border:0;border-radius:0;padding:6px 16px;font-size:11px;font-weight:600;background:rgba(255,255,255,.04);color:#999;border:1px solid rgba(255,255,255,.12);cursor:pointer;letter-spacing:.3px">' +
+                                'CLOSE & REFRESH</button>' +
                         '</div>' +
                     '</div>' +
                 '</div>' +
             '</div>'
         );
+
+        /* Override Bootstrap modal backdrop + dialog styles for dark theme */
+        $('<style>' +
+            '#bfst-modal .modal-dialog{margin-top:60px}' +
+            '#bfst-modal .modal-content *{border-radius:0!important}' +
+            '#bfst-modal .modal-header .close{display:none}' +
+            '#bfst-modal .modal-backdrop{background:#000}' +
+            '#bfst-log::-webkit-scrollbar{width:4px}' +
+            '#bfst-log::-webkit-scrollbar-track{background:#060612}' +
+            '#bfst-log::-webkit-scrollbar-thumb{background:#23233a}' +
+            '#bfst-close-btn:hover:not(:disabled){background:rgba(79,195,247,.1)!important;color:#4fc3f7!important;border-color:#4fc3f7!important}' +
+            '#bfst-close-btn:disabled{opacity:.3;cursor:not-allowed}' +
+        '</style>').appendTo('head');
     }
 
     // Click handler
     $('{$this->selector($this->selectorPrefix)}').off('click').on('click', function() {
         var keys = $.admin.grid.selected();
         if (keys.length === 0) {
-            $.admin.toastr.warning('No series selected!', '', {positionClass: 'toast-top-center'});
+            $.admin.toastr.warning('No series selected.', '', {positionClass: 'toast-top-center'});
             return;
         }
         if (keys.length > 200) {
-            $.admin.toastr.warning('Too many selected (' + keys.length + '). Max 200.', '', {positionClass: 'toast-top-center'});
+            $.admin.toastr.warning('Max 200 at a time (' + keys.length + ' selected).', '', {positionClass: 'toast-top-center'});
             return;
         }
 
@@ -121,12 +153,13 @@ class BatchFixSeriesType extends BatchAction
         $('#bfst-deleted').text('0');
         $('#bfst-kept').text('0');
         $('#bfst-skipped').text('0');
+        $('#bfst-header-count').text(total + ' selected');
         $('#bfst-progress-bar').css('width', '0%');
         $('#bfst-progress-text').text('0 / ' + total);
         $('#bfst-current').text('Starting analysis...');
         $('#bfst-log').html('');
-        $('#bfst-close-btn').prop('disabled', true);
-        $('#bfst-status').text('Processing...').css('color', '#f39c12');
+        $('#bfst-close-btn').prop('disabled', true).css({'background':'rgba(255,255,255,.04)','color':'#999','border-color':'rgba(255,255,255,.12)'});
+        $('#bfst-status').text('Processing...').css('color', '#ff9800');
 
         $('#bfst-modal').modal('show');
 
@@ -147,19 +180,21 @@ class BatchFixSeriesType extends BatchAction
         var idx = 0;
         function processNext() {
             if (idx >= keys.length) {
-                $('#bfst-current').html('<strong style="color:#27ae60">All done!</strong>');
-                $('#bfst-status').text('Complete: ' + deleted + ' deleted, ' + kept + ' kept, ' + skipped + ' skipped').css('color', '#27ae60');
-                $('#bfst-close-btn').prop('disabled', false);
-                logLine('<span style="color:#27ae60;font-weight:bold">--- COMPLETE ---</span>');
-                logLine('<span style="color:#fff">Deleted: ' + deleted + ' | Kept: ' + kept + ' | Skipped: ' + skipped + ' | Total: ' + total + '</span>');
+                /* Done */
+                $('#bfst-current').html('<span style="color:#4caf50;font-weight:600">Complete</span>');
+                $('#bfst-status').text(deleted + ' deleted / ' + kept + ' kept / ' + skipped + ' skipped').css('color', '#4caf50');
+                $('#bfst-close-btn').prop('disabled', false).css({'background':'#4fc3f7','color':'#0a0a18','border-color':'#4fc3f7'});
+                $('#bfst-progress-bar').css('background', '#4caf50');
+                logLine('<span style="color:#4caf50;font-weight:600">--- COMPLETE ---</span>');
+                logLine('<span style="color:#e2e8f0">Deleted: ' + deleted + '  Kept: ' + kept + '  Skipped: ' + skipped + '  Total: ' + total + '</span>');
                 return;
             }
 
             var seriesId = keys[idx];
             idx++;
             var num = idx;
-            $('#bfst-current').html('Analyzing <strong>#' + seriesId + '</strong> (' + num + '/' + total + ')...');
-            logLine('<span style="color:#7f8c8d">-- [' + num + '/' + total + '] Series #' + seriesId + ' --</span>');
+            $('#bfst-current').html('Analyzing <span style="color:#4fc3f7;font-weight:600">#' + seriesId + '</span> (' + num + '/' + total + ')');
+            logLine('<span style="color:#3a3a4a">[' + num + '/' + total + '] #' + seriesId + '</span>');
 
             $.ajax({
                 method: 'POST',
@@ -170,7 +205,7 @@ class BatchFixSeriesType extends BatchAction
                     if (!resp || !resp.action) {
                         skipped++;
                         $('#bfst-skipped').text(skipped);
-                        logLine('<span style="color:#e67e22">  ! #' + seriesId + ': Unexpected response</span>');
+                        logLine('<span style="color:#ff9800">  ! #' + seriesId + ': unexpected response</span>');
                         updateProgress();
                         processNext();
                         return;
@@ -182,29 +217,29 @@ class BatchFixSeriesType extends BatchAction
                     if (resp.action === 'deleted') {
                         deleted++;
                         $('#bfst-deleted').text(deleted);
-                        logLine('<span style="color:#e74c3c">  [DEL] #' + seriesId + ' "' + shortTitle + '" -> <strong>DELETED</strong> (score=' + resp.score + ')</span>');
-                        if (resp.signals) logLine('<span style="color:#888">    signals: ' + resp.signals + '</span>');
+                        logLine('<span style="color:#ef5350">  DEL  #' + seriesId + ' "' + shortTitle + '" <span style="color:#c62828">DELETED</span> score=' + resp.score + '</span>');
+                        if (resp.signals) logLine('<span style="color:#3a3a4a">        ' + resp.signals + '</span>');
                     } else if (resp.action === 'skipped_has_episodes') {
                         skipped++;
                         $('#bfst-skipped').text(skipped);
-                        logLine('<span style="color:#f39c12">  [SKIP] #' + seriesId + ' "' + shortTitle + '" -> has ' + (resp.episode_count||0) + ' episode(s)</span>');
+                        logLine('<span style="color:#ff9800">  SKIP #' + seriesId + ' "' + shortTitle + '" has ' + (resp.episode_count||0) + ' ep(s)</span>');
                     } else if (resp.action === 'skipped_no_muno_info') {
                         skipped++;
                         $('#bfst-skipped').text(skipped);
-                        logLine('<span style="color:#95a5a6">  [SKIP] #' + seriesId + ' "' + shortTitle + '" -> no munowatch info</span>');
+                        logLine('<span style="color:#555">  SKIP #' + seriesId + ' "' + shortTitle + '" no munowatch info</span>');
                     } else if (resp.action === 'kept_is_series') {
                         kept++;
                         $('#bfst-kept').text(kept);
-                        logLine('<span style="color:#27ae60">  [KEEP] #' + seriesId + ' "' + shortTitle + '" -> confirmed series (score=' + resp.score + ')</span>');
-                        if (resp.signals) logLine('<span style="color:#888">    signals: ' + resp.signals + '</span>');
+                        logLine('<span style="color:#4caf50">  KEEP #' + seriesId + ' "' + shortTitle + '" confirmed series score=' + resp.score + '</span>');
+                        if (resp.signals) logLine('<span style="color:#3a3a4a">        ' + resp.signals + '</span>');
                     } else if (resp.action === 'not_found') {
                         skipped++;
                         $('#bfst-skipped').text(skipped);
-                        logLine('<span style="color:#95a5a6">  [SKIP] #' + seriesId + ' -> not found (already deleted?)</span>');
+                        logLine('<span style="color:#555">  SKIP #' + seriesId + ' not found</span>');
                     } else if (resp.action === 'error') {
                         skipped++;
                         $('#bfst-skipped').text(skipped);
-                        logLine('<span style="color:#e74c3c">  [ERR] #' + seriesId + ' "' + shortTitle + '" -> ' + (resp.error||'?') + '</span>');
+                        logLine('<span style="color:#ef5350">  ERR  #' + seriesId + ' "' + shortTitle + '" ' + (resp.error||'?') + '</span>');
                     }
 
                     updateProgress();
@@ -214,14 +249,14 @@ class BatchFixSeriesType extends BatchAction
                     skipped++;
                     $('#bfst-skipped').text(skipped);
                     var errMsg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : ('HTTP ' + xhr.status);
-                    logLine('<span style="color:#e74c3c">  [ERR] #' + seriesId + ' -> AJAX: ' + errMsg + '</span>');
+                    logLine('<span style="color:#ef5350">  ERR  #' + seriesId + ' AJAX: ' + errMsg + '</span>');
                     updateProgress();
                     setTimeout(processNext, 500);
                 }
             });
         }
 
-        logLine('<span style="color:#3498db;font-weight:bold">--- Fix Series Type: Analyzing ' + total + ' series ---</span>');
+        logLine('<span style="color:#4fc3f7;font-weight:600">Fix Series Type: ' + total + ' series queued</span>');
         processNext();
     });
 })(jQuery);
