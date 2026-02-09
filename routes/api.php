@@ -8,6 +8,7 @@ use App\Http\Controllers\LudoController;
 use App\Http\Controllers\ModerationController;
 use App\Http\Controllers\SubscriptionApiController;
 use App\Http\Controllers\Api\V2\MovieController as V2MovieController;
+use App\Http\Controllers\Api\V2\SearchController as V2SearchController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -151,6 +152,17 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::get('movies/{id}',         [V2MovieController::class, 'show']);
         Route::get('movies/{id}/related', [V2MovieController::class, 'related']);
         Route::get('series/{id}/episodes',[V2MovieController::class, 'episodes']);
+
+        // Playback reporting
+        Route::post('movies/{id}/playback', [V2MovieController::class, 'playback']);
+
+        // Search — series search, suggestions, trending, history
+        Route::get('search/series',       [V2SearchController::class, 'searchSeries']);
+        Route::get('search/suggestions',  [V2SearchController::class, 'suggestions']);
+        Route::get('search/trending',     [V2SearchController::class, 'trending']);
+        Route::get('search/history',      [V2SearchController::class, 'history']);
+        Route::delete('search/history/{id}', [V2SearchController::class, 'deleteHistory']);
+        Route::delete('search/history',   [V2SearchController::class, 'clearHistory']);
     });
 });
 

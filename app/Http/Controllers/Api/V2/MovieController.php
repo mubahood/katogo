@@ -124,6 +124,11 @@ class MovieController extends Controller
             });
         }
 
+        // For Series: only show first episodes (1 per series, not all episodes)
+        if ($type === 'Series') {
+            $query->where('is_first_episode', 'yes');
+        }
+
         // Optional filters
         if ($request->filled('genre'))    $query->where('genre', 'LIKE', '%' . $request->get('genre') . '%');
         if ($request->filled('language')) $query->where('language', 'LIKE', '%' . $request->get('language') . '%');
@@ -382,12 +387,29 @@ class MovieController extends Controller
             }
         }
 
+        // Episode count & seasons for series
+        $episodesInfo = null;
+        if ($movie->type === 'Series' && !empty($movie->category_id)) {
+            $episodesInfo = [
+                'total_episodes' => MovieModel::where('category_id', $movie->category_id)
+                    ->where('status', 'Active')->where('type', 'Series')->count(),
+                'seasons' => MovieModel::where('category_id', $movie->category_id)
+                    ->where('status', 'Active')->where('type', 'Series')
+                    ->whereNotNull('season_number')->where('season_number', '!=', '')
+                    ->where('season_number', '!=', '0')
+                    ->distinct()->pluck('season_number')
+                    ->sort(fn($a, $b) => intval($a) - intval($b))
+                    ->values()->toArray(),
+            ];
+        }
+
         $elapsed = round((microtime(true) - $startTime) * 1000);
         Log::info("[V2:movie] id={$id} type={$movie->type} ms={$elapsed}");
 
         return $this->success([
             'movie'             => $movieData,
             'series_info'       => $seriesInfo,
+            'episodes_info'     => $episodesInfo,
             'user_interactions' => [
                 'has_liked'      => MovieLike::hasUserLikedMovie($user->id, $id),
                 'has_wishlisted' => MovieWishlist::hasUserWishlistedMovie($user->id, $id),
@@ -430,31 +452,28 @@ class MovieController extends Controller
         $perPage = $this->resolvePerPage($request, 20);
         $scored  = [];
 
-        // ── If Series episode: same-series episodes first ──
+        // ── Build exclusion list (for series, exclude same-series episodes) ──
+        $excludeIds = [$movie->id];
         if ($movie->type === 'Series' && !empty($movie->category_id)) {
             $sameSeriesIds = MovieModel::where('category_id', $movie->category_id)
-                ->where('id', '!=', $movie->id)
-                ->where('status', 'Active')
-                ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
-                ->orderBy('id', 'asc')
                 ->pluck('id')
                 ->toArray();
-
-            foreach ($sameSeriesIds as $sid) {
-                $scored[$sid] = 10000;
-            }
+            $excludeIds = array_unique(array_merge($excludeIds, $sameSeriesIds));
         }
+        $isSeries = $movie->type === 'Series';
 
         // ── Genre match ──
         if (!empty($movie->genre) && count($scored) < $perPage * 2) {
-            $genreIds = MovieModel::where('genre', $movie->genre)
-                ->where('id', '!=', $movie->id)
+            $genreQuery = MovieModel::where('genre', $movie->genre)
                 ->where('status', 'Active')
-                ->whereNotIn('id', array_keys($scored))
-                ->limit(30)
-                ->pluck('id')
-                ->toArray();
-
+                ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
+            if ($isSeries) {
+                $genreQuery->where(function ($q) {
+                    $q->where('type', '!=', 'Series')
+                      ->orWhere('is_first_episode', 'yes');
+                });
+            }
+            $genreIds = $genreQuery->limit(30)->pluck('id')->toArray();
             foreach ($genreIds as $gid) {
                 $scored[$gid] = 5000;
             }
@@ -462,14 +481,16 @@ class MovieController extends Controller
 
         // ── VJ match ──
         if (!empty($movie->vj) && count($scored) < $perPage * 2) {
-            $vjIds = MovieModel::where('vj', 'LIKE', '%' . $movie->vj . '%')
-                ->where('id', '!=', $movie->id)
+            $vjQuery = MovieModel::where('vj', 'LIKE', '%' . $movie->vj . '%')
                 ->where('status', 'Active')
-                ->whereNotIn('id', array_keys($scored))
-                ->limit(20)
-                ->pluck('id')
-                ->toArray();
-
+                ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
+            if ($isSeries) {
+                $vjQuery->where(function ($q) {
+                    $q->where('type', '!=', 'Series')
+                      ->orWhere('is_first_episode', 'yes');
+                });
+            }
+            $vjIds = $vjQuery->limit(20)->pluck('id')->toArray();
             foreach ($vjIds as $vid) {
                 $scored[$vid] = 4000;
             }
@@ -479,14 +500,16 @@ class MovieController extends Controller
         $titleWords = $this->extractSignificantWords($movie->title);
         if (!empty($titleWords) && count($scored) < $perPage * 2) {
             $phrase = implode(' ', $titleWords);
-            $titleIds = MovieModel::where('title', 'LIKE', '%' . $phrase . '%')
-                ->where('id', '!=', $movie->id)
+            $titleQuery = MovieModel::where('title', 'LIKE', '%' . $phrase . '%')
                 ->where('status', 'Active')
-                ->whereNotIn('id', array_keys($scored))
-                ->limit(20)
-                ->pluck('id')
-                ->toArray();
-
+                ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
+            if ($isSeries) {
+                $titleQuery->where(function ($q) {
+                    $q->where('type', '!=', 'Series')
+                      ->orWhere('is_first_episode', 'yes');
+                });
+            }
+            $titleIds = $titleQuery->limit(20)->pluck('id')->toArray();
             foreach ($titleIds as $tid) {
                 $scored[$tid] = 3000;
             }
@@ -494,14 +517,16 @@ class MovieController extends Controller
 
         // ── Year match ──
         if (!empty($movie->year) && count($scored) < $perPage * 2) {
-            $yearIds = MovieModel::where('year', $movie->year)
-                ->where('id', '!=', $movie->id)
+            $yearQuery = MovieModel::where('year', $movie->year)
                 ->where('status', 'Active')
-                ->whereNotIn('id', array_keys($scored))
-                ->limit(15)
-                ->pluck('id')
-                ->toArray();
-
+                ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
+            if ($isSeries) {
+                $yearQuery->where(function ($q) {
+                    $q->where('type', '!=', 'Series')
+                      ->orWhere('is_first_episode', 'yes');
+                });
+            }
+            $yearIds = $yearQuery->limit(15)->pluck('id')->toArray();
             foreach ($yearIds as $yid) {
                 $scored[$yid] = 800;
             }
@@ -700,5 +725,61 @@ class MovieController extends Controller
         return array_values(array_filter($words, function ($w) use ($ignoreWords) {
             return mb_strlen($w) >= 3 && !in_array($w, $ignoreWords);
         }));
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  POST /api/v2/movies/{id}/playback — Report playback event
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Record playback events: start, progress, stop.
+     *
+     * Body params:
+     *   event      – "start" | "progress" | "stop"
+     *   position   – Current position in seconds
+     *   duration   – Total duration in seconds
+     *   percentage – Playback percentage (optional)
+     */
+    public function playback(Request $request, $id)
+    {
+        $user = $this->resolveUser($request);
+        $movie = MovieModel::find($id);
+
+        if (!$movie) {
+            return $this->error('Movie not found', 404);
+        }
+
+        $event      = $request->input('event', 'progress');
+        $position   = (int) $request->input('position', 0);
+        $duration   = (int) $request->input('duration', 0);
+        $percentage = $request->input('percentage', $duration > 0 ? round(($position / $duration) * 100, 1) : 0);
+
+        // Update or create view record
+        if ($user) {
+            $view = MovieView::updateOrCreate(
+                ['user_id' => $user->id, 'movie_id' => $movie->id],
+                [
+                    'progress'     => $position,
+                    'max_progress' => $duration,
+                    'status'       => $event === 'stop' ? 'Paused' : 'Active',
+                ]
+            );
+        }
+
+        // Increment views_count on "start" event only
+        if ($event === 'start') {
+            $movie->increment('views_count');
+        }
+
+        Log::info("V2 Playback [{$event}] movie={$id} pos={$position}/{$duration} ({$percentage}%)" .
+            ($user ? " user={$user->id}" : ' guest'));
+
+        return $this->success([
+            'event'      => $event,
+            'movie_id'   => (int) $id,
+            'position'   => $position,
+            'duration'   => $duration,
+            'percentage' => $percentage,
+        ], 'Playback recorded');
     }
 }
