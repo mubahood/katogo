@@ -7,6 +7,7 @@ use App\Http\Controllers\GameController;
 use App\Http\Controllers\LudoController;
 use App\Http\Controllers\ModerationController;
 use App\Http\Controllers\SubscriptionApiController;
+use App\Http\Controllers\Api\V2\MovieController as V2MovieController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -140,6 +141,17 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('video-progress/{movie_id}', [DynamicCrudController::class, 'get_video_progress']);
     Route::get('watch-history', [DynamicCrudController::class, 'get_watch_history']);
     Route::post('video-progress/{movie_id}/delete', [DynamicCrudController::class, 'delete_video_progress']);
+
+    // ════════════════════════════════════════════
+    //  V2 API — Clean, paginated, optimised
+    // ════════════════════════════════════════════
+    Route::prefix('v2')->group(function () {
+        Route::get('movies',              [V2MovieController::class, 'index']);
+        Route::get('movies/search',       [V2MovieController::class, 'search']);
+        Route::get('movies/{id}',         [V2MovieController::class, 'show']);
+        Route::get('movies/{id}/related', [V2MovieController::class, 'related']);
+        Route::get('series/{id}/episodes',[V2MovieController::class, 'episodes']);
+    });
 });
 
 // ========================================
