@@ -157,6 +157,15 @@ class SeriesMovieController extends AdminController
                 'Failed' => 'Failed',
             ]);
             $filter->equal('is_muno', 'Munowatch')->select(['Yes' => 'Yes', 'No' => 'No']);
+
+            // Filter: 0 episodes (useful for finding mis-typed movies)
+            $filter->where(function ($query) {
+                if ($this->input === 'zero') {
+                    $query->whereRaw('(SELECT COUNT(*) FROM movie_models WHERE movie_models.category_id = series_movies.id) = 0');
+                } elseif ($this->input === 'has') {
+                    $query->whereRaw('(SELECT COUNT(*) FROM movie_models WHERE movie_models.category_id = series_movies.id) > 0');
+                }
+            }, 'Episodes')->select(['zero' => '0 Episodes', 'has' => 'Has Episodes']);
         });
 
         $grid->column('thumbnail', __('Thumbnail'))->image('', 50, 50)->sortable();
