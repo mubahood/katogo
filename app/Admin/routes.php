@@ -36,6 +36,13 @@ Route::group([
     $router->resource('movies', MovieModelController::class);
     $router->resource('series-movies', SeriesMovieController::class);
 
+    // API: Fix Series Type — single-series AJAX endpoint for live progress modal
+    $router->post('api/fix-series-type-single', function (\Illuminate\Http\Request $request) {
+        return response()->json(
+            \App\Admin\Actions\Post\BatchFixSeriesType::processSingle($request)
+        );
+    });
+
     $router->resource('companies', CompanyController::class);
     $router->resource('stock-categories', StockCategoryController::class);
     $router->resource('stock-sub-categories', StockSubCategoryController::class);
