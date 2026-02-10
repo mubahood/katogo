@@ -68,12 +68,21 @@ class BatchFixSeries extends BatchAction
                 if (isset($result['error']) && !isset($result['success'])) {
                     $failedSeries++;
                     $errors[] = "#{$series->id} ({$series->title}): {$result['error']}";
+                    // Mark fix tracking columns
+                    $series->fix_status = 'error';
+                    $series->fix_error_message = $result['error'];
                 } else {
                     $fixedSeries++;
                     $totalEpFixed  += $result['episodes_fixed'] ?? 0;
                     $totalEpFailed += $result['episodes_failed'] ?? 0;
                     $totalSynced   += ($result['sync']['created'] ?? 0) + ($result['sync']['updated'] ?? 0);
+                    // Mark fix tracking columns
+                    $series->fix_status = 'fixed';
+                    $series->fix_error_message = null;
                 }
+                $series->fix_date = now();
+                $series->fix_counter = ($series->fix_counter ?? 0) + 1;
+                $series->save();
 
                 // Step 2: Clean title and activate if ready
                 $activation = $fixer->checkAndActivateSeries((int) $series->id);
@@ -88,6 +97,12 @@ class BatchFixSeries extends BatchAction
                 $failedSeries++;
                 $errors[] = "#{$series->id} ({$series->title}): " . $e->getMessage();
                 Log::error("[BatchFixSeries] Exception fixing series #{$series->id}: " . $e->getMessage());
+                // Mark fix tracking on exception
+                $series->fix_status = 'error';
+                $series->fix_error_message = 'Exception: ' . mb_substr($e->getMessage(), 0, 500);
+                $series->fix_date = now();
+                $series->fix_counter = ($series->fix_counter ?? 0) + 1;
+                $series->save();
             }
 
             if ($total > 3) {

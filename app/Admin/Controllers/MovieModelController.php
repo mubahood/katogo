@@ -453,13 +453,7 @@ class MovieModelController extends AdminController
         // ── Fix tracking columns ──
         $grid->column('fix_status', __('Fix'))
             ->sortable()
-            ->display(function ($val) {
-                return match ($val) {
-                    'fixed' => '<span class="label label-success">Fixed</span>',
-                    'error' => '<span class="label label-danger">Error</span>',
-                    default => '<span class="label label-warning">Pending</span>',
-                };
-            })
+            ->editable('select', ['pending' => 'Pending', 'fixed' => 'Fixed', 'error' => 'Error'])
             ->filter(['pending' => 'Pending', 'fixed' => 'Fixed', 'error' => 'Error']);
 
         $grid->column('fix_counter', __('#Fix'))

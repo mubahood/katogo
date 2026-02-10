@@ -68,14 +68,29 @@ class BatchFixMovies extends BatchAction
 
                 if ($result['success']) {
                     $fixed++;
+                    // Mark fix tracking columns
+                    $movie->fix_status = 'fixed';
+                    $movie->fix_error_message = null;
                 } else {
                     $failed++;
                     $errors[] = "#{$movie->id} ({$movie->title}): " . ($result['message'] ?? 'Unknown error');
+                    // Mark fix tracking columns
+                    $movie->fix_status = 'error';
+                    $movie->fix_error_message = $result['message'] ?? 'Unknown error';
                 }
+                $movie->fix_date = now();
+                $movie->fix_counter = ($movie->fix_counter ?? 0) + 1;
+                $movie->save();
             } catch (\Throwable $e) {
                 $failed++;
                 $errors[] = "#{$movie->id} ({$movie->title}): Exception — " . $e->getMessage();
                 Log::error("[BatchFixMovies] Exception fixing movie #{$movie->id}: " . $e->getMessage());
+                // Mark fix tracking on exception
+                $movie->fix_status = 'error';
+                $movie->fix_error_message = 'Exception: ' . mb_substr($e->getMessage(), 0, 500);
+                $movie->fix_date = now();
+                $movie->fix_counter = ($movie->fix_counter ?? 0) + 1;
+                $movie->save();
             }
 
             // Small pause between movies to avoid overwhelming the external API
