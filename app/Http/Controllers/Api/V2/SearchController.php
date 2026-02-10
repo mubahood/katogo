@@ -20,6 +20,9 @@ use Illuminate\Support\Facades\Log;
  * ═══════════════════════════════════════════════════════════════
  *
  *  Endpoints:
+ *    GET  /api/v2/search/all             – Power search: movies + series combined (6-phase scoring)
+ *    GET  /api/v2/search/all/suggestions – Auto-suggest for power search (movies, series, VJs, genres)
+ *    GET  /api/v2/search/all/trending    – Trending terms + popular movies + popular series
  *    GET  /api/v2/search/series          – Series-only search (first episodes)
  *    GET  /api/v2/search/suggestions     – Auto-suggest as user types
  *    GET  /api/v2/search/trending        – Trending/popular search terms
@@ -141,6 +144,32 @@ class SearchController extends Controller
         }
 
         $items = $this->cleanUrls($firstEpisodes->values()->all());
+
+        // ── Step 4: Enrich with series data (episode_count, series_views, series_type) ──
+        $categoryIds = $firstEpisodes->pluck('category_id')->filter()->unique()->toArray();
+        $seriesData = [];
+        if (!empty($categoryIds)) {
+            $seriesData = SeriesMovie::whereIn('id', $categoryIds)
+                ->select('id', 'total_episodes', 'total_views')
+                ->get()
+                ->keyBy('id')
+                ->toArray();
+        }
+
+        $items = array_map(function ($item) use ($seriesData) {
+            $data = $item instanceof \Illuminate\Database\Eloquent\Model ? $item->toArray() : (array) $item;
+            $catId = $data['category_id'] ?? null;
+            $epCount = 0;
+            $views = 0;
+            if ($catId && isset($seriesData[$catId])) {
+                $epCount = (int) ($seriesData[$catId]['total_episodes'] ?? 0);
+                $views = (int) ($seriesData[$catId]['total_views'] ?? 0);
+            }
+            $data['episode_count'] = $epCount;
+            $data['series_views'] = $views;
+            $data['series_type'] = $epCount <= 5 ? 'mini' : 'full';
+            return $data;
+        }, $items);
 
         // Log the search
         $foundIds = $firstEpisodes->pluck('id')->take(10)->toArray();
@@ -392,6 +421,537 @@ class SearchController extends Controller
         MovieSearch::where('user_id', $user->id)->delete();
 
         return $this->success(null, "Search history cleared.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/v2/search/all — Power search: movies + series (6-phase scoring)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Combined search across movies AND series with 6-phase relevance scoring.
+     *
+     * Query params:
+     *   q         – Search term (required, min 2 chars)
+     *   page      – Page number (default 1)
+     *   per_page  – Items per page (default 20, max 50)
+     *   type      – Filter: "movie", "series", or omit for all
+     *   genre     – Filter by genre (partial match)
+     *   vj        – Filter by VJ name (partial match)
+     *   year      – Filter by year (exact)
+     *   sort      – "relevance" (default), "newest", "popular", "rating"
+     */
+    public function searchAll(Request $request)
+    {
+        $user = $this->resolveUser($request);
+        if (!$user) {
+            return $this->error('Authentication required.', 401);
+        }
+
+        $startTime  = microtime(true);
+        $searchTerm = trim($request->get('q', ''));
+
+        if (mb_strlen($searchTerm) < 2) {
+            return $this->error('Search term must be at least 2 characters.', 422);
+        }
+
+        $perPage = min(50, max(1, (int) $request->get('per_page', 20)));
+        $page    = max(1, (int) $request->get('page', 1));
+        $typeFilter  = strtolower(trim($request->get('type', '')));
+        $genreFilter = trim($request->get('genre', ''));
+        $vjFilter    = trim($request->get('vj', ''));
+        $yearFilter  = trim($request->get('year', ''));
+        $sort        = strtolower(trim($request->get('sort', 'relevance')));
+
+        $ignoreWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'for', 'and', 'that', 'with', 'to', 'is', 'are', 'was', 'were'];
+        $scores      = [];      // id => score
+        $itemTypes   = [];      // id => 'movie' | 'series'
+        $seriesInfo  = [];      // id => ['series_name'=>..., 'episode_count'=>..., 'series_type'=>...]
+
+        // ── Phase 1: Exact title match → Movies (1000 pts) ──
+        if ($typeFilter !== 'series') {
+            $movieExactIds = MovieModel::where('type', 'Movie')
+                ->where('status', 'Active')
+                ->where('title', 'LIKE', '%' . $searchTerm . '%')
+                ->pluck('id')->toArray();
+
+            foreach ($movieExactIds as $id) {
+                $scores[$id] = ($scores[$id] ?? 0) + 1000;
+                $itemTypes[$id] = 'movie';
+            }
+        }
+
+        // ── Phase 2: Exact title match → Series first-episodes (950 pts) ──
+        if ($typeFilter !== 'movie') {
+            $seriesMatches = SeriesMovie::where('title', 'LIKE', '%' . $searchTerm . '%')
+                ->where('is_active', 'Yes')
+                ->get();
+
+            if ($seriesMatches->isNotEmpty()) {
+                $seriesMap = $seriesMatches->keyBy('id');
+
+                $firstEpisodes = MovieModel::whereIn('category_id', $seriesMatches->pluck('id'))
+                    ->where('type', 'Series')
+                    ->where('status', 'Active')
+                    ->select('id', 'category_id')
+                    ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
+                    ->orderBy('id', 'asc')
+                    ->get()
+                    ->unique('category_id');
+
+                foreach ($firstEpisodes as $ep) {
+                    $scores[$ep->id] = ($scores[$ep->id] ?? 0) + 950;
+                    $itemTypes[$ep->id] = 'series';
+                    if (isset($seriesMap[$ep->category_id])) {
+                        $s = $seriesMap[$ep->category_id];
+                        $epCount = MovieModel::where('category_id', $ep->category_id)
+                            ->where('type', 'Series')->where('status', 'Active')->count();
+                        $seriesInfo[$ep->id] = [
+                            'series_name'   => $s->title,
+                            'episode_count' => $epCount,
+                            'series_type'   => $epCount <= 3 ? 'MINI' : ($epCount <= 8 ? 'SERIES' : 'PRO'),
+                        ];
+                    }
+                }
+            }
+        }
+
+        // ── Phase 3: VJ name match (800 pts) ──
+        $vjMatchIds = MovieModel::where('status', 'Active')
+            ->where('vj', 'LIKE', '%' . $searchTerm . '%')
+            ->whereNotIn('id', array_keys($scores))
+            ->pluck('id')->toArray();
+
+        foreach ($vjMatchIds as $id) {
+            $scores[$id] = ($scores[$id] ?? 0) + 800;
+            if (!isset($itemTypes[$id])) {
+                $itemTypes[$id] = 'movie'; // will be corrected later when fetched
+            }
+        }
+
+        // ── Phase 4: Progressive word removal (700→500 pts) ──
+        $words = explode(' ', $searchTerm);
+        if (count($words) > 1) {
+            // Remove from end
+            $temp = $words;
+            while (count($temp) > 1) {
+                array_pop($temp);
+                $validWords = array_filter($temp, fn($w) => !in_array(strtolower($w), $ignoreWords));
+                if (empty($validWords)) break;
+                $phrase = implode(' ', $temp);
+                $matches = MovieModel::where('status', 'Active')
+                    ->where('title', 'LIKE', '%' . $phrase . '%')
+                    ->whereNotIn('id', array_keys($scores))
+                    ->pluck('id')->toArray();
+                $pts = 700 / count($words);
+                foreach ($matches as $id) {
+                    $scores[$id] = ($scores[$id] ?? 0) + $pts;
+                    if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
+                }
+            }
+            // Remove from start
+            $temp = $words;
+            while (count($temp) > 1) {
+                array_shift($temp);
+                $validWords = array_filter($temp, fn($w) => !in_array(strtolower($w), $ignoreWords));
+                if (empty($validWords)) break;
+                $phrase = implode(' ', $temp);
+                $matches = MovieModel::where('status', 'Active')
+                    ->where('title', 'LIKE', '%' . $phrase . '%')
+                    ->whereNotIn('id', array_keys($scores))
+                    ->pluck('id')->toArray();
+                $pts = 500 / count($words);
+                foreach ($matches as $id) {
+                    $scores[$id] = ($scores[$id] ?? 0) + $pts;
+                    if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
+                }
+            }
+        }
+
+        // ── Phase 5: Genre match (400 pts) ──
+        $genreHit = MovieModel::where('status', 'Active')
+            ->where('genre', 'LIKE', '%' . $searchTerm . '%')
+            ->whereNotIn('id', array_keys($scores))
+            ->limit(60)
+            ->pluck('id')->toArray();
+
+        foreach ($genreHit as $id) {
+            $scores[$id] = ($scores[$id] ?? 0) + 400;
+            if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
+        }
+
+        // ── Phase 6: Individual significant words (200 pts) ──
+        $sigWords = array_filter($words, fn($w) => !in_array(strtolower($w), $ignoreWords) && mb_strlen($w) >= 3);
+        if (!empty($sigWords)) {
+            $wordHits = MovieModel::where('status', 'Active')
+                ->where(function ($q) use ($sigWords) {
+                    foreach ($sigWords as $w) {
+                        $q->orWhere('title', 'LIKE', '%' . $w . '%');
+                    }
+                })
+                ->whereNotIn('id', array_keys($scores))
+                ->limit(100)
+                ->pluck('id')->toArray();
+
+            foreach ($wordHits as $id) {
+                $scores[$id] = ($scores[$id] ?? 0) + 200;
+                if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
+            }
+        }
+
+        // ── Apply filters ──
+        if (!empty($scores)) {
+            $filteredQuery = MovieModel::select('id', 'type')
+                ->whereIn('id', array_keys($scores))
+                ->where('status', 'Active');
+
+            if ($typeFilter === 'movie') {
+                $filteredQuery->where('type', 'Movie');
+            } elseif ($typeFilter === 'series') {
+                $filteredQuery->where('type', 'Series');
+            }
+            if (!empty($genreFilter)) {
+                $filteredQuery->where('genre', 'LIKE', '%' . $genreFilter . '%');
+            }
+            if (!empty($vjFilter)) {
+                $filteredQuery->where('vj', 'LIKE', '%' . $vjFilter . '%');
+            }
+            if (!empty($yearFilter)) {
+                $filteredQuery->where('year', $yearFilter);
+            }
+
+            $validIds = $filteredQuery->pluck('type', 'id')->toArray();
+            $scores = array_intersect_key($scores, $validIds);
+
+            // Correct item types from DB
+            foreach ($validIds as $id => $dbType) {
+                $itemTypes[$id] = strtolower($dbType) === 'series' ? 'series' : 'movie';
+            }
+        }
+
+        // ── Sort ──
+        if ($sort === 'relevance' || empty($sort)) {
+            arsort($scores);
+        }
+        // For other sorts, we apply after fetch
+
+        $total  = count($scores);
+        $sliced = array_slice($scores, ($page - 1) * $perPage, $perPage, true);
+
+        if (empty($sliced)) {
+            $elapsed = round((microtime(true) - $startTime) * 1000);
+            Log::info("[V2:searchAll] q='{$searchTerm}' results=0 ms={$elapsed}");
+
+            // Log the search
+            MovieSearch::logSearch($searchTerm, $user->id, 0);
+
+            return $this->success([
+                'items'      => [],
+                'filters'    => $this->buildFilterMeta($searchTerm),
+                'pagination' => ['current_page' => $page, 'per_page' => $perPage, 'total' => 0, 'last_page' => 1],
+            ], "No results found.");
+        }
+
+        $movies = MovieModel::select(self::LIST_FIELDS)
+            ->whereIn('id', array_keys($sliced))
+            ->get()
+            ->keyBy('id');
+
+        // Build result items preserving score order
+        $items = [];
+        foreach ($sliced as $id => $score) {
+            if (!isset($movies[$id])) continue;
+            $data = $movies[$id]->toArray();
+            $data['_score']     = round($score);
+            $data['_item_type'] = $itemTypes[$id] ?? 'movie';
+            if (isset($seriesInfo[$id])) {
+                $data = array_merge($data, $seriesInfo[$id]);
+            }
+            $items[] = $data;
+        }
+
+        // Apply secondary sorting if not relevance
+        if ($sort === 'newest') {
+            usort($items, fn($a, $b) => ($b['year'] ?? 0) <=> ($a['year'] ?? 0));
+        } elseif ($sort === 'popular') {
+            usort($items, fn($a, $b) => ($b['views_count'] ?? 0) <=> ($a['views_count'] ?? 0));
+        } elseif ($sort === 'rating') {
+            usort($items, fn($a, $b) => ($b['rating'] ?? 0) <=> ($a['rating'] ?? 0));
+        }
+
+        $items = $this->cleanUrls($items);
+
+        $elapsed = round((microtime(true) - $startTime) * 1000);
+        Log::info("[V2:searchAll] q='{$searchTerm}' type={$typeFilter} results={$total} page={$page} ms={$elapsed}");
+
+        // Log the search for history/trending
+        MovieSearch::logSearch($searchTerm, $user->id, $total);
+
+        // Count types in full result set
+        $movieCount  = count(array_filter($itemTypes, fn($t) => $t === 'movie'));
+        $seriesCount = count(array_filter($itemTypes, fn($t) => $t === 'series'));
+
+        return $this->success([
+            'items'       => array_values($items),
+            'result_meta' => [
+                'total'        => $total,
+                'movie_count'  => $movieCount,
+                'series_count' => $seriesCount,
+                'query'        => $searchTerm,
+                'elapsed_ms'   => $elapsed,
+            ],
+            'filters'     => $this->buildFilterMeta($searchTerm),
+            'pagination'  => [
+                'current_page' => $page,
+                'per_page'     => $perPage,
+                'total'        => $total,
+                'last_page'    => max(1, (int) ceil($total / $perPage)),
+            ],
+        ], "Search results retrieved.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/v2/search/all/suggestions — Auto-suggest for power search
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Returns combined suggestions: movie titles, series titles, VJ names, genres.
+     *
+     * Query params:
+     *   q     – Partial search term (min 1 char)
+     *   limit – Max results per category (default 5, max 10)
+     */
+    public function allSuggestions(Request $request)
+    {
+        $user = $this->resolveUser($request);
+        if (!$user) {
+            return $this->error('Authentication required.', 401);
+        }
+
+        $q     = trim($request->get('q', ''));
+        $limit = min(10, max(1, (int) $request->get('limit', 5)));
+
+        if (mb_strlen($q) < 1) {
+            return $this->error('Query required.', 422);
+        }
+
+        // Movie title suggestions
+        $movieTitles = MovieModel::where('type', 'Movie')
+            ->where('status', 'Active')
+            ->where('title', 'LIKE', '%' . $q . '%')
+            ->orderByDesc('views_count')
+            ->limit($limit)
+            ->pluck('title')
+            ->map(fn($t) => ['text' => $t, 'type' => 'movie'])
+            ->toArray();
+
+        // Series title suggestions
+        $seriesTitles = SeriesMovie::where('title', 'LIKE', '%' . $q . '%')
+            ->where('is_active', 'Yes')
+            ->orderByDesc('total_views')
+            ->limit($limit)
+            ->pluck('title')
+            ->map(fn($t) => ['text' => $t, 'type' => 'series'])
+            ->toArray();
+
+        // VJ name suggestions
+        $vjNames = MovieModel::where('status', 'Active')
+            ->where('vj', 'LIKE', '%' . $q . '%')
+            ->whereNotNull('vj')
+            ->where('vj', '!=', '')
+            ->selectRaw('DISTINCT vj')
+            ->limit($limit)
+            ->pluck('vj')
+            ->map(fn($v) => ['text' => $v, 'type' => 'vj'])
+            ->toArray();
+
+        // Genre suggestions
+        $genres = MovieModel::where('status', 'Active')
+            ->where('genre', 'LIKE', '%' . $q . '%')
+            ->whereNotNull('genre')
+            ->where('genre', '!=', '')
+            ->selectRaw('DISTINCT genre')
+            ->limit($limit)
+            ->pluck('genre')
+            ->map(fn($g) => ['text' => $g, 'type' => 'genre'])
+            ->toArray();
+
+        // Popular past searches matching the query
+        $popularSearches = MovieSearch::where('search_term', 'LIKE', '%' . $q . '%')
+            ->where('has_results', true)
+            ->groupBy('search_term_normalized')
+            ->selectRaw('MAX(search_term) as search_term, SUM(search_count) as total')
+            ->orderByDesc('total')
+            ->limit($limit)
+            ->pluck('search_term')
+            ->map(fn($s) => ['text' => $s, 'type' => 'search'])
+            ->toArray();
+
+        // Merge and deduplicate by text (case-insensitive)
+        $all  = array_merge($movieTitles, $seriesTitles, $vjNames, $genres, $popularSearches);
+        $seen = [];
+        $suggestions = [];
+        foreach ($all as $item) {
+            $key = strtolower($item['text']);
+            if (!isset($seen[$key])) {
+                $seen[$key] = true;
+                $suggestions[] = $item;
+            }
+        }
+
+        // Sort: prioritize items starting with the query
+        usort($suggestions, function ($a, $b) use ($q) {
+            $aStart = stripos($a['text'], $q) === 0 ? 0 : 1;
+            $bStart = stripos($b['text'], $q) === 0 ? 0 : 1;
+            return $aStart <=> $bStart;
+        });
+
+        return $this->success([
+            'suggestions' => array_slice($suggestions, 0, 20),
+            'query'       => $q,
+        ], "Suggestions retrieved.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  GET /api/v2/search/all/trending — Trending terms + popular content
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Returns trending search terms + popular movies + popular series.
+     *
+     * Query params:
+     *   period – "day", "week" (default), "month"
+     *   limit  – Max items per section (default 12, max 30)
+     */
+    public function allTrending(Request $request)
+    {
+        $user = $this->resolveUser($request);
+        if (!$user) {
+            return $this->error('Authentication required.', 401);
+        }
+
+        $period = $request->get('period', 'week');
+        $limit  = min(30, max(1, (int) $request->get('limit', 12)));
+
+        $since = match ($period) {
+            'day'   => now()->subDay(),
+            'month' => now()->subMonth(),
+            default => now()->subWeek(),
+        };
+
+        // Trending search terms
+        $trendingTerms = MovieSearch::where('last_searched_at', '>=', $since)
+            ->where('has_results', true)
+            ->whereRaw('LENGTH(search_term) >= 3')
+            ->groupBy('search_term_normalized')
+            ->selectRaw('MAX(search_term) as search_term, SUM(search_count) as total')
+            ->orderByDesc('total')
+            ->limit($limit)
+            ->pluck('search_term')
+            ->toArray();
+
+        // Popular movies (most viewed recently)
+        $popularMovies = MovieModel::where('type', 'Movie')
+            ->where('status', 'Active')
+            ->whereNotNull('image_url')
+            ->where('image_url', '!=', '')
+            ->orderByDesc('views_count')
+            ->limit($limit)
+            ->select(self::LIST_FIELDS)
+            ->get()
+            ->toArray();
+        $popularMovies = $this->cleanUrls($popularMovies);
+
+        // Popular series (first episode of most viewed series)
+        $popularSeriesIds = SeriesMovie::where('is_active', 'Yes')
+            ->orderByDesc('total_views')
+            ->limit($limit)
+            ->pluck('id', 'title')
+            ->toArray();
+
+        $popularSeries = [];
+        if (!empty($popularSeriesIds)) {
+            $firstEps = MovieModel::whereIn('category_id', array_values($popularSeriesIds))
+                ->where('type', 'Series')
+                ->where('status', 'Active')
+                ->select(self::LIST_FIELDS)
+                ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
+                ->orderBy('id', 'asc')
+                ->get()
+                ->unique('category_id');
+
+            foreach ($firstEps as $ep) {
+                $data = $ep->toArray();
+                $epCount = MovieModel::where('category_id', $ep->category_id)
+                    ->where('type', 'Series')->where('status', 'Active')->count();
+                $data['episode_count'] = $epCount;
+                $data['series_type']   = $epCount <= 3 ? 'MINI' : ($epCount <= 8 ? 'SERIES' : 'PRO');
+                $data['_item_type']    = 'series';
+                $popularSeries[] = $data;
+            }
+            $popularSeries = $this->cleanUrls($popularSeries);
+        }
+
+        // Available genres for filter chips
+        $topGenres = MovieModel::where('status', 'Active')
+            ->whereNotNull('genre')
+            ->where('genre', '!=', '')
+            ->selectRaw('genre, COUNT(*) as cnt')
+            ->groupBy('genre')
+            ->orderByDesc('cnt')
+            ->limit(20)
+            ->pluck('genre')
+            ->toArray();
+
+        return $this->success([
+            'trending_terms'  => $trendingTerms,
+            'popular_movies'  => array_values($popularMovies),
+            'popular_series'  => array_values($popularSeries),
+            'top_genres'      => $topGenres,
+        ], "Trending data retrieved.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PRIVATE: Build filter metadata from matching results
+    // ═══════════════════════════════════════════════════════════════
+
+    private function buildFilterMeta(string $searchTerm): array
+    {
+        // Available genres in result set
+        $genres = MovieModel::where('status', 'Active')
+            ->where('title', 'LIKE', '%' . $searchTerm . '%')
+            ->whereNotNull('genre')
+            ->where('genre', '!=', '')
+            ->selectRaw('DISTINCT genre')
+            ->limit(20)
+            ->pluck('genre')
+            ->toArray();
+
+        // Available years
+        $years = MovieModel::where('status', 'Active')
+            ->where('title', 'LIKE', '%' . $searchTerm . '%')
+            ->whereNotNull('year')
+            ->where('year', '!=', '')
+            ->selectRaw('DISTINCT year')
+            ->orderByDesc('year')
+            ->limit(15)
+            ->pluck('year')
+            ->toArray();
+
+        // Available VJs
+        $vjs = MovieModel::where('status', 'Active')
+            ->where('title', 'LIKE', '%' . $searchTerm . '%')
+            ->whereNotNull('vj')
+            ->where('vj', '!=', '')
+            ->selectRaw('DISTINCT vj')
+            ->limit(15)
+            ->pluck('vj')
+            ->toArray();
+
+        return [
+            'genres' => $genres,
+            'years'  => $years,
+            'vjs'    => $vjs,
+        ];
     }
 
     // ═══════════════════════════════════════════════════════════

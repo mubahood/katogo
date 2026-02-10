@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
 use App\Models\MovieModel;
+use App\Models\MovieCrawlerPage;
 use App\Models\SeriesMovie;
 use App\Models\MovieView;
 use App\Models\MovieLike;
@@ -162,6 +163,244 @@ class MovieController extends Controller
             'items'      => $items,
             'pagination' => $this->paginationMeta($paginated),
         ], "Movies retrieved successfully.");
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  GET /api/v2/series — Rich series listing with sections
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Dedicated series listing endpoint with:
+     *   • Episode count & mini-series / full-series classification
+     *   • Sections manifest on page 1 (popular, recent, mini-series)
+     *   • Available filter options on page 1
+     *   • Zero-episode series excluded (unless searching)
+     *
+     * Query params:
+     *   sort       – "latest" (default) | "popular" | "year" | "episodes"
+     *   genre      – Filter by genre (partial match)
+     *   language   – Filter by language (partial match)
+     *   vj         – Filter by VJ name (partial match)
+     *   year       – Filter by year
+     *   min_episodes – Minimum episode count (e.g. 1 for mini filter)
+     *   max_episodes – Maximum episode count (e.g. 5 for mini filter)
+     *   page       – Page number (default 1)
+     *   per_page   – Items per page (default 20, max 50)
+     */
+    public function seriesIndex(Request $request)
+    {
+        $user = $this->resolveUser($request);
+        if (!$user) {
+            return $this->error('Authentication required.', 401);
+        }
+
+        $startTime = microtime(true);
+
+        $page    = max(1, (int) $request->get('page', 1));
+        $perPage = $this->resolvePerPage($request);
+        $sort    = $request->get('sort', 'latest');
+
+        // ── Build base query: first-episode movies joined with series_movies ──
+        $selectCols = array_map(fn($f) => "movie_models.{$f}", self::LIST_FIELDS);
+        $selectCols[] = 'series_movies.total_episodes as episode_count';
+        $selectCols[] = 'series_movies.total_views as series_views';
+
+        $query = MovieModel::query()
+            ->join('series_movies', 'movie_models.category_id', '=', 'series_movies.id')
+            ->select($selectCols)
+            ->where('movie_models.type', 'Series')
+            ->where('movie_models.is_first_episode', 'yes')
+            ->where('movie_models.status', 'Active')
+            ->where('series_movies.total_episodes', '>', 0);  // never send 0-ep series
+
+        // ── Optional filters ──
+        if ($request->filled('genre'))    $query->where('movie_models.genre', 'LIKE', '%' . $request->get('genre') . '%');
+        if ($request->filled('language')) $query->where('movie_models.language', 'LIKE', '%' . $request->get('language') . '%');
+        if ($request->filled('vj'))       $query->where('movie_models.vj', 'LIKE', '%' . $request->get('vj') . '%');
+        if ($request->filled('year'))     $query->where('movie_models.year', $request->get('year'));
+        if ($request->filled('min_episodes')) $query->where('series_movies.total_episodes', '>=', (int) $request->get('min_episodes'));
+        if ($request->filled('max_episodes')) $query->where('series_movies.total_episodes', '<=', (int) $request->get('max_episodes'));
+
+        // ── Sorting ──
+        switch ($sort) {
+            case 'popular':
+                $query->orderByDesc('series_movies.total_views');
+                break;
+            case 'year':
+                $query->orderByDesc('movie_models.year')->orderByDesc('movie_models.id');
+                break;
+            case 'episodes':
+                $query->orderByDesc('series_movies.total_episodes');
+                break;
+            case 'latest':
+            default:
+                $query->orderByDesc('movie_models.id');
+                break;
+        }
+
+        // ── Paginate ──
+        $paginated = $query->paginate($perPage);
+
+        // ── Process items: add series_type, clean URLs ──
+        $items = array_map(function ($item) {
+            $data = $item instanceof \Illuminate\Database\Eloquent\Model ? $item->toArray() : (array) $item;
+            $data = $this->cleanUrlSingle($data);
+            $eps = (int) ($data['episode_count'] ?? 0);
+            $data['series_type'] = $eps <= 5 ? 'mini' : 'full';
+            return $data;
+        }, $paginated->items());
+
+        // ── Build response ──
+        $response = [
+            'items'      => $items,
+            'pagination' => $this->paginationMeta($paginated),
+        ];
+
+        // ── Page 1 extras: sections + filters ──
+        if ($page === 1) {
+            $response['sections'] = $this->buildSeriesSections();
+            $response['filters']  = $this->getSeriesFilterOptions();
+        }
+
+        $elapsed = round((microtime(true) - $startTime) * 1000);
+        Log::info("[V2:series] sort={$sort} page={$page} per_page={$perPage} total={$paginated->total()} ms={$elapsed}");
+
+        return $this->success($response, 'Series retrieved successfully.');
+    }
+
+    /**
+     * Build the three featured sections for the series landing page.
+     *
+     * Returns:
+     *   popular     – 15 series, ordered by total_views (most watched)
+     *   recent      – 15 series, ordered by newest
+     *   mini_series – 15 random series with 1-5 episodes
+     */
+    private function buildSeriesSections(): array
+    {
+        $selectCols = array_map(fn($f) => "movie_models.{$f}", self::LIST_FIELDS);
+        $selectCols[] = 'series_movies.total_episodes as episode_count';
+        $selectCols[] = 'series_movies.total_views as series_views';
+
+        $baseQuery = fn() => MovieModel::query()
+            ->join('series_movies', 'movie_models.category_id', '=', 'series_movies.id')
+            ->select($selectCols)
+            ->where('movie_models.type', 'Series')
+            ->where('movie_models.is_first_episode', 'yes')
+            ->where('movie_models.status', 'Active')
+            ->where('series_movies.total_episodes', '>', 0);
+
+        // ── 1. Popular: top 15 by view count ──
+        $popular = $baseQuery()
+            ->orderByDesc('series_movies.total_views')
+            ->limit(15)
+            ->get()
+            ->map(fn($i) => $this->enrichSeriesItem($i))
+            ->toArray();
+
+        // ── 2. Recent: newest 15 ──
+        $recent = $baseQuery()
+            ->orderByDesc('movie_models.id')
+            ->limit(15)
+            ->get()
+            ->map(fn($i) => $this->enrichSeriesItem($i))
+            ->toArray();
+
+        // ── 3. Mini-series: 1-5 episodes, 15 random ──
+        $mini = $baseQuery()
+            ->where('series_movies.total_episodes', '<=', 5)
+            ->inRandomOrder()
+            ->limit(15)
+            ->get()
+            ->map(fn($i) => $this->enrichSeriesItem($i))
+            ->toArray();
+
+        return [
+            [
+                'key'      => 'popular',
+                'title'    => 'Most Popular',
+                'subtitle' => 'Most watched series',
+                'items'    => $popular,
+            ],
+            [
+                'key'      => 'recent',
+                'title'    => 'Recently Added',
+                'subtitle' => 'Newest series',
+                'items'    => $recent,
+            ],
+            [
+                'key'      => 'mini_series',
+                'title'    => 'Mini Series',
+                'subtitle' => 'Quick watches · 1-5 episodes',
+                'items'    => $mini,
+            ],
+        ];
+    }
+
+    /**
+     * Enrich a series item with series_type, clean URLs.
+     */
+    private function enrichSeriesItem($item): array
+    {
+        $data = $item instanceof \Illuminate\Database\Eloquent\Model ? $item->toArray() : (array) $item;
+        $data = $this->cleanUrlSingle($data);
+        $eps  = (int) ($data['episode_count'] ?? 0);
+        $data['series_type'] = $eps <= 5 ? 'mini' : 'full';
+        return $data;
+    }
+
+    /**
+     * Get available filter options for the series listing.
+     * Only returns values that actually exist in active series.
+     */
+    private function getSeriesFilterOptions(): array
+    {
+        $base = MovieModel::query()
+            ->join('series_movies', 'movie_models.category_id', '=', 'series_movies.id')
+            ->where('movie_models.type', 'Series')
+            ->where('movie_models.is_first_episode', 'yes')
+            ->where('movie_models.status', 'Active')
+            ->where('series_movies.total_episodes', '>', 0);
+
+        // Genres: split comma-separated genre strings and collect unique values
+        $rawGenres = (clone $base)
+            ->whereNotNull('movie_models.genre')
+            ->where('movie_models.genre', '!=', '')
+            ->pluck('movie_models.genre');
+
+        $genres = $rawGenres
+            ->flatMap(fn($g) => array_map('trim', explode(',', $g)))
+            ->filter(fn($g) => strlen($g) > 0)
+            ->unique()
+            ->sort()
+            ->values()
+            ->toArray();
+
+        // Languages
+        $languages = (clone $base)
+            ->whereNotNull('movie_models.language')
+            ->where('movie_models.language', '!=', '')
+            ->distinct()
+            ->pluck('movie_models.language')
+            ->sort()
+            ->values()
+            ->toArray();
+
+        // Years
+        $years = (clone $base)
+            ->whereNotNull('movie_models.year')
+            ->where('movie_models.year', '!=', '')
+            ->distinct()
+            ->pluck('movie_models.year')
+            ->sortDesc()
+            ->values()
+            ->toArray();
+
+        return [
+            'genres'    => $genres,
+            'languages' => $languages,
+            'years'     => $years,
+        ];
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -757,7 +996,7 @@ class MovieController extends Controller
         // Update or create view record
         if ($user) {
             $view = MovieView::updateOrCreate(
-                ['user_id' => $user->id, 'movie_id' => $movie->id],
+                ['user_id' => $user->id, 'movie_model_id' => $movie->id],
                 [
                     'progress'     => $position,
                     'max_progress' => $duration,
@@ -781,5 +1020,289 @@ class MovieController extends Controller
             'duration'   => $duration,
             'percentage' => $percentage,
         ], 'Playback recorded');
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  POST /api/v2/movies/{id}/fix — Mobile-triggered movie fix
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Perform fix / diagnostic actions on a movie.
+     *
+     * Body:
+     *   action – "diagnose" | "refresh" | "test_url" | "sync_episodes"
+     */
+    public function fix(Request $request, $id)
+    {
+        $user = $this->resolveUser($request);
+        if (!$user) {
+            return $this->error('Authentication required.', 401);
+        }
+
+        $movie = MovieModel::find($id);
+        if (!$movie) {
+            return $this->error('Movie not found.', 404);
+        }
+
+        $action = $request->input('action', 'diagnose');
+
+        Log::info("V2 Fix [{$action}] movie={$id} user=" . ($user->id ?? 'guest'));
+
+        switch ($action) {
+
+            // ── Diagnose: return diagnostic info without changing anything ──
+            case 'diagnose':
+                return $this->fixDiagnose($movie);
+
+            // ── Refresh: re-fetch movie data from munowatch source ──
+            case 'refresh':
+                return $this->fixRefresh($movie);
+
+            // ── Test URL: check if the video URL is accessible ──
+            case 'test_url':
+                return $this->fixTestUrl($movie);
+
+            // ── Sync Episodes: re-fetch episodes for a series ──
+            case 'sync_episodes':
+                return $this->fixSyncEpisodes($movie);
+
+            default:
+                return $this->error("Unknown fix action: {$action}", 400);
+        }
+    }
+
+    /**
+     * Diagnose a movie — return diagnostic info about URLs, source, status.
+     */
+    private function fixDiagnose(MovieModel $movie)
+    {
+        $diagnostics = [
+            'id'          => $movie->id,
+            'title'       => $movie->title,
+            'type'        => $movie->type,
+            'status'      => $movie->status,
+            'has_url'     => !empty($movie->url) && strlen($movie->url) > 5,
+            'url_domain'  => !empty($movie->url) ? parse_url($movie->url, PHP_URL_HOST) : null,
+            'has_external_url' => !empty($movie->external_url) && strlen($movie->external_url) > 5,
+            'is_muno'     => $movie->is_muno ?? 'No',
+            'munowatch_id'=> $movie->munowatch_id ?? null,
+            'category_id' => $movie->category_id,
+            'genre'       => $movie->genre,
+            'vj'          => $movie->vj,
+            'views_count' => MovieView::where('movie_model_id', $movie->id)->count(),
+            'likes_count' => MovieLike::where('movie_model_id', $movie->id)->count(),
+            'has_thumbnail' => !empty($movie->thumbnail_url) && strlen($movie->thumbnail_url) > 5,
+            'has_image'   => !empty($movie->image_url) && strlen($movie->image_url) > 5,
+            'content_type'=> $movie->content_type ?? null,
+            'content_is_video' => $movie->content_is_video ?? null,
+        ];
+
+        // Series-specific diagnostics
+        if ($movie->type === 'Series' && !empty($movie->category_id)) {
+            $series = SeriesMovie::find($movie->category_id);
+            $diagnostics['series'] = $series ? [
+                'id'             => $series->id,
+                'title'          => $series->title,
+                'total_episodes' => $series->total_episodes ?? 0,
+                'is_active'      => $series->is_active ?? 'No',
+                'is_muno'        => $series->is_muno ?? 'No',
+            ] : null;
+
+            $diagnostics['episode_count'] = MovieModel::where('category_id', $movie->category_id)
+                ->where('status', 'Active')->where('type', 'Series')->count();
+        }
+
+        // Check if crawler page exists
+        $crawler = MovieCrawlerPage::where('url', $movie->external_url)->first();
+        if (!$crawler && !empty($movie->page_source_url)) {
+            $crawler = MovieCrawlerPage::where('url', $movie->page_source_url)->first();
+        }
+        $diagnostics['has_crawler_page'] = $crawler !== null;
+        $diagnostics['crawler_status']   = $crawler ? $crawler->status : null;
+
+        return $this->success([
+            'action'      => 'diagnose',
+            'diagnostics' => $diagnostics,
+        ], 'Diagnostics retrieved.');
+    }
+
+    /**
+     * Refresh a movie — re-process from munowatch source.
+     */
+    private function fixRefresh(MovieModel $movie)
+    {
+        try {
+            // Check if the movie has a valid source URL
+            $sourceUrl = $movie->page_source_url ?? $movie->external_url;
+            if (empty($sourceUrl) || strlen($sourceUrl) < 10) {
+                return $this->error('Movie has no valid source URL to refresh from.', 400);
+            }
+
+            // Store original values for comparison
+            $originalUrl   = $movie->url;
+            $originalTitle = $movie->title;
+            $originalThumb = $movie->thumbnail_url;
+
+            // Reset processing flags so process_munowatch re-fetches
+            $movie->muno_processed = 'No';
+            $movie->save();
+
+            // Run the munowatch processor
+            MovieModel::process_munowatch($movie);
+
+            // Reload movie data
+            $movie->refresh();
+
+            // Build change summary
+            $changes = [];
+            if ($movie->url !== $originalUrl)               $changes[] = 'video_url';
+            if ($movie->title !== $originalTitle)            $changes[] = 'title';
+            if ($movie->thumbnail_url !== $originalThumb)    $changes[] = 'thumbnail';
+
+            $movieData = $this->cleanUrlSingle(
+                MovieModel::select(self::DETAIL_FIELDS)->find($movie->id)->toArray()
+            );
+
+            return $this->success([
+                'action'  => 'refresh',
+                'movie'   => $movieData,
+                'changes' => $changes,
+                'message' => count($changes) > 0
+                    ? 'Movie refreshed. Updated: ' . implode(', ', $changes)
+                    : 'Movie refreshed. No changes detected.',
+            ], 'Movie data refreshed successfully.');
+
+        } catch (\Throwable $e) {
+            Log::error("V2 Fix refresh failed for movie {$movie->id}: " . $e->getMessage());
+            return $this->error('Refresh failed: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Test a movie's video URL accessibility via cURL.
+     */
+    private function fixTestUrl(MovieModel $movie)
+    {
+        if (empty($movie->url) || strlen($movie->url) < 10) {
+            return $this->error('Movie has no video URL to test.', 400);
+        }
+
+        try {
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL            => $movie->url,
+                CURLOPT_NOBODY         => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS      => 5,
+                CURLOPT_TIMEOUT        => 15,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_USERAGENT      => 'okhttp/4.9.0',
+            ]);
+
+            curl_exec($ch);
+            $httpCode    = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+            $fileSize    = curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+            $finalUrl    = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+            $curlError   = curl_error($ch);
+            curl_close($ch);
+
+            $isAccessible = $httpCode >= 200 && $httpCode < 400;
+            $isVideo = $isAccessible && (
+                stripos($contentType ?? '', 'video') !== false ||
+                stripos($contentType ?? '', 'octet-stream') !== false ||
+                stripos($contentType ?? '', 'mp4') !== false
+            );
+
+            $urlDomain = parse_url($movie->url, PHP_URL_HOST);
+
+            return $this->success([
+                'action'       => 'test_url',
+                'is_accessible'=> $isAccessible,
+                'is_video'     => $isVideo,
+                'http_code'    => $httpCode,
+                'content_type' => $contentType,
+                'file_size'    => $fileSize > 0 ? round($fileSize / 1048576, 1) . ' MB' : 'Unknown',
+                'domain'       => $urlDomain,
+                'curl_error'   => $curlError ?: null,
+                'message'      => $isAccessible
+                    ? ($isVideo ? 'Video URL is accessible and valid.' : 'URL is accessible but may not be a video.')
+                    : 'Video URL is not accessible (HTTP ' . $httpCode . ').',
+            ], $isAccessible ? 'URL test passed.' : 'URL test failed.');
+
+        } catch (\Throwable $e) {
+            Log::error("V2 Fix test_url failed for movie {$movie->id}: " . $e->getMessage());
+            return $this->error('URL test failed: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Sync episodes for a series movie.
+     */
+    private function fixSyncEpisodes(MovieModel $movie)
+    {
+        if ($movie->type !== 'Series') {
+            return $this->error('This is not a series episode. Episode syncing only works for series.', 400);
+        }
+
+        $categoryId = $movie->category_id;
+        if (empty($categoryId) || $categoryId == '0') {
+            return $this->error('Movie has no series/category link.', 400);
+        }
+
+        try {
+            $series = SeriesMovie::find($categoryId);
+            if (!$series) {
+                return $this->error('Series not found for category_id: ' . $categoryId, 404);
+            }
+
+            // Find the crawler page for this series
+            $crawlerPage = null;
+            if (!empty($series->external_url)) {
+                $crawlerPage = MovieCrawlerPage::where('url', $series->external_url)->first();
+            }
+            if (!$crawlerPage && !empty($movie->external_url)) {
+                $crawlerPage = MovieCrawlerPage::where('url', $movie->external_url)->first();
+            }
+
+            $beforeCount = MovieModel::where('category_id', $categoryId)
+                ->where('status', 'Active')->where('type', 'Series')->count();
+
+            if ($crawlerPage) {
+                // Use the existing generate_series_episodes logic
+                MovieCrawlerPage::generate_series_episodes($crawlerPage);
+            } else if ($series->is_muno === 'Yes' && !empty($series->external_url)) {
+                // Try SeriesFixerService directly
+                $fixer = new \App\Services\SeriesFixerService();
+                $fixer->syncAllEpisodes((int) $series->id);
+                $fixer->checkAndActivateSeries((int) $series->id);
+            } else {
+                return $this->error('No crawler page or munowatch source found for this series.', 400);
+            }
+
+            $afterCount = MovieModel::where('category_id', $categoryId)
+                ->where('status', 'Active')->where('type', 'Series')->count();
+
+            $series->refresh();
+
+            return $this->success([
+                'action'         => 'sync_episodes',
+                'series_id'      => $series->id,
+                'series_title'   => $series->title,
+                'episodes_before'=> $beforeCount,
+                'episodes_after' => $afterCount,
+                'new_episodes'   => max(0, $afterCount - $beforeCount),
+                'total_episodes' => $series->total_episodes ?? $afterCount,
+                'message'        => $afterCount > $beforeCount
+                    ? ($afterCount - $beforeCount) . ' new episodes synced.'
+                    : 'Episode sync complete. No new episodes found.',
+            ], 'Episodes synced successfully.');
+
+        } catch (\Throwable $e) {
+            Log::error("V2 Fix sync_episodes failed for movie {$movie->id}: " . $e->getMessage());
+            return $this->error('Episode sync failed: ' . $e->getMessage(), 500);
+        }
     }
 }

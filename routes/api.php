@@ -9,6 +9,9 @@ use App\Http\Controllers\ModerationController;
 use App\Http\Controllers\SubscriptionApiController;
 use App\Http\Controllers\Api\V2\MovieController as V2MovieController;
 use App\Http\Controllers\Api\V2\SearchController as V2SearchController;
+use App\Http\Controllers\Api\V2\ManifestController as V2ManifestController;
+use App\Http\Controllers\Api\V2\BlogController as V2BlogController;
+use App\Http\Controllers\Api\V2\SafeModeAnalyticsController as V2SafeModeAnalyticsController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -147,14 +150,21 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     //  V2 API — Clean, paginated, optimised
     // ════════════════════════════════════════════
     Route::prefix('v2')->group(function () {
+        // V2 Manifest — optimised, lean, cached
+        Route::get('manifest',            [V2ManifestController::class, 'index']);
+
         Route::get('movies',              [V2MovieController::class, 'index']);
         Route::get('movies/search',       [V2MovieController::class, 'search']);
         Route::get('movies/{id}',         [V2MovieController::class, 'show']);
         Route::get('movies/{id}/related', [V2MovieController::class, 'related']);
+        Route::get('series',              [V2MovieController::class, 'seriesIndex']);
         Route::get('series/{id}/episodes',[V2MovieController::class, 'episodes']);
 
         // Playback reporting
         Route::post('movies/{id}/playback', [V2MovieController::class, 'playback']);
+
+        // Movie fix / debug (mobile-triggered)
+        Route::post('movies/{id}/fix', [V2MovieController::class, 'fix']);
 
         // Search — series search, suggestions, trending, history
         Route::get('search/series',       [V2SearchController::class, 'searchSeries']);
@@ -163,6 +173,26 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::get('search/history',      [V2SearchController::class, 'history']);
         Route::delete('search/history/{id}', [V2SearchController::class, 'deleteHistory']);
         Route::delete('search/history',   [V2SearchController::class, 'clearHistory']);
+
+        // Power Search — combined movies + series search (V2)
+        Route::get('search/all',              [V2SearchController::class, 'searchAll']);
+        Route::get('search/all/suggestions',  [V2SearchController::class, 'allSuggestions']);
+        Route::get('search/all/trending',     [V2SearchController::class, 'allTrending']);
+
+        // Blog / News
+        Route::get('blog',                     [V2BlogController::class, 'index']);
+        Route::get('blog/marquee',             [V2BlogController::class, 'marquee']);
+        Route::get('blog/{id}',                [V2BlogController::class, 'show']);
+        Route::post('blog/{id}/like',          [V2BlogController::class, 'toggleLike']);
+        Route::post('blog/{id}/comment',       [V2BlogController::class, 'addComment']);
+        Route::post('blog/comment/{id}/like',  [V2BlogController::class, 'toggleCommentLike']);
+        Route::post('blog/comment/{id}/report',[V2BlogController::class, 'reportComment']);
+
+        // SafeMode Analytics
+        Route::post('safemode/track',                     [V2SafeModeAnalyticsController::class, 'track']);
+        Route::post('safemode/progress',                  [V2SafeModeAnalyticsController::class, 'saveProgress']);
+        Route::get('safemode/progress/{external_video_id}',[V2SafeModeAnalyticsController::class, 'getProgress']);
+        Route::get('safemode/history',                    [V2SafeModeAnalyticsController::class, 'history']);
     });
 });
 

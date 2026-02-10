@@ -128,6 +128,12 @@ Route::group([
     // Coin Transactions
     $router->resource('coin-transactions', CoinTransactionController::class);
 
+    // ============================================
+    // BLOG MODULE ROUTES
+    // ============================================
+    $router->resource('blog-posts', BlogPostController::class);
+    $router->resource('blog-comments', BlogCommentController::class);
+
     // Debug Player Proxy (server-side cURL video URL testing — requires admin session)
     $router->post('debug-player/proxy', 'DebugPlayerProxyController@proxy');
     // Debug Player Fix Movie (re-fetch from source, repair broken records — requires admin session)

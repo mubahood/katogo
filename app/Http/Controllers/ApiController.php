@@ -752,8 +752,9 @@ class ApiController extends BaseController
             $u = User::find($u->id);
             if ($u != null) {
                 $app_type = Utils::get_app_type($r);
-                $app_types = ['ugflix', 'lugaflix'];
+                $app_types = ['ugflix', 'lugaflix', 'muno_app'];
                 if (!in_array($app_type, $app_types)) {
+                    $app_type = 'ugflix';
                 }
                 $u->app_type = $app_type; 
                 $platform = Utils::get_platform_from_request($r);
