@@ -331,6 +331,11 @@
         statusHtml += '<span style="background:' + sColor + ';color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:600">' + isActive + '</span>';
         if (s.is_muno === 'Yes') statusHtml += ' <span style="background:#7c3aed;color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:600">Munowatch</span>';
         if (s.series_code) statusHtml += ' <span style="background:#1e40af;color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:600">Code: ' + s.series_code + '</span>';
+        if (s.fix_status) {
+            var fxBg = s.fix_status === 'fixed' ? '#16a34a' : (s.fix_status === 'error' ? '#dc2626' : '#d97706');
+            statusHtml += ' <span style="background:' + fxBg + ';color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:600">Fix: ' + s.fix_status + '</span>';
+            if (s.fix_counter > 0) statusHtml += ' <span style="background:#6b7280;color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:600">#' + s.fix_counter + '</span>';
+        }
         $('#sfx-series-status').html(statusHtml);
 
         // Title bar
@@ -516,6 +521,12 @@
         var stColor = ep.status === 'Active' ? '#16a34a' : '#dc2626';
         html += '<span style="color:' + stColor + ';font-weight:600">' + (ep.status || '?') + '</span>';
         html += '</td></tr>';
+        if (ep.fix_status) {
+            var fxColor = ep.fix_status === 'fixed' ? '#16a34a' : (ep.fix_status === 'error' ? '#dc2626' : '#d97706');
+            html += '<tr><td style="padding-right:12px;color:#6b7280">Fix Status</td><td><span style="color:' + fxColor + ';font-weight:600">' + _escHtml(ep.fix_status) + '</span>';
+            if (ep.fix_counter > 0) html += ' <span style="color:#6b7280;font-size:10px">(#' + ep.fix_counter + ')</span>';
+            html += '</td></tr>';
+        }
         html += '</table></div>';
 
         // Right: URLs

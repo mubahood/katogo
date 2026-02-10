@@ -10,6 +10,7 @@ use Encore\Admin\Facades\Admin;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
 use Encore\Admin\Show;
+use Encore\Admin\Layout\Content;
 
 class MovieModelController extends AdminController
 {
@@ -19,6 +20,89 @@ class MovieModelController extends AdminController
      * @var string
      */
     protected $title = 'Movies';
+
+    // ─── Slug detection helper ────────────────────────────
+    private function detectSlug(): string
+    {
+        $segments = request()->segments();
+        foreach ($segments as $seg) {
+            if (in_array($seg, [
+                'movies-movies-pending', 'movies-movies-fixed', 'movies-movies-failed',
+                'movies-active', 'movies-series', 'movies-movies',
+                'movies-inactive', 'movies-content-is-video',
+                'movies-processed', 'movies-not-processed', 'movies',
+            ])) {
+                return $seg;
+            }
+        }
+        return 'movies';
+    }
+
+    private function slugLabel(): string
+    {
+        return match ($this->detectSlug()) {
+            'movies-movies-pending' => 'Movies — Pending Fix',
+            'movies-movies-fixed'   => 'Movies — Fixed',
+            'movies-movies-failed'  => 'Movies — Failed / Error',
+            'movies-active'         => 'Active Movies',
+            'movies-series'         => 'Series Episodes',
+            'movies-movies'         => 'Movies (Type: Movie)',
+            'movies-inactive'       => 'Inactive Movies',
+            'movies-content-is-video'  => 'Content is Video',
+            'movies-processed'      => 'Processed',
+            'movies-not-processed'  => 'Not Processed',
+            default                 => 'All Movies',
+        };
+    }
+
+    /**
+     * Index with optional compact dashboard for fix-filtered views.
+     */
+    public function index(Content $content)
+    {
+        $slug = $this->detectSlug();
+        $content->title($this->slugLabel());
+
+        // Show fix navigation tabs for movie slug views
+        if (str_starts_with($slug, 'movies-movies')) {
+            $content->body($this->fixNavigationTabs($slug));
+        }
+
+        return $content->body($this->grid());
+    }
+
+    /**
+     * Fix navigation tabs for slug-filtered views.
+     */
+    protected function fixNavigationTabs(string $slug): string
+    {
+        $total      = MovieModel::count();
+        $fixPending = MovieModel::where('fix_status', 'pending')->count();
+        $fixFixed   = MovieModel::where('fix_status', 'fixed')->count();
+        $fixError   = MovieModel::where('fix_status', 'error')->count();
+
+        $html = '<style>
+.mmc-nav{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.mmc-nav a{display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;border:1px solid #ddd;color:#555;transition:all .15s}
+.mmc-nav a:hover{border-color:#3498db;color:#3498db}
+.mmc-nav a.active{background:#3498db;color:#fff;border-color:#3498db}
+</style>';
+
+        $slugs = [
+            'movies-movies'         => ['All ('.$total.')', 'fa-film'],
+            'movies-movies-pending' => ['Pending ('.$fixPending.')', 'fa-clock-o'],
+            'movies-movies-fixed'   => ['Fixed ('.$fixFixed.')', 'fa-check-circle'],
+            'movies-movies-failed'  => ['Failed ('.$fixError.')', 'fa-times-circle'],
+        ];
+        $html .= '<div class="mmc-nav">';
+        foreach ($slugs as $s => [$label, $icon]) {
+            $cls = ($slug === $s) ? 'active' : '';
+            $html .= "<a href='" . admin_url($s) . "' class='{$cls}'><i class='fa {$icon}'></i> {$label}</a>";
+        }
+        $html .= '</div>';
+
+        return $html;
+    }
 
     /**
      * Make a grid builder.
@@ -30,6 +114,41 @@ class MovieModelController extends AdminController
 
         $grid = new Grid(new MovieModel());
         $grid->model()->orderBy('id', 'desc');
+
+        // ── Auto-filter by slug ──
+        $slug = $this->detectSlug();
+        switch ($slug) {
+            case 'movies-movies-pending':
+                $grid->model()->where('fix_status', 'pending');
+                break;
+            case 'movies-movies-fixed':
+                $grid->model()->where('fix_status', 'fixed');
+                break;
+            case 'movies-movies-failed':
+                $grid->model()->where('fix_status', 'error');
+                break;
+            case 'movies-active':
+                $grid->model()->where('status', 'Active');
+                break;
+            case 'movies-series':
+                $grid->model()->where('type', 'Series');
+                break;
+            case 'movies-movies':
+                $grid->model()->where('type', 'Movie');
+                break;
+            case 'movies-inactive':
+                $grid->model()->where('status', 'Inactive');
+                break;
+            case 'movies-content-is-video':
+                $grid->model()->where('content_is_video', 'Yes');
+                break;
+            case 'movies-processed':
+                $grid->model()->where('content_type_processed', 'Yes');
+                break;
+            case 'movies-not-processed':
+                $grid->model()->where('content_type_processed', 'No');
+                break;
+        }
         /*
         $url_segs = explode('/', request()->url());
         if (in_array('movies-active', $url_segs)) {
@@ -93,6 +212,11 @@ class MovieModelController extends AdminController
             $filter->equal('category_id', __('Category'))
                 ->select(SeriesMovie::all()->pluck('title', 'id'));
             $filter->between('created_at', __('Created at'))->datetime();
+            $filter->equal('fix_status', __('Fix Status'))->select([
+                'pending' => 'Pending',
+                'fixed'   => 'Fixed',
+                'error'   => 'Error',
+            ]);
         });
 
         $grid->column('thumbnail_url', __('Thumbnail'))
@@ -318,9 +442,46 @@ class MovieModelController extends AdminController
                 'language' => $this->language,
                 'munowatch_id' => $this->munowatch_id,
                 'views_count' => $this->views_count,
+                'fix_status' => $this->fix_status,
+                'fix_counter' => $this->fix_counter,
+                'fix_date' => $this->fix_date,
+                'fix_error_message' => $this->fix_error_message,
             ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES);
             return '<button class="btn btn-xs btn-primary ugflix-debug-play-btn" data-movie="' . htmlspecialchars($movieData, ENT_QUOTES, 'UTF-8') . '"><i class="fa fa-play"></i> Play</button>';
         });
+
+        // ── Fix tracking columns ──
+        $grid->column('fix_status', __('Fix'))
+            ->sortable()
+            ->display(function ($val) {
+                return match ($val) {
+                    'fixed' => '<span class="label label-success">Fixed</span>',
+                    'error' => '<span class="label label-danger">Error</span>',
+                    default => '<span class="label label-warning">Pending</span>',
+                };
+            })
+            ->filter(['pending' => 'Pending', 'fixed' => 'Fixed', 'error' => 'Error']);
+
+        $grid->column('fix_counter', __('#Fix'))
+            ->sortable()
+            ->display(function ($val) {
+                $color = $val > 5 ? '#e74c3c' : ($val > 0 ? '#f39c12' : '#bdc3c7');
+                return "<span style='color:{$color};font-weight:600'>{$val}</span>";
+            });
+
+        $grid->column('fix_date', __('Fixed At'))
+            ->sortable()
+            ->display(function ($val) {
+                if (!$val) return '<span class="text-muted">—</span>';
+                return \Carbon\Carbon::parse($val)->diffForHumans();
+            })->hide();
+
+        $grid->column('fix_error_message', __('Fix Error'))
+            ->display(function ($val) {
+                if (empty($val)) return '<span class="text-muted">—</span>';
+                $short = mb_strlen($val) > 50 ? mb_substr($val, 0, 50) . '…' : $val;
+                return "<span style='color:#e74c3c;font-size:11px' title='" . htmlspecialchars($val) . "'>{$short}</span>";
+            })->hide();
 
         $grid->column('video_is_downloaded_to_server', __('Downloaded'))->sortable()
             ->filter([
@@ -576,6 +737,12 @@ https://storage.googleapis.com/mubahood-movies/m.schooldynamics.ug/storage/video
         $show->field('category_id', __('Category id'));
         $show->field('is_processed', __('Is processed'));
 
+        $show->divider();
+        $show->field('fix_status', __('Fix Status'));
+        $show->field('fix_error_message', __('Fix Error Message'));
+        $show->field('fix_date', __('Fix Date'));
+        $show->field('fix_counter', __('Fix Attempts'));
+
         return $show;
     }
 
@@ -795,6 +962,15 @@ https://storage.googleapis.com/mubahood-movies/m.schooldynamics.ug/storage/video
             ->default('No');
 
         $form->text('old_video_url', __('Old Video URL'));
+
+        $form->divider('Fix Tracking');
+        $form->select('fix_status', __('Fix Status'))
+            ->options(['pending' => 'Pending', 'fixed' => 'Fixed', 'error' => 'Error'])
+            ->default('pending');
+        $form->textarea('fix_error_message', __('Fix Error Message'))->rows(2);
+        $form->datetime('fix_date', __('Fix Date'));
+        $form->number('fix_counter', __('Fix Attempts'))->default(0);
+
         return $form;
     }
 }

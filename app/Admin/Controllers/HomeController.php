@@ -14,6 +14,7 @@ use Encore\Admin\Layout\Column;
 use Encore\Admin\Widgets\InfoBox;
 use Encore\Admin\Widgets\Box;
 use Encore\Admin\Widgets\Table;
+use App\Models\SeriesMovie;
 
 class HomeController extends Controller
 {
@@ -87,6 +88,41 @@ class HomeController extends Controller
             ['System Efficiency', 'tachometer', 'success', admin_url('movies?efficiency=1'), $systemEfficiency.'%'],
             ['Success Rate', 'check-circle-o', 'primary', admin_url('movies?success=1'), $urlSuccessRate.'%'],
         ];
+
+        // ══════════ FIX TRACKING STATISTICS ══════════
+        $movieFixPending = MovieModel::where('fix_status', 'pending')->count();
+        $movieFixFixed   = MovieModel::where('fix_status', 'fixed')->count();
+        $movieFixError   = MovieModel::where('fix_status', 'error')->count();
+        $seriesFixPending = SeriesMovie::where('fix_status', 'pending')->count();
+        $seriesFixFixed   = SeriesMovie::where('fix_status', 'fixed')->count();
+        $seriesFixError   = SeriesMovie::where('fix_status', 'error')->count();
+        $totalSeries      = SeriesMovie::count();
+        $activeSeries     = SeriesMovie::where('is_active', 'Yes')->count();
+
+        $fixStats = [
+            ['Movies Pending Fix', 'hourglass-half', 'orange', admin_url('movies-movies-pending'), number_format($movieFixPending)],
+            ['Movies Fixed', 'wrench', 'green', admin_url('movies-movies-fixed'), number_format($movieFixFixed)],
+            ['Movies Fix Errors', 'bug', 'red', admin_url('movies-movies-failed'), number_format($movieFixError)],
+            ['Series Pending Fix', 'clock-o', 'orange', admin_url('series-movies-pending'), number_format($seriesFixPending)],
+            ['Series Fixed', 'check', 'green', admin_url('series-movies-fixed'), number_format($seriesFixFixed)],
+            ['Series Fix Errors', 'times', 'red', admin_url('series-movies-failed'), number_format($seriesFixError)],
+            ['Total Series', 'tv', 'blue', admin_url('series-movies'), number_format($totalSeries)],
+            ['Active Series', 'play-circle', 'success', admin_url('series-movies?is_active=Yes'), number_format($activeSeries)],
+        ];
+
+        // Fix Tracking Summary Table
+        $fixTrackingHeaders = ['Content Type', 'Pending', 'Fixed', 'Error', 'Total', 'Fix Rate'];
+        $movieFixTotal = $movieFixPending + $movieFixFixed + $movieFixError;
+        $movieFixRate  = $movieFixTotal > 0 ? round(($movieFixFixed / $movieFixTotal) * 100, 1) : 0;
+        $seriesFixTotal = $seriesFixPending + $seriesFixFixed + $seriesFixError;
+        $seriesFixRate  = $seriesFixTotal > 0 ? round(($seriesFixFixed / $seriesFixTotal) * 100, 1) : 0;
+        $fixTrackingRows = [
+            ['🎬 Movies (Episodes)', number_format($movieFixPending), number_format($movieFixFixed), number_format($movieFixError), number_format($movieFixTotal), $movieFixRate.'%'],
+            ['📺 Series', number_format($seriesFixPending), number_format($seriesFixFixed), number_format($seriesFixError), number_format($seriesFixTotal), $seriesFixRate.'%'],
+            ['📊 Total', number_format($movieFixPending + $seriesFixPending), number_format($movieFixFixed + $seriesFixFixed), number_format($movieFixError + $seriesFixError), number_format($movieFixTotal + $seriesFixTotal), '—'],
+        ];
+        $fixTrackingBox = (new Box('🔧 Fix Tracking Summary', new Table($fixTrackingHeaders, $fixTrackingRows)))
+            ->style('warning')->solid();
 
         // URL Processing Pipeline Table
         $pipelineHeaders = ['Processing Stage', 'Count', 'Percentage', 'Status'];
@@ -258,10 +294,22 @@ class HomeController extends Controller
                 }
             })
             
-            // Row 5: Pipeline Statistics
-            ->row(function(Row $row) use ($pipelineBox) {
-                $row->column(12, function(Column $col) use ($pipelineBox) {
+            // Row 4b: Fix Tracking Stats
+            ->row(function(Row $row) use ($fixStats) {
+                foreach ($fixStats as [$label,$icon,$color,$link,$value]) {
+                    $row->column(3, function(Column $col) use ($label,$icon,$color,$link,$value) {
+                        $col->append((new InfoBox($label, $icon, $color, $link, $value))->solid());
+                    });
+                }
+            })
+            
+            // Row 5: Pipeline Statistics + Fix Tracking
+            ->row(function(Row $row) use ($pipelineBox, $fixTrackingBox) {
+                $row->column(6, function(Column $col) use ($pipelineBox) {
                     $col->append($pipelineBox);
+                });
+                $row->column(6, function(Column $col) use ($fixTrackingBox) {
+                    $col->append($fixTrackingBox);
                 });
             })
             

@@ -107,6 +107,10 @@ class DebugPlayerProxyController extends Controller
 
         if (!empty($movieIds) && is_array($movieIds)) {
             $result = $fixer->fixBatch($movieIds);
+            // Update fix tracking for each movie in batch
+            foreach ($movieIds as $id) {
+                $this->updateMovieFixTracking($id, $result['success'] ?? false, $result['message'] ?? null);
+            }
             return response()->json($result);
         }
 
@@ -116,7 +120,40 @@ class DebugPlayerProxyController extends Controller
 
         $result = $fixer->fix((int) $movieId);
 
+        // Update fix tracking columns
+        $this->updateMovieFixTracking($movieId, $result['success'] ?? false, $result['message'] ?? null);
+
         return response()->json($result);
+    }
+
+    /**
+     * Update fix_status / fix_counter / fix_date on a movie_models record.
+     */
+    private function updateMovieFixTracking(int|string $movieId, bool $success, ?string $errorMessage = null): void
+    {
+        $movie = \App\Models\MovieModel::find($movieId);
+        if (!$movie) return;
+
+        $movie->fix_status = $success ? 'fixed' : 'error';
+        $movie->fix_error_message = $success ? null : ($errorMessage ?? 'Unknown error');
+        $movie->fix_date = now();
+        $movie->fix_counter = ($movie->fix_counter ?? 0) + 1;
+        $movie->save();
+    }
+
+    /**
+     * Update fix_status / fix_counter / fix_date on a series_movies record.
+     */
+    private function updateSeriesFixTracking(int|string $seriesId, bool $success, ?string $errorMessage = null): void
+    {
+        $series = \App\Models\SeriesMovie::find($seriesId);
+        if (!$series) return;
+
+        $series->fix_status = $success ? 'fixed' : 'error';
+        $series->fix_error_message = $success ? null : ($errorMessage ?? 'Unknown error');
+        $series->fix_date = now();
+        $series->fix_counter = ($series->fix_counter ?? 0) + 1;
+        $series->save();
     }
 
     /**
@@ -363,6 +400,9 @@ class DebugPlayerProxyController extends Controller
         $fixer = new SeriesFixerService();
         $result = $fixer->fixSeries((int) $seriesId, (int) $maxEpisodes);
 
+        // Track fix status on the series record
+        $this->updateSeriesFixTracking($seriesId, $result['success'] ?? false, $result['message'] ?? null);
+
         return response()->json($result);
     }
 
@@ -380,6 +420,9 @@ class DebugPlayerProxyController extends Controller
 
         $fixer = new SeriesFixerService();
         $result = $fixer->fixEpisode((int) $movieId);
+
+        // Track fix status on the episode record
+        $this->updateMovieFixTracking($movieId, $result['success'] ?? false, $result['message'] ?? null);
 
         return response()->json($result);
     }

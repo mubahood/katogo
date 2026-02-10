@@ -36,6 +36,16 @@ Route::group([
     $router->resource('movies', MovieModelController::class);
     $router->resource('series-movies', SeriesMovieController::class);
 
+    // ── Slug-filtered series views (same controller, auto-detects slug) ──
+    $router->resource('series-movies-pending', SeriesMovieController::class);
+    $router->resource('series-movies-fixed', SeriesMovieController::class);
+    $router->resource('series-movies-failed', SeriesMovieController::class);
+
+    // ── Slug-filtered movie views (same controller, auto-detects slug) ──
+    $router->resource('movies-movies-pending', MovieModelController::class);
+    $router->resource('movies-movies-fixed', MovieModelController::class);
+    $router->resource('movies-movies-failed', MovieModelController::class);
+
     // API: Fix Series Type — single-series AJAX endpoint for live progress modal
     $router->post('api/fix-series-type-single', function (\Illuminate\Http\Request $request) {
         return response()->json(

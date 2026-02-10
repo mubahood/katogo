@@ -10,6 +10,18 @@ class SeriesMovie extends Model
 {
     use HasFactory;
 
+    protected $fillable = [
+        'title', 'Category', 'description', 'thumbnail', 'total_seasons', 'total_episodes',
+        'total_views', 'total_rating', 'is_active', 'vj', 'genre', 'language', 'year',
+        'series_code', 'munowatch_id', 'is_muno', 'external_url',
+        'fix_status', 'fix_error_message', 'fix_date', 'fix_counter',
+    ];
+
+    protected $casts = [
+        'fix_date'    => 'datetime',
+        'fix_counter' => 'integer',
+    ];
+
     //boot
     protected static function boot()
     {

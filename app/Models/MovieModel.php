@@ -13,6 +13,11 @@ class MovieModel extends Model
 {
     use HasFactory;
 
+    protected $casts = [
+        'fix_date'    => 'datetime',
+        'fix_counter' => 'integer',
+    ];
+
     //process_munowatch
     public static function process_munowatch($movie)
     {

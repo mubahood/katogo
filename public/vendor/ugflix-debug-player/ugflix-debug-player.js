@@ -473,7 +473,8 @@ var UgflixDebugPlayer = (function () {
         var fields = [
             ['ID', data.id], ['Title', data.title],
             ['Type', isSeries ? '\uD83D\uDCFA Series Episode' : (data.type || 'Movie')],
-            ['Status', data.status], ['Genre', data.genre], ['VJ', data.vj]
+            ['Status', data.status], ['Genre', data.genre], ['VJ', data.vj],
+            ['Fix Status', data.fix_status || 'pending'], ['Fix #', data.fix_counter || 0]
         ];
         // Series-specific fields
         if (isSeries) {
