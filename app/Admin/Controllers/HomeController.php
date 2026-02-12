@@ -75,7 +75,7 @@ class HomeController extends Controller
         // Subscriptions
         $activeSubs = DB::table('subscriptions')
             ->where('status', 'Active')
-            ->where('end_date', '>=', Carbon::now())
+            ->where('end_date_time', '>=', Carbon::now())
             ->count();
         $expiredSubs = DB::table('subscriptions')->where('status', 'Expired')->count();
         $totalSubs   = DB::table('subscriptions')->count();

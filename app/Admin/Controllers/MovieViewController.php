@@ -77,7 +77,7 @@ class MovieViewController extends AdminController
             ->leftJoin('subscriptions', function ($j) {
                 $j->on('admin_users.id', '=', 'subscriptions.user_id')
                   ->where('subscriptions.status', '=', 'Active')
-                  ->where('subscriptions.end_date', '>=', Carbon::now());
+                  ->where('subscriptions.end_date_time', '>=', Carbon::now());
             })
             ->selectRaw("IF(subscriptions.id IS NOT NULL, 'subscribed', 'free') as sub_status, COUNT(DISTINCT movie_views.id) as cnt")
             ->groupBy('sub_status')
@@ -323,7 +323,7 @@ class MovieViewController extends AdminController
             $u = $this->user ?: User::find($this->user_id);
             if (!$u) return '-';
             $sub = Subscription::where('user_id', $u->id)
-                ->orderBy('end_date', 'desc')->first();
+                ->orderBy('end_date_time', 'desc')->first();
             if (!$sub) {
                 return '<span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:#95a5a6">Free</span>';
             }
@@ -335,7 +335,7 @@ class MovieViewController extends AdminController
                 'Failed'    => '#dc3545',
             ];
             $clr = $statusColors[$sub->status] ?? '#999';
-            $endLabel = $sub->end_date ? Carbon::parse($sub->end_date)->format('d-M-y') : '';
+            $endLabel = $sub->end_date_time ? Carbon::parse($sub->end_date_time)->format('d-M-y') : '';
             return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:{$clr}'>{$sub->status}</span>"
                  . ($endLabel ? "<br><small class='text-muted'>{$endLabel}</small>" : '');
         });
@@ -360,7 +360,7 @@ class MovieViewController extends AdminController
         $grid->column('_expand', 'Details')->expand(function ($model) {
             $movie = $model->movie ?: ($model->movie_model_id ? MovieModel::find($model->movie_model_id) : null);
             $user  = $model->user ?: ($model->user_id ? User::find($model->user_id) : null);
-            $sub   = $user ? Subscription::where('user_id', $user->id)->orderBy('end_date', 'desc')->first() : null;
+            $sub = $user ? Subscription::where('user_id', $user->id)->orderBy('end_date_time', 'desc')->first() : null;
 
             $html = '<div style="padding:15px;background:#f9f9f9;border-radius:8px;font-size:12px">';
 
@@ -410,8 +410,8 @@ class MovieViewController extends AdminController
                     $subColors = ['Active' => '#28a745', 'Expired' => '#dc3545', 'Cancelled' => '#6c757d', 'Pending' => '#ffc107', 'Failed' => '#dc3545'];
                     $sClr = $subColors[$sub->status] ?? '#999';
                     $html .= '<tr><td style="font-weight:bold">Subscription</td><td><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' . $sClr . '">' . $sub->status . '</span>';
-                    $html .= ' · Plan: ' . ($sub->plan_name ?? $sub->subscription_plan_id ?? 'N/A');
-                    $html .= ' · Ends: ' . ($sub->end_date ? Carbon::parse($sub->end_date)->format('M d, Y') : 'N/A');
+                    $html .= ' · Plan: ' . ($sub->plan_id ?? 'N/A');
+                    $html .= ' · Ends: ' . ($sub->end_date_time ? Carbon::parse($sub->end_date_time)->format('M d, Y') : 'N/A');
                     $html .= '</td></tr>';
                 } else {
                     $html .= '<tr><td style="font-weight:bold">Subscription</td><td><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:#95a5a6">No Subscription</span></td></tr>';

@@ -51,7 +51,7 @@ class UserController extends AdminController
         // Subscription stats
         $activeSubUsers = DB::table('subscriptions')
             ->where('status', 'Active')
-            ->where('end_date', '>=', Carbon::now())
+            ->where('end_date_time', '>=', Carbon::now())
             ->distinct('user_id')->count('user_id');
         $guestUsers = User::where('is_guest', 'Yes')->count();
         $verifiedUsers = User::where('email_verified', 1)->count();
@@ -232,13 +232,13 @@ class UserController extends AdminController
 
         // Subscription status
         $grid->column('subscription', 'Subscription')->display(function () {
-            $sub = Subscription::where('user_id', $this->id)->orderBy('end_date', 'desc')->first();
+            $sub = Subscription::where('user_id', $this->id)->orderBy('end_date_time', 'desc')->first();
             if (!$sub) {
                 return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:#95a5a6'>Free</span>";
             }
             $colors = ['Active' => '#28a745', 'Expired' => '#dc3545', 'Cancelled' => '#6c757d', 'Pending' => '#ffc107', 'Failed' => '#dc3545'];
             $clr = $colors[$sub->status] ?? '#999';
-            $end = $sub->end_date ? Carbon::parse($sub->end_date)->format('d-M-y') : '';
+            $end = $sub->end_date_time ? Carbon::parse($sub->end_date_time)->format('d-M-y') : '';
             return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:{$clr}'>{$sub->status}</span>"
                  . ($end ? "<br><small class='text-muted'>{$end}</small>" : '');
         });
@@ -274,7 +274,7 @@ class UserController extends AdminController
 
         // Expand details
         $grid->column('_detail', 'More')->expand(function ($model) {
-            $sub = Subscription::where('user_id', $model->id)->orderBy('end_date', 'desc')->first();
+            $sub = Subscription::where('user_id', $model->id)->orderBy('end_date_time', 'desc')->first();
             $viewCount = MovieView::where('user_id', $model->id)->count();
             $watchHrs = round(MovieView::where('user_id', $model->id)->sum('progress') / 3600, 1);
 
@@ -285,7 +285,7 @@ class UserController extends AdminController
             $html .= '<tr><td style="font-weight:bold">Views / Watch Hrs</td><td>' . $viewCount . ' / ' . $watchHrs . 'h</td><td style="font-weight:bold">Bio</td><td>' . htmlspecialchars(mb_substr($model->bio ?? '', 0, 80)) . '</td></tr>';
             if ($sub) {
                 $sClr = ['Active' => '#28a745', 'Expired' => '#dc3545'][$sub->status] ?? '#999';
-                $html .= '<tr><td style="font-weight:bold">Subscription</td><td colspan="3"><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' . $sClr . '">' . $sub->status . '</span> · Plan: ' . ($sub->plan_name ?? $sub->subscription_plan_id ?? '?') . ' · Ends: ' . ($sub->end_date ? Carbon::parse($sub->end_date)->format('M d, Y') : 'N/A') . '</td></tr>';
+                $html .= '<tr><td style="font-weight:bold">Subscription</td><td colspan="3"><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' . $sClr . '">' . $sub->status . '</span> · Plan: ' . ($sub->plan_id ?? '?') . ' · Ends: ' . ($sub->end_date_time ? Carbon::parse($sub->end_date_time)->format('M d, Y') : 'N/A') . '</td></tr>';
             }
             $html .= '<tr><td style="font-weight:bold">Google ID</td><td>' . ($model->google_id ?? '—') . '</td><td style="font-weight:bold">Profile %</td><td>' . ($model->completed_profile_pct ?? 0) . '%</td></tr>';
             $html .= '</table></div>';
