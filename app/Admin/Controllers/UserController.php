@@ -3,343 +3,414 @@
 namespace App\Admin\Controllers;
 
 use App\Models\User;
+use App\Models\Subscription;
+use App\Models\MovieView;
+use Carbon\Carbon;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
 use Encore\Admin\Show;
+use Encore\Admin\Layout\Content;
+use Illuminate\Support\Facades\DB;
 
 class UserController extends AdminController
 {
-    /**
-     * Title for current resource.
-     *
-     * @var string
-     */
     protected $title = 'Users';
 
     /**
-     * Make a grid builder.
-     *
-     * @return Grid
+     * Index with analytics dashboard + grid
+     */
+    public function index(Content $content)
+    {
+        return $content
+            ->title('Users')
+            ->description('User management & analytics')
+            ->body($this->dashboard())
+            ->body($this->grid());
+    }
+
+    /**
+     * Compact stats dashboard
+     */
+    protected function dashboard()
+    {
+        $totalUsers   = User::count();
+        $todayUsers   = User::whereDate('created_at', Carbon::today())->count();
+        $weekUsers    = User::where('created_at', '>=', Carbon::now()->subDays(7))->count();
+        $monthUsers   = User::where('created_at', '>=', Carbon::now()->subDays(30))->count();
+
+        // App type breakdown
+        $ugflixUsers   = User::where('app_type', 'ugflix')->count();
+        $lugaflixUsers = User::where('app_type', 'lugaflix')->count();
+        $otherUsers    = $totalUsers - $ugflixUsers - $lugaflixUsers;
+
+        // Platform
+        $androidUsers = User::where('platform', 'android')->count();
+        $iosUsers     = User::where('platform', 'ios')->count();
+
+        // Subscription stats
+        $activeSubUsers = DB::table('subscriptions')
+            ->where('status', 'Active')
+            ->where('end_date', '>=', Carbon::now())
+            ->distinct('user_id')->count('user_id');
+        $guestUsers = User::where('is_guest', 'Yes')->count();
+        $verifiedUsers = User::where('email_verified', 1)->count();
+
+        // Activity
+        $activeViewers = MovieView::where('created_at', '>=', Carbon::now()->subDays(7))
+            ->distinct('user_id')->count('user_id');
+        $totalViews = MovieView::count();
+        $totalWatchHours = round(MovieView::sum('progress') / 3600, 1);
+
+        // Avg views per user
+        $avgViewsPerUser = $totalUsers > 0 ? round($totalViews / $totalUsers, 1) : 0;
+
+        // Daily signups last 7 days
+        $dailySignups = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $d = Carbon::today()->subDays($i);
+            $dailySignups[] = ['label' => $d->format('D'), 'count' => User::whereDate('created_at', $d)->count()];
+        }
+        $maxDaily = max(array_column($dailySignups, 'count') ?: [1]);
+
+        // Pie percentages
+        $pT = max($ugflixUsers + $lugaflixUsers + $otherUsers, 1);
+        $ugPct = round(($ugflixUsers / $pT) * 100);
+        $lgPct = round(($lugaflixUsers / $pT) * 100);
+        $dT = max($androidUsers + $iosUsers, 1);
+        $anPct = round(($androidUsers / $dT) * 100);
+
+        $html = '<style>
+.uc-wrap{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:12px}
+.uc-row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.uc-card{flex:1;min-width:115px;background:#fff;border-radius:6px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:3px solid #ddd;position:relative;transition:box-shadow .15s}
+.uc-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.uc-card a{color:inherit;text-decoration:none;display:block}
+.uc-card .uc-val{font-size:20px;font-weight:700;line-height:1.1}
+.uc-card .uc-lbl{font-size:10px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
+.uc-card .uc-icon{position:absolute;right:10px;top:10px;font-size:16px;opacity:.35}
+.uc-box{background:#fff;border-radius:6px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.uc-box-title{font-size:11px;font-weight:700;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px}
+.uc-pie{width:80px;height:80px;border-radius:50%;margin:0 auto 6px}
+.uc-legend{font-size:10px;text-align:center}
+.uc-legend span{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px}
+.uc-bar-wrap{display:flex;align-items:flex-end;gap:4px;height:60px}
+.uc-bar-lbl{text-align:center;font-size:9px;color:#888;margin-top:2px}
+</style>';
+
+        $html .= '<div class="uc-wrap">';
+
+        // Row 1: KPIs
+        $html .= '<div class="uc-row">';
+        $cards = [
+            ['Total Users', number_format($totalUsers), '#007bff', 'fa-users'],
+            ['Today', number_format($todayUsers), '#28a745', 'fa-user-plus'],
+            ['This Week', number_format($weekUsers), '#6f42c1', 'fa-calendar'],
+            ['This Month', number_format($monthUsers), '#17a2b8', 'fa-calendar-o'],
+            ['Active Subs', number_format($activeSubUsers), '#f39c12', 'fa-star'],
+            ['Guests', number_format($guestUsers), '#95a5a6', 'fa-user-secret'],
+            ['Verified', number_format($verifiedUsers), '#28a745', 'fa-check-circle'],
+            ['Active Viewers (7d)', number_format($activeViewers), '#e83e8c', 'fa-eye'],
+        ];
+        foreach ($cards as [$lbl, $val, $clr, $ico]) {
+            $html .= "<div class='uc-card' style='border-left-color:{$clr}'><div class='uc-val' style='color:{$clr}'>{$val}</div><div class='uc-lbl'>{$lbl}</div><i class='fa {$ico} uc-icon'></i></div>";
+        }
+        $html .= '</div>';
+
+        // Row 2: Platform cards
+        $html .= '<div class="uc-row">';
+        $p2 = [
+            ['Ugflix', number_format($ugflixUsers), '#e74c3c', 'fa-play-circle'],
+            ['Lugaflix', number_format($lugaflixUsers), '#3498db', 'fa-play-circle-o'],
+            ['Android', number_format($androidUsers), '#28a745', 'fa-android'],
+            ['iOS', number_format($iosUsers), '#555', 'fa-apple'],
+            ['Total Views', number_format($totalViews), '#007bff', 'fa-eye'],
+            ['Watch Hours', number_format($totalWatchHours) . 'h', '#e83e8c', 'fa-clock-o'],
+            ['Avg Views/User', $avgViewsPerUser, '#fd7e14', 'fa-bar-chart'],
+        ];
+        foreach ($p2 as [$lbl, $val, $clr, $ico]) {
+            $html .= "<div class='uc-card' style='border-left-color:{$clr}'><div class='uc-val' style='color:{$clr}'>{$val}</div><div class='uc-lbl'>{$lbl}</div><i class='fa {$ico} uc-icon'></i></div>";
+        }
+        $html .= '</div>';
+
+        // Row 3: Charts
+        $html .= '<div class="uc-row">';
+
+        // 7-day signups bar
+        $html .= '<div class="uc-box" style="flex:2;min-width:220px">';
+        $html .= '<div class="uc-box-title">New Users — Last 7 Days</div>';
+        $html .= '<div class="uc-bar-wrap">';
+        foreach ($dailySignups as $ds) {
+            $h = $maxDaily > 0 ? round(($ds['count'] / $maxDaily) * 55) : 0;
+            $html .= "<div style='flex:1;text-align:center'><div style='height:{$h}px;background:#007bff;border-radius:2px 2px 0 0;margin:0 auto;width:80%'></div><div class='uc-bar-lbl'>{$ds['label']}<br><b>{$ds['count']}</b></div></div>";
+        }
+        $html .= '</div></div>';
+
+        // App pie
+        $html .= '<div class="uc-box" style="flex:1;min-width:140px;text-align:center">';
+        $html .= '<div class="uc-box-title">App Type</div>';
+        $ugDeg = round(($ugPct / 100) * 360);
+        $lgDeg = round(($lgPct / 100) * 360);
+        $html .= "<div class='uc-pie' style='background:conic-gradient(#e74c3c 0deg {$ugDeg}deg, #3498db {$ugDeg}deg " . ($ugDeg + $lgDeg) . "deg, #bdc3c7 " . ($ugDeg + $lgDeg) . "deg 360deg)'></div>";
+        $html .= "<div class='uc-legend'><span style='background:#e74c3c'></span>Ugflix {$ugPct}% <span style='background:#3498db;margin-left:4px'></span>Lugaflix {$lgPct}%</div>";
+        $html .= '</div>';
+
+        // Device pie
+        $html .= '<div class="uc-box" style="flex:1;min-width:140px;text-align:center">';
+        $html .= '<div class="uc-box-title">Device OS</div>';
+        $anDeg = round(($anPct / 100) * 360);
+        $html .= "<div class='uc-pie' style='background:conic-gradient(#28a745 0deg {$anDeg}deg, #555 {$anDeg}deg 360deg)'></div>";
+        $html .= "<div class='uc-legend'><span style='background:#28a745'></span>Android {$anPct}% <span style='background:#555;margin-left:4px'></span>iOS " . (100 - $anPct) . "%</div>";
+        $html .= '</div>';
+
+        $html .= '</div>'; // row 3
+        $html .= '</div>'; // uc-wrap
+
+        return $html;
+    }
+
+    /**
+     * Grid with important columns, clean layout
      */
     protected function grid()
     {
         $grid = new Grid(new User());
         $grid->model()->orderBy('id', 'desc');
+
+        $grid->quickSearch('name', 'username', 'email', 'phone_number');
+
         $grid->filter(function ($filter) {
-            // Remove the default id filter
             $filter->disableIdFilter();
-            $filter->like('username', 'Username');
-            $filter->like('name', 'Name');
-            $filter->like('email', 'Email');
-            $filter->equal('status', 'Status')->select([
-                'active' => 'Active',
-                'inactive' => 'Inactive',
-                'banned' => 'Banned',
-            ]);
-            $filter->between('created_at', 'Created At')->datetime();
-            $filter->between('updated_at', 'Updated At')->datetime();
+            $filter->column(1/4, function ($filter) {
+                $filter->like('name', 'Name');
+                $filter->like('username', 'Username');
+            });
+            $filter->column(1/4, function ($filter) {
+                $filter->like('email', 'Email');
+                $filter->like('phone_number', 'Phone');
+            });
+            $filter->column(1/4, function ($filter) {
+                $filter->equal('app_type', 'App Type')->select(['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix']);
+                $filter->equal('platform', 'Platform')->select(['android' => 'Android', 'ios' => 'iOS']);
+            });
+            $filter->column(1/4, function ($filter) {
+                $filter->equal('is_guest', 'Guest')->select(['Yes' => 'Yes', 'No' => 'No']);
+                $filter->equal('status', 'Status')->select(['active' => 'Active', 'inactive' => 'Inactive', 'banned' => 'Banned']);
+            });
+            $filter->between('created_at', 'Registered')->datetime();
         });
 
-        $grid->column('id', __('Id'));
-        $grid->column('username', __('Username'));
-        $grid->column('name', __('Name'));
-        $grid->column('avatar', __('Avatar'))->lightbox();
-        $grid->column('app_type', __('App Type'))->sortable()
-            ->filter([
-                'ugflix' => 'Ugflix',
-                'lugaflix' => 'Lugaflix',
-            ])
-            ->editable('select', [
-                'ugflix' => 'Ugflix',
-                'lugaflix' => 'Lugaflix',
-            ]);
-        $grid->column('platform', __('Platform'))->sortable()
-            ->filter([
-                'android' => 'Android',
-                'ios' => 'iOS',
-            ]);
+        $grid->column('id', 'ID')->width(50)->sortable();
 
-        $grid->column('terms_of_service_accepted', __('Terms of service accepted'));
-        $grid->column('privacy_policy_accepted', __('Privacy policy accepted'));
-        $grid->column('community_guidelines_accepted', __('Community guidelines accepted'));
-        $grid->column('marketing_emails_consent', __('Marketing emails consent'));
-        $grid->column('data_processing_consent', __('Data processing consent'));
-        $grid->column('content_moderation_consent', __('Content moderation consent'));
-        $grid->column('terms_accepted_date', __('Terms accepted date'));
-        $grid->column('privacy_accepted_date', __('Privacy accepted date'));
-        $grid->column('guidelines_accepted_date', __('Guidelines accepted date'));
-        $grid->column('notification_preferences', __('Notification preferences'));
-        $grid->column('push_notifications', __('Push notifications'));
-        $grid->column('email_notifications', __('Email notifications'));
-        $grid->column('profile_visibility', __('Profile visibility'));
-        $grid->column('content_filtering', __('Content filtering'));
-        $grid->column('safe_mode', __('Safe mode'));
-        $grid->column('location_sharing', __('Location sharing'));
-        $grid->column('analytics_consent', __('Analytics consent'));
-        $grid->column('crash_reporting', __('Crash reporting'));
-        $grid->column('company_id', __('Company id'));
-        $grid->column('first_name', __('First name'));
-        $grid->column('last_name', __('Last name'));
-        $grid->column('phone_number', __('Phone number'));
-        $grid->column('phone_number_2', __('Phone number 2'));
-        $grid->column('address', __('Address'));
-        $grid->column('sex', __('Sex'));
-        $grid->column('dob', __('Dob'));
-        $grid->column('status', __('Status'));
-        $grid->column('email', __('Email'));
-        $grid->column('email_verified_at', __('Email verified at'));
-        $grid->column('google_id', __('Google id'));
-        $grid->column('secret_code', __('Secret code'));
-        $grid->column('profile_photos', __('Profile photos'));
-        $grid->column('bio', __('Bio'));
-        $grid->column('tagline', __('Tagline'));
-        $grid->column('phone_country_name', __('Phone country name'));
-        $grid->column('phone_country_code', __('Phone country code'));
-        $grid->column('phone_country_international', __('Phone country international'));
-        $grid->column('sexual_orientation', __('Sexual orientation'));
-        $grid->column('height_cm', __('Height cm'));
-        $grid->column('body_type', __('Body type'));
-        $grid->column('country', __('Country'));
-        $grid->column('state', __('State'));
-        $grid->column('city', __('City'));
-        $grid->column('latitude', __('Latitude'));
-        $grid->column('longitude', __('Longitude'));
-        $grid->column('last_online_at', __('Last online at'));
-        $grid->column('online_status', __('Online status'));
-        $grid->column('looking_for', __('Looking for'));
-        $grid->column('interested_in', __('Interested in'));
-        $grid->column('age_range_min', __('Age range min'));
-        $grid->column('age_range_max', __('Age range max'));
-        $grid->column('max_distance_km', __('Max distance km'));
-        $grid->column('smoking_habit', __('Smoking habit'));
-        $grid->column('drinking_habit', __('Drinking habit'));
-        $grid->column('pet_preference', __('Pet preference'));
-        $grid->column('religion', __('Religion'));
-        $grid->column('political_views', __('Political views'));
-        $grid->column('languages_spoken', __('Languages spoken'));
-        $grid->column('education_level', __('Education level'));
-        $grid->column('occupation', __('Occupation'));
-        $grid->column('email_verified', __('Email verified'));
-        $grid->column('phone_verified', __('Phone verified'));
-        $grid->column('verification_code', __('Verification code'));
-        $grid->column('failed_login_attempts', __('Failed login attempts'));
-        $grid->column('last_password_change', __('Last password change'));
-        $grid->column('subscription_tier', __('Subscription tier'));
-        $grid->column('subscription_expires', __('Subscription expires'));
-        $grid->column('credits_balance', __('Credits balance'));
-        $grid->column('profile_views', __('Profile views'));
-        $grid->column('likes_received', __('Likes received'));
-        $grid->column('matches_count', __('Matches count'));
-        $grid->column('completed_profile_pct', __('Completed profile pct'));
-        $grid->column('is_guest', __('Is guest'));
-        $grid->column('last_trending_notification_sent', __('Last trending notification sent'));
-        $grid->column('last_trending_notification_period', __('Last trending notification period'));
-        $grid->column('last_trending_notification_date', __('Last trending notification date'));
-        $grid->column('trending_notifications_today', __('Trending notifications today'));
-        $grid->column('max_trending_notifications_per_day', __('Max trending notifications per day'));
-        $grid->column('created_at', __('Created'));
+        $grid->column('name', 'User')->display(function () {
+            $avatar = $this->avatar ? "<img src='" . htmlspecialchars($this->avatar) . "' style='width:28px;height:28px;border-radius:50%;margin-right:6px;vertical-align:middle;object-fit:cover'>" : '';
+            $name = htmlspecialchars($this->name ?? 'N/A');
+            $email = htmlspecialchars($this->email ?? '');
+            return "{$avatar}<strong>{$name}</strong><br><small class='text-muted'>{$email}</small>";
+        })->sortable();
+
+        $grid->column('phone_number', 'Phone')->display(function () {
+            return htmlspecialchars($this->phone_number ?? $this->phone_number_2 ?? '—');
+        });
+
+        $grid->column('app_type', 'App')->sortable()
+            ->filter(['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix'])
+            ->display(function ($v) {
+                $colors = ['ugflix' => '#e74c3c', 'lugaflix' => '#3498db'];
+                $clr = $colors[$v] ?? '#999';
+                return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:{$clr}'>" . ($v ?: '?') . "</span>";
+            })
+            ->editable('select', ['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix']);
+
+        $grid->column('platform', 'Device')->sortable()
+            ->filter(['android' => 'Android', 'ios' => 'iOS'])
+            ->display(function ($v) {
+                $icon = $v === 'android' ? 'fa-android' : ($v === 'ios' ? 'fa-apple' : 'fa-mobile');
+                $clr  = $v === 'android' ? '#28a745' : ($v === 'ios' ? '#555' : '#999');
+                return "<i class='fa {$icon}' style='color:{$clr}'></i> " . ($v ?: '?');
+            });
+
+        // Subscription status
+        $grid->column('subscription', 'Subscription')->display(function () {
+            $sub = Subscription::where('user_id', $this->id)->orderBy('end_date', 'desc')->first();
+            if (!$sub) {
+                return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:#95a5a6'>Free</span>";
+            }
+            $colors = ['Active' => '#28a745', 'Expired' => '#dc3545', 'Cancelled' => '#6c757d', 'Pending' => '#ffc107', 'Failed' => '#dc3545'];
+            $clr = $colors[$sub->status] ?? '#999';
+            $end = $sub->end_date ? Carbon::parse($sub->end_date)->format('d-M-y') : '';
+            return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:{$clr}'>{$sub->status}</span>"
+                 . ($end ? "<br><small class='text-muted'>{$end}</small>" : '');
+        });
+
+        // View count
+        $grid->column('views', 'Views')->display(function () {
+            $cnt = MovieView::where('user_id', $this->id)->count();
+            return $cnt > 0 ? "<span class='label label-info'>{$cnt}</span>" : '<small class="text-muted">0</small>';
+        });
+
+        $grid->column('is_guest', 'Guest')->display(function ($v) {
+            return $v === 'Yes'
+                ? '<span class="label label-warning" style="font-size:9px">Guest</span>'
+                : '<span class="label label-success" style="font-size:9px">Reg</span>';
+        });
+
+        $grid->column('country', 'Location')->display(function () {
+            $parts = array_filter([$this->city, $this->country]);
+            return $parts ? implode(', ', $parts) : '<small class="text-muted">—</small>';
+        });
+
+        $grid->column('created_at', 'Registered')->sortable()->display(function ($v) {
+            if (!$v) return '—';
+            $d = Carbon::parse($v);
+            return $d->format('d-M-Y') . '<br><small class="text-muted">' . $d->diffForHumans() . '</small>';
+        });
+
+        $grid->column('last_online_at', 'Last Active')->sortable()->display(function ($v) {
+            if (!$v) return '<small class="text-muted">Never</small>';
+            $d = Carbon::parse($v);
+            return $d->format('d-M H:i') . '<br><small class="text-muted">' . $d->diffForHumans() . '</small>';
+        });
+
+        // Expand details
+        $grid->column('_detail', 'More')->expand(function ($model) {
+            $sub = Subscription::where('user_id', $model->id)->orderBy('end_date', 'desc')->first();
+            $viewCount = MovieView::where('user_id', $model->id)->count();
+            $watchHrs = round(MovieView::where('user_id', $model->id)->sum('progress') / 3600, 1);
+
+            $html = '<div style="padding:12px;background:#f9f9f9;border-radius:6px;font-size:12px">';
+            $html .= '<table class="table table-bordered table-condensed">';
+            $html .= '<tr><td style="width:140px;font-weight:bold">Username</td><td>' . htmlspecialchars($model->username ?? 'N/A') . '</td><td style="width:140px;font-weight:bold">Email Verified</td><td>' . ($model->email_verified ? 'Yes' : 'No') . '</td></tr>';
+            $html .= '<tr><td style="font-weight:bold">Status</td><td>' . ($model->status ?? 'N/A') . '</td><td style="font-weight:bold">Safe Mode</td><td>' . ($model->safe_mode ?? 'N/A') . '</td></tr>';
+            $html .= '<tr><td style="font-weight:bold">Views / Watch Hrs</td><td>' . $viewCount . ' / ' . $watchHrs . 'h</td><td style="font-weight:bold">Bio</td><td>' . htmlspecialchars(mb_substr($model->bio ?? '', 0, 80)) . '</td></tr>';
+            if ($sub) {
+                $sClr = ['Active' => '#28a745', 'Expired' => '#dc3545'][$sub->status] ?? '#999';
+                $html .= '<tr><td style="font-weight:bold">Subscription</td><td colspan="3"><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' . $sClr . '">' . $sub->status . '</span> · Plan: ' . ($sub->plan_name ?? $sub->subscription_plan_id ?? '?') . ' · Ends: ' . ($sub->end_date ? Carbon::parse($sub->end_date)->format('M d, Y') : 'N/A') . '</td></tr>';
+            }
+            $html .= '<tr><td style="font-weight:bold">Google ID</td><td>' . ($model->google_id ?? '—') . '</td><td style="font-weight:bold">Profile %</td><td>' . ($model->completed_profile_pct ?? 0) . '%</td></tr>';
+            $html .= '</table></div>';
+            return $html;
+        });
+
+        $grid->export(function ($export) {
+            $export->filename('Users_' . date('Y-m-d_H-i'));
+        });
+
         return $grid;
     }
 
     /**
-     * Make a show builder.
-     *
-     * @param mixed $id
-     * @return Show
+     * Show page
      */
     protected function detail($id)
     {
         $show = new Show(User::findOrFail($id));
 
-        $show->field('id', __('Id'));
-        $show->field('username', __('Username'));
-        $show->field('password', __('Password'));
-        $show->field('name', __('Name'));
-        $show->field('avatar', __('Avatar'));
-        $show->field('remember_token', __('Remember token'));
-        $show->field('created_at', __('Created at'));
-        $show->field('updated_at', __('Updated at'));
-        $show->field('terms_of_service_accepted', __('Terms of service accepted'));
-        $show->field('privacy_policy_accepted', __('Privacy policy accepted'));
-        $show->field('community_guidelines_accepted', __('Community guidelines accepted'));
-        $show->field('marketing_emails_consent', __('Marketing emails consent'));
-        $show->field('data_processing_consent', __('Data processing consent'));
-        $show->field('content_moderation_consent', __('Content moderation consent'));
-        $show->field('terms_accepted_date', __('Terms accepted date'));
-        $show->field('privacy_accepted_date', __('Privacy accepted date'));
-        $show->field('guidelines_accepted_date', __('Guidelines accepted date'));
-        $show->field('notification_preferences', __('Notification preferences'));
-        $show->field('push_notifications', __('Push notifications'));
-        $show->field('email_notifications', __('Email notifications'));
-        $show->field('profile_visibility', __('Profile visibility'));
-        $show->field('content_filtering', __('Content filtering'));
-        $show->field('safe_mode', __('Safe mode'));
-        $show->field('location_sharing', __('Location sharing'));
-        $show->field('analytics_consent', __('Analytics consent'));
-        $show->field('crash_reporting', __('Crash reporting'));
-        $show->field('company_id', __('Company id'));
-        $show->field('first_name', __('First name'));
-        $show->field('last_name', __('Last name'));
-        $show->field('phone_number', __('Phone number'));
-        $show->field('phone_number_2', __('Phone number 2'));
-        $show->field('address', __('Address'));
-        $show->field('sex', __('Sex'));
-        $show->field('dob', __('Dob'));
-        $show->field('status', __('Status'));
-        $show->field('email', __('Email'));
-        $show->field('email_verified_at', __('Email verified at'));
-        $show->field('google_id', __('Google id'));
-        $show->field('secret_code', __('Secret code'));
-        $show->field('profile_photos', __('Profile photos'));
-        $show->field('bio', __('Bio'));
-        $show->field('tagline', __('Tagline'));
-        $show->field('phone_country_name', __('Phone country name'));
-        $show->field('phone_country_code', __('Phone country code'));
-        $show->field('phone_country_international', __('Phone country international'));
-        $show->field('sexual_orientation', __('Sexual orientation'));
-        $show->field('height_cm', __('Height cm'));
-        $show->field('body_type', __('Body type'));
-        $show->field('country', __('Country'));
-        $show->field('state', __('State'));
-        $show->field('city', __('City'));
-        $show->field('latitude', __('Latitude'));
-        $show->field('longitude', __('Longitude'));
-        $show->field('last_online_at', __('Last online at'));
-        $show->field('online_status', __('Online status'));
-        $show->field('looking_for', __('Looking for'));
-        $show->field('interested_in', __('Interested in'));
-        $show->field('age_range_min', __('Age range min'));
-        $show->field('age_range_max', __('Age range max'));
-        $show->field('max_distance_km', __('Max distance km'));
-        $show->field('smoking_habit', __('Smoking habit'));
-        $show->field('drinking_habit', __('Drinking habit'));
-        $show->field('pet_preference', __('Pet preference'));
-        $show->field('religion', __('Religion'));
-        $show->field('political_views', __('Political views'));
-        $show->field('languages_spoken', __('Languages spoken'));
-        $show->field('education_level', __('Education level'));
-        $show->field('occupation', __('Occupation'));
-        $show->field('email_verified', __('Email verified'));
-        $show->field('phone_verified', __('Phone verified'));
-        $show->field('verification_code', __('Verification code'));
-        $show->field('failed_login_attempts', __('Failed login attempts'));
-        $show->field('last_password_change', __('Last password change'));
-        $show->field('subscription_tier', __('Subscription tier'));
-        $show->field('subscription_expires', __('Subscription expires'));
-        $show->field('credits_balance', __('Credits balance'));
-        $show->field('profile_views', __('Profile views'));
-        $show->field('likes_received', __('Likes received'));
-        $show->field('matches_count', __('Matches count'));
-        $show->field('completed_profile_pct', __('Completed profile pct'));
-        $show->field('is_guest', __('Is guest'));
-        $show->field('last_trending_notification_sent', __('Last trending notification sent'));
-        $show->field('last_trending_notification_period', __('Last trending notification period'));
-        $show->field('last_trending_notification_date', __('Last trending notification date'));
-        $show->field('trending_notifications_today', __('Trending notifications today'));
-        $show->field('max_trending_notifications_per_day', __('Max trending notifications per day'));
+        $show->divider('Account');
+        $show->field('id', 'ID');
+        $show->field('username', 'Username');
+        $show->field('name', 'Name');
+        $show->field('email', 'Email');
+        $show->field('phone_number', 'Phone');
+        $show->field('avatar', 'Avatar')->image();
+        $show->field('app_type', 'App Type');
+        $show->field('platform', 'Platform');
+        $show->field('status', 'Status');
+        $show->field('is_guest', 'Guest');
+        $show->field('google_id', 'Google ID');
+
+        $show->divider('Location');
+        $show->field('country', 'Country');
+        $show->field('state', 'State');
+        $show->field('city', 'City');
+
+        $show->divider('Profile');
+        $show->field('first_name', 'First Name');
+        $show->field('last_name', 'Last Name');
+        $show->field('sex', 'Sex');
+        $show->field('dob', 'DOB');
+        $show->field('bio', 'Bio');
+        $show->field('occupation', 'Occupation');
+        $show->field('completed_profile_pct', 'Profile %');
+
+        $show->divider('Subscription');
+        $show->field('subscription_tier', 'Tier');
+        $show->field('subscription_expires', 'Expires');
+
+        $show->divider('Privacy & Consent');
+        $show->field('safe_mode', 'Safe Mode');
+        $show->field('content_filtering', 'Content Filtering');
+        $show->field('terms_of_service_accepted', 'ToS Accepted');
+        $show->field('privacy_policy_accepted', 'Privacy Accepted');
+        $show->field('email_verified', 'Email Verified');
+        $show->field('phone_verified', 'Phone Verified');
+
+        $show->divider('Activity');
+        $show->field('last_online_at', 'Last Online');
+        $show->field('online_status', 'Online Status');
+        $show->field('profile_views', 'Profile Views');
+        $show->field('created_at', 'Registered');
+        $show->field('updated_at', 'Updated');
 
         return $show;
     }
 
     /**
-     * Make a form builder.
-     *
-     * @return Form
+     * Form
      */
     protected function form()
     {
         $form = new Form(new User());
 
-        //app_type
-        $form->select('app_type', __('App Type'))->options([
-            'ugflix' => 'Ugflix',
-            'lugaflix' => 'Lugaflix',
-        ])->default('ugflix');
+        $form->tab('Account', function ($form) {
+            $form->select('app_type', 'App Type')->options(['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix'])->default('ugflix');
+            $form->text('username', 'Username');
+            $form->text('name', 'Name');
+            $form->email('email', 'Email');
+            $form->password('password', 'Password');
+            $form->image('avatar', 'Avatar');
+            $form->text('status', 'Status')->default('active');
+            $form->text('is_guest', 'Guest')->default('No');
+            $form->text('google_id', 'Google ID');
+        });
 
-        $form->text('username', __('Username'));
-        $form->password('password', __('Password'));
-        $form->text('name', __('Name'));
-        $form->image('avatar', __('Avatar'));
-        $form->text('remember_token', __('Remember token'));
-        $form->text('terms_of_service_accepted', __('Terms of service accepted'));
-        $form->text('privacy_policy_accepted', __('Privacy policy accepted'));
-        $form->text('community_guidelines_accepted', __('Community guidelines accepted'));
-        $form->text('marketing_emails_consent', __('Marketing emails consent'));
-        $form->text('data_processing_consent', __('Data processing consent'));
-        $form->text('content_moderation_consent', __('Content moderation consent'));
-        $form->datetime('terms_accepted_date', __('Terms accepted date'))->default(date('Y-m-d H:i:s'));
-        $form->datetime('privacy_accepted_date', __('Privacy accepted date'))->default(date('Y-m-d H:i:s'));
-        $form->datetime('guidelines_accepted_date', __('Guidelines accepted date'))->default(date('Y-m-d H:i:s'));
-        $form->text('notification_preferences', __('Notification preferences'));
-        $form->text('push_notifications', __('Push notifications'));
-        $form->text('email_notifications', __('Email notifications'));
-        $form->text('profile_visibility', __('Profile visibility'))->default('Public');
-        $form->text('content_filtering', __('Content filtering'))->default('On');
-        $form->text('safe_mode', __('Safe mode'))->default('On');
-        $form->text('location_sharing', __('Location sharing'));
-        $form->text('analytics_consent', __('Analytics consent'));
-        $form->text('crash_reporting', __('Crash reporting'));
-        $form->number('company_id', __('Company id'));
-        $form->textarea('first_name', __('First name'));
-        $form->textarea('last_name', __('Last name'));
-        $form->textarea('phone_number', __('Phone number'));
-        $form->textarea('phone_number_2', __('Phone number 2'));
-        $form->textarea('address', __('Address'));
-        $form->textarea('sex', __('Sex'));
-        $form->date('dob', __('Dob'))->default(date('Y-m-d'));
-        $form->text('status', __('Status'))->default('active');
-        $form->email('email', __('Email'));
-        $form->datetime('email_verified_at', __('Email verified at'))->default(date('Y-m-d H:i:s'));
-        $form->text('google_id', __('Google id'));
-        $form->text('secret_code', __('Secret code'));
-        $form->text('profile_photos', __('Profile photos'));
-        $form->textarea('bio', __('Bio'));
-        $form->text('tagline', __('Tagline'));
-        $form->text('phone_country_name', __('Phone country name'));
-        $form->text('phone_country_code', __('Phone country code'));
-        $form->text('phone_country_international', __('Phone country international'));
-        $form->text('sexual_orientation', __('Sexual orientation'));
-        $form->number('height_cm', __('Height cm'));
-        $form->text('body_type', __('Body type'));
-        $form->text('country', __('Country'));
-        $form->text('state', __('State'));
-        $form->text('city', __('City'));
-        $form->decimal('latitude', __('Latitude'));
-        $form->decimal('longitude', __('Longitude'));
-        $form->datetime('last_online_at', __('Last online at'))->default(date('Y-m-d H:i:s'));
-        $form->text('online_status', __('Online status'))->default('Offline');
-        $form->textarea('looking_for', __('Looking for'));
-        $form->textarea('interested_in', __('Interested in'));
-        $form->number('age_range_min', __('Age range min'));
-        $form->number('age_range_max', __('Age range max'));
-        $form->number('max_distance_km', __('Max distance km'));
-        $form->text('smoking_habit', __('Smoking habit'));
-        $form->text('drinking_habit', __('Drinking habit'));
-        $form->text('pet_preference', __('Pet preference'));
-        $form->text('religion', __('Religion'));
-        $form->text('political_views', __('Political views'));
-        $form->textarea('languages_spoken', __('Languages spoken'));
-        $form->text('education_level', __('Education level'));
-        $form->text('occupation', __('Occupation'));
-        $form->switch('email_verified', __('Email verified'));
-        $form->switch('phone_verified', __('Phone verified'));
-        $form->text('verification_code', __('Verification code'));
-        $form->number('failed_login_attempts', __('Failed login attempts'));
-        $form->datetime('last_password_change', __('Last password change'))->default(date('Y-m-d H:i:s'));
-        $form->text('subscription_tier', __('Subscription tier'));
-        $form->datetime('subscription_expires', __('Subscription expires'))->default(date('Y-m-d H:i:s'));
-        $form->number('credits_balance', __('Credits balance'));
-        $form->number('profile_views', __('Profile views'));
-        $form->number('likes_received', __('Likes received'));
-        $form->number('matches_count', __('Matches count'));
-        $form->number('completed_profile_pct', __('Completed profile pct'));
-        $form->text('is_guest', __('Is guest'))->default('No');
-        $form->datetime('last_trending_notification_sent', __('Last trending notification sent'))->default(date('Y-m-d H:i:s'));
-        $form->text('last_trending_notification_period', __('Last trending notification period'));
-        $form->date('last_trending_notification_date', __('Last trending notification date'))->default(date('Y-m-d'));
-        $form->number('trending_notifications_today', __('Trending notifications today'));
-        $form->number('max_trending_notifications_per_day', __('Max trending notifications per day'))->default(4);
+        $form->tab('Personal', function ($form) {
+            $form->text('first_name', 'First Name');
+            $form->text('last_name', 'Last Name');
+            $form->text('phone_number', 'Phone');
+            $form->text('phone_number_2', 'Phone 2');
+            $form->text('sex', 'Sex');
+            $form->date('dob', 'Date of Birth')->default(date('Y-m-d'));
+            $form->textarea('bio', 'Bio');
+            $form->text('tagline', 'Tagline');
+            $form->text('occupation', 'Occupation');
+            $form->text('education_level', 'Education');
+        });
+
+        $form->tab('Location', function ($form) {
+            $form->text('country', 'Country');
+            $form->text('state', 'State');
+            $form->text('city', 'City');
+            $form->text('address', 'Address');
+            $form->decimal('latitude', 'Latitude');
+            $form->decimal('longitude', 'Longitude');
+        });
+
+        $form->tab('Settings', function ($form) {
+            $form->text('safe_mode', 'Safe Mode')->default('On');
+            $form->text('content_filtering', 'Content Filtering')->default('On');
+            $form->text('profile_visibility', 'Profile Visibility')->default('Public');
+            $form->switch('email_verified', 'Email Verified');
+            $form->switch('phone_verified', 'Phone Verified');
+            $form->text('push_notifications', 'Push Notifications');
+            $form->text('email_notifications', 'Email Notifications');
+        });
+
+        $form->tab('Subscription', function ($form) {
+            $form->text('subscription_tier', 'Tier');
+            $form->datetime('subscription_expires', 'Expires')->default(date('Y-m-d H:i:s'));
+            $form->number('credits_balance', 'Credits');
+        });
 
         return $form;
     }
