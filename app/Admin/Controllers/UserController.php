@@ -272,23 +272,69 @@ class UserController extends AdminController
             return $d->format('d-M H:i') . '<br><small class="text-muted">' . $d->diffForHumans() . '</small>';
         });
 
-        // Expand details
+        // Expand details + subscription history
         $grid->column('_detail', 'More')->expand(function ($model) {
-            $sub = Subscription::where('user_id', $model->id)->orderBy('end_date_time', 'desc')->first();
+            $subs = Subscription::where('user_id', $model->id)->orderBy('end_date_time', 'desc')->get();
             $viewCount = MovieView::where('user_id', $model->id)->count();
             $watchHrs = round(MovieView::where('user_id', $model->id)->sum('progress') / 3600, 1);
 
             $html = '<div style="padding:12px;background:#f9f9f9;border-radius:6px;font-size:12px">';
-            $html .= '<table class="table table-bordered table-condensed">';
+
+            // --- User Info Table ---
+            $html .= '<table class="table table-bordered table-condensed" style="margin-bottom:10px">';
             $html .= '<tr><td style="width:140px;font-weight:bold">Username</td><td>' . htmlspecialchars($model->username ?? 'N/A') . '</td><td style="width:140px;font-weight:bold">Email Verified</td><td>' . ($model->email_verified ? 'Yes' : 'No') . '</td></tr>';
             $html .= '<tr><td style="font-weight:bold">Status</td><td>' . ($model->status ?? 'N/A') . '</td><td style="font-weight:bold">Safe Mode</td><td>' . ($model->safe_mode ?? 'N/A') . '</td></tr>';
             $html .= '<tr><td style="font-weight:bold">Views / Watch Hrs</td><td>' . $viewCount . ' / ' . $watchHrs . 'h</td><td style="font-weight:bold">Bio</td><td>' . htmlspecialchars(mb_substr($model->bio ?? '', 0, 80)) . '</td></tr>';
-            if ($sub) {
-                $sClr = ['Active' => '#28a745', 'Expired' => '#dc3545'][$sub->status] ?? '#999';
-                $html .= '<tr><td style="font-weight:bold">Subscription</td><td colspan="3"><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' . $sClr . '">' . $sub->status . '</span> · Plan: ' . ($sub->plan_id ?? '?') . ' · Ends: ' . ($sub->end_date_time ? Carbon::parse($sub->end_date_time)->format('M d, Y') : 'N/A') . '</td></tr>';
-            }
             $html .= '<tr><td style="font-weight:bold">Google ID</td><td>' . ($model->google_id ?? '—') . '</td><td style="font-weight:bold">Profile %</td><td>' . ($model->completed_profile_pct ?? 0) . '%</td></tr>';
-            $html .= '</table></div>';
+            $html .= '</table>';
+
+            // --- Subscription History ---
+            $html .= '<div style="margin-top:6px;margin-bottom:6px;font-weight:700;font-size:13px;color:#333">📋 Subscription History (' . $subs->count() . ')</div>';
+            if ($subs->isEmpty()) {
+                $html .= '<div style="padding:8px 12px;background:#fff;border:1px dashed #ccc;border-radius:4px;color:#888;text-align:center">No subscriptions found for this user</div>';
+            } else {
+                $html .= '<table class="table table-bordered table-condensed" style="background:#fff">';
+                $html .= '<thead><tr style="background:#eee;font-weight:700;font-size:11px">';
+                $html .= '<th>#</th><th>Status</th><th>Plan</th><th>Days</th><th>Start</th><th>End</th><th>Amount</th><th>Payment</th><th>Auto-Renew</th><th>Created</th>';
+                $html .= '</tr></thead><tbody>';
+                foreach ($subs as $i => $sub) {
+                    $sClr = [
+                        'Active'    => '#28a745',
+                        'Expired'   => '#dc3545',
+                        'Cancelled' => '#fd7e14',
+                        'Pending'   => '#ffc107',
+                        'Failed'    => '#6c757d',
+                    ][$sub->status] ?? '#999';
+                    $sTxt = ($sub->status === 'Pending') ? '#333' : '#fff';
+                    $badge = '<span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:' . $sTxt . ';background:' . $sClr . '">' . ($sub->status ?? '?') . '</span>';
+                    $start = $sub->start_date_time ? Carbon::parse($sub->start_date_time)->format('M d, Y') : '—';
+                    $end   = $sub->end_date_time ? Carbon::parse($sub->end_date_time)->format('M d, Y') : '—';
+                    $amt   = $sub->amount_paid ? ($sub->currency ?? 'UGX') . ' ' . number_format($sub->amount_paid, 0) : '—';
+                    $pay   = $sub->payment_method ?? '—';
+                    if ($sub->payment_status) {
+                        $pClr = ($sub->payment_status === 'completed' || $sub->payment_status === 'Completed') ? '#28a745' : '#888';
+                        $pay .= ' <span style="color:' . $pClr . ';font-size:10px">(' . $sub->payment_status . ')</span>';
+                    }
+                    $renew = $sub->auto_renew ? '<span style="color:#28a745">✓</span>' : '<span style="color:#ccc">✗</span>';
+                    $created = $sub->created_at ? Carbon::parse($sub->created_at)->format('M d, Y H:i') : '—';
+                    $rowBg = ($i === 0 && $sub->status === 'Active') ? 'background:#f0fff0;' : '';
+                    $html .= '<tr style="font-size:11px;' . $rowBg . '">';
+                    $html .= '<td>' . ($i + 1) . '</td>';
+                    $html .= '<td>' . $badge . '</td>';
+                    $html .= '<td>' . ($sub->plan_id ?? '—') . '</td>';
+                    $html .= '<td>' . ($sub->days ?? '—') . '</td>';
+                    $html .= '<td>' . $start . '</td>';
+                    $html .= '<td>' . $end . '</td>';
+                    $html .= '<td style="font-weight:600">' . $amt . '</td>';
+                    $html .= '<td>' . $pay . '</td>';
+                    $html .= '<td style="text-align:center">' . $renew . '</td>';
+                    $html .= '<td><small class="text-muted">' . $created . '</small></td>';
+                    $html .= '</tr>';
+                }
+                $html .= '</tbody></table>';
+            }
+
+            $html .= '</div>';
             return $html;
         });
 
