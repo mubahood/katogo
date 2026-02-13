@@ -110,17 +110,19 @@ class MovieController extends Controller
         $startTime = microtime(true);
 
         $perPage = $this->resolvePerPage($request);
-        $type    = $request->get('type', 'Movie');
-        $status  = $request->get('status', 'Active');
         $sort    = $request->get('sort', 'latest');
 
+        // Minimal filter: only Active items
         $query = MovieModel::select(self::LIST_FIELDS)
-            ->where('type', $type)
-            ->where('status', $status);
+            ->where('status', 'Active');
 
-        // For Series: only show first episodes (1 per series, not all episodes)
-        if ($type === 'Series') {
-            $query->where('is_first_episode', 'yes');
+        // Optional type filter (only applied if explicitly sent)
+        if ($request->filled('type')) {
+            $query->where('type', $request->get('type'));
+            // For Series: only show first episodes
+            if ($request->get('type') === 'Series') {
+                $query->where('is_first_episode', 'yes');
+            }
         }
 
         // Optional filters
@@ -150,7 +152,8 @@ class MovieController extends Controller
         $items = $this->cleanUrls($paginated->items());
 
         $elapsed = round((microtime(true) - $startTime) * 1000);
-        Log::info("[V2:movies] type={$type} sort={$sort} page={$paginated->currentPage()} per_page={$perPage} total={$paginated->total()} ms={$elapsed}");
+        $typeUsed = $request->get('type', 'ALL');
+        Log::info("[V2:movies] type={$typeUsed} sort={$sort} page={$paginated->currentPage()} per_page={$perPage} total={$paginated->total()} ms={$elapsed}");
 
         return $this->success([
             'items'      => $items,
