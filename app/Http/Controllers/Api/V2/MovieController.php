@@ -112,17 +112,17 @@ class MovieController extends Controller
         $perPage = $this->resolvePerPage($request);
         $sort    = $request->get('sort', 'latest');
 
-        // Show all active items. For Series, only first episodes (no episode spam).
+        // Movies only — no series in this listing
         $query = MovieModel::select(self::LIST_FIELDS)
             ->where('status', 'Active')
-            ->where(function ($q) {
-                $q->where('type', '!=', 'Series')
-                  ->orWhere('is_first_episode', 'Yes');
-            });
+            ->where('type', 'Movie');
 
-        // If caller explicitly wants only one type, narrow it down
+        // If caller explicitly wants Series, override
         if ($request->filled('type')) {
             $query->where('type', $request->get('type'));
+            if ($request->get('type') === 'Series') {
+                $query->where('is_first_episode', 'Yes');
+            }
         }
 
         // Optional filters
