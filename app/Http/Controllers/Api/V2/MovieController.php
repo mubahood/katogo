@@ -1051,6 +1051,10 @@ class MovieController extends Controller
 
         switch ($action) {
 
+            // ── Fix (centralized): Use MovieFixerService for full re-fetch + repair ──
+            case 'fix':
+                return $this->fixCentralized($movie);
+
             // ── Diagnose: return diagnostic info without changing anything ──
             case 'diagnose':
                 return $this->fixDiagnose($movie);
@@ -1069,6 +1073,49 @@ class MovieController extends Controller
 
             default:
                 return $this->error("Unknown fix action: {$action}", 400);
+        }
+    }
+
+    /**
+     * Centralized fix — uses MovieFixerService for full re-fetch from MunoWatch + repair.
+     *
+     * This is the PRIMARY fix action for mobile apps. It:
+     *   1. Detects the movie's source platform (MunoWatch, MyVJ, etc.)
+     *   2. Fetches fresh data directly from the original API
+     *   3. Extracts the best video URL
+     *   4. Applies all changes to the DB record
+     *   5. Updates fix tracking (fix_status, fix_counter, fix_date)
+     *   6. Returns the fully updated movie in DETAIL_FIELDS format
+     *
+     * The returned movie data can be used by the mobile app to update local state
+     * and immediately reload the player without any additional calls.
+     */
+    private function fixCentralized(MovieModel $movie)
+    {
+        try {
+            $fixer = new \App\Services\MovieFixerService();
+            $result = $fixer->fix($movie->id);
+
+            if ($result['success'] ?? false) {
+                // Reload movie with DETAIL_FIELDS and clean URLs
+                $movieData = $this->cleanUrlSingle(
+                    MovieModel::select(self::DETAIL_FIELDS)->find($movie->id)->toArray()
+                );
+
+                return $this->success([
+                    'action'  => 'fix',
+                    'movie'   => $movieData,
+                    'changes' => $result['changes'] ?? [],
+                    'old_url' => $result['old_url'] ?? null,
+                    'new_url' => $result['new_url'] ?? null,
+                    'message' => $result['message'] ?? 'Movie fixed successfully.',
+                ], $result['message'] ?? 'Movie fixed.');
+            } else {
+                return $this->error($result['message'] ?? 'Fix failed.', 400);
+            }
+        } catch (\Throwable $e) {
+            Log::error("V2 Fix centralized failed for movie {$movie->id}: " . $e->getMessage());
+            return $this->error('Fix failed: ' . $e->getMessage(), 500);
         }
     }
 
