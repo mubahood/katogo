@@ -119,13 +119,6 @@ class MovieController extends Controller
             ->where('status', $status)
             ->where('is_muno', 'Yes');   // Only Muno-approved movies
 
-        // For Movies: only show standalone movies (not series episodes)
-        if ($type === 'Movie') {
-            $query->where(function ($q) {
-                $q->whereNull('category_id')->orWhere('category_id', 0);
-            });
-        }
-
         // For Series: only show first episodes (1 per series, not all episodes)
         if ($type === 'Series') {
             $query->where('is_first_episode', 'yes');
