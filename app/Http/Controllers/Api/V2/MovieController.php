@@ -112,17 +112,22 @@ class MovieController extends Controller
         $perPage = $this->resolvePerPage($request);
         $sort    = $request->get('sort', 'latest');
 
-        // Movies only — no series in this listing
+        // Build base query based on requested type
+        $type = $request->get('type', 'Movie');
         $query = MovieModel::select(self::LIST_FIELDS)
-            ->where('status', 'Active')
-            ->where('type', 'Movie');
+            ->where('status', 'Active');
 
-        // If caller explicitly wants Series, override
-        if ($request->filled('type')) {
-            $query->where('type', $request->get('type'));
-            if ($request->get('type') === 'Series') {
-                $query->where('is_first_episode', 'Yes');
-            }
+        if ($type === 'Series') {
+            // Series tab: only first episodes of series
+            $query->where('type', 'Series')
+                  ->where('is_first_episode', 'Yes');
+        } else {
+            // Movies tab: everything EXCEPT non-first-episode series entries
+            // This includes type=Movie, Episode, or any other type, plus series first episodes
+            $query->where(function ($q) {
+                $q->where('type', '!=', 'Series')
+                  ->orWhere('is_first_episode', 'Yes');
+            });
         }
 
         // Optional filters
@@ -152,7 +157,7 @@ class MovieController extends Controller
         $items = $this->cleanUrls($paginated->items());
 
         $elapsed = round((microtime(true) - $startTime) * 1000);
-        $typeUsed = $request->get('type', 'ALL');
+        $typeUsed = $type;
         Log::info("[V2:movies] type={$typeUsed} sort={$sort} page={$paginated->currentPage()} per_page={$perPage} total={$paginated->total()} ms={$elapsed}");
 
         return $this->success([
