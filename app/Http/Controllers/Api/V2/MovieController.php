@@ -116,8 +116,7 @@ class MovieController extends Controller
 
         $query = MovieModel::select(self::LIST_FIELDS)
             ->where('type', $type)
-            ->where('status', $status)
-            ->where('is_muno', 'Yes');   // Only Muno-approved movies
+            ->where('status', $status);
 
         // For Series: only show first episodes (1 per series, not all episodes)
         if ($type === 'Series') {
