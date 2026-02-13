@@ -236,16 +236,21 @@ class ManifestController extends Controller
      * Build the shared (non-personal) movie sections.
      * Cached server-side for 5 minutes.
      *
-     * Strategy: use soft dedup — only prevent the SAME movie from appearing
-     * in the very next adjacent section. This keeps all sections full even
-     * when the total catalogue is small.
+     * ROTATION STRATEGY:
+     *  – Page-cycling: each section has totalPages = ceil(pool / limit).
+     *    currentPage = dayOfYear % totalPages. This guarantees the ENTIRE
+     *    catalogue is shown before any movie repeats in that section.
+     *  – Deterministic shuffle: discovery sections use ORDER BY RAND(fixedSeed)
+     *    with a CONSTANT seed per section (not daily). The same shuffled order
+     *    always, but a different PAGE each day — zero overlap between days.
+     *  – Soft dedup: adjacent sections exclude each other's IDs so two
+     *    neighbouring rows never show the same movie.
      */
     private function buildMovieSections(): array
     {
-        $sections      = [];
-        $todaySeed     = Carbon::today()->timestamp;
-        $dayOffset     = Carbon::today()->dayOfYear % 4;
-        $prevSectionIds = []; // IDs from previous section only (soft dedup)
+        $sections       = [];
+        $dayOfYear      = Carbon::today()->dayOfYear;   // 1-365/366
+        $prevSectionIds = [];
 
         // Helper: append a section & rotate dedup window
         $addSection = function (string $key, string $title, string $icon, $collection) use (&$sections, &$prevSectionIds) {
@@ -259,81 +264,141 @@ class ManifestController extends Controller
             $prevSectionIds = $collection->pluck('id')->toArray();
         };
 
-        // Base query scope (reusable)
+        /**
+         * Page-cycle offset calculator.
+         * Given a total pool size and desired page size, returns the SQL OFFSET
+         * for today so that the full pool is covered before repeating.
+         */
+        $cycledOffset = function (int $poolSize, int $pageSize) use ($dayOfYear): int {
+            $totalPages = max(1, (int) ceil($poolSize / max(1, $pageSize)));
+            $page = $dayOfYear % $totalPages;
+            return $page * $pageSize;
+        };
+
+        // Base scopes
         $activeMovies = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes']);
         $activeSeries = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes']);
 
+        // Total counts (cached 10 min — used for page calculation)
+        $totalMovies = Cache::remember('v2_total_movies', 600, fn () =>
+            MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])->count()
+        );
+        $totalSeries = Cache::remember('v2_total_series', 600, fn () =>
+            MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes'])->count()
+        );
+
+        $limit = 20;
+
         // ═══════════════════════════════════════════════════
-        // 1. LATEST MOVIES — newest additions first
+        // 1. LATEST MOVIES — newest, no cycling needed
         // ═══════════════════════════════════════════════════
         $latest = $activeMovies()
             ->orderBy('created_at', 'desc')
-            ->limit(20)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
         $addSection('latest', 'Latest Movies', 'clock', $latest);
 
         // ═══════════════════════════════════════════════════
-        // 2. TRENDING NOW — most downloaded, daily rotation
+        // 2. TRENDING NOW — by downloads, page-cycled
+        //    Full cycle: e.g. 200 movies / 20 = 10 days
         // ═══════════════════════════════════════════════════
+        $trendingOffset = $cycledOffset($totalMovies, $limit);
         $trending = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderBy('downloads_count', 'desc')
-            ->offset($dayOffset * 3)
-            ->limit(20)
+            ->offset($trendingOffset)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
+        // If offset overshoots (near end of catalogue), wrap to top
+        if ($trending->count() < 3) {
+            $trending = $activeMovies()
+                ->whereNotIn('id', $prevSectionIds)
+                ->orderBy('downloads_count', 'desc')
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+        }
         $addSection('trending', 'Trending Now', 'trending-up', $trending);
 
         // ═══════════════════════════════════════════════════
-        // 3. POPULAR MOVIES — most viewed
+        // 3. POPULAR MOVIES — by views, offset by half-cycle
+        //    (shifted so it doesn't overlap with trending's page)
         // ═══════════════════════════════════════════════════
+        $popularPages = max(1, (int) ceil($totalMovies / $limit));
+        $popularPage  = ($dayOfYear + (int) floor($popularPages / 2)) % $popularPages;
         $popular = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderBy('views_time_count', 'desc')
-            ->offset($dayOffset * 2)
-            ->limit(20)
+            ->offset($popularPage * $limit)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
+        if ($popular->count() < 3) {
+            $popular = $activeMovies()
+                ->whereNotIn('id', $prevSectionIds)
+                ->orderBy('views_time_count', 'desc')
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+        }
         $addSection('popular', 'Popular Movies', 'star', $popular);
 
         // ═══════════════════════════════════════════════════
-        // 4. NEW THIS WEEK — added in last 7 days
+        // 4. NEW THIS WEEK — last 7 days (naturally fresh)
         // ═══════════════════════════════════════════════════
         $weekAgo = Carbon::now()->subDays(7);
         $newThisWeek = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->where('created_at', '>=', $weekAgo)
             ->orderBy('created_at', 'desc')
-            ->limit(20)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
         if ($newThisWeek->count() >= 3) {
             $addSection('new_this_week', 'New This Week', 'calendar', $newThisWeek);
         }
 
         // ═══════════════════════════════════════════════════
-        // 5. SERIES — latest series
+        // 5. SERIES — page-cycled through all series
         // ═══════════════════════════════════════════════════
-        $series = $activeSeries()
-            ->orderBy('created_at', 'desc')
-            ->limit(20)
-            ->get(self::SLIM_FIELDS);
-        if ($series->count() >= 2) {
-            $addSection('series', 'Series', 'tv', $series);
+        if ($totalSeries >= 2) {
+            $seriesOffset = $cycledOffset($totalSeries, $limit);
+            $series = $activeSeries()
+                ->orderBy('created_at', 'desc')
+                ->offset($seriesOffset)
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+            if ($series->count() < 2) {
+                $series = $activeSeries()->orderBy('created_at', 'desc')->limit($limit)->get(self::SLIM_FIELDS);
+            }
+            if ($series->count() >= 2) {
+                $addSection('series', 'Series', 'tv', $series);
+            }
         }
 
         // ═══════════════════════════════════════════════════
-        // 6. MOST DOWNLOADED — top by download count
+        // 6. MOST DOWNLOADED — page-cycled (offset shifted by 1/3)
         // ═══════════════════════════════════════════════════
+        $dlPages  = max(1, (int) ceil($totalMovies / $limit));
+        $dlPage   = ($dayOfYear + (int) floor($dlPages / 3)) % $dlPages;
         $mostDownloaded = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderBy('downloads_count', 'desc')
-            ->offset(15 + $dayOffset * 5)
-            ->limit(20)
+            ->offset($dlPage * $limit)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
+        if ($mostDownloaded->count() < 3) {
+            $mostDownloaded = $activeMovies()
+                ->whereNotIn('id', $prevSectionIds)
+                ->orderBy('downloads_count', 'desc')
+                ->offset(0)
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+        }
         if ($mostDownloaded->count() >= 3) {
             $addSection('most_downloaded', 'Most Downloaded', 'download-cloud', $mostDownloaded);
         }
 
         // ═══════════════════════════════════════════════════
-        // 7–14. GENRE SECTIONS — up to 8 genres
+        // 7–14. GENRE SECTIONS — up to 8 genres, page-cycled
+        //   Each genre's movies are in a fixed shuffled order
+        //   (RAND with constant seed per genre), paged daily.
         // ═══════════════════════════════════════════════════
         $topGenres = DB::table('movie_models')
             ->select('genre', DB::raw('COUNT(*) as cnt'))
@@ -359,12 +424,28 @@ class ManifestController extends Controller
                 if (strlen($normalised) < 2 || in_array($normalised, $seenGenres)) continue;
                 $seenGenres[] = $normalised;
 
+                // Fixed seed per genre (constant) — same shuffle order always
+                $genreSeed = crc32($normalised);
+                $genreCount = $activeMovies()->where('genre', 'LIKE', "%{$g}%")->count();
+                $genreOffset = $cycledOffset($genreCount, $limit);
+
                 $genreMovies = $activeMovies()
                     ->where('genre', 'LIKE', "%{$g}%")
                     ->whereNotIn('id', $prevSectionIds)
-                    ->orderByRaw("RAND({$todaySeed})")
-                    ->limit(20)
+                    ->orderByRaw("RAND({$genreSeed})")
+                    ->offset($genreOffset)
+                    ->limit($limit)
                     ->get(self::SLIM_FIELDS);
+
+                // Wrap if near end
+                if ($genreMovies->count() < 3) {
+                    $genreMovies = $activeMovies()
+                        ->where('genre', 'LIKE', "%{$g}%")
+                        ->whereNotIn('id', $prevSectionIds)
+                        ->orderByRaw("RAND({$genreSeed})")
+                        ->limit($limit)
+                        ->get(self::SLIM_FIELDS);
+                }
 
                 if ($genreMovies->count() >= 3) {
                     $addSection(
@@ -379,7 +460,9 @@ class ManifestController extends Controller
         }
 
         // ═══════════════════════════════════════════════════
-        // 15–17. VJ SPOTLIGHT — up to 3 top VJs
+        // 15–17. VJ SPOTLIGHT — 3 VJs, rotating daily
+        //   Day 1: VJ A,B,C → Day 2: VJ D,E,F → …
+        //   Cycles through all VJs before repeating.
         // ═══════════════════════════════════════════════════
         $topVjs = DB::table('movie_models')
             ->select('vj', DB::raw('COUNT(*) as cnt'))
@@ -390,24 +473,39 @@ class ManifestController extends Controller
             ->where('vj', '!=', '')
             ->groupBy('vj')
             ->orderByDesc('cnt')
-            ->limit(8)
+            ->limit(15)
             ->get();
 
         $vjSpotlightCount = 0;
+        $vjsPerDay = 3;
         if ($topVjs->isNotEmpty()) {
-            // Start from a daily-rotating index
-            $vjStart = $todaySeed % $topVjs->count();
-            for ($i = 0; $i < $topVjs->count() && $vjSpotlightCount < 3; $i++) {
-                $vjRow  = $topVjs[($vjStart + $i) % $topVjs->count()];
+            $vjTotal = $topVjs->count();
+            // Rotate: day 0 → VJs 0,1,2 | day 1 → VJs 3,4,5 | …
+            $vjStartIdx = ($dayOfYear * $vjsPerDay) % $vjTotal;
+            for ($i = 0; $i < $vjTotal && $vjSpotlightCount < $vjsPerDay; $i++) {
+                $vjRow  = $topVjs[($vjStartIdx + $i) % $vjTotal];
                 $vjName = trim($vjRow->vj);
                 if (strlen($vjName) < 2) continue;
+
+                $vjSeed = crc32($vjName);
+                $vjMovieCount = $activeMovies()->where('vj', 'LIKE', "%{$vjName}%")->count();
+                $vjOffset = $cycledOffset($vjMovieCount, $limit);
 
                 $vjMovies = $activeMovies()
                     ->where('vj', 'LIKE', "%{$vjName}%")
                     ->whereNotIn('id', $prevSectionIds)
-                    ->orderByRaw("RAND({$todaySeed})")
-                    ->limit(20)
+                    ->orderByRaw("RAND({$vjSeed})")
+                    ->offset($vjOffset)
+                    ->limit($limit)
                     ->get(self::SLIM_FIELDS);
+
+                if ($vjMovies->count() < 3) {
+                    $vjMovies = $activeMovies()
+                        ->where('vj', 'LIKE', "%{$vjName}%")
+                        ->orderByRaw("RAND({$vjSeed})")
+                        ->limit($limit)
+                        ->get(self::SLIM_FIELDS);
+                }
 
                 if ($vjMovies->count() >= 3) {
                     $displayName = trim(str_ireplace(['vj ', 'VJ '], '', $vjName));
@@ -423,51 +521,97 @@ class ManifestController extends Controller
         }
 
         // ═══════════════════════════════════════════════════
-        // 18. TOP RATED — highest rating
+        // 18. TOP RATED — page-cycled
         // ═══════════════════════════════════════════════════
+        $ratedCount = $activeMovies()->where('rating', '>', 0)->count();
+        $ratedOffset = $cycledOffset($ratedCount, $limit);
         $topRated = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->where('rating', '>', 0)
             ->orderBy('rating', 'desc')
-            ->limit(20)
+            ->offset($ratedOffset)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
+        if ($topRated->count() < 3) {
+            $topRated = $activeMovies()
+                ->whereNotIn('id', $prevSectionIds)
+                ->where('rating', '>', 0)
+                ->orderBy('rating', 'desc')
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+        }
         if ($topRated->count() >= 3) {
             $addSection('top_rated', 'Top Rated', 'thumbs-up', $topRated);
         }
 
         // ═══════════════════════════════════════════════════
-        // 19. FOR YOU — seeded random daily pick
+        // 19. FOR YOU — deterministic shuffle, page-cycled
+        //   Fixed random order (seed=42), different page each day.
+        //   Full catalogue cycles before any movie repeats.
         // ═══════════════════════════════════════════════════
+        $forYouOffset = $cycledOffset($totalMovies, $limit);
+        // Shift by 2/3 so it doesn't align with trending/popular pages
+        $forYouPages = max(1, (int) ceil($totalMovies / $limit));
+        $forYouPage  = ($dayOfYear + (int) floor($forYouPages * 2 / 3)) % $forYouPages;
         $forYou = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
-            ->orderByRaw("RAND({$todaySeed})")
-            ->limit(20)
+            ->orderByRaw('RAND(42)')
+            ->offset($forYouPage * $limit)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
+        if ($forYou->count() < 3) {
+            $forYou = $activeMovies()
+                ->whereNotIn('id', $prevSectionIds)
+                ->orderByRaw('RAND(42)')
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+        }
         if ($forYou->count() >= 3) {
             $addSection('for_you', 'Recommended For You', 'heart', $forYou);
         }
 
         // ═══════════════════════════════════════════════════
-        // 20. HIDDEN GEMS — low-view discoveries
+        // 20. HIDDEN GEMS — low views, page-cycled
         // ═══════════════════════════════════════════════════
+        $gemsCount = $activeMovies()->where('views_time_count', '<', 100)->count();
+        $gemsOffset = $cycledOffset($gemsCount, $limit);
         $hiddenGems = $activeMovies()
             ->where('views_time_count', '<', 100)
             ->whereNotIn('id', $prevSectionIds)
-            ->orderByRaw("RAND({$todaySeed})")
-            ->limit(20)
+            ->orderByRaw('RAND(7777)')
+            ->offset($gemsOffset)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
+        if ($hiddenGems->count() < 3) {
+            $hiddenGems = $activeMovies()
+                ->where('views_time_count', '<', 100)
+                ->orderByRaw('RAND(7777)')
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+        }
         if ($hiddenGems->count() >= 3) {
             $addSection('hidden_gems', 'Hidden Gems', 'award', $hiddenGems);
         }
 
         // ═══════════════════════════════════════════════════
-        // 21. CLASSICS — oldest movies in the catalogue
+        // 21. CLASSICS — oldest movies, page-cycled
         // ═══════════════════════════════════════════════════
+        $classicsOffset = $cycledOffset($totalMovies, $limit);
+        $classicsPages  = max(1, (int) ceil($totalMovies / $limit));
+        $classicsPage   = ($dayOfYear + (int) floor($classicsPages / 4)) % $classicsPages;
         $classics = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderBy('created_at', 'asc')
-            ->limit(20)
+            ->offset($classicsPage * $limit)
+            ->limit($limit)
             ->get(self::SLIM_FIELDS);
+        if ($classics->count() < 3) {
+            $classics = $activeMovies()
+                ->whereNotIn('id', $prevSectionIds)
+                ->orderBy('created_at', 'asc')
+                ->limit($limit)
+                ->get(self::SLIM_FIELDS);
+        }
         if ($classics->count() >= 3) {
             $addSection('classics', 'Classics', 'archive', $classics);
         }
