@@ -28,6 +28,7 @@ class ManifestController extends Controller
     private const SLIM_FIELDS = [
         'id',
         'title',
+        'url',
         'thumbnail_url',
         'genre',
         'type',
@@ -628,9 +629,16 @@ class ManifestController extends Controller
      */
     private function slimMovie($movie): array
     {
+        $url = $movie->url ?? '';
+        if ($url !== '') {
+            $url = str_replace(' ', '%20', $url);
+            $url = preg_replace('/^http:/i', 'https:', $url);
+        }
+
         return [
             'id'            => (int) $movie->id,
             'title'         => $movie->title ?? '',
+            'url'           => $url,
             'thumbnail_url' => $movie->thumbnail_url ?? '',
             'genre'         => $movie->genre ?? '',
             'type'          => $movie->type ?? 'Movie',
