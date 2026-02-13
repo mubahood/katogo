@@ -253,13 +253,14 @@ class ManifestController extends Controller
         $prevSectionIds = [];
 
         // Helper: append a section & rotate dedup window
-        $addSection = function (string $key, string $title, string $icon, $collection) use (&$sections, &$prevSectionIds) {
+        $addSection = function (string $key, string $title, string $icon, $collection, array $filterParams = []) use (&$sections, &$prevSectionIds) {
             if ($collection->isEmpty()) return;
             $sections[] = [
-                'key'   => $key,
-                'title' => $title,
-                'icon'  => $icon,
-                'items' => $collection->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
+                'key'           => $key,
+                'title'         => $title,
+                'icon'          => $icon,
+                'filter_params' => $filterParams,   // so Flutter "See All" can paginate
+                'items'         => $collection->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
             ];
             $prevSectionIds = $collection->pluck('id')->toArray();
         };
@@ -296,7 +297,7 @@ class ManifestController extends Controller
             ->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get(self::SLIM_FIELDS);
-        $addSection('latest', 'Latest Movies', 'clock', $latest);
+        $addSection('latest', 'Latest Movies', 'clock', $latest, ['sort' => 'latest']);
 
         // ═══════════════════════════════════════════════════
         // 2. TRENDING NOW — by downloads, page-cycled
@@ -317,7 +318,7 @@ class ManifestController extends Controller
                 ->limit($limit)
                 ->get(self::SLIM_FIELDS);
         }
-        $addSection('trending', 'Trending Now', 'trending-up', $trending);
+        $addSection('trending', 'Trending Now', 'trending-up', $trending, ['sort' => 'popular']);
 
         // ═══════════════════════════════════════════════════
         // 3. POPULAR MOVIES — by views, offset by half-cycle
@@ -338,7 +339,7 @@ class ManifestController extends Controller
                 ->limit($limit)
                 ->get(self::SLIM_FIELDS);
         }
-        $addSection('popular', 'Popular Movies', 'star', $popular);
+        $addSection('popular', 'Popular Movies', 'star', $popular, ['sort' => 'popular']);
 
         // ═══════════════════════════════════════════════════
         // 4. NEW THIS WEEK — last 7 days (naturally fresh)
@@ -351,7 +352,7 @@ class ManifestController extends Controller
             ->limit($limit)
             ->get(self::SLIM_FIELDS);
         if ($newThisWeek->count() >= 3) {
-            $addSection('new_this_week', 'New This Week', 'calendar', $newThisWeek);
+            $addSection('new_this_week', 'New This Week', 'calendar', $newThisWeek, ['sort' => 'latest']);
         }
 
         // ═══════════════════════════════════════════════════
@@ -368,7 +369,7 @@ class ManifestController extends Controller
                 $series = $activeSeries()->orderBy('created_at', 'desc')->limit($limit)->get(self::SLIM_FIELDS);
             }
             if ($series->count() >= 2) {
-                $addSection('series', 'Series', 'tv', $series);
+                $addSection('series', 'Series', 'tv', $series, ['type' => 'Series', 'sort' => 'latest']);
             }
         }
 
@@ -392,7 +393,7 @@ class ManifestController extends Controller
                 ->get(self::SLIM_FIELDS);
         }
         if ($mostDownloaded->count() >= 3) {
-            $addSection('most_downloaded', 'Most Downloaded', 'download-cloud', $mostDownloaded);
+            $addSection('most_downloaded', 'Most Downloaded', 'download-cloud', $mostDownloaded, ['sort' => 'popular']);
         }
 
         // ═══════════════════════════════════════════════════
@@ -452,7 +453,8 @@ class ManifestController extends Controller
                         'genre_' . strtolower(str_replace(' ', '_', $normalised)),
                         "{$normalised} Movies",
                         'film',
-                        $genreMovies
+                        $genreMovies,
+                        ['genre' => $normalised]
                     );
                     $genreSectionCount++;
                 }
@@ -513,7 +515,8 @@ class ManifestController extends Controller
                         'vj_spotlight_' . ($vjSpotlightCount + 1),
                         "VJ {$displayName} Collection",
                         'mic',
-                        $vjMovies
+                        $vjMovies,
+                        ['vj' => $vjName]
                     );
                     $vjSpotlightCount++;
                 }
@@ -541,7 +544,7 @@ class ManifestController extends Controller
                 ->get(self::SLIM_FIELDS);
         }
         if ($topRated->count() >= 3) {
-            $addSection('top_rated', 'Top Rated', 'thumbs-up', $topRated);
+            $addSection('top_rated', 'Top Rated', 'thumbs-up', $topRated, ['sort' => 'popular']);
         }
 
         // ═══════════════════════════════════════════════════
@@ -567,7 +570,7 @@ class ManifestController extends Controller
                 ->get(self::SLIM_FIELDS);
         }
         if ($forYou->count() >= 3) {
-            $addSection('for_you', 'Recommended For You', 'heart', $forYou);
+            $addSection('for_you', 'Recommended For You', 'heart', $forYou, ['sort' => 'popular']);
         }
 
         // ═══════════════════════════════════════════════════
@@ -590,7 +593,7 @@ class ManifestController extends Controller
                 ->get(self::SLIM_FIELDS);
         }
         if ($hiddenGems->count() >= 3) {
-            $addSection('hidden_gems', 'Hidden Gems', 'award', $hiddenGems);
+            $addSection('hidden_gems', 'Hidden Gems', 'award', $hiddenGems, ['sort' => 'latest']);
         }
 
         // ═══════════════════════════════════════════════════
@@ -613,7 +616,7 @@ class ManifestController extends Controller
                 ->get(self::SLIM_FIELDS);
         }
         if ($classics->count() >= 3) {
-            $addSection('classics', 'Classics', 'archive', $classics);
+            $addSection('classics', 'Classics', 'archive', $classics, ['sort' => 'year']);
         }
 
         return $sections;

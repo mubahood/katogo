@@ -116,7 +116,8 @@ class MovieController extends Controller
 
         $query = MovieModel::select(self::LIST_FIELDS)
             ->where('type', $type)
-            ->where('status', $status);
+            ->where('status', $status)
+            ->where('is_muno', 'Yes');   // Only Muno-approved movies
 
         // For Movies: only show standalone movies (not series episodes)
         if ($type === 'Movie') {
