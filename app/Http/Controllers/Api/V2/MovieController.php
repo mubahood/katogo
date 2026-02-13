@@ -110,17 +110,19 @@ class MovieController extends Controller
         $startTime = microtime(true);
 
         $perPage = $this->resolvePerPage($request);
-        // Default type=Movie (this is the movies endpoint), but allow override
-        $type = $request->get('type', 'Movie');
-        $sort = $request->get('sort', 'latest');
+        $sort    = $request->get('sort', 'latest');
 
+        // Show all active items. For Series, only first episodes (no episode spam).
         $query = MovieModel::select(self::LIST_FIELDS)
             ->where('status', 'Active')
-            ->where('type', $type);
+            ->where(function ($q) {
+                $q->where('type', '!=', 'Series')
+                  ->orWhere('is_first_episode', 'Yes');
+            });
 
-        // For Series: only show first episode per series (no duplicates)
-        if ($type === 'Series') {
-            $query->where('is_first_episode', 'Yes');
+        // If caller explicitly wants only one type, narrow it down
+        if ($request->filled('type')) {
+            $query->where('type', $request->get('type'));
         }
 
         // Optional filters
