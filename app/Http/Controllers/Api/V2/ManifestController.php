@@ -39,6 +39,8 @@ class ManifestController extends Controller
         'rating',
         'views_time_count',
         'downloads_count',
+        'category_id',
+        'is_first_episode',
     ];
 
     /**
@@ -279,14 +281,15 @@ class ManifestController extends Controller
 
         // Base scopes
         $activeMovies = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes']);
-        $activeSeries = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes']);
+        // Series scope: only first episodes so each series appears once
+        $activeSeries = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes', 'is_first_episode' => 'Yes']);
 
         // Total counts (cached 10 min — used for page calculation)
         $totalMovies = Cache::remember('v2_total_movies', 600, fn () =>
             MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])->count()
         );
         $totalSeries = Cache::remember('v2_total_series', 600, fn () =>
-            MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes'])->count()
+            MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes', 'is_first_episode' => 'Yes'])->count()
         );
 
         $limit = 20;
@@ -357,17 +360,27 @@ class ManifestController extends Controller
         }
 
         // ═══════════════════════════════════════════════════
-        // 5. SERIES — page-cycled through all series
+        // 5. SERIES — first episode of each series only (deduplicated by category_id)
         // ═══════════════════════════════════════════════════
         if ($totalSeries >= 2) {
             $seriesOffset = $cycledOffset($totalSeries, $limit);
+            // Fetch extra to account for duplicates, then deduplicate by category_id
             $series = $activeSeries()
                 ->orderBy('created_at', 'desc')
                 ->offset($seriesOffset)
-                ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->limit($limit * 2)
+                ->get(self::SLIM_FIELDS)
+                ->unique('category_id')
+                ->take($limit)
+                ->values();
             if ($series->count() < 2) {
-                $series = $activeSeries()->orderBy('created_at', 'desc')->limit($limit)->get(self::SLIM_FIELDS);
+                $series = $activeSeries()
+                    ->orderBy('created_at', 'desc')
+                    ->limit($limit * 2)
+                    ->get(self::SLIM_FIELDS)
+                    ->unique('category_id')
+                    ->take($limit)
+                    ->values();
             }
             if ($series->count() >= 2) {
                 $addSection('series', 'Series', 'tv', $series, ['type' => 'Series', 'sort' => 'latest']);
@@ -636,18 +649,20 @@ class ManifestController extends Controller
         }
 
         return [
-            'id'            => (int) $movie->id,
-            'title'         => $movie->title ?? '',
-            'url'           => $url,
-            'thumbnail_url' => $movie->thumbnail_url ?? '',
-            'genre'         => $movie->genre ?? '',
-            'type'          => $movie->type ?? 'Movie',
-            'vj'            => $movie->vj ?? '',
-            'is_premium'    => $movie->is_premium ?? 'No',
-            'year'          => $movie->year ?? '',
-            'duration'      => $movie->duration ?? '',
-            'rating'        => (float) ($movie->rating ?? 0),
-            'views'         => (int) ($movie->views_time_count ?? 0),
+            'id'               => (int) $movie->id,
+            'title'            => $movie->title ?? '',
+            'url'              => $url,
+            'thumbnail_url'    => $movie->thumbnail_url ?? '',
+            'genre'            => $movie->genre ?? '',
+            'type'             => $movie->type ?? 'Movie',
+            'vj'               => $movie->vj ?? '',
+            'is_premium'       => $movie->is_premium ?? 'No',
+            'year'             => $movie->year ?? '',
+            'duration'         => $movie->duration ?? '',
+            'rating'           => (float) ($movie->rating ?? 0),
+            'views'            => (int) ($movie->views_time_count ?? 0),
+            'category_id'      => $movie->category_id ? (int) $movie->category_id : null,
+            'is_first_episode' => $movie->is_first_episode ?? null,
         ];
     }
 
