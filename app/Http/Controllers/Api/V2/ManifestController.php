@@ -235,67 +235,106 @@ class ManifestController extends Controller
     /**
      * Build the shared (non-personal) movie sections.
      * Cached server-side for 5 minutes.
+     *
+     * Strategy: use soft dedup — only prevent the SAME movie from appearing
+     * in the very next adjacent section. This keeps all sections full even
+     * when the total catalogue is small.
      */
     private function buildMovieSections(): array
     {
-        $sections   = [];
-        $usedIds    = [];
-        $todaySeed  = Carbon::today()->timestamp;
-        $dayOffset  = Carbon::today()->dayOfYear % 4;
+        $sections      = [];
+        $todaySeed     = Carbon::today()->timestamp;
+        $dayOffset     = Carbon::today()->dayOfYear % 4;
+        $prevSectionIds = []; // IDs from previous section only (soft dedup)
 
-        // ── Trending (by downloads, daily offset) ────────
-        $trending = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+        // Helper: append a section & rotate dedup window
+        $addSection = function (string $key, string $title, string $icon, $collection) use (&$sections, &$prevSectionIds) {
+            if ($collection->isEmpty()) return;
+            $sections[] = [
+                'key'   => $key,
+                'title' => $title,
+                'icon'  => $icon,
+                'items' => $collection->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
+            ];
+            $prevSectionIds = $collection->pluck('id')->toArray();
+        };
+
+        // Base query scope (reusable)
+        $activeMovies = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes']);
+        $activeSeries = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes']);
+
+        // ═══════════════════════════════════════════════════
+        // 1. LATEST MOVIES — newest additions first
+        // ═══════════════════════════════════════════════════
+        $latest = $activeMovies()
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get(self::SLIM_FIELDS);
+        $addSection('latest', 'Latest Movies', 'clock', $latest);
+
+        // ═══════════════════════════════════════════════════
+        // 2. TRENDING NOW — most downloaded, daily rotation
+        // ═══════════════════════════════════════════════════
+        $trending = $activeMovies()
+            ->whereNotIn('id', $prevSectionIds)
             ->orderBy('downloads_count', 'desc')
             ->offset($dayOffset * 3)
-            ->limit(15)
+            ->limit(20)
             ->get(self::SLIM_FIELDS);
+        $addSection('trending', 'Trending Now', 'trending-up', $trending);
 
-        if ($trending->isNotEmpty()) {
-            $sections[] = [
-                'key'   => 'trending',
-                'title' => 'Trending Now',
-                'icon'  => 'trending-up',
-                'items' => $trending->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
-            ];
-            $usedIds = array_merge($usedIds, $trending->pluck('id')->toArray());
-        }
-
-        // ── Popular (by views, excluding used, daily offset) ─
-        $popular = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
-            ->whereNotIn('id', $usedIds)
+        // ═══════════════════════════════════════════════════
+        // 3. POPULAR MOVIES — most viewed
+        // ═══════════════════════════════════════════════════
+        $popular = $activeMovies()
+            ->whereNotIn('id', $prevSectionIds)
             ->orderBy('views_time_count', 'desc')
             ->offset($dayOffset * 2)
-            ->limit(15)
+            ->limit(20)
             ->get(self::SLIM_FIELDS);
+        $addSection('popular', 'Popular Movies', 'star', $popular);
 
-        if ($popular->isNotEmpty()) {
-            $sections[] = [
-                'key'   => 'popular',
-                'title' => 'Popular Movies',
-                'icon'  => 'star',
-                'items' => $popular->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
-            ];
-            $usedIds = array_merge($usedIds, $popular->pluck('id')->toArray());
-        }
-
-        // ── Just Added (newest, excluding used) ──────────
-        $latest = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
-            ->whereNotIn('id', $usedIds)
+        // ═══════════════════════════════════════════════════
+        // 4. NEW THIS WEEK — added in last 7 days
+        // ═══════════════════════════════════════════════════
+        $weekAgo = Carbon::now()->subDays(7);
+        $newThisWeek = $activeMovies()
+            ->whereNotIn('id', $prevSectionIds)
+            ->where('created_at', '>=', $weekAgo)
             ->orderBy('created_at', 'desc')
-            ->limit(15)
+            ->limit(20)
             ->get(self::SLIM_FIELDS);
-
-        if ($latest->isNotEmpty()) {
-            $sections[] = [
-                'key'   => 'latest',
-                'title' => 'Just Added',
-                'icon'  => 'clock',
-                'items' => $latest->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
-            ];
-            $usedIds = array_merge($usedIds, $latest->pluck('id')->toArray());
+        if ($newThisWeek->count() >= 3) {
+            $addSection('new_this_week', 'New This Week', 'calendar', $newThisWeek);
         }
 
-        // ── Top genre-based sections (up to 4) ──────────
+        // ═══════════════════════════════════════════════════
+        // 5. SERIES — latest series
+        // ═══════════════════════════════════════════════════
+        $series = $activeSeries()
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get(self::SLIM_FIELDS);
+        if ($series->count() >= 2) {
+            $addSection('series', 'Series', 'tv', $series);
+        }
+
+        // ═══════════════════════════════════════════════════
+        // 6. MOST DOWNLOADED — top by download count
+        // ═══════════════════════════════════════════════════
+        $mostDownloaded = $activeMovies()
+            ->whereNotIn('id', $prevSectionIds)
+            ->orderBy('downloads_count', 'desc')
+            ->offset(15 + $dayOffset * 5)
+            ->limit(20)
+            ->get(self::SLIM_FIELDS);
+        if ($mostDownloaded->count() >= 3) {
+            $addSection('most_downloaded', 'Most Downloaded', 'download-cloud', $mostDownloaded);
+        }
+
+        // ═══════════════════════════════════════════════════
+        // 7–14. GENRE SECTIONS — up to 8 genres
+        // ═══════════════════════════════════════════════════
         $topGenres = DB::table('movie_models')
             ->select('genre', DB::raw('COUNT(*) as cnt'))
             ->where('status', 'Active')
@@ -305,46 +344,43 @@ class ManifestController extends Controller
             ->where('genre', '!=', '')
             ->groupBy('genre')
             ->orderByDesc('cnt')
-            ->limit(30)
+            ->limit(40)
             ->get();
 
         $seenGenres = [];
         $genreSectionCount = 0;
+        $maxGenreSections = 8;
         foreach ($topGenres as $row) {
-            if ($genreSectionCount >= 4) {
-                break;
-            }
+            if ($genreSectionCount >= $maxGenreSections) break;
             $parts = array_map('trim', preg_split('/[,\/]/', $row->genre));
             foreach ($parts as $g) {
-                if ($genreSectionCount >= 4) {
-                    break;
-                }
-                if (strlen($g) < 2 || in_array($g, $seenGenres)) {
-                    continue;
-                }
-                $seenGenres[] = $g;
+                if ($genreSectionCount >= $maxGenreSections) break;
+                $normalised = ucfirst(strtolower(trim($g)));
+                if (strlen($normalised) < 2 || in_array($normalised, $seenGenres)) continue;
+                $seenGenres[] = $normalised;
 
-                $genreMovies = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+                $genreMovies = $activeMovies()
                     ->where('genre', 'LIKE', "%{$g}%")
-                    ->whereNotIn('id', $usedIds)
+                    ->whereNotIn('id', $prevSectionIds)
                     ->orderByRaw("RAND({$todaySeed})")
-                    ->limit(15)
+                    ->limit(20)
                     ->get(self::SLIM_FIELDS);
 
                 if ($genreMovies->count() >= 3) {
-                    $sections[] = [
-                        'key'   => 'genre_' . strtolower(str_replace(' ', '_', $g)),
-                        'title' => "{$g} Movies",
-                        'icon'  => 'film',
-                        'items' => $genreMovies->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
-                    ];
-                    $usedIds = array_merge($usedIds, $genreMovies->pluck('id')->toArray());
+                    $addSection(
+                        'genre_' . strtolower(str_replace(' ', '_', $normalised)),
+                        "{$normalised} Movies",
+                        'film',
+                        $genreMovies
+                    );
                     $genreSectionCount++;
                 }
             }
         }
 
-        // ── VJ Spotlight (random top VJ) ─────────────────
+        // ═══════════════════════════════════════════════════
+        // 15–17. VJ SPOTLIGHT — up to 3 top VJs
+        // ═══════════════════════════════════════════════════
         $topVjs = DB::table('movie_models')
             ->select('vj', DB::raw('COUNT(*) as cnt'))
             ->where('status', 'Active')
@@ -354,50 +390,86 @@ class ManifestController extends Controller
             ->where('vj', '!=', '')
             ->groupBy('vj')
             ->orderByDesc('cnt')
-            ->limit(5)
+            ->limit(8)
             ->get();
 
+        $vjSpotlightCount = 0;
         if ($topVjs->isNotEmpty()) {
-            $vjIndex = $todaySeed % $topVjs->count();
-            $vjRow   = $topVjs[$vjIndex];
-            $vjName  = trim($vjRow->vj);
-            if (strlen($vjName) > 0) {
-                $vjMovies = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+            // Start from a daily-rotating index
+            $vjStart = $todaySeed % $topVjs->count();
+            for ($i = 0; $i < $topVjs->count() && $vjSpotlightCount < 3; $i++) {
+                $vjRow  = $topVjs[($vjStart + $i) % $topVjs->count()];
+                $vjName = trim($vjRow->vj);
+                if (strlen($vjName) < 2) continue;
+
+                $vjMovies = $activeMovies()
                     ->where('vj', 'LIKE', "%{$vjName}%")
-                    ->whereNotIn('id', $usedIds)
+                    ->whereNotIn('id', $prevSectionIds)
                     ->orderByRaw("RAND({$todaySeed})")
-                    ->limit(15)
+                    ->limit(20)
                     ->get(self::SLIM_FIELDS);
 
                 if ($vjMovies->count() >= 3) {
-                    // Clean VJ name for display
                     $displayName = trim(str_ireplace(['vj ', 'VJ '], '', $vjName));
-                    $sections[] = [
-                        'key'   => 'vj_spotlight',
-                        'title' => "VJ {$displayName} Collection",
-                        'icon'  => 'mic',
-                        'items' => $vjMovies->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
-                    ];
-                    $usedIds = array_merge($usedIds, $vjMovies->pluck('id')->toArray());
+                    $addSection(
+                        'vj_spotlight_' . ($vjSpotlightCount + 1),
+                        "VJ {$displayName} Collection",
+                        'mic',
+                        $vjMovies
+                    );
+                    $vjSpotlightCount++;
                 }
             }
         }
 
-        // ── Hidden Gems (few views, seeded daily) ────────
-        $hiddenGems = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
-            ->where('views_time_count', '<', 50)
-            ->whereNotIn('id', $usedIds)
-            ->orderByRaw("RAND({$todaySeed})")
-            ->limit(15)
+        // ═══════════════════════════════════════════════════
+        // 18. TOP RATED — highest rating
+        // ═══════════════════════════════════════════════════
+        $topRated = $activeMovies()
+            ->whereNotIn('id', $prevSectionIds)
+            ->where('rating', '>', 0)
+            ->orderBy('rating', 'desc')
+            ->limit(20)
             ->get(self::SLIM_FIELDS);
+        if ($topRated->count() >= 3) {
+            $addSection('top_rated', 'Top Rated', 'thumbs-up', $topRated);
+        }
 
+        // ═══════════════════════════════════════════════════
+        // 19. FOR YOU — seeded random daily pick
+        // ═══════════════════════════════════════════════════
+        $forYou = $activeMovies()
+            ->whereNotIn('id', $prevSectionIds)
+            ->orderByRaw("RAND({$todaySeed})")
+            ->limit(20)
+            ->get(self::SLIM_FIELDS);
+        if ($forYou->count() >= 3) {
+            $addSection('for_you', 'Recommended For You', 'heart', $forYou);
+        }
+
+        // ═══════════════════════════════════════════════════
+        // 20. HIDDEN GEMS — low-view discoveries
+        // ═══════════════════════════════════════════════════
+        $hiddenGems = $activeMovies()
+            ->where('views_time_count', '<', 100)
+            ->whereNotIn('id', $prevSectionIds)
+            ->orderByRaw("RAND({$todaySeed})")
+            ->limit(20)
+            ->get(self::SLIM_FIELDS);
         if ($hiddenGems->count() >= 3) {
-            $sections[] = [
-                'key'   => 'hidden_gems',
-                'title' => 'Hidden Gems',
-                'icon'  => 'award',
-                'items' => $hiddenGems->map(fn ($m) => $this->slimMovie($m))->values()->toArray(),
-            ];
+            $addSection('hidden_gems', 'Hidden Gems', 'award', $hiddenGems);
+        }
+
+        // ═══════════════════════════════════════════════════
+        // 21. CLASSICS — oldest movies in the catalogue
+        // ═══════════════════════════════════════════════════
+        $classics = $activeMovies()
+            ->whereNotIn('id', $prevSectionIds)
+            ->orderBy('created_at', 'asc')
+            ->limit(20)
+            ->get(self::SLIM_FIELDS);
+        if ($classics->count() >= 3) {
+            $addSection('classics', 'Classics', 'archive', $classics);
         }
 
         return $sections;
