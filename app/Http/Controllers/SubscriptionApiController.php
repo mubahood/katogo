@@ -606,8 +606,19 @@ class SubscriptionApiController extends Controller
                 ], 403);
             }
 
-            // Only check if pending
-            if ($subscription->status !== 'Pending') {
+            // Check if already fully active+completed — no need to re-check
+            if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Subscription is already active and paid',
+                    'data' => $subscription->toApiArray(),
+                ]);
+            }
+
+            // Check Pending, Failed, Processing, or Cancelled subscriptions
+            // (Previously only checked 'Pending' — missed Failed subs where Pesapal actually completed)
+            if (!in_array($subscription->status, ['Pending', 'Failed', 'Processing', 'Cancelled'])) {
                 return response()->json([
                     'code' => 1,
                     'status' => 200,

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V2\SearchController as V2SearchController;
 use App\Http\Controllers\Api\V2\ManifestController as V2ManifestController;
 use App\Http\Controllers\Api\V2\BlogController as V2BlogController;
 use App\Http\Controllers\Api\V2\SafeModeAnalyticsController as V2SafeModeAnalyticsController;
+use App\Http\Controllers\Api\V2\SubscriptionFixController as V2SubscriptionFixController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -45,12 +46,9 @@ Route::get('random-movie', [DynamicCrudController::class, 'random_movie']);
 Route::get('subscription-plans', [SubscriptionApiController::class, 'listPlans']);
 
 // Pesapal Callback & IPN (no authentication required)
-Route::get('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'callback']);
-Route::post('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'callback']); // Support both GET and POST
-Route::post('subscriptions/pesapal/ipn', [SubscriptionApiController::class, 'ipn']);
-
-// Pesapal Callback & IPN Routes (Public - No Auth Required)
+// NOTE: Using pesapalCallback/pesapalIpn which include robust error handling
 Route::get('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'pesapalCallback']);
+Route::post('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'pesapalCallback']); // Support both GET and POST
 Route::post('subscriptions/pesapal/ipn', [SubscriptionApiController::class, 'pesapalIpn']);
 
 // Payment Status Check (Public - but validates ownership)
@@ -193,6 +191,15 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::post('safemode/progress',                  [V2SafeModeAnalyticsController::class, 'saveProgress']);
         Route::get('safemode/progress/{external_video_id}',[V2SafeModeAnalyticsController::class, 'getProgress']);
         Route::get('safemode/history',                    [V2SafeModeAnalyticsController::class, 'history']);
+
+        // ════════════════════════════════════════════
+        //  V2 Subscription Payment Fix Endpoints
+        //  360° control for diagnosing and fixing stuck payments
+        // ════════════════════════════════════════════
+        Route::get('subscriptions/fixable',               [V2SubscriptionFixController::class, 'fixable']);
+        Route::post('subscriptions/auto-fix',             [V2SubscriptionFixController::class, 'autoFix']);
+        Route::post('subscriptions/{id}/force-check',     [V2SubscriptionFixController::class, 'forceCheck']);
+        Route::get('subscriptions/{id}/diagnostic',       [V2SubscriptionFixController::class, 'diagnostic']);
     });
 });
 
