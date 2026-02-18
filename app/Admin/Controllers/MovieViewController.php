@@ -60,7 +60,20 @@ class MovieViewController extends AdminController
             ->pluck('cnt', 'app_type')->toArray();
         $ugflixViews   = $platformData['ugflix'] ?? 0;
         $lugaflixViews = $platformData['lugaflix'] ?? 0;
-        $unknownViews  = $platformData['unknown'] ?? 0 + ($platformData[''] ?? 0);
+        $munoAppViews  = $platformData['muno_app'] ?? 0;
+        $unknownViews  = ($platformData['unknown'] ?? 0) + ($platformData[''] ?? 0);
+
+        // Platform breakdown for past 30 days
+        $platformData30 = DB::table('movie_views')
+            ->join('admin_users', 'movie_views.user_id', '=', 'admin_users.id')
+            ->where('movie_views.created_at', '>=', Carbon::now()->subDays(30))
+            ->selectRaw("COALESCE(admin_users.app_type,'unknown') as app_type, COUNT(*) as cnt")
+            ->groupBy('admin_users.app_type')
+            ->pluck('cnt', 'app_type')->toArray();
+        $ugflixViews30   = $platformData30['ugflix'] ?? 0;
+        $lugaflixViews30 = $platformData30['lugaflix'] ?? 0;
+        $munoAppViews30  = $platformData30['muno_app'] ?? 0;
+        $unknownViews30  = ($platformData30['unknown'] ?? 0) + ($platformData30[''] ?? 0);
 
         // Device platform breakdown
         $deviceData = DB::table('movie_views')
@@ -114,11 +127,19 @@ class MovieViewController extends AdminController
             ->orderByDesc('cnt')
             ->limit(5)->get();
 
-        // Platform pie percentages
-        $pTotal = max($ugflixViews + $lugaflixViews + $unknownViews, 1);
+        // Platform pie percentages (all time)
+        $pTotal = max($ugflixViews + $lugaflixViews + $munoAppViews + $unknownViews, 1);
         $ugPct  = round(($ugflixViews / $pTotal) * 100);
         $lgPct  = round(($lugaflixViews / $pTotal) * 100);
-        $ukPct  = 100 - $ugPct - $lgPct;
+        $mnPct  = round(($munoAppViews / $pTotal) * 100);
+        $ukPct  = 100 - $ugPct - $lgPct - $mnPct;
+
+        // Platform pie percentages (30 days)
+        $pTotal30 = max($ugflixViews30 + $lugaflixViews30 + $munoAppViews30 + $unknownViews30, 1);
+        $ugPct30  = round(($ugflixViews30 / $pTotal30) * 100);
+        $lgPct30  = round(($lugaflixViews30 / $pTotal30) * 100);
+        $mnPct30  = round(($munoAppViews30 / $pTotal30) * 100);
+        $ukPct30  = 100 - $ugPct30 - $lgPct30 - $mnPct30;
 
         // Device pie
         $dTotal = max($androidViews + $iosViews, 1);
@@ -176,6 +197,7 @@ class MovieViewController extends AdminController
         $pCards = [
             ['Ugflix Views', number_format($ugflixViews), '#e74c3c', 'fa-play-circle'],
             ['Lugaflix Views', number_format($lugaflixViews), '#3498db', 'fa-play-circle-o'],
+            ['Muno App Views', number_format($munoAppViews), '#ff9800', 'fa-play-circle'],
             ['Android', number_format($androidViews), '#28a745', 'fa-android'],
             ['iOS', number_format($iosViews), '#555', 'fa-apple'],
             ['Subscribed Views', number_format($subscribedViews), '#f39c12', 'fa-star'],
@@ -199,13 +221,25 @@ class MovieViewController extends AdminController
         }
         $html .= '</div></div>';
 
-        // App platform pie
+        // App platform pie (all time)
         $html .= '<div class="mv-box" style="flex:1;min-width:140px;text-align:center">';
-        $html .= '<div class="mv-box-title">App Platform</div>';
+        $html .= '<div class="mv-box-title">App Platform (All Time)</div>';
         $ugDeg = round(($ugPct / 100) * 360);
         $lgDeg = round(($lgPct / 100) * 360);
-        $html .= "<div class='mv-pie' style='background:conic-gradient(#e74c3c 0deg {$ugDeg}deg, #3498db {$ugDeg}deg " . ($ugDeg + $lgDeg) . "deg, #bdc3c7 " . ($ugDeg + $lgDeg) . "deg 360deg)'></div>";
-        $html .= "<div class='mv-legend'><span style='background:#e74c3c'></span>Ugflix {$ugPct}% <span style='background:#3498db;margin-left:6px'></span>Lugaflix {$lgPct}%</div>";
+        $mnDeg = round(($mnPct / 100) * 360);
+        $html .= "<div class='mv-pie' style='background:conic-gradient(#e74c3c 0deg {$ugDeg}deg, #3498db {$ugDeg}deg " . ($ugDeg + $lgDeg) . "deg, #ff9800 " . ($ugDeg + $lgDeg) . "deg " . ($ugDeg + $lgDeg + $mnDeg) . "deg, #bdc3c7 " . ($ugDeg + $lgDeg + $mnDeg) . "deg 360deg)'></div>";
+        $html .= "<div class='mv-legend'><span style='background:#e74c3c'></span>Ugflix {$ugPct}% <span style='background:#3498db;margin-left:6px'></span>Lugaflix {$lgPct}% <span style='background:#ff9800;margin-left:6px'></span>Muno {$mnPct}%</div>";
+        $html .= '</div>';
+
+        // App platform pie (past 30 days)
+        $html .= '<div class="mv-box" style="flex:1;min-width:140px;text-align:center">';
+        $html .= '<div class="mv-box-title">App Platform (30 Days)</div>';
+        $ugDeg30 = round(($ugPct30 / 100) * 360);
+        $lgDeg30 = round(($lgPct30 / 100) * 360);
+        $mnDeg30 = round(($mnPct30 / 100) * 360);
+        $html .= "<div class='mv-pie' style='background:conic-gradient(#e74c3c 0deg {$ugDeg30}deg, #3498db {$ugDeg30}deg " . ($ugDeg30 + $lgDeg30) . "deg, #ff9800 " . ($ugDeg30 + $lgDeg30) . "deg " . ($ugDeg30 + $lgDeg30 + $mnDeg30) . "deg, #bdc3c7 " . ($ugDeg30 + $lgDeg30 + $mnDeg30) . "deg 360deg)'></div>";
+        $html .= "<div class='mv-legend'><span style='background:#e74c3c'></span>Ugflix {$ugPct30}% <span style='background:#3498db;margin-left:6px'></span>Lugaflix {$lgPct30}% <span style='background:#ff9800;margin-left:6px'></span>Muno {$mnPct30}%</div>";
+        $html .= "<div style='margin-top:4px;font-size:10px;color:#888'>" . number_format($ugflixViews30) . " · " . number_format($lugaflixViews30) . " · " . number_format($munoAppViews30) . "</div>";
         $html .= '</div>';
 
         // Device pie
@@ -237,7 +271,7 @@ class MovieViewController extends AdminController
             $u = User::find($tu->user_id);
             $n = $u ? (mb_strlen($u->name) > 22 ? mb_substr($u->name, 0, 22) . '…' : $u->name) : '#' . $tu->user_id;
             $app = $u ? ($u->app_type ?? '?') : '?';
-            $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : '#999');
+            $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : '#999'));
             $html .= "<div class='mv-rank'><div class='mv-rank-num'>#{$rank}</div><div class='mv-rank-name'><a href='" . admin_url("users/{$tu->user_id}") . "' style='color:#333;text-decoration:none'>{$n}</a> <span class='mv-badge' style='background:{$appClr}'>{$app}</span></div><div class='mv-rank-cnt'>{$tu->cnt}</div></div>";
             $rank++;
         }
@@ -310,7 +344,7 @@ class MovieViewController extends AdminController
             $u = $this->user ?: User::find($this->user_id);
             if (!$u) return '-';
             $app = $u->app_type ?? 'unknown';
-            $colors = ['ugflix' => '#e74c3c', 'lugaflix' => '#3498db'];
+            $colors = ['ugflix' => '#e74c3c', 'lugaflix' => '#3498db', 'muno_app' => '#ff9800'];
             $clr = $colors[$app] ?? '#999';
             $device = $u->platform ?? '?';
             $dIcon = $device === 'android' ? 'fa-android' : ($device === 'ios' ? 'fa-apple' : 'fa-mobile');
@@ -399,7 +433,7 @@ class MovieViewController extends AdminController
             $html .= '<h4 style="margin-bottom:12px;color:#333;border-bottom:2px solid #17a2b8;padding-bottom:6px">👤 User & Subscription</h4>';
             $html .= '<table class="table table-bordered table-condensed" style="margin-bottom:16px">';
             if ($user) {
-                $appClr = ($user->app_type ?? '') === 'ugflix' ? '#e74c3c' : (($user->app_type ?? '') === 'lugaflix' ? '#3498db' : '#999');
+                $appClr = ($user->app_type ?? '') === 'ugflix' ? '#e74c3c' : (($user->app_type ?? '') === 'lugaflix' ? '#3498db' : (($user->app_type ?? '') === 'muno_app' ? '#ff9800' : '#999'));
                 $html .= '<tr><td style="width:150px;font-weight:bold">User</td><td><a href="' . admin_url("users/{$user->id}") . '">' . htmlspecialchars($user->name ?? 'N/A') . '</a> (ID: ' . $user->id . ')</td></tr>';
                 $html .= '<tr><td style="font-weight:bold">Email / Phone</td><td>' . htmlspecialchars($user->email ?? 'N/A') . ' · ' . htmlspecialchars($user->phone_number ?? $user->phone ?? 'N/A') . '</td></tr>';
                 $html .= '<tr><td style="font-weight:bold">App / Device</td><td><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' . $appClr . '">' . ($user->app_type ?? 'unknown') . '</span> · ' . ($user->platform ?? 'unknown') . '</td></tr>';
