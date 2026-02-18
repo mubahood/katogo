@@ -24,23 +24,23 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // General API rate limit - increased for apps with polling
+        // General API rate limit - very generous to prevent 429 errors
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(300)->by($request->user()?->id ?: $request->ip());
+            return Limit::perMinute(1000)->by($request->user()?->id ?: $request->ip());
         });
 
         // Higher rate limit for game endpoints (polling every 2 seconds)
         RateLimiter::for('game', function (Request $request) {
             $userKey = $request->user()?->id ?: $request->ip();
-            return Limit::perMinute(120)->by($userKey);
+            return Limit::perMinute(300)->by($userKey);
         });
 
-        // Specific throttle for video progress saves: ~12 per minute (~once every 5s)
+        // Specific throttle for video progress saves
         RateLimiter::for('video-progress', function (Request $request) {
             $userKey = $request->user()?->id ?: $request->ip();
             // Group by movie as well to allow separate limits per video
             $movieId = (string) ($request->input('movie_model_id') ?? 'unknown');
-            return Limit::perMinute(12)->by($userKey . ':movie:' . $movieId);
+            return Limit::perMinute(30)->by($userKey . ':movie:' . $movieId);
         });
 
         $this->routes(function () {
