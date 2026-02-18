@@ -113,15 +113,31 @@ class MovieViewController extends AdminController
         $todayTrend = $todayViews > $yesterViews ? '▲' : ($todayViews < $yesterViews ? '▼' : '—');
         $trendColor = $todayViews >= $yesterViews ? '#28a745' : '#dc3545';
 
-        // Top 5 movies
+        // Top 5 movies (all time)
         $topMovies = MovieView::whereNotNull('movie_model_id')
             ->selectRaw('movie_model_id, COUNT(*) as cnt')
             ->groupBy('movie_model_id')
             ->orderByDesc('cnt')
             ->limit(5)->get();
 
-        // Top 5 users
+        // Top 5 movies (past 30 days)
+        $topMovies30 = MovieView::whereNotNull('movie_model_id')
+            ->where('created_at', '>=', Carbon::now()->subDays(30))
+            ->selectRaw('movie_model_id, COUNT(*) as cnt')
+            ->groupBy('movie_model_id')
+            ->orderByDesc('cnt')
+            ->limit(5)->get();
+
+        // Top 5 users (all time)
         $topUsers = MovieView::whereNotNull('user_id')
+            ->selectRaw('user_id, COUNT(*) as cnt')
+            ->groupBy('user_id')
+            ->orderByDesc('cnt')
+            ->limit(5)->get();
+
+        // Top 5 users (past 30 days)
+        $topUsers30 = MovieView::whereNotNull('user_id')
+            ->where('created_at', '>=', Carbon::now()->subDays(30))
             ->selectRaw('user_id, COUNT(*) as cnt')
             ->groupBy('user_id')
             ->orderByDesc('cnt')
@@ -250,9 +266,9 @@ class MovieViewController extends AdminController
         $html .= "<div class='mv-legend'><span style='background:#28a745'></span>Android {$anPct}% <span style='background:#555;margin-left:6px'></span>iOS {$ioPct}%</div>";
         $html .= '</div>';
 
-        // Top 5 movies
+        // Top 5 movies (all time)
         $html .= '<div class="mv-box" style="flex:1.5;min-width:180px">';
-        $html .= '<div class="mv-box-title">Top 5 Movies</div>';
+        $html .= '<div class="mv-box-title">Top 5 Movies (All Time)</div>';
         $rank = 1;
         foreach ($topMovies as $tm) {
             $m = MovieModel::find($tm->movie_model_id);
@@ -263,9 +279,22 @@ class MovieViewController extends AdminController
         if ($topMovies->isEmpty()) $html .= '<div style="color:#aaa;text-align:center;padding:10px">No data</div>';
         $html .= '</div>';
 
-        // Top 5 users
+        // Top 5 movies (past 30 days)
         $html .= '<div class="mv-box" style="flex:1.5;min-width:180px">';
-        $html .= '<div class="mv-box-title">Top 5 Users</div>';
+        $html .= '<div class="mv-box-title">Top 5 Movies (30 Days)</div>';
+        $rank = 1;
+        foreach ($topMovies30 as $tm) {
+            $m = MovieModel::find($tm->movie_model_id);
+            $t = $m ? (mb_strlen($m->title) > 28 ? mb_substr($m->title, 0, 28) . '…' : $m->title) : '#' . $tm->movie_model_id;
+            $html .= "<div class='mv-rank'><div class='mv-rank-num'>#{$rank}</div><div class='mv-rank-name'><a href='" . admin_url("movies-movies/{$tm->movie_model_id}") . "' style='color:#333;text-decoration:none' title='" . htmlspecialchars($m->title ?? '') . "'>{$t}</a></div><div class='mv-rank-cnt'>{$tm->cnt}</div></div>";
+            $rank++;
+        }
+        if ($topMovies30->isEmpty()) $html .= '<div style="color:#aaa;text-align:center;padding:10px">No data</div>';
+        $html .= '</div>';
+
+        // Top 5 users (all time)
+        $html .= '<div class="mv-box" style="flex:1.5;min-width:180px">';
+        $html .= '<div class="mv-box-title">Top 5 Users (All Time)</div>';
         $rank = 1;
         foreach ($topUsers as $tu) {
             $u = User::find($tu->user_id);
@@ -276,6 +305,21 @@ class MovieViewController extends AdminController
             $rank++;
         }
         if ($topUsers->isEmpty()) $html .= '<div style="color:#aaa;text-align:center;padding:10px">No data</div>';
+        $html .= '</div>';
+
+        // Top 5 users (past 30 days)
+        $html .= '<div class="mv-box" style="flex:1.5;min-width:180px">';
+        $html .= '<div class="mv-box-title">Top 5 Users (30 Days)</div>';
+        $rank = 1;
+        foreach ($topUsers30 as $tu) {
+            $u = User::find($tu->user_id);
+            $n = $u ? (mb_strlen($u->name) > 22 ? mb_substr($u->name, 0, 22) . '…' : $u->name) : '#' . $tu->user_id;
+            $app = $u ? ($u->app_type ?? '?') : '?';
+            $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : '#999'));
+            $html .= "<div class='mv-rank'><div class='mv-rank-num'>#{$rank}</div><div class='mv-rank-name'><a href='" . admin_url("users/{$tu->user_id}") . "' style='color:#333;text-decoration:none'>{$n}</a> <span class='mv-badge' style='background:{$appClr}'>{$app}</span></div><div class='mv-rank-cnt'>{$tu->cnt}</div></div>";
+            $rank++;
+        }
+        if ($topUsers30->isEmpty()) $html .= '<div style="color:#aaa;text-align:center;padding:10px">No data</div>';
         $html .= '</div>';
 
         $html .= '</div>'; // end row 3
