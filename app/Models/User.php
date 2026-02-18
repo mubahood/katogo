@@ -576,6 +576,8 @@ class User extends Administrator implements JWTSubject
         $app_type = 'ugflix';
         if (strtolower($this->app_type) == 'lugaflix') { 
             $app_type = 'lugaflix';
+        } elseif (strtolower($this->app_type) == 'muno_app') {
+            $app_type = 'muno_app';
         }
 
 

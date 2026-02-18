@@ -78,10 +78,13 @@ class Subscription extends Model
                 throw new \Exception("User with ID {$subscription->user_id} not found for Subscription creation");
             }
 
-            $sub = 'SUB-';//remvoe unused import 
+            $sub = 'SUB-';
             if (strtolower($user->app_type) == 'lugaflix') {
                 $sub = 'LUG-';
                 $subscription->app_type = 'lugaflix';
+            } elseif (strtolower($user->app_type) == 'muno_app') {
+                $sub = 'MUN-';
+                $subscription->app_type = 'muno_app';
             }
 
             // Generate merchant reference if not provided

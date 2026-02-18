@@ -48,9 +48,11 @@ class SubscriptionController extends AdminController
             })
             ->row(function (Row $row) {
                 // LugaFlix Stats
-                $row->column(6, $this->lugaflixStatsBox());
+                $row->column(4, $this->lugaflixStatsBox());
                 // UGFlix Stats
-                $row->column(6, $this->ugflixStatsBox());
+                $row->column(4, $this->ugflixStatsBox());
+                // Muno App Stats
+                $row->column(4, $this->munoAppStatsBox());
             })
             ->row(function (Row $row) {
                 $row->column(6, $this->revenueChartBox());
@@ -182,6 +184,68 @@ class SubscriptionController extends AdminController
         $table = new Table(['Metric', 'Value'], $rows);
         $box = new Box('🎬 UGFlix Stats', $table);
         $box->style('success');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
+     * Muno App stats box
+     */
+    protected function munoAppStatsBox()
+    {
+        $completed = Subscription::where('app_type', 'muno_app')
+            ->where('payment_status', 'Completed');
+        
+        $totalRevenue = (clone $completed)->sum('amount_paid');
+        $totalSubs = (clone $completed)->count();
+        $activeSubs = Subscription::where('app_type', 'muno_app')
+            ->where('status', 'Active')
+            ->where('payment_status', 'Completed')
+            ->count();
+        
+        $thisMonth = Subscription::where('app_type', 'muno_app')
+            ->where('payment_status', 'Completed')
+            ->whereMonth('created_at', Carbon::now()->month)
+            ->whereYear('created_at', Carbon::now()->year)
+            ->sum('amount_paid');
+        
+        $today = Subscription::where('app_type', 'muno_app')
+            ->where('payment_status', 'Completed')
+            ->whereDate('created_at', Carbon::today())
+            ->sum('amount_paid');
+        
+        $todayCount = Subscription::where('app_type', 'muno_app')
+            ->where('payment_status', 'Completed')
+            ->whereDate('created_at', Carbon::today())
+            ->count();
+        
+        $pending = Subscription::where('app_type', 'muno_app')
+            ->where('payment_status', 'Pending')
+            ->count();
+        
+        $processing = Subscription::where('app_type', 'muno_app')
+            ->where('payment_status', 'Processing')
+            ->count();
+        
+        $failed = Subscription::where('app_type', 'muno_app')
+            ->where('payment_status', 'Failed')
+            ->count();
+
+        $rows = [
+            ['💰 Total Revenue', 'UGX ' . number_format($totalRevenue)],
+            ['✅ Total Completed', number_format($totalSubs)],
+            ['🟢 Active Now', number_format($activeSubs)],
+            ['📅 This Month', 'UGX ' . number_format($thisMonth)],
+            ['⭐ Today (' . $todayCount . ' sales)', 'UGX ' . number_format($today)],
+            ['⏳ Pending', "<span class='label label-warning'>{$pending}</span>"],
+            ['🔄 Processing', "<span class='label label-info'>{$processing}</span>"],
+            ['❌ Failed', "<span class='label label-danger'>{$failed}</span>"],
+        ];
+
+        $table = new Table(['Metric', 'Value'], $rows);
+        $box = new Box('📺 Muno App Stats', $table);
+        $box->style('info');
         $box->solid();
 
         return $box;
@@ -472,6 +536,7 @@ class SubscriptionController extends AdminController
                 $filter->equal('app_type', 'App Type')->select([
                     'ugflix' => 'UGFlix',
                     'lugaflix' => 'LugaFlix',
+                    'muno_app' => 'Muno App',
                 ]);
                 
                 $filter->equal('platform', 'Platform')->select([
@@ -495,6 +560,7 @@ class SubscriptionController extends AdminController
                 $icons = [
                     'ugflix' => '🎬 UGFlix',
                     'lugaflix' => '🎭 LugaFlix',
+                    'muno_app' => '📺 Muno App',
                 ];
                 return $icons[strtolower($type ?? '')] ?? ucfirst($type ?? 'Unknown');
             })->sortable();
@@ -712,7 +778,7 @@ class SubscriptionController extends AdminController
         $show->divider('💳 Payment Information');
 
         $show->field('app_type', __('App Type'))->as(function ($value) {
-            $icons = ['ugflix' => '🎬', 'lugaflix' => '🎭'];
+            $icons = ['ugflix' => '🎬', 'lugaflix' => '🎭', 'muno_app' => '📺'];
             return ($icons[strtolower($value ?? '')] ?? '📱') . " " . ucfirst($value ?? 'Unknown');
         });
         
@@ -803,6 +869,7 @@ class SubscriptionController extends AdminController
                 ->options([
                     'ugflix' => '🎬 UGFlix',
                     'lugaflix' => '🎭 LugaFlix',
+                    'muno_app' => '📺 Muno App',
                 ]);
 
             $form->select('platform', __('📲 Platform'))
