@@ -90,12 +90,12 @@ class HomeController extends Controller
         $uniqueViewers = MovieView::distinct('user_id')->count('user_id');
         $errMovies     = MovieModel::whereNotNull('error_message')->count();
 
-        // Daily data last 14 days
+        // Daily data last 30 days
         $daily = [];
-        for ($i = 13; $i >= 0; $i--) {
+        for ($i = 29; $i >= 0; $i--) {
             $d = Carbon::today()->subDays($i);
             $daily[] = [
-                'label' => $d->format('d'),
+                'label' => $d->format('d M'),
                 'day'   => $d->format('D'),
                 'views' => MovieView::whereDate('created_at', $d)->count(),
                 'users' => User::whereDate('created_at', $d)->count(),
@@ -104,10 +104,51 @@ class HomeController extends Controller
         $maxViews = max(array_column($daily, 'views') ?: [1]);
         $maxUsers = max(array_column($daily, 'users') ?: [1]);
 
+        // Per-platform daily data (last 30 days) — Muno, LugaFlix, UG Flix
+        $platformDaily = [];
+        $munoUsers = User::where('app_type', 'muno_app')->count();
+        for ($i = 29; $i >= 0; $i--) {
+            $d = Carbon::today()->subDays($i);
+            $platformDaily[] = [
+                'label'        => $d->format('d M'),
+                'muno_views'   => MovieView::whereDate('created_at', $d)->whereHas('user', function($q) { $q->where('app_type', 'muno_app'); })->count(),
+                'lugaflix_views'=> MovieView::whereDate('created_at', $d)->whereHas('user', function($q) { $q->where('app_type', 'lugaflix'); })->count(),
+                'ugflix_views'  => MovieView::whereDate('created_at', $d)->whereHas('user', function($q) { $q->where('app_type', 'ugflix'); })->count(),
+                'muno_users'   => User::whereDate('created_at', $d)->where('app_type', 'muno_app')->count(),
+                'lugaflix_users'=> User::whereDate('created_at', $d)->where('app_type', 'lugaflix')->count(),
+                'ugflix_users'  => User::whereDate('created_at', $d)->where('app_type', 'ugflix')->count(),
+            ];
+        }
+
+        // Weekly aggregated data (last 12 weeks)
+        $weeklyData = [];
+        for ($i = 11; $i >= 0; $i--) {
+            $weekStart = Carbon::now()->subWeeks($i)->startOfWeek();
+            $weekEnd   = Carbon::now()->subWeeks($i)->endOfWeek();
+            $weeklyData[] = [
+                'label' => $weekStart->format('d M'),
+                'muno_views'   => MovieView::whereBetween('created_at', [$weekStart, $weekEnd])->whereHas('user', function($q) { $q->where('app_type', 'muno_app'); })->count(),
+                'lugaflix_views'=> MovieView::whereBetween('created_at', [$weekStart, $weekEnd])->whereHas('user', function($q) { $q->where('app_type', 'lugaflix'); })->count(),
+                'ugflix_views'  => MovieView::whereBetween('created_at', [$weekStart, $weekEnd])->whereHas('user', function($q) { $q->where('app_type', 'ugflix'); })->count(),
+                'muno_users'   => User::whereBetween('created_at', [$weekStart, $weekEnd])->where('app_type', 'muno_app')->count(),
+                'lugaflix_users'=> User::whereBetween('created_at', [$weekStart, $weekEnd])->where('app_type', 'lugaflix')->count(),
+                'ugflix_users'  => User::whereBetween('created_at', [$weekStart, $weekEnd])->where('app_type', 'ugflix')->count(),
+                'muno_watch_hrs'   => round(MovieView::whereBetween('created_at', [$weekStart, $weekEnd])->whereHas('user', function($q) { $q->where('app_type', 'muno_app'); })->sum('progress') / 3600, 1),
+                'lugaflix_watch_hrs'=> round(MovieView::whereBetween('created_at', [$weekStart, $weekEnd])->whereHas('user', function($q) { $q->where('app_type', 'lugaflix'); })->sum('progress') / 3600, 1),
+                'ugflix_watch_hrs'  => round(MovieView::whereBetween('created_at', [$weekStart, $weekEnd])->whereHas('user', function($q) { $q->where('app_type', 'ugflix'); })->sum('progress') / 3600, 1),
+            ];
+        }
+
+        // Platform totals
+        $munoViews    = MovieView::whereHas('user', function($q) { $q->where('app_type', 'muno_app'); })->count();
+        $lugaflixViews = MovieView::whereHas('user', function($q) { $q->where('app_type', 'lugaflix'); })->count();
+        $ugflixViews  = MovieView::whereHas('user', function($q) { $q->where('app_type', 'ugflix'); })->count();
+
         // User app pie
-        $uT = max($ugflixUsers + $lugaflixUsers + max($totalUsers - $ugflixUsers - $lugaflixUsers, 0), 1);
+        $uT = max($ugflixUsers + $lugaflixUsers + $munoUsers + max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers, 0), 1);
         $ugPct = round(($ugflixUsers / $uT) * 100);
         $lgPct = round(($lugaflixUsers / $uT) * 100);
+        $mnPct = round(($munoUsers / $uT) * 100);
 
         // Pipeline pie
         $pipT = max($totalMovies, 1);
@@ -232,64 +273,104 @@ class HomeController extends Controller
         $html .= '</div>';
 
         // ── SECTION: Charts & Analytics ──
+        $html .= '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
         $html .= '<div class="db-section">Charts & Analytics</div>';
+
+        // ── ROW 1: Platform Views Line Chart + Platform Signups Line Chart ──
         $html .= '<div class="db-row">';
 
-        // 14-day views bar chart
-        $html .= '<div class="db-box" style="flex:3;min-width:300px">';
-        $html .= '<div class="db-box-title">Daily Views — Last 14 Days</div>';
-        $html .= '<div class="db-bar-wrap">';
-        foreach ($daily as $dv) {
-            $h = $maxViews > 0 ? round(($dv['views'] / $maxViews) * 45) : 0;
-            $html .= "<div style='flex:1;text-align:center'><div style='height:{$h}px;background:#007bff;border-radius:2px 2px 0 0;margin:0 auto;width:70%' title='{$dv['views']} views'></div><div class='db-bar-lbl'>{$dv['label']}<br><b>{$dv['views']}</b></div></div>";
-        }
-        $html .= '</div></div>';
+        // Prepare JSON data for Chart.js
+        $chartLabels = json_encode(array_column($platformDaily, 'label'));
+        $munoViewsArr = json_encode(array_column($platformDaily, 'muno_views'));
+        $lugaflixViewsArr = json_encode(array_column($platformDaily, 'lugaflix_views'));
+        $ugflixViewsArr = json_encode(array_column($platformDaily, 'ugflix_views'));
+        $munoUsersArr = json_encode(array_column($platformDaily, 'muno_users'));
+        $lugaflixUsersArr = json_encode(array_column($platformDaily, 'lugaflix_users'));
+        $ugflixUsersArr = json_encode(array_column($platformDaily, 'ugflix_users'));
+        $totalViewsArr = json_encode(array_column($daily, 'views'));
+        $totalUsersArr = json_encode(array_column($daily, 'users'));
+        $dailyLabels = json_encode(array_column($daily, 'label'));
 
-        // 14-day signups bar
-        $html .= '<div class="db-box" style="flex:3;min-width:300px">';
-        $html .= '<div class="db-box-title">Daily Signups — Last 14 Days</div>';
-        $html .= '<div class="db-bar-wrap">';
-        foreach ($daily as $dv) {
-            $h = $maxUsers > 0 ? round(($dv['users'] / $maxUsers) * 45) : 0;
-            $html .= "<div style='flex:1;text-align:center'><div style='height:{$h}px;background:#28a745;border-radius:2px 2px 0 0;margin:0 auto;width:70%' title='{$dv['users']} users'></div><div class='db-bar-lbl'>{$dv['label']}<br><b>{$dv['users']}</b></div></div>";
-        }
-        $html .= '</div></div>';
+        // Weekly JSON data
+        $weeklyLabels = json_encode(array_column($weeklyData, 'label'));
+        $wkMunoViews = json_encode(array_column($weeklyData, 'muno_views'));
+        $wkLugaflixViews = json_encode(array_column($weeklyData, 'lugaflix_views'));
+        $wkUgflixViews = json_encode(array_column($weeklyData, 'ugflix_views'));
+        $wkMunoUsers = json_encode(array_column($weeklyData, 'muno_users'));
+        $wkLugaflixUsers = json_encode(array_column($weeklyData, 'lugaflix_users'));
+        $wkUgflixUsers = json_encode(array_column($weeklyData, 'ugflix_users'));
+        $wkMunoHrs = json_encode(array_column($weeklyData, 'muno_watch_hrs'));
+        $wkLugaflixHrs = json_encode(array_column($weeklyData, 'lugaflix_watch_hrs'));
+        $wkUgflixHrs = json_encode(array_column($weeklyData, 'ugflix_watch_hrs'));
 
-        $html .= '</div>'; // charts row
-
-        // Pie charts row
-        $html .= '<div class="db-row">';
-
-        // User app type pie
-        $html .= '<div class="db-box" style="flex:1;min-width:130px;text-align:center">';
-        $html .= '<div class="db-box-title">Users by App</div>';
-        $ugDeg = round(($ugPct / 100) * 360);
-        $lgDeg = round(($lgPct / 100) * 360);
-        $html .= "<div class='db-pie' style='background:conic-gradient(#e74c3c 0deg {$ugDeg}deg, #3498db {$ugDeg}deg " . ($ugDeg + $lgDeg) . "deg, #bdc3c7 " . ($ugDeg + $lgDeg) . "deg 360deg)'></div>";
-        $html .= "<div class='db-legend'><span style='background:#e74c3c'></span>Ugflix {$ugPct}%<br><span style='background:#3498db'></span>Lugaflix {$lgPct}%</div>";
+        // Platform Views Line Chart (30 days)
+        $html .= '<div class="db-box" style="flex:1;min-width:460px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-line-chart" style="color:#007bff"></i> Daily Views by Platform — Last 30 Days</div>';
+        $html .= '<div style="position:relative;height:320px"><canvas id="platformViewsChart"></canvas></div>';
         $html .= '</div>';
 
-        // Device pie
+        // Platform Signups Line Chart (30 days)
+        $html .= '<div class="db-box" style="flex:1;min-width:460px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-user-plus" style="color:#28a745"></i> Daily Signups by Platform — Last 30 Days</div>';
+        $html .= '<div style="position:relative;height:320px"><canvas id="platformSignupsChart"></canvas></div>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // row 1
+
+        // ── ROW 2: Combined Views/Signups bar chart + Weekly Trends area chart ──
+        $html .= '<div class="db-row">';
+
+        $html .= '<div class="db-box" style="flex:1;min-width:460px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-bar-chart" style="color:#6f42c1"></i> Total Views & Signups — Last 30 Days</div>';
+        $html .= '<div style="position:relative;height:300px"><canvas id="combinedBarChart"></canvas></div>';
+        $html .= '</div>';
+
+        $html .= '<div class="db-box" style="flex:1;min-width:460px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-area-chart" style="color:#e83e8c"></i> Weekly Views Trend — Last 12 Weeks</div>';
+        $html .= '<div style="position:relative;height:300px"><canvas id="weeklyTrendChart"></canvas></div>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // row 2
+
+        // ── ROW 3: Weekly Signups + Watch Hours + Doughnut Charts ──
+        $html .= '<div class="db-row">';
+
+        $html .= '<div class="db-box" style="flex:1;min-width:340px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-users" style="color:#17a2b8"></i> Weekly Signups by Platform — 12 Weeks</div>';
+        $html .= '<div style="position:relative;height:280px"><canvas id="weeklySignupsChart"></canvas></div>';
+        $html .= '</div>';
+
+        $html .= '<div class="db-box" style="flex:1;min-width:340px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-clock-o" style="color:#fd7e14"></i> Weekly Watch Hours by Platform</div>';
+        $html .= '<div style="position:relative;height:280px"><canvas id="watchHoursChart"></canvas></div>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // row 3
+
+        // ── ROW 4: Doughnut Charts + Platform Comparison + Subscription Summary ──
+        $html .= '<div class="db-row">';
+
+        // Users by App doughnut
+        $html .= '<div class="db-box" style="flex:1;min-width:200px;text-align:center">';
+        $html .= '<div class="db-box-title"><i class="fa fa-pie-chart" style="color:#e74c3c"></i> Users by Platform</div>';
+        $html .= '<div style="position:relative;height:220px"><canvas id="usersPieChart"></canvas></div>';
+        $html .= '</div>';
+
+        // Device OS doughnut
         $dT = max($androidUsers + $iosUsers, 1);
         $anPct = round(($androidUsers / $dT) * 100);
-        $html .= '<div class="db-box" style="flex:1;min-width:130px;text-align:center">';
-        $html .= '<div class="db-box-title">Device OS</div>';
-        $anDeg = round(($anPct / 100) * 360);
-        $html .= "<div class='db-pie' style='background:conic-gradient(#28a745 0deg {$anDeg}deg, #555 {$anDeg}deg 360deg)'></div>";
-        $html .= "<div class='db-legend'><span style='background:#28a745'></span>Android {$anPct}%<br><span style='background:#555'></span>iOS " . (100 - $anPct) . "%</div>";
+        $html .= '<div class="db-box" style="flex:1;min-width:200px;text-align:center">';
+        $html .= '<div class="db-box-title"><i class="fa fa-mobile" style="color:#555"></i> Device OS</div>';
+        $html .= '<div style="position:relative;height:220px"><canvas id="devicePieChart"></canvas></div>';
         $html .= '</div>';
 
-        // Pipeline pie
-        $html .= '<div class="db-box" style="flex:1;min-width:130px;text-align:center">';
-        $html .= '<div class="db-box-title">Pipeline Status</div>';
-        $d1 = round(($prodPct / 100) * 360);
-        $d2 = round(($workPct / 100) * 360);
-        $d3 = round(($testPct / 100) * 360);
-        $html .= "<div class='db-pie' style='background:conic-gradient(#28a745 0deg {$d1}deg, #17a2b8 {$d1}deg " . ($d1+$d2) . "deg, #ffc107 " . ($d1+$d2) . "deg " . ($d1+$d2+$d3) . "deg, #dc3545 " . ($d1+$d2+$d3) . "deg 360deg)'></div>";
-        $html .= "<div class='db-legend'><span style='background:#28a745'></span>Prod {$prodPct}% <span style='background:#17a2b8'></span>Working {$workPct}%<br><span style='background:#ffc107'></span>Tested {$testPct}% <span style='background:#dc3545'></span>Untested {$untPct}%</div>";
+        // Pipeline Status doughnut
+        $html .= '<div class="db-box" style="flex:1;min-width:200px;text-align:center">';
+        $html .= '<div class="db-box-title"><i class="fa fa-tasks" style="color:#17a2b8"></i> Pipeline Status</div>';
+        $html .= '<div style="position:relative;height:220px"><canvas id="pipelinePieChart"></canvas></div>';
         $html .= '</div>';
 
-        // Fix tracking pie
+        // Fix Tracking doughnut
         $allFixItems = $mFixPending + $mFixFixed + $mFixError + $sFixPending + $sFixFixed + $sFixError;
         $allFixed = $mFixFixed + $sFixFixed;
         $allPend  = $mFixPending + $sFixPending;
@@ -298,26 +379,218 @@ class HomeController extends Controller
         $fxPct = round(($allFixed / $fxT) * 100);
         $fpPct = round(($allPend / $fxT) * 100);
         $fePct = 100 - $fxPct - $fpPct;
-        $html .= '<div class="db-box" style="flex:1;min-width:130px;text-align:center">';
-        $html .= '<div class="db-box-title">Fix Tracking</div>';
-        $fd1 = round(($fxPct / 100) * 360);
-        $fd2 = round(($fpPct / 100) * 360);
-        $html .= "<div class='db-pie' style='background:conic-gradient(#28a745 0deg {$fd1}deg, #ffc107 {$fd1}deg " . ($fd1+$fd2) . "deg, #dc3545 " . ($fd1+$fd2) . "deg 360deg)'></div>";
-        $html .= "<div class='db-legend'><span style='background:#28a745'></span>Fixed {$fxPct}% <span style='background:#ffc107'></span>Pending {$fpPct}%<br><span style='background:#dc3545'></span>Error {$fePct}%</div>";
+        $html .= '<div class="db-box" style="flex:1;min-width:200px;text-align:center">';
+        $html .= '<div class="db-box-title"><i class="fa fa-wrench" style="color:#28a745"></i> Fix Tracking</div>';
+        $html .= '<div style="position:relative;height:220px"><canvas id="fixPieChart"></canvas></div>';
         $html .= '</div>';
 
+        $html .= '</div>'; // row 4
+
+        // ── ROW 5: Platform Comparison Scorecards + Subscription Summary ──
+        $html .= '<div class="db-row">';
+
+        // Platform comparison cards
+        $html .= '<div class="db-box" style="flex:2;min-width:400px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-trophy" style="color:#f39c12"></i> Platform Comparison</div>';
+        $html .= '<table class="db-tbl">';
+        $html .= '<tr><th>Platform</th><th>Users</th><th>Total Views</th><th style="text-align:center">Trend</th></tr>';
+        $platformCompare = [
+            ['Muno', $munoUsers, $munoViews, '#e74c3c', 'fa-fire'],
+            ['LugaFlix', $lugaflixUsers, $lugaflixViews, '#3498db', 'fa-star'],
+            ['UG Flix', $ugflixUsers, $ugflixViews, '#2ecc71', 'fa-bolt'],
+        ];
+        foreach ($platformCompare as [$pName, $pUsers, $pViews, $pColor, $pIcon]) {
+            $avgViews = $pUsers > 0 ? round($pViews / $pUsers, 1) : 0;
+            $html .= "<tr><td><i class='fa {$pIcon}' style='color:{$pColor};margin-right:4px'></i><b style='color:{$pColor}'>{$pName}</b></td>";
+            $html .= "<td><b>" . number_format($pUsers) . "</b></td>";
+            $html .= "<td><b>" . number_format($pViews) . "</b></td>";
+            $html .= "<td style='text-align:center'><span class='db-badge' style='background:{$pColor}'>{$avgViews} views/user</span></td></tr>";
+        }
+        $html .= '</table></div>';
+
         // Subscription summary
-        $html .= '<div class="db-box" style="flex:1.5;min-width:180px">';
-        $html .= '<div class="db-box-title">Subscription Summary</div>';
+        $html .= '<div class="db-box" style="flex:1;min-width:240px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-credit-card" style="color:#f39c12"></i> Subscription Summary</div>';
         $html .= '<table class="db-tbl">';
         $html .= '<tr><th>Metric</th><th>Value</th></tr>';
         $html .= '<tr><td>Total Subscriptions</td><td><b>' . number_format($totalSubs) . '</b></td></tr>';
         $html .= '<tr><td>Active</td><td><span class="db-badge" style="background:#28a745">' . number_format($activeSubs) . '</span></td></tr>';
         $html .= '<tr><td>Expired</td><td><span class="db-badge" style="background:#dc3545">' . number_format($expiredSubs) . '</span></td></tr>';
-        $html .= '<tr><td>Total Revenue</td><td><b>UGX ' . number_format($subRevenue) . '</b></td></tr>';
+        $html .= '<tr><td>Total Revenue</td><td><b style="color:#f39c12">UGX ' . number_format($subRevenue) . '</b></td></tr>';
         $html .= '</table></div>';
 
-        $html .= '</div>'; // pie row
+        $html .= '</div>'; // row 5
+
+        // ════════ Chart.js Initialization Scripts ════════
+        $html .= '<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const platformColors = {
+        muno: { bg: "rgba(231,76,60,0.15)", border: "#e74c3c", point: "#c0392b" },
+        lugaflix: { bg: "rgba(52,152,219,0.15)", border: "#3498db", point: "#2980b9" },
+        ugflix: { bg: "rgba(46,204,113,0.15)", border: "#2ecc71", point: "#27ae60" },
+    };
+    const chartFont = { family: "-apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif" };
+    const gridColor = "rgba(0,0,0,0.04)";
+    const defaultOpts = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { position: "top", labels: { usePointStyle: true, pointStyle: "circle", padding: 15, font: { size: 11, ...chartFont } } },
+            tooltip: { mode: "index", intersect: false, backgroundColor: "rgba(0,0,0,0.8)", titleFont: { size: 12 }, bodyFont: { size: 11 }, padding: 10, cornerRadius: 6, displayColors: true }
+        },
+        interaction: { mode: "nearest", axis: "x", intersect: false },
+        scales: {
+            x: { grid: { color: gridColor, drawBorder: false }, ticks: { font: { size: 10, ...chartFont }, maxRotation: 45 } },
+            y: { beginAtZero: true, grid: { color: gridColor, drawBorder: false }, ticks: { font: { size: 10, ...chartFont } } }
+        }
+    };
+    function lineDataset(label, data, colorKey, dashed) {
+        return {
+            label: label, data: data,
+            borderColor: platformColors[colorKey].border,
+            backgroundColor: platformColors[colorKey].bg,
+            pointBackgroundColor: platformColors[colorKey].point,
+            pointRadius: 3, pointHoverRadius: 6,
+            borderWidth: 2.5, tension: 0.35, fill: true,
+            borderDash: dashed ? [5, 3] : []
+        };
+    }
+
+    // ─── 1. Platform Views (30 days) ───
+    new Chart(document.getElementById("platformViewsChart"), {
+        type: "line",
+        data: {
+            labels: ' . $chartLabels . ',
+            datasets: [
+                lineDataset("Muno", ' . $munoViewsArr . ', "muno", false),
+                lineDataset("LugaFlix", ' . $lugaflixViewsArr . ', "lugaflix", false),
+                lineDataset("UG Flix", ' . $ugflixViewsArr . ', "ugflix", false)
+            ]
+        },
+        options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, title: { display: false } } }
+    });
+
+    // ─── 2. Platform Signups (30 days) ───
+    new Chart(document.getElementById("platformSignupsChart"), {
+        type: "line",
+        data: {
+            labels: ' . $chartLabels . ',
+            datasets: [
+                lineDataset("Muno", ' . $munoUsersArr . ', "muno", false),
+                lineDataset("LugaFlix", ' . $lugaflixUsersArr . ', "lugaflix", false),
+                lineDataset("UG Flix", ' . $ugflixUsersArr . ', "ugflix", false)
+            ]
+        },
+        options: defaultOpts
+    });
+
+    // ─── 3. Combined Bar (Views + Signups Total) ───
+    new Chart(document.getElementById("combinedBarChart"), {
+        type: "bar",
+        data: {
+            labels: ' . $dailyLabels . ',
+            datasets: [
+                { label: "Views", data: ' . $totalViewsArr . ', backgroundColor: "rgba(0,123,255,0.7)", borderColor: "#007bff", borderWidth: 1, borderRadius: 4, barPercentage: 0.7 },
+                { label: "Signups", data: ' . $totalUsersArr . ', backgroundColor: "rgba(40,167,69,0.7)", borderColor: "#28a745", borderWidth: 1, borderRadius: 4, barPercentage: 0.7 }
+            ]
+        },
+        options: { ...defaultOpts, scales: { ...defaultOpts.scales, x: { ...defaultOpts.scales.x, stacked: false }, y: { ...defaultOpts.scales.y, stacked: false } } }
+    });
+
+    // ─── 4. Weekly Views Trend (area chart) ───
+    new Chart(document.getElementById("weeklyTrendChart"), {
+        type: "line",
+        data: {
+            labels: ' . $weeklyLabels . ',
+            datasets: [
+                { ...lineDataset("Muno", ' . $wkMunoViews . ', "muno", false), fill: "origin", backgroundColor: "rgba(231,76,60,0.12)" },
+                { ...lineDataset("LugaFlix", ' . $wkLugaflixViews . ', "lugaflix", false), fill: "origin", backgroundColor: "rgba(52,152,219,0.12)" },
+                { ...lineDataset("UG Flix", ' . $wkUgflixViews . ', "ugflix", false), fill: "origin", backgroundColor: "rgba(46,204,113,0.12)" }
+            ]
+        },
+        options: { ...defaultOpts, elements: { line: { tension: 0.4 } } }
+    });
+
+    // ─── 5. Weekly Signups (stacked bar) ───
+    new Chart(document.getElementById("weeklySignupsChart"), {
+        type: "bar",
+        data: {
+            labels: ' . $weeklyLabels . ',
+            datasets: [
+                { label: "Muno", data: ' . $wkMunoUsers . ', backgroundColor: "rgba(231,76,60,0.75)", borderRadius: 3, barPercentage: 0.8 },
+                { label: "LugaFlix", data: ' . $wkLugaflixUsers . ', backgroundColor: "rgba(52,152,219,0.75)", borderRadius: 3, barPercentage: 0.8 },
+                { label: "UG Flix", data: ' . $wkUgflixUsers . ', backgroundColor: "rgba(46,204,113,0.75)", borderRadius: 3, barPercentage: 0.8 }
+            ]
+        },
+        options: { ...defaultOpts, scales: { ...defaultOpts.scales, x: { ...defaultOpts.scales.x, stacked: true }, y: { ...defaultOpts.scales.y, stacked: true } } }
+    });
+
+    // ─── 6. Watch Hours (grouped bar) ───
+    new Chart(document.getElementById("watchHoursChart"), {
+        type: "bar",
+        data: {
+            labels: ' . $weeklyLabels . ',
+            datasets: [
+                { label: "Muno (hrs)", data: ' . $wkMunoHrs . ', backgroundColor: "rgba(231,76,60,0.65)", borderRadius: 3 },
+                { label: "LugaFlix (hrs)", data: ' . $wkLugaflixHrs . ', backgroundColor: "rgba(52,152,219,0.65)", borderRadius: 3 },
+                { label: "UG Flix (hrs)", data: ' . $wkUgflixHrs . ', backgroundColor: "rgba(46,204,113,0.65)", borderRadius: 3 }
+            ]
+        },
+        options: defaultOpts
+    });
+
+    // ─── 7. Users by Platform Doughnut ───
+    new Chart(document.getElementById("usersPieChart"), {
+        type: "doughnut",
+        data: {
+            labels: ["Muno (' . $mnPct . '%)", "LugaFlix (' . $lgPct . '%)", "UG Flix (' . $ugPct . '%)", "Other (' . (100 - $ugPct - $lgPct - $mnPct) . '%)"],
+            datasets: [{ data: [' . $munoUsers . ', ' . $lugaflixUsers . ', ' . $ugflixUsers . ', ' . max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers, 0) . '],
+                backgroundColor: ["rgba(231,76,60,0.8)", "rgba(52,152,219,0.8)", "rgba(46,204,113,0.8)", "rgba(189,195,199,0.6)"],
+                borderWidth: 2, borderColor: "#fff", hoverOffset: 8 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
+            plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10, ...chartFont } } } } }
+    });
+
+    // ─── 8. Device OS Doughnut ───
+    new Chart(document.getElementById("devicePieChart"), {
+        type: "doughnut",
+        data: {
+            labels: ["Android (' . $anPct . '%)", "iOS (' . (100 - $anPct) . '%)"],
+            datasets: [{ data: [' . $androidUsers . ', ' . $iosUsers . '],
+                backgroundColor: ["rgba(40,167,69,0.8)", "rgba(85,85,85,0.8)"],
+                borderWidth: 2, borderColor: "#fff", hoverOffset: 8 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
+            plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10, ...chartFont } } } } }
+    });
+
+    // ─── 9. Pipeline Status Doughnut ───
+    new Chart(document.getElementById("pipelinePieChart"), {
+        type: "doughnut",
+        data: {
+            labels: ["Production (' . $prodPct . '%)", "Working (' . $workPct . '%)", "Tested (' . $testPct . '%)", "Untested (' . $untPct . '%)"],
+            datasets: [{ data: [' . $productionReady . ', ' . ($urlsWorking - $productionReady) . ', ' . ($urlTested - $urlsWorking) . ', ' . $urlNotTested . '],
+                backgroundColor: ["rgba(40,167,69,0.8)", "rgba(23,162,184,0.8)", "rgba(255,193,7,0.8)", "rgba(220,53,69,0.7)"],
+                borderWidth: 2, borderColor: "#fff", hoverOffset: 8 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
+            plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10, ...chartFont } } } } }
+    });
+
+    // ─── 10. Fix Tracking Doughnut ───
+    new Chart(document.getElementById("fixPieChart"), {
+        type: "doughnut",
+        data: {
+            labels: ["Fixed (' . $fxPct . '%)", "Pending (' . $fpPct . '%)", "Error (' . $fePct . '%)"],
+            datasets: [{ data: [' . $allFixed . ', ' . $allPend . ', ' . $allErr . '],
+                backgroundColor: ["rgba(40,167,69,0.8)", "rgba(255,193,7,0.8)", "rgba(220,53,69,0.8)"],
+                borderWidth: 2, borderColor: "#fff", hoverOffset: 8 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
+            plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10, ...chartFont } } } } }
+    });
+});
+</script>';
 
         // ── SECTION: Summary Tables ──
         $html .= '<div class="db-section">Summary Tables</div>';
