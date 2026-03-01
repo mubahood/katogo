@@ -136,16 +136,21 @@ class MovieController extends Controller
         if ($request->filled('vj'))       $query->where('vj', 'LIKE', '%' . $request->get('vj') . '%');
         if ($request->filled('year'))     $query->where('year', $request->get('year'));
 
-        // Sorting
+        // Sorting — always use a deterministic tiebreaker (id) so OFFSET
+        // pagination never skips or duplicates movies.
+        // views_count & downloads_count are TEXT columns → CAST to INT.
         switch ($sort) {
             case 'popular':
-                $query->orderByDesc('views_count');
+                $query->orderByRaw('CAST(IFNULL(views_count, 0) AS UNSIGNED) DESC')
+                      ->orderByDesc('id');
                 break;
             case 'title':
-                $query->orderBy('title', 'asc');
+                $query->orderBy('title', 'asc')
+                      ->orderByDesc('id');
                 break;
             case 'year':
-                $query->orderByDesc('year')->orderByDesc('id');
+                $query->orderByDesc('year')
+                      ->orderByDesc('id');
                 break;
             case 'latest':
             default:
@@ -222,16 +227,19 @@ class MovieController extends Controller
         if ($request->filled('min_episodes')) $query->where('series_movies.total_episodes', '>=', (int) $request->get('min_episodes'));
         if ($request->filled('max_episodes')) $query->where('series_movies.total_episodes', '<=', (int) $request->get('max_episodes'));
 
-        // ── Sorting ──
+        // ── Sorting (always include id tiebreaker for stable pagination) ──
         switch ($sort) {
             case 'popular':
-                $query->orderByDesc('series_movies.total_views');
+                $query->orderByRaw('CAST(IFNULL(series_movies.total_views, 0) AS UNSIGNED) DESC')
+                      ->orderByDesc('movie_models.id');
                 break;
             case 'year':
-                $query->orderByDesc('movie_models.year')->orderByDesc('movie_models.id');
+                $query->orderByDesc('movie_models.year')
+                      ->orderByDesc('movie_models.id');
                 break;
             case 'episodes':
-                $query->orderByDesc('series_movies.total_episodes');
+                $query->orderByDesc('series_movies.total_episodes')
+                      ->orderByDesc('movie_models.id');
                 break;
             case 'latest':
             default:

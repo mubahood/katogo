@@ -1156,6 +1156,7 @@ class DynamicCrudController extends Controller
             //   ->where('is_muno', 'Yes')
         }
         $query->where('is_muno', 'Yes');
+        $query->where('status', 'Active');
 
         $platform_type = Utils::get_platform();
 
@@ -1166,7 +1167,14 @@ class DynamicCrudController extends Controller
 
         $sortBy = $request->get('sort_by', 'created_at');
         $sortDir = $request->get('sort_dir', 'desc');
-        $query->orderBy($sortBy, $sortDir);
+        // Cast views_count / downloads_count to INT when sorting by TEXT columns
+        if (in_array($sortBy, ['views_count', 'downloads_count', 'views_time_count'])) {
+            $query->orderByRaw("CAST(IFNULL({$sortBy}, 0) AS UNSIGNED) {$sortDir}");
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
+        // Always add id tiebreaker for deterministic OFFSET pagination
+        $query->orderBy('id', 'desc');
         $perPage = $request->get('per_page', 21);
         $movies = $query->paginate($perPage);
         $movieIds = $movies->pluck('id')->toArray();

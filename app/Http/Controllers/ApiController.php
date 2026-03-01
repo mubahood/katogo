@@ -811,81 +811,101 @@ class ApiController extends BaseController
         $date = Carbon::parse('2020-01-01 00:00:00');
 
 
-        // 12 hours ago
-        $min_time = Carbon::now()->subHours(12);
-        //maxk time now
-        $max_time = Carbon::now();
+        // ═══════════════════════════════════════════════════════════
+        //  DAILY ROTATION — movies cycle based on last_listing_date
+        //
+        //  Strategy:
+        //  1. Use a daily boundary (6am) for a full 24h window
+        //  2. Movies stamped "today" are the current batch
+        //  3. When < 200 stamped for today, pick movies with the
+        //     OLDEST last_listing_date (= not shown for the longest)
+        //  4. This guarantees every movie in the catalogue gets its
+        //     turn before any movie repeats
+        // ═══════════════════════════════════════════════════════════
+        $today_6am = Carbon::today()->addHours(6);
+        // Before 6am? Use yesterday's boundary so the current batch persists
+        if (Carbon::now()->hour < 6) {
+            $today_6am = Carbon::yesterday()->addHours(6);
+        }
 
-        //setting movies for today listing
-        $temp_movies = MovieModel::where([
+        // Movies already stamped for today's cycle
+        $todays_batch = MovieModel::where([
             'status' => 'Active',
             'type' => 'Movie',
         ])
-            ->whereNotNull('last_listing_date')
             ->where('is_muno', 'Yes')
-            ->whereBetween('last_listing_date', [$min_time, $max_time])
+            ->whereNotNull('last_listing_date')
+            ->where('last_listing_date', '>=', $today_6am)
             ->orderBy('created_at', 'desc')
             ->limit(200)
             ->get($take_only);
-        //if temp_movies is less than 200, set last_listing_date to null for all movies
-        if (count($temp_movies) < 200) {
-            $latest_movies_with_listing_date_as_null = MovieModel::where([
+
+        // If fewer than 200 stamped for today, stamp a fresh batch
+        if ($todays_batch->count() < 200) {
+            $already_listed_ids = $todays_batch->pluck('id')->toArray();
+            $needed = 200 - $todays_batch->count();
+
+            // Priority 1: Movies never listed (NULL last_listing_date)
+            $to_stamp = MovieModel::where([
                 'status' => 'Active',
                 'type' => 'Movie',
             ])
-                ->whereNull('last_listing_date')
                 ->where('is_muno', 'Yes')
+                ->whereNull('last_listing_date')
+                ->whereNotIn('id', $already_listed_ids)
                 ->orderBy('created_at', 'desc')
-                ->limit(200)
+                ->limit($needed)
                 ->get();
-            //check if latest_movies_with_listing_date_as_null is less than 200
-            if (count($latest_movies_with_listing_date_as_null) < 200) {
-                //get latest 2000 movies
-                $latest_movies_with_listing_date_as_null_ids = $latest_movies_with_listing_date_as_null->pluck('id')->toArray();
-                $latest_random_movies = MovieModel::where([
+
+            // Priority 2: Movies with OLDEST last_listing_date (true rotation)
+            if ($to_stamp->count() < $needed) {
+                $exclude_ids = array_merge($already_listed_ids, $to_stamp->pluck('id')->toArray());
+                $still_needed = $needed - $to_stamp->count();
+                $extra = MovieModel::where([
                     'status' => 'Active',
                     'type' => 'Movie',
                 ])
-                    ->whereNotIn('id', $latest_movies_with_listing_date_as_null_ids)
-                    ->orderBy('created_at', 'desc')
-                    ->limit(200 - count($latest_movies_with_listing_date_as_null))
+                    ->where('is_muno', 'Yes')
+                    ->whereNotIn('id', $exclude_ids)
+                    ->orderBy('last_listing_date', 'asc')   // KEY: oldest-listed first = true rotation
+                    ->limit($still_needed)
                     ->get();
-                $latest_movies_with_listing_date_as_null = $latest_movies_with_listing_date_as_null->merge($latest_random_movies);
-                //set $latest_movies_with_listing_date_as_null as today's listing (use sql)
-                $latest_movies_with_listing_date_as_null_ids = $latest_movies_with_listing_date_as_null->pluck('id')->toArray();
-                $six_am_today = Carbon::now()->startOfDay()->addHours(6);
+                $to_stamp = $to_stamp->merge($extra);
+            }
+
+            // Stamp the new batch with today's boundary
+            if ($to_stamp->isNotEmpty()) {
                 DB::table('movie_models')
-                    ->whereIn('id', $latest_movies_with_listing_date_as_null_ids)
-                    ->update(['last_listing_date' => $six_am_today]);
+                    ->whereIn('id', $to_stamp->pluck('id')->toArray())
+                    ->update(['last_listing_date' => $today_6am]);
             }
         }
 
-        //movies with last_listing_date is between 12 hours ago and now
+        // Re-fetch today's full batch (after stamping)
         $oldest_listed_movies = MovieModel::where([
             'status' => 'Active',
             'type' => 'Movie',
         ])
-            ->whereNotNull('last_listing_date')
             ->where('is_muno', 'Yes')
-            ->whereBetween('last_listing_date', [$min_time, $max_time])
-            ->orderBy('last_listing_date', 'desc')
+            ->whereNotNull('last_listing_date')
+            ->where('last_listing_date', '>=', $today_6am)
+            ->orderBy('created_at', 'desc')
             ->limit(200)
             ->get($take_only);
 
-
-        //if less than 200, get the rest of the movies
-        if (count($oldest_listed_movies) < 200) {
+        // Fallback: if somehow still too few, include recently-listed movies
+        if ($oldest_listed_movies->count() < 10) {
             $oldest_listed_movies = MovieModel::where([
                 'status' => 'Active',
                 'type' => 'Movie',
             ])
                 ->where('is_muno', 'Yes')
-                ->orderBy('created_at', 'desc')
+                ->orderBy('last_listing_date', 'desc')  // most recently listed first
                 ->limit(200)
                 ->get($take_only);
         }
 
-        // Early return if no movies are available
+        // Final fallback: any active movies
         if ($oldest_listed_movies->count() === 0) {
             $oldest_listed_movies = MovieModel::where([
                 'status' => 'Active',
@@ -1044,56 +1064,62 @@ class ApiController extends BaseController
         }
 
 
-        //for you movies
-
+        // For You — shuffled selection from today's batch
         if (count($movies) > 10) {
+            $for_you = $movies->shuffle()->take(20);
+            $my_list = [];
             $my_list['title'] = "For You";
-            $my_list['movies'] = $movies->skip(10)->take(10);
+            $my_list['movies'] = $for_you->values();
             $lists[] = $my_list;
         }
 
+        // Genre sections — filtered by actual genre, with daily page-cycling
+        $genre_sections = ['Drama', 'Action', 'Comedy', 'Romance', 'Thriller'];
+        $dayOfYear = Carbon::today()->dayOfYear;
+        $already_listed_genre_ids = [];
+        foreach ($genre_sections as $genre_name) {
+            $genre_query = MovieModel::where('status', 'Active')
+                ->where('type', 'Movie')
+                ->where('is_muno', 'Yes')
+                ->where('genre', 'LIKE', "%{$genre_name}%")
+                ->whereNotIn('id', $already_listed_genre_ids);
 
-        //continue watching
-        if (count($movies) > 30) {
-            $my_list['title'] = "Continue Watching";
-            $my_list['movies'] = $movies->skip(20)->take(10);
-            $lists[] = $my_list;
-        }
-        //latest movies
-        if (count($movies) > 40) {
-            $my_list['title'] = "Latest Movies";
-            $my_list['movies'] = $movies->skip(30)->take(10);
-            $lists[] = $my_list;
+            $genre_total = $genre_query->count();
+            if ($genre_total < 3) continue;
+
+            // Page-cycle through genre catalogue daily
+            $genre_pages = max(1, (int) ceil($genre_total / 20));
+            $genre_page  = $dayOfYear % $genre_pages;
+            $genre_movies = $genre_query
+                ->orderByRaw('RAND(' . crc32($genre_name) . ')')
+                ->offset($genre_page * 20)
+                ->limit(20)
+                ->get($take_only);
+
+            // Wrap around if near end
+            if ($genre_movies->count() < 3) {
+                $genre_movies = MovieModel::where('status', 'Active')
+                    ->where('type', 'Movie')
+                    ->where('is_muno', 'Yes')
+                    ->where('genre', 'LIKE', "%{$genre_name}%")
+                    ->orderByRaw('RAND(' . crc32($genre_name) . ')')
+                    ->limit(20)
+                    ->get($take_only);
+            }
+
+            if ($genre_movies->count() >= 3) {
+                $my_list = [];
+                $my_list['title'] = "{$genre_name} Movies";
+                $my_list['movies'] = $genre_movies;
+                $lists[] = $my_list;
+                $already_listed_genre_ids = array_merge(
+                    $already_listed_genre_ids,
+                    $genre_movies->pluck('id')->toArray()
+                );
+            }
         }
 
 
-        //drama movies
-        if (count($movies) > 60) {
-            $my_list['title'] = "Drama Movies";
-            $my_list['movies'] = $movies->skip(40)->take(10);
-            $lists[] = $my_list;
-        }
-        //action movies
-        if (count($movies) > 70) {
-            $my_list['title'] = "Action Movies";
-            $my_list['movies'] = $movies->skip(70)->take(10);
-            $lists[] = $my_list;
-        }
-
-        //comedy movies
-        if (count($movies) > 80) {
-            $my_list['title'] = "Comedy Movies";
-            $my_list['movies'] = $movies->skip(80)->take(10);
-            $lists[] = $my_list;
-        }
-
-
-        //latest movies
-        if (count($movies) > 210) {
-            $my_list['title'] = "Latest Movies";
-            $my_list['movies'] = $movies->skip(210)->take(10);
-            $lists[] = $my_list;
-        }
 
 
         $unique_genres = [];
