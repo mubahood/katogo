@@ -51,6 +51,9 @@ Route::get('subscriptions/pesapal/callback', [SubscriptionApiController::class, 
 Route::post('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'pesapalCallback']); // Support both GET and POST
 Route::post('subscriptions/pesapal/ipn', [SubscriptionApiController::class, 'pesapalIpn']);
 
+// Pesapal API Diagnostics (no auth — for admin testing)
+Route::get('subscriptions/pesapal/test', [SubscriptionApiController::class, 'pesapalTest']);
+
 // Payment Status Check (Public - but validates ownership)
 Route::get('subscriptions/payment-status/{trackingId}', [SubscriptionApiController::class, 'getPaymentStatus']);
 

@@ -8,10 +8,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Subscription Pesapal Service
+ * Subscription Pesapal Service - BULLETPROOF IMPLEMENTATION
  * 
- * Handles all Pesapal payment integration for subscriptions
- * Based on the blitxpress implementation
+ * Handles all Pesapal payment integration for subscriptions.
+ * Features:
+ * - Config validation on construction (fail-fast)
+ * - Automatic retry with exponential backoff on all API calls
+ * - IPN ID caching to avoid re-registration every request
+ * - Comprehensive error handling with clear error messages
+ * - SSL fallback for environments with certificate issues
+ * - Token refresh on 401 responses
  */
 class SubscriptionPesapalService
 {
@@ -22,212 +28,474 @@ class SubscriptionPesapalService
     private $callbackUrl;
     private $appBaseUrl;
 
+    /** @var int Maximum retry attempts for API calls */
+    private const MAX_RETRIES = 3;
+
+    /** @var int Base delay in milliseconds for exponential backoff */
+    private const RETRY_DELAY_MS = 500;
+
+    /** @var int Token cache duration in seconds (4.5 min, tokens expire in 5 min) */
+    private const TOKEN_CACHE_SECONDS = 270;
+
+    /** @var int IPN ID cache duration in seconds (24 hours) */
+    private const IPN_CACHE_SECONDS = 86400;
+
+    /** @var int cURL timeout in seconds */
+    private const CURL_TIMEOUT = 30;
+
+    /** @var int cURL connection timeout in seconds */
+    private const CURL_CONNECT_TIMEOUT = 10;
+
     public function __construct()
     {
+        // ===== CREDENTIAL VALIDATION (FAIL-FAST) =====
         $this->consumerKey = env('PESAPAL_CONSUMER_KEY');
         $this->consumerSecret = env('PESAPAL_CONSUMER_SECRET');
         $this->baseUrl = env('PESAPAL_PRODUCTION_URL', 'https://pay.pesapal.com/v3');
-        
+
+        if (empty($this->consumerKey) || empty($this->consumerSecret)) {
+            $missing = [];
+            if (empty($this->consumerKey)) $missing[] = 'PESAPAL_CONSUMER_KEY';
+            if (empty($this->consumerSecret)) $missing[] = 'PESAPAL_CONSUMER_SECRET';
+            Log::critical('Pesapal: Missing API credentials in .env', ['missing' => $missing]);
+            throw new \RuntimeException('Pesapal payment system misconfigured: missing ' . implode(', ', $missing) . ' in .env');
+        }
+
+        if (empty($this->baseUrl) || !filter_var($this->baseUrl, FILTER_VALIDATE_URL)) {
+            Log::critical('Pesapal: Invalid base URL', ['base_url' => $this->baseUrl]);
+            throw new \RuntimeException('Pesapal payment system misconfigured: invalid PESAPAL_PRODUCTION_URL');
+        }
+
         // Use APP_PRODUCTION_URL for externally-reachable URLs (not APP_URL which may be localhost)
         $this->appBaseUrl = env('APP_PRODUCTION_URL', env('APP_URL', 'https://katogo.schooldynamics.ug'));
-        
-        // CRITICAL FIX: Always construct the correct IPN and callback URLs
-        // The IPN URL MUST match the route: /api/subscriptions/pesapal/ipn
-        // The callback URL MUST match the route: /api/subscriptions/pesapal/callback
+
+        if (empty($this->appBaseUrl) || !filter_var($this->appBaseUrl, FILTER_VALIDATE_URL)) {
+            Log::critical('Pesapal: Invalid app base URL', ['app_base_url' => $this->appBaseUrl]);
+            throw new \RuntimeException('Pesapal payment system misconfigured: APP_PRODUCTION_URL or APP_URL is invalid');
+        }
+
+        // Warn if using localhost (common misconfiguration)
+        if (strpos($this->appBaseUrl, 'localhost') !== false || strpos($this->appBaseUrl, '127.0.0.1') !== false) {
+            Log::warning('Pesapal: APP_PRODUCTION_URL contains localhost - IPN/Callback will NOT work in production!', [
+                'app_base_url' => $this->appBaseUrl,
+            ]);
+        }
+
+        // CRITICAL: Always construct the correct IPN and callback URLs
         $this->ipnUrl = rtrim($this->appBaseUrl, '/') . '/api/subscriptions/pesapal/ipn';
         $this->callbackUrl = rtrim($this->appBaseUrl, '/') . '/api/subscriptions/pesapal/callback';
-        
+
         Log::info('Pesapal Service initialized', [
             'ipn_url' => $this->ipnUrl,
             'callback_url' => $this->callbackUrl,
             'base_url' => $this->baseUrl,
+            'has_consumer_key' => !empty($this->consumerKey),
         ]);
     }
 
+    // ================================================================
+    // PRIVATE HELPER: Retry-enabled cURL executor
+    // ================================================================
+
     /**
-     * STEP 1: Authenticate with Pesapal
-     * Returns JWT token for API calls
+     * Execute a cURL request with automatic retry and exponential backoff.
+     * Handles SSL fallback, token refresh on 401, and detailed error logging.
+     *
+     * @param string $url Full API URL
+     * @param string $method 'GET' or 'POST'
+     * @param array|null $payload POST body (will be JSON-encoded)
+     * @param string|null $bearerToken Authorization token
+     * @param string $operationName Human-readable name for logging
+     * @return array ['http_code' => int, 'body' => string, 'data' => array|null]
+     * @throws \Exception on all retries exhausted
      */
-    public function authenticate()
+    private function curlWithRetry(string $url, string $method, ?array $payload, ?string $bearerToken, string $operationName): array
+    {
+        $lastError = null;
+        $sslVerify = true;
+
+        for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, self::CURL_TIMEOUT);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, self::CURL_CONNECT_TIMEOUT);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $sslVerify);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $sslVerify ? 2 : 0);
+
+            $headers = [
+                'Content-Type: application/json',
+                'Accept: application/json',
+            ];
+            if ($bearerToken) {
+                $headers[] = 'Authorization: Bearer ' . $bearerToken;
+            }
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+            if ($method === 'POST') {
+                curl_setopt($ch, CURLOPT_POST, 1);
+                if ($payload !== null) {
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+                }
+            }
+
+            $response = curl_exec($ch);
+            $curlErrno = curl_errno($ch);
+            $curlError = curl_error($ch);
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            // ----- cURL-level error (network, DNS, SSL, timeout) -----
+            if ($curlErrno !== 0) {
+                $lastError = "{$operationName} connection failed (attempt {$attempt}/" . self::MAX_RETRIES . ", curl error {$curlErrno}): {$curlError}";
+                Log::warning("Pesapal: {$lastError}");
+
+                // If SSL error and this was first attempt, retry with SSL verification disabled
+                if (in_array($curlErrno, [CURLE_SSL_CERTPROBLEM, CURLE_SSL_CACERT, CURLE_SSL_CONNECT_ERROR, 60, 77]) && $sslVerify) {
+                    Log::warning("Pesapal: SSL error on {$operationName}, retrying without SSL verification");
+                    $sslVerify = false;
+                }
+
+                if ($attempt < self::MAX_RETRIES) {
+                    $delay = self::RETRY_DELAY_MS * pow(2, $attempt - 1); // 500ms, 1000ms, 2000ms
+                    usleep($delay * 1000);
+                    continue;
+                }
+                throw new \Exception($lastError);
+            }
+
+            // ----- Parse JSON -----
+            $data = json_decode($response, true);
+            if ($data === null && !empty($response) && $response !== 'null') {
+                $lastError = "{$operationName} returned invalid JSON. HTTP {$httpCode}. Body: " . substr($response, 0, 300);
+                Log::warning("Pesapal: {$lastError}");
+
+                if ($attempt < self::MAX_RETRIES) {
+                    $delay = self::RETRY_DELAY_MS * pow(2, $attempt - 1);
+                    usleep($delay * 1000);
+                    continue;
+                }
+                throw new \Exception($lastError);
+            }
+
+            // ----- HTTP 5xx server error → retry -----
+            if ($httpCode >= 500 && $attempt < self::MAX_RETRIES) {
+                $lastError = "{$operationName} server error HTTP {$httpCode} (attempt {$attempt})";
+                Log::warning("Pesapal: {$lastError}");
+                $delay = self::RETRY_DELAY_MS * pow(2, $attempt - 1);
+                usleep($delay * 1000);
+                continue;
+            }
+
+            // ----- HTTP 429 rate limit → retry with longer backoff -----
+            if ($httpCode === 429 && $attempt < self::MAX_RETRIES) {
+                $lastError = "{$operationName} rate limited (attempt {$attempt})";
+                Log::warning("Pesapal: {$lastError}");
+                usleep(2000 * 1000); // 2 seconds
+                continue;
+            }
+
+            // ----- Return result (caller decides if success/failure based on status) -----
+            return [
+                'http_code' => $httpCode,
+                'body' => $response,
+                'data' => $data,
+            ];
+        }
+
+        throw new \Exception("{$operationName} failed after " . self::MAX_RETRIES . " attempts. Last error: {$lastError}");
+    }
+
+    /**
+     * Get token cache key
+     */
+    private function tokenCacheKey(): string
+    {
+        return 'pesapal_subscription_token_' . md5($this->consumerKey);
+    }
+
+    /**
+     * Get IPN ID cache key
+     */
+    private function ipnCacheKey(): string
+    {
+        return 'pesapal_ipn_id_' . md5($this->ipnUrl);
+    }
+
+    /**
+     * Clear cached token (used on 401 to force re-auth)
+     */
+    private function clearTokenCache(): void
+    {
+        Cache::forget($this->tokenCacheKey());
+    }
+
+    // ================================================================
+    // STEP 1: Authenticate with Pesapal
+    // ================================================================
+
+    /**
+     * Authenticate with Pesapal API and retrieve a JWT token.
+     * Cached for 4.5 minutes (tokens expire in 5 minutes).
+     * Retries up to MAX_RETRIES times on failure.
+     *
+     * @param bool $forceRefresh Force re-authentication (ignore cache)
+     * @return string JWT token
+     * @throws \Exception on authentication failure
+     */
+    public function authenticate(bool $forceRefresh = false): string
     {
         try {
-            // Check cache first (tokens are valid for 5 minutes)
-            $cacheKey = 'pesapal_subscription_token_' . md5($this->consumerKey);
-            $cachedToken = Cache::get($cacheKey);
-            
-            if ($cachedToken) {
-                return $cachedToken;
+            $cacheKey = $this->tokenCacheKey();
+
+            if (!$forceRefresh) {
+                $cachedToken = Cache::get($cacheKey);
+                if ($cachedToken) {
+                    return $cachedToken;
+                }
             }
 
             $payload = [
                 'consumer_key' => $this->consumerKey,
-                'consumer_secret' => $this->consumerSecret
+                'consumer_secret' => $this->consumerSecret,
             ];
 
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $this->baseUrl . '/api/Auth/RequestToken');
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'Accept: application/json'
-            ]);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            $result = $this->curlWithRetry(
+                $this->baseUrl . '/api/Auth/RequestToken',
+                'POST',
+                $payload,
+                null,
+                'Authentication'
+            );
 
-            $response = curl_exec($ch);
-            $curlErrno = curl_errno($ch);
-            $curlError = curl_error($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            if ($result['http_code'] === 200 && isset($result['data']['token'])) {
+                $token = $result['data']['token'];
 
-            // Check for curl errors (network failure, SSL issues, timeout)
-            if ($curlErrno !== 0) {
-                throw new \Exception("Pesapal API connection failed (curl error {$curlErrno}): {$curlError}");
-            }
+                // Validate token is not empty
+                if (empty(trim($token))) {
+                    throw new \Exception('Authentication returned empty token');
+                }
 
-            $data = json_decode($response, true);
-            
-            if ($data === null && $response !== 'null') {
-                throw new \Exception('Pesapal API returned invalid JSON. HTTP ' . $httpCode . '. Response: ' . substr($response, 0, 200));
-            }
+                Cache::put($cacheKey, $token, self::TOKEN_CACHE_SECONDS);
 
-            if ($httpCode === 200 && isset($data['token'])) {
-                $token = $data['token'];
-                
-                // ENHANCED: Cache token for 4.5 minutes (expires in 5) with safety buffer
-                // Prevents token expiration during long-running operations
-                Cache::put($cacheKey, $token, 270);
-                
-                Log::info('Pesapal Subscription: Authentication successful', [
-                    'cache_duration' => '270s (4.5min)',
-                    'expires_at' => now()->addSeconds(270)->toDateTimeString(),
+                Log::info('Pesapal: Authentication successful', [
+                    'cache_duration' => self::TOKEN_CACHE_SECONDS . 's',
+                    'expires_at' => now()->addSeconds(self::TOKEN_CACHE_SECONDS)->toDateTimeString(),
                 ]);
+
                 return $token;
             }
 
-            throw new \Exception('Authentication failed: ' . ($data['error']['message'] ?? 'HTTP ' . $httpCode));
+            // Extract meaningful error message
+            $errorMsg = $result['data']['error']['message']
+                ?? $result['data']['message']
+                ?? $result['data']['error']
+                ?? ('HTTP ' . $result['http_code']);
+
+            throw new \Exception("Authentication failed: {$errorMsg}");
 
         } catch (\Exception $e) {
-            Log::error('Pesapal Subscription: Authentication failed', [
-                'error' => $e->getMessage()
+            Log::error('Pesapal: Authentication failed', [
+                'error' => $e->getMessage(),
             ]);
             throw $e;
         }
     }
 
+    // ================================================================
+    // STEP 2: Register IPN URL (with caching)
+    // ================================================================
+
     /**
-     * STEP 2: Register IPN URL
-     * Returns IPN ID for payment notifications
+     * Register IPN URL with Pesapal and return the IPN ID.
+     * Caches the IPN ID for 24 hours to avoid re-registering every request.
+     * If Pesapal says it's already registered, uses the existing ID.
+     *
+     * @param string|null $ipnUrl Override IPN URL (must be a valid URL)
+     * @return string IPN ID
+     * @throws \Exception on registration failure
      */
-    public function registerIpnUrl($ipnUrl = null)
+    public function registerIpnUrl($ipnUrl = null): string
     {
         $ipnUrl = $ipnUrl ?: $this->ipnUrl;
 
+        // Validate IPN URL
+        if (empty($ipnUrl) || !filter_var($ipnUrl, FILTER_VALIDATE_URL)) {
+            throw new \Exception("Invalid IPN URL: '{$ipnUrl}'. Must be a valid HTTPS URL.");
+        }
+
         try {
+            // Check cache first — IPN IDs don't change for the same URL
+            $cacheKey = $this->ipnCacheKey();
+            $cachedIpnId = Cache::get($cacheKey);
+
+            if ($cachedIpnId) {
+                Log::debug('Pesapal: Using cached IPN ID', ['ipn_id' => $cachedIpnId]);
+                return $cachedIpnId;
+            }
+
             $token = $this->authenticate();
 
             $payload = [
                 'url' => $ipnUrl,
-                'ipn_notification_type' => 'POST'
+                'ipn_notification_type' => 'POST',
             ];
 
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $this->baseUrl . '/api/URLSetup/RegisterIPN');
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'Accept: application/json',
-                'Authorization: Bearer ' . $token
-            ]);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            $result = $this->curlWithRetry(
+                $this->baseUrl . '/api/URLSetup/RegisterIPN',
+                'POST',
+                $payload,
+                $token,
+                'IPN Registration'
+            );
 
-            $response = curl_exec($ch);
-            $curlErrno = curl_errno($ch);
-            $curlError = curl_error($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            // Handle 401 — token expired, refresh and retry once
+            if ($result['http_code'] === 401) {
+                Log::warning('Pesapal: IPN registration got 401, refreshing token');
+                $this->clearTokenCache();
+                $token = $this->authenticate(true);
 
-            if ($curlErrno !== 0) {
-                throw new \Exception("IPN registration connection failed (curl error {$curlErrno}): {$curlError}");
+                $result = $this->curlWithRetry(
+                    $this->baseUrl . '/api/URLSetup/RegisterIPN',
+                    'POST',
+                    $payload,
+                    $token,
+                    'IPN Registration (retry auth)'
+                );
             }
 
-            $data = json_decode($response, true);
-            
-            if ($data === null && $response !== 'null') {
-                throw new \Exception('IPN registration returned invalid JSON. HTTP ' . $httpCode);
-            }
+            if (isset($result['data']['ipn_id']) && !empty($result['data']['ipn_id'])) {
+                $ipnId = $result['data']['ipn_id'];
 
-            if ($httpCode === 200 && isset($data['ipn_id'])) {
-                Log::info('Pesapal Subscription: IPN registered successfully', [
-                    'ipn_id' => $data['ipn_id'],
-                    'url' => $ipnUrl
+                // Cache for 24 hours
+                Cache::put($cacheKey, $ipnId, self::IPN_CACHE_SECONDS);
+
+                Log::info('Pesapal: IPN registered successfully', [
+                    'ipn_id' => $ipnId,
+                    'url' => $ipnUrl,
+                    'cached_for' => self::IPN_CACHE_SECONDS . 's',
                 ]);
-                
-                return $data['ipn_id'];
+
+                return $ipnId;
             }
 
-            // If already registered, Pesapal returns the existing IPN ID
-            if (isset($data['ipn_id'])) {
-                return $data['ipn_id'];
-            }
+            // Extract error
+            $errorMsg = $result['data']['error']['message']
+                ?? $result['data']['message']
+                ?? $result['data']['error']
+                ?? ('HTTP ' . $result['http_code']);
 
-            throw new \Exception('IPN registration failed: ' . ($data['error']['message'] ?? 'HTTP ' . $httpCode));
+            throw new \Exception("IPN registration failed: {$errorMsg}");
 
         } catch (\Exception $e) {
-            Log::error('Pesapal Subscription: IPN registration failed', [
+            Log::error('Pesapal: IPN registration failed', [
                 'error' => $e->getMessage(),
-                'ipn_url' => $ipnUrl
+                'ipn_url' => $ipnUrl,
             ]);
             throw $e;
         }
     }
 
+    // ================================================================
+    // STEP 3: Initialize Payment — BULLETPROOF
+    // ================================================================
+
     /**
-     * STEP 3: Initialize payment
-     * Creates payment request and returns redirect URL
-     * 
-     * @param Subscription $subscription
-     * @param string|null $notificationId
-     * @param string|null $callbackUrl
-     * @return array
+     * Initialize payment with Pesapal.
+     * Pre-validates ALL required data before making any API calls.
+     * Retries on transient failures, refreshes token on 401.
+     *
+     * @param Subscription $subscription Must have: user, plan, merchant_reference, amount, currency
+     * @param string|null $notificationId Cached IPN ID (auto-registered if null)
+     * @param string|null $callbackUrl Override callback URL (must contain full path)
+     * @return array ['success' => true, 'order_tracking_id' => ..., 'redirect_url' => ..., ...]
+     * @throws \Exception on payment initialization failure
      */
     public function initializePayment($subscription, $notificationId = null, $callbackUrl = null)
     {
+        // ===== PRE-FLIGHT VALIDATION =====
+        $errors = [];
+
+        if (!$subscription || !$subscription->id) {
+            $errors[] = 'Subscription record is null or unsaved';
+        }
+
+        if (empty($subscription->pesapal_merchant_reference)) {
+            $errors[] = 'Subscription has no merchant reference';
+        }
+
+        if (empty($subscription->amount_paid) || (float) $subscription->amount_paid <= 0) {
+            $errors[] = 'Subscription amount is zero or negative: ' . ($subscription->amount_paid ?? 'null');
+        }
+
+        if (empty($subscription->currency)) {
+            $errors[] = 'Subscription currency is empty';
+        }
+
+        $user = $subscription->user;
+        if (!$user) {
+            $errors[] = 'Subscription has no associated user (user_id: ' . ($subscription->user_id ?? 'null') . ')';
+        }
+
+        $plan = $subscription->plan;
+        if (!$plan) {
+            $errors[] = 'Subscription has no associated plan (plan_id: ' . ($subscription->plan_id ?? 'null') . ')';
+        }
+
+        if (!empty($errors)) {
+            $errorMsg = 'Payment pre-flight validation failed: ' . implode('; ', $errors);
+            Log::error('Pesapal: ' . $errorMsg, [
+                'subscription_id' => $subscription->id ?? null,
+                'user_id' => $subscription->user_id ?? null,
+            ]);
+            throw new \Exception($errorMsg);
+        }
+
         try {
-            $token = $this->authenticate();
-            
-            // CRITICAL FIX: Always use the correct callback URL that matches the route
-            // The Flutter app was sending just the base URL without the callback path
-            // which caused Pesapal to redirect users to the homepage instead of the callback handler
-            // Only allow override if it contains the full callback path
+            // ===== CALLBACK URL VALIDATION =====
             if ($callbackUrl && strpos($callbackUrl, '/api/subscriptions/pesapal/callback') !== false) {
-                // Valid callback URL override
+                // Valid callback URL override — use it
             } else {
+                if ($callbackUrl) {
+                    Log::warning('Pesapal: Invalid callback URL override, using default', [
+                        'received' => $callbackUrl,
+                        'using' => $this->callbackUrl,
+                    ]);
+                }
                 $callbackUrl = $this->callbackUrl;
             }
-            
-            Log::info('Pesapal: Using callback URL', [
+
+            // Final callback URL validation
+            if (empty($callbackUrl) || !filter_var($callbackUrl, FILTER_VALIDATE_URL)) {
+                throw new \Exception("Callback URL is invalid: '{$callbackUrl}'");
+            }
+
+            Log::info('Pesapal: Initializing payment', [
+                'subscription_id' => $subscription->id,
+                'merchant_reference' => $subscription->pesapal_merchant_reference,
+                'amount' => $subscription->amount_paid,
+                'currency' => $subscription->currency,
                 'callback_url' => $callbackUrl,
-                'original_request_url' => func_get_args()[2] ?? 'none',
+                'user_email' => $user->email ?? 'none',
             ]);
 
-            // Get or register IPN
+            // ===== AUTHENTICATE =====
+            $token = $this->authenticate();
+
+            // ===== GET OR REGISTER IPN =====
             if (!$notificationId) {
                 $notificationId = $this->registerIpnUrl();
             }
 
-            $user = $subscription->user;
-            $plan = $subscription->plan;
+            if (empty($notificationId)) {
+                throw new \Exception('Failed to obtain IPN notification ID');
+            }
 
+            // ===== BUILD PAYLOAD =====
             $payload = [
                 'id' => $subscription->pesapal_merchant_reference,
-                'currency' => $subscription->currency,
-                'amount' => (float) $subscription->amount_paid,
+                'currency' => strtoupper(trim($subscription->currency)),
+                'amount' => round((float) $subscription->amount_paid, 2),
                 'description' => "Subscription: {$plan->name} - {$plan->duration_days} days",
                 'callback_url' => $callbackUrl,
                 'notification_id' => $notificationId,
@@ -242,56 +510,72 @@ class SubscriptionPesapalService
                     'city' => '',
                     'state' => '',
                     'postal_code' => '',
-                    'zip_code' => ''
-                ]
+                    'zip_code' => '',
+                ],
             ];
 
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $this->baseUrl . '/api/Transactions/SubmitOrderRequest');
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'Accept: application/json',
-                'Authorization: Bearer ' . $token
-            ]);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            // ===== SUBMIT ORDER =====
+            $result = $this->curlWithRetry(
+                $this->baseUrl . '/api/Transactions/SubmitOrderRequest',
+                'POST',
+                $payload,
+                $token,
+                'SubmitOrderRequest'
+            );
 
-            $response = curl_exec($ch);
-            $curlErrno = curl_errno($ch);
-            $curlError = curl_error($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            // Handle 401 — token expired mid-flow, refresh and retry
+            if ($result['http_code'] === 401) {
+                Log::warning('Pesapal: SubmitOrderRequest got 401, refreshing token and retrying');
+                $this->clearTokenCache();
+                $token = $this->authenticate(true);
 
-            if ($curlErrno !== 0) {
-                throw new \Exception("Payment submission connection failed (curl error {$curlErrno}): {$curlError}");
+                $result = $this->curlWithRetry(
+                    $this->baseUrl . '/api/Transactions/SubmitOrderRequest',
+                    'POST',
+                    $payload,
+                    $token,
+                    'SubmitOrderRequest (retry auth)'
+                );
             }
 
-            $data = json_decode($response, true);
-            
-            if ($data === null && $response !== 'null') {
-                throw new \Exception('Payment submission returned invalid JSON. HTTP ' . $httpCode . '. Response: ' . substr($response ?? '', 0, 200));
-            }
-
-            Log::info('Pesapal Subscription: SubmitOrderRequest response', [
-                'http_code' => $httpCode,
-                'has_tracking_id' => isset($data['order_tracking_id']),
-                'has_redirect_url' => isset($data['redirect_url']),
-                'callback_url_sent' => $callbackUrl,
-                'ipn_notification_id' => $notificationId,
+            Log::info('Pesapal: SubmitOrderRequest response', [
+                'http_code' => $result['http_code'],
+                'has_tracking_id' => isset($result['data']['order_tracking_id']),
+                'has_redirect_url' => isset($result['data']['redirect_url']),
+                'subscription_id' => $subscription->id,
             ]);
 
-            if ($httpCode === 200 && isset($data['order_tracking_id'])) {
-                // Update subscription with Pesapal details
-                $subscription->pesapal_tracking_id = $data['order_tracking_id'];
-                $subscription->pesapal_response = $data;
-                $subscription->payment_url = $data['redirect_url'] ?? null;
+            // ===== VALIDATE RESPONSE =====
+            if ($result['http_code'] === 200 && isset($result['data']['order_tracking_id'])) {
+                $trackingId = $result['data']['order_tracking_id'];
+                $redirectUrl = $result['data']['redirect_url'] ?? null;
+
+                // CRITICAL: Ensure we got a redirect URL
+                if (empty($redirectUrl)) {
+                    Log::error('Pesapal: SubmitOrderRequest returned tracking_id but NO redirect_url', [
+                        'tracking_id' => $trackingId,
+                        'full_response' => $result['data'],
+                    ]);
+                    throw new \Exception('Pesapal returned order but no payment redirect URL. Tracking ID: ' . $trackingId);
+                }
+
+                // Validate redirect URL is a proper URL
+                if (!filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+                    Log::error('Pesapal: Invalid redirect URL returned', [
+                        'redirect_url' => $redirectUrl,
+                        'tracking_id' => $trackingId,
+                    ]);
+                    throw new \Exception('Pesapal returned invalid redirect URL: ' . substr($redirectUrl, 0, 100));
+                }
+
+                // ===== UPDATE SUBSCRIPTION =====
+                $subscription->pesapal_tracking_id = $trackingId;
+                $subscription->pesapal_response = $result['data'];
+                $subscription->payment_url = $redirectUrl;
                 $subscription->payment_status = 'Processing';
                 $subscription->save();
 
-                // Create transaction record
+                // ===== CREATE TRANSACTION RECORD =====
                 SubscriptionTransaction::create([
                     'subscription_id' => $subscription->id,
                     'user_id' => $user->id,
@@ -299,98 +583,124 @@ class SubscriptionPesapalService
                     'amount' => $subscription->amount_paid,
                     'currency' => $subscription->currency,
                     'status' => 'Pending',
-                    'pesapal_tracking_id' => $data['order_tracking_id'],
+                    'pesapal_tracking_id' => $trackingId,
                     'merchant_reference' => $subscription->pesapal_merchant_reference,
                     'request_payload' => $payload,
-                    'response_payload' => $data,
+                    'response_payload' => $result['data'],
                 ]);
 
-                Log::info('Pesapal Subscription: Payment initialized successfully', [
+                Log::info('Pesapal: Payment initialized successfully', [
                     'subscription_id' => $subscription->id,
-                    'tracking_id' => $data['order_tracking_id'],
+                    'tracking_id' => $trackingId,
+                    'redirect_url_domain' => parse_url($redirectUrl, PHP_URL_HOST),
                     'merchant_reference' => $subscription->pesapal_merchant_reference,
+                    'amount' => $subscription->amount_paid,
+                    'currency' => $subscription->currency,
                 ]);
 
                 return [
                     'success' => true,
-                    'order_tracking_id' => $data['order_tracking_id'],
+                    'order_tracking_id' => $trackingId,
                     'merchant_reference' => $subscription->pesapal_merchant_reference,
-                    'redirect_url' => $data['redirect_url'],
-                    'status' => '200'
+                    'redirect_url' => $redirectUrl,
+                    'status' => '200',
                 ];
             }
 
-            throw new \Exception('Payment initialization failed: ' . ($data['error']['message'] ?? 'HTTP ' . $httpCode));
+            // ===== HANDLE SPECIFIC ERROR CODES =====
+            $errorMsg = $result['data']['error']['message']
+                ?? $result['data']['message']
+                ?? $result['data']['error']
+                ?? null;
+
+            if ($result['http_code'] === 400) {
+                throw new \Exception('Pesapal rejected the order (400 Bad Request): ' . ($errorMsg ?? 'Check payload format'));
+            }
+            if ($result['http_code'] === 403) {
+                throw new \Exception('Pesapal access denied (403): ' . ($errorMsg ?? 'Check API credentials'));
+            }
+            if ($result['http_code'] === 422) {
+                throw new \Exception('Pesapal validation error (422): ' . ($errorMsg ?? 'Check order fields'));
+            }
+
+            throw new \Exception('Payment initialization failed: ' . ($errorMsg ?? 'HTTP ' . $result['http_code']));
 
         } catch (\Exception $e) {
-            Log::error('Pesapal Subscription: Payment initialization failed', [
+            Log::error('Pesapal: Payment initialization failed', [
                 'subscription_id' => $subscription->id,
-                'error' => $e->getMessage()
+                'merchant_reference' => $subscription->pesapal_merchant_reference ?? null,
+                'error' => $e->getMessage(),
             ]);
             throw $e;
         }
     }
 
+    // ================================================================
+    // STEP 4: Check Transaction Status
+    // ================================================================
+
     /**
-     * STEP 4: Check transaction status
-     * 
+     * Check transaction status with Pesapal.
+     * Retries on transient failures, refreshes token on 401.
+     *
      * @param string $orderTrackingId
-     * @return array
+     * @return array ['success' => bool, 'data' => array|null, 'error' => string|null]
      */
     public function getTransactionStatus($orderTrackingId)
     {
         try {
+            if (empty($orderTrackingId)) {
+                throw new \Exception('Order tracking ID is empty');
+            }
+
             $token = $this->authenticate();
 
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $this->baseUrl . '/api/Transactions/GetTransactionStatus?orderTrackingId=' . $orderTrackingId);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Accept: application/json',
-                'Authorization: Bearer ' . $token
-            ]);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            $result = $this->curlWithRetry(
+                $this->baseUrl . '/api/Transactions/GetTransactionStatus?orderTrackingId=' . urlencode($orderTrackingId),
+                'GET',
+                null,
+                $token,
+                'GetTransactionStatus'
+            );
 
-            $response = curl_exec($ch);
-            $curlErrno = curl_errno($ch);
-            $curlError = curl_error($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            // Handle 401 — token expired, refresh and retry
+            if ($result['http_code'] === 401) {
+                Log::warning('Pesapal: GetTransactionStatus got 401, refreshing token');
+                $this->clearTokenCache();
+                $token = $this->authenticate(true);
 
-            if ($curlErrno !== 0) {
-                throw new \Exception("Transaction status check connection failed (curl error {$curlErrno}): {$curlError}");
+                $result = $this->curlWithRetry(
+                    $this->baseUrl . '/api/Transactions/GetTransactionStatus?orderTrackingId=' . urlencode($orderTrackingId),
+                    'GET',
+                    null,
+                    $token,
+                    'GetTransactionStatus (retry auth)'
+                );
             }
 
-            $data = json_decode($response, true);
-            
-            if ($data === null && $response !== 'null') {
-                throw new \Exception('Transaction status returned invalid JSON. HTTP ' . $httpCode);
-            }
-
-            if ($httpCode === 200) {
-                Log::info('Pesapal Subscription: Transaction status retrieved', [
+            if ($result['http_code'] === 200) {
+                Log::info('Pesapal: Transaction status retrieved', [
                     'tracking_id' => $orderTrackingId,
-                    'status' => $data['status_code'] ?? 'unknown'
+                    'status' => $result['data']['status_code'] ?? 'unknown',
                 ]);
 
                 return [
                     'success' => true,
-                    'data' => $data
+                    'data' => $result['data'],
                 ];
             }
 
-            throw new \Exception('Status check failed: HTTP ' . $httpCode);
+            throw new \Exception('Status check failed: HTTP ' . $result['http_code']);
 
         } catch (\Exception $e) {
-            Log::error('Pesapal Subscription: Transaction status check failed', [
+            Log::error('Pesapal: Transaction status check failed', [
                 'tracking_id' => $orderTrackingId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return [
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ];
         }
     }
@@ -691,13 +1001,15 @@ class SubscriptionPesapalService
     public function processIpnCallback($orderTrackingId, $merchantReference = null)
     {
         try {
-         
+            if (empty($orderTrackingId)) {
+                throw new \Exception('IPN callback received empty orderTrackingId');
+            }
 
             // Get latest transaction status from Pesapal
             $statusResult = $this->getTransactionStatus($orderTrackingId);
 
             if (!$statusResult['success']) {
-                throw new \Exception('Failed to get transaction status');
+                throw new \Exception('Failed to get transaction status: ' . ($statusResult['error'] ?? 'unknown'));
             }
 
             // Update subscription status
@@ -706,12 +1018,185 @@ class SubscriptionPesapalService
             return $result;
 
         } catch (\Exception $e) {
-            Log::error('Pesapal Subscription: IPN callback processing failed', [
+            Log::error('Pesapal: IPN callback processing failed', [
                 'tracking_id' => $orderTrackingId,
-                'error' => $e->getMessage()
+                'merchant_reference' => $merchantReference,
+                'error' => $e->getMessage(),
             ]);
 
             throw $e;
+        }
+    }
+
+    // ================================================================
+    // DIAGNOSTICS: Test the full payment flow without creating records
+    // ================================================================
+
+    /**
+     * Test the Pesapal API connection end-to-end.
+     * Steps: Authenticate → Register IPN → (optionally submit test order)
+     * Does NOT create any database records.
+     *
+     * @param bool $submitTestOrder If true, submits a real $1 test order
+     * @return array Diagnostic results
+     */
+    public function testConnection(bool $submitTestOrder = false): array
+    {
+        $results = [
+            'timestamp' => now()->toDateTimeString(),
+            'config' => [
+                'base_url' => $this->baseUrl,
+                'ipn_url' => $this->ipnUrl,
+                'callback_url' => $this->callbackUrl,
+                'has_consumer_key' => !empty($this->consumerKey),
+                'consumer_key_prefix' => substr($this->consumerKey, 0, 8) . '...',
+            ],
+            'steps' => [],
+            'overall' => 'pending',
+        ];
+
+        // Step 1: Auth
+        try {
+            $start = microtime(true);
+            $token = $this->authenticate(true); // force refresh
+            $elapsed = round((microtime(true) - $start) * 1000);
+
+            $results['steps']['auth'] = [
+                'status' => 'OK',
+                'token_length' => strlen($token),
+                'token_prefix' => substr($token, 0, 20) . '...',
+                'elapsed_ms' => $elapsed,
+            ];
+        } catch (\Exception $e) {
+            $results['steps']['auth'] = [
+                'status' => 'FAILED',
+                'error' => $e->getMessage(),
+            ];
+            $results['overall'] = 'FAILED at authentication';
+            return $results;
+        }
+
+        // Step 2: IPN Registration
+        try {
+            // Clear IPN cache to test fresh
+            Cache::forget($this->ipnCacheKey());
+
+            $start = microtime(true);
+            $ipnId = $this->registerIpnUrl();
+            $elapsed = round((microtime(true) - $start) * 1000);
+
+            $results['steps']['ipn_registration'] = [
+                'status' => 'OK',
+                'ipn_id' => $ipnId,
+                'ipn_url' => $this->ipnUrl,
+                'elapsed_ms' => $elapsed,
+            ];
+        } catch (\Exception $e) {
+            $results['steps']['ipn_registration'] = [
+                'status' => 'FAILED',
+                'error' => $e->getMessage(),
+            ];
+            $results['overall'] = 'FAILED at IPN registration';
+            return $results;
+        }
+
+        // Step 3: (Optional) Submit a test order
+        if ($submitTestOrder) {
+            try {
+                $testRef = 'TEST-' . time() . '-' . rand(1000, 9999);
+                $payload = [
+                    'id' => $testRef,
+                    'currency' => 'UGX',
+                    'amount' => 500,
+                    'description' => 'API Connection Test - Do Not Pay',
+                    'callback_url' => $this->callbackUrl,
+                    'notification_id' => $ipnId,
+                    'billing_address' => [
+                        'email_address' => 'test@katogo.test',
+                        'phone_number' => '',
+                        'country_code' => 'UG',
+                        'first_name' => 'Test',
+                        'last_name' => 'User',
+                        'line_1' => '',
+                        'line_2' => '',
+                        'city' => '',
+                        'state' => '',
+                        'postal_code' => '',
+                        'zip_code' => '',
+                    ],
+                ];
+
+                $start = microtime(true);
+                $result = $this->curlWithRetry(
+                    $this->baseUrl . '/api/Transactions/SubmitOrderRequest',
+                    'POST',
+                    $payload,
+                    $token,
+                    'Test SubmitOrderRequest'
+                );
+                $elapsed = round((microtime(true) - $start) * 1000);
+
+                if ($result['http_code'] === 200 && isset($result['data']['redirect_url'])) {
+                    $results['steps']['submit_order'] = [
+                        'status' => 'OK',
+                        'test_reference' => $testRef,
+                        'tracking_id' => $result['data']['order_tracking_id'] ?? null,
+                        'redirect_url' => $result['data']['redirect_url'],
+                        'elapsed_ms' => $elapsed,
+                    ];
+                } else {
+                    $results['steps']['submit_order'] = [
+                        'status' => 'FAILED',
+                        'http_code' => $result['http_code'],
+                        'response' => $result['data'],
+                        'elapsed_ms' => $elapsed,
+                    ];
+                    $results['overall'] = 'FAILED at order submission';
+                    return $results;
+                }
+            } catch (\Exception $e) {
+                $results['steps']['submit_order'] = [
+                    'status' => 'FAILED',
+                    'error' => $e->getMessage(),
+                ];
+                $results['overall'] = 'FAILED at order submission';
+                return $results;
+            }
+        }
+
+        $results['overall'] = 'ALL PASSED';
+        return $results;
+    }
+
+    /**
+     * Get list of registered IPN URLs from Pesapal
+     * Useful for debugging IPN configuration issues
+     *
+     * @return array
+     */
+    public function getRegisteredIpnList(): array
+    {
+        try {
+            $token = $this->authenticate();
+
+            $result = $this->curlWithRetry(
+                $this->baseUrl . '/api/URLSetup/GetIpnList',
+                'GET',
+                null,
+                $token,
+                'GetIpnList'
+            );
+
+            return [
+                'success' => $result['http_code'] === 200,
+                'data' => $result['data'] ?? [],
+                'http_code' => $result['http_code'],
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
         }
     }
 }

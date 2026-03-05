@@ -81,8 +81,9 @@ class SubscriptionApiController extends Controller
     public function create(Request $request)
     {
         try {
+            // ===== INPUT VALIDATION =====
             $validator = Validator::make($request->all(), [
-                'plan_id' => 'required|exists:subscription_plans,id',
+                'plan_id' => 'required|integer|exists:subscription_plans,id',
                 'callback_url' => 'url|nullable',
             ]);
 
@@ -90,15 +91,15 @@ class SubscriptionApiController extends Controller
                 return response()->json([
                     'code' => 0,
                     'status' => 400,
-                    'message' => 'Validation failed',
+                    'message' => 'Validation failed: ' . $validator->errors()->first(),
                     'data' => ['errors' => $validator->errors()],
                 ], 400);
             }
 
-
+            // ===== AUTHENTICATION =====
             $user = $request->user();
 
-            if (! $user) {
+            if (!$user) {
                 $user = Utils::get_user($request);
             }
 
@@ -106,85 +107,133 @@ class SubscriptionApiController extends Controller
                 return response()->json([
                     'code' => 0,
                     'status' => 401,
-                    'message' => 'Authentication required',
+                    'message' => 'Authentication required. Please log in and try again.',
                     'data' => null,
                 ], 401);
             }
 
-            // Use database transaction to prevent concurrent subscription creation
+            // ===== VERIFY USER HAS EMAIL =====
+            if (empty($user->email)) {
+                Log::warning('Subscription attempt by user without email', ['user_id' => $user->id]);
+            }
+
+            // ===== CREATE SUBSCRIPTION (DB TRANSACTION) =====
             $subscription = DB::transaction(function () use ($user, $request) {
                 // Lock user row to prevent race conditions
                 $user->lockForUpdate();
 
-                // FIXED: Check for pending/processing subscriptions but allow cancellation
+                // Cancel any stale pending subscriptions
                 $pendingSubscriptions = $user->subscriptions()
                     ->whereIn('payment_status', ['Pending', 'Processing'])
                     ->where('status', 'Pending')
-                    ->where('created_at', '>', now()->subHours(2)) // Extended to 2 hours
+                    ->where('created_at', '>', now()->subHours(2))
                     ->get();
 
-                if ($pendingSubscriptions->count() > 0) {
-                    // SOLUTION: Cancel old pending subscriptions instead of blocking
-                    foreach ($pendingSubscriptions as $pendingSub) {
-                        Log::info('Cancelling old pending subscription to allow new one', [
-                            'old_subscription_id' => $pendingSub->id,
-                            'user_id' => $user->id,
-                        ]);
-                        
-                        // Cancel the old pending subscription
-                        $pendingSub->status = 'Cancelled';
-                        $pendingSub->payment_status = 'Failed';
-                        $pendingSub->cancelled_at = now();
-                        $pendingSub->cancelled_reason = 'Cancelled due to new subscription attempt';
-                        $pendingSub->save();
-                    }
+                foreach ($pendingSubscriptions as $pendingSub) {
+                    Log::info('Cancelling stale pending subscription', [
+                        'old_subscription_id' => $pendingSub->id,
+                        'user_id' => $user->id,
+                        'age_minutes' => now()->diffInMinutes($pendingSub->created_at),
+                    ]);
+
+                    $pendingSub->status = 'Cancelled';
+                    $pendingSub->payment_status = 'Failed';
+                    $pendingSub->cancelled_at = now();
+                    $pendingSub->cancelled_reason = 'Automatically cancelled: new subscription attempt';
+                    $pendingSub->save();
                 }
 
-                // Get plan
+                // Get plan (active plans only)
                 $plan = SubscriptionPlan::active()->findOrFail($request->plan_id);
 
-                // Create subscription
+                if ((float) $plan->getActualPrice() <= 0) {
+                    throw new \Exception('Selected plan has invalid price. Please contact support.');
+                }
+
+                // Create subscription record
                 return $user->createSubscription($plan);
             });
 
-            // Initialize payment with Pesapal
-            $callbackUrl = $request->callback_url;
-            $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
-
-            if ($paymentResult['success']) {
-                Log::info('Subscription created and payment initialized', [
-                    'subscription_id' => $subscription->id,
-                    'user_id' => $user->id,
-                    'plan_id' => $request->plan_id,
-                ]);
-
-                return response()->json([
-                    'code' => 1,
-                    'status' => 200,
-                    'message' => 'Subscription created successfully. Please complete payment.',
-                    'data' => [
-                        'subscription_id' => $subscription->id,
-                        'order_tracking_id' => $paymentResult['order_tracking_id'],
-                        'merchant_reference' => $paymentResult['merchant_reference'],
-                        'redirect_url' => $paymentResult['redirect_url'],
-                        'amount' => $subscription->amount_paid,
-                        'currency' => $subscription->currency,
-                    ],
-                ]);
+            // ===== VERIFY SUBSCRIPTION WAS CREATED =====
+            if (!$subscription || !$subscription->id) {
+                throw new \Exception('Failed to create subscription record');
             }
 
-            throw new \Exception('Failed to initialize payment');
+            if (empty($subscription->pesapal_merchant_reference)) {
+                throw new \Exception('Subscription created but missing merchant reference');
+            }
+
+            // ===== INITIALIZE PESAPAL PAYMENT =====
+            $callbackUrl = $request->callback_url;
+
+            Log::info('Initiating Pesapal payment', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $user->id,
+                'plan_id' => $request->plan_id,
+                'amount' => $subscription->amount_paid,
+                'callback_url' => $callbackUrl ?? 'default',
+            ]);
+
+            $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
+
+            if (!$paymentResult['success'] || empty($paymentResult['redirect_url'])) {
+                // Clean up — mark subscription as failed
+                $subscription->status = 'Failed';
+                $subscription->payment_status = 'Failed';
+                $subscription->failed_at = now();
+                $subscription->cancelled_reason = 'Payment initialization failed: no redirect URL';
+                $subscription->save();
+
+                throw new \Exception('Payment gateway did not return a payment link. Please try again.');
+            }
+
+            Log::info('Subscription created and payment initialized', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $user->id,
+                'plan_id' => $request->plan_id,
+                'tracking_id' => $paymentResult['order_tracking_id'],
+                'redirect_url_domain' => parse_url($paymentResult['redirect_url'], PHP_URL_HOST),
+            ]);
+
+            return response()->json([
+                'code' => 1,
+                'status' => 200,
+                'message' => 'Subscription created successfully. Please complete payment.',
+                'data' => [
+                    'subscription_id' => $subscription->id,
+                    'order_tracking_id' => $paymentResult['order_tracking_id'],
+                    'merchant_reference' => $paymentResult['merchant_reference'],
+                    'redirect_url' => $paymentResult['redirect_url'],
+                    'amount' => $subscription->amount_paid,
+                    'currency' => $subscription->currency,
+                ],
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'code' => 0,
+                'status' => 404,
+                'message' => 'Selected subscription plan not found or inactive.',
+                'data' => null,
+            ], 404);
+
         } catch (\Exception $e) {
             Log::error('Failed to create subscription', [
-                'user_id' => $request->user()?->id,
-                'plan_id' => $request->plan_id,
-                'error' => $e->getMessage()
+                'user_id' => $user->id ?? $request->user()?->id ?? 'unknown',
+                'plan_id' => $request->plan_id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => substr($e->getTraceAsString(), 0, 500),
             ]);
+
+            // Return user-friendly message, not internal error details in production
+            $message = app()->environment('production')
+                ? 'Unable to process payment at this time. Please try again later.'
+                : $e->getMessage();
 
             return response()->json([
                 'code' => 0,
                 'status' => 500,
-                'message' => $e->getMessage(),
+                'message' => $message,
                 'data' => null,
             ], 500);
         }
@@ -1520,6 +1569,43 @@ class SubscriptionApiController extends Controller
                 </body>
                 </html>
             ", 200, ['Content-Type' => 'text/html']);
+        }
+    }
+
+    /**
+     * TEST ENDPOINT: Verify Pesapal API connectivity
+     * GET /api/subscriptions/pesapal/test
+     * 
+     * Tests: Authentication → IPN Registration → (optionally) Order Submission
+     * Does NOT require user authentication — for admin diagnostics only.
+     * In production, protect this with an API key or IP whitelist.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function pesapalTest(Request $request)
+    {
+        try {
+            $submitOrder = $request->get('submit_order', false);
+            $results = $this->pesapalService->testConnection((bool) $submitOrder);
+
+            // Also get registered IPN list
+            $ipnList = $this->pesapalService->getRegisteredIpnList();
+            $results['registered_ipns'] = $ipnList;
+
+            return response()->json([
+                'code' => $results['overall'] === 'ALL PASSED' ? 1 : 0,
+                'status' => 200,
+                'message' => 'Pesapal API test: ' . $results['overall'],
+                'data' => $results,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => 0,
+                'status' => 500,
+                'message' => 'Pesapal test failed: ' . $e->getMessage(),
+                'data' => null,
+            ], 500);
         }
     }
 }
