@@ -249,47 +249,53 @@ class SubscriptionApiController extends Controller
     public function callback(Request $request)
     {
         try {
-            Log::info('Pesapal subscription callback received', $request->all());
+            Log::info('Pesapal subscription callback received (legacy)', $request->all());
 
             $orderTrackingId = $request->get('OrderTrackingId');
             $merchantReference = $request->get('OrderMerchantReference');
 
             if (!$orderTrackingId) {
                 Log::warning('Pesapal callback missing OrderTrackingId');
-                return $this->callbackError('Invalid callback parameters');
+                return $this->callbackPage('error', 'Invalid Callback', 'The callback was missing required parameters. Please return to the app.');
             }
 
             // Get transaction status from Pesapal
-            $statusResult = $this->pesapalService->getTransactionStatus($orderTrackingId);
+            try {
+                $statusResult = $this->pesapalService->getTransactionStatus($orderTrackingId);
 
-            if (!$statusResult['success']) {
-                throw new \Exception('Failed to verify payment status');
-            }
+                if (!$statusResult['success']) {
+                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment. Please return to the app — your subscription will activate automatically.');
+                }
 
-            // Update subscription status
-            $result = $this->pesapalService->updateSubscriptionStatus($orderTrackingId, $statusResult['data']);
-            $subscription = $result['subscription'];
+                // Update subscription status
+                $result = $this->pesapalService->updateSubscriptionStatus($orderTrackingId, $statusResult['data']);
+                $subscription = $result['subscription'];
+                $status = $result['status'];
 
-            $status = $result['status']; // success, failed, pending
+                // Return JSON if API request
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json([
+                        'code' => $status === 'success' ? 1 : 0,
+                        'status' => 200,
+                        'message' => $this->getStatusMessage($status),
+                        'data' => [
+                            'subscription_id' => $subscription->id,
+                            'status' => $subscription->status,
+                            'payment_status' => $subscription->payment_status,
+                            'order_tracking_id' => $orderTrackingId,
+                        ],
+                    ]);
+                }
 
-            // Return JSON if API request, otherwise redirect for web
-            if ($request->expectsJson() || $request->wantsJson()) {
-                return response()->json([
-                    'code' => $status === 'success' ? 1 : 0,
-                    'status' => 200,
-                    'message' => $this->getStatusMessage($status),
-                    'data' => [
-                        'subscription_id' => $subscription->id,
-                        'status' => $subscription->status,
-                        'payment_status' => $subscription->payment_status,
-                        'order_tracking_id' => $orderTrackingId,
-                    ],
-                ]);
-            } else {
-                // Redirect to frontend with status
-                $frontendUrl = env('APP_FRONTEND_URL', env('APP_URL'));
-                $redirectUrl = "{$frontendUrl}/subscription-result?status={$status}&subscription_id={$subscription->id}";
-                return redirect($redirectUrl);
+                $planName = $subscription->plan->name ?? 'Premium';
+                return match ($status) {
+                    'success' => $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access!"),
+                    'failed' => $this->callbackPage('failed', 'Payment Failed', 'Your payment could not be processed. Please return to the app and try again.'),
+                    default => $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. Please return to the app — your subscription will activate automatically.'),
+                };
+            } catch (\Exception $statusEx) {
+                Log::warning('Callback status check failed, showing pending', ['error' => $statusEx->getMessage()]);
+                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment. Please return to the app — your subscription will activate automatically.');
             }
         } catch (\Exception $e) {
             Log::error('Pesapal subscription callback processing failed', [
@@ -297,7 +303,7 @@ class SubscriptionApiController extends Controller
                 'request' => $request->all()
             ]);
 
-            return $this->callbackError($e->getMessage(), $request);
+            return $this->callbackPage('error', 'Something Went Wrong', 'We encountered an error processing your payment callback. Please return to the app and check your subscription status.');
         }
     }
 
@@ -1112,105 +1118,87 @@ class SubscriptionApiController extends Controller
 
             if (!$orderTrackingId) {
                 Log::error('❌ Pesapal Callback: Missing OrderTrackingId');
-                return $this->callbackError('Invalid callback: Missing tracking ID', $request);
+                return $this->callbackPage('error', 'Invalid Callback', 'The payment callback was missing required tracking information. Please return to the app and try again.');
             }
 
-            // Find subscription
-            $subscription = Subscription::where('pesapal_tracking_id', $orderTrackingId)
-                ->orWhere('pesapal_merchant_reference', $orderMerchantReference)
-                ->first();
+            // Find subscription — try tracking ID first, then merchant reference
+            $subscription = Subscription::where('pesapal_tracking_id', $orderTrackingId)->first();
+
+            if (!$subscription && $orderMerchantReference) {
+                $subscription = Subscription::where('pesapal_merchant_reference', $orderMerchantReference)->first();
+            }
 
             if (!$subscription) {
                 Log::error('❌ Pesapal Callback: Subscription not found', [
                     'tracking_id' => $orderTrackingId,
                     'merchant_ref' => $orderMerchantReference,
                 ]);
-                return $this->callbackError('Subscription not found', $request);
+                return $this->callbackPage('error', 'Subscription Not Found', 'We could not find a matching subscription for this payment. If you were charged, please contact our support team.');
             }
 
             Log::info('📦 Pesapal Callback: Found subscription', [
                 'subscription_id' => $subscription->id,
                 'user_id' => $subscription->user_id,
                 'current_status' => $subscription->status,
+                'current_payment_status' => $subscription->payment_status,
             ]);
 
-            // Get transaction status from Pesapal
-            $statusResult = $this->pesapalService->getTransactionStatus($orderTrackingId);
-
-            if (!$statusResult['success']) {
-                Log::error('❌ Pesapal Callback: Failed to get transaction status');
-                return $this->callbackError('Failed to verify payment status', $request);
+            // If subscription is already active (IPN arrived first), show success immediately
+            if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+                Log::info('✅ Pesapal Callback: Subscription already active (IPN processed first)');
+                $planName = $subscription->plan->name ?? 'Premium';
+                return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!");
             }
 
-            // Update subscription based on payment status
-            $result = $this->pesapalService->updateSubscriptionStatus($orderTrackingId, $statusResult['data']);
+            // Try to get transaction status from Pesapal
+            // IMPORTANT: This can fail if Pesapal hasn't finished processing — that's OK
+            try {
+                $statusResult = $this->pesapalService->getTransactionStatus($orderTrackingId);
 
-            Log::info('✅ Pesapal Callback: Status updated', [
-                'subscription_id' => $subscription->id,
-                'result_status' => $result['status'],
-            ]);
+                if ($statusResult['success']) {
+                    // Update subscription based on payment status
+                    $result = $this->pesapalService->updateSubscriptionStatus($orderTrackingId, $statusResult['data']);
+                    $status = $result['status'];
 
-            // Return a user-friendly HTML page since users come from the mobile app's external browser
-            // The app will check payment status via the PendingSubscriptionScreen
-            $status = $result['status'];
-            $statusEmoji = match ($status) {
-                'success' => '✅',
-                'failed' => '❌',
-                'pending' => '⏳',
-                default => '❓',
-            };
-            $statusTitle = match ($status) {
-                'success' => 'Payment Successful!',
-                'failed' => 'Payment Failed',
-                'pending' => 'Payment Processing',
-                default => 'Payment Status Unknown',
-            };
-            $statusMessage = match ($status) {
-                'success' => 'Your subscription has been activated. You can close this page and return to the app.',
-                'failed' => 'Your payment could not be processed. Please return to the app and try again.',
-                'pending' => 'Your payment is being processed. Please return to the app and check your subscription status.',
-                default => 'Please return to the app and check your subscription status.',
-            };
+                    Log::info('✅ Pesapal Callback: Status updated', [
+                        'subscription_id' => $subscription->id,
+                        'result_status' => $status,
+                    ]);
 
-            Log::info('🔀 Pesapal Callback: Showing status page to user', [
-                'status' => $status,
-                'tracking_id' => $orderTrackingId,
-            ]);
+                    $planName = $subscription->plan->name ?? 'Premium';
 
-            return response()->make("
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset='utf-8'>
-                    <meta name='viewport' content='width=device-width, initial-scale=1'>
-                    <title>{$statusTitle}</title>
-                    <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                               display: flex; justify-content: center; align-items: center; min-height: 100vh; 
-                               margin: 0; background: #1a1a2e; color: #fff; }
-                        .card { text-align: center; padding: 40px; max-width: 400px; 
-                                background: #16213e; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-                        .emoji { font-size: 64px; margin-bottom: 16px; }
-                        h1 { margin: 0 0 12px; font-size: 24px; }
-                        p { color: #a0a0b0; line-height: 1.6; margin: 0; }
-                    </style>
-                </head>
-                <body>
-                    <div class='card'>
-                        <div class='emoji'>{$statusEmoji}</div>
-                        <h1>{$statusTitle}</h1>
-                        <p>{$statusMessage}</p>
-                    </div>
-                </body>
-                </html>
-            ", 200, ['Content-Type' => 'text/html']);
+                    if ($status === 'success') {
+                        return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!");
+                    } elseif ($status === 'failed') {
+                        return $this->callbackPage('failed', 'Payment Failed', 'Your payment could not be processed. Please return to the app and try again with a different payment method.');
+                    } else {
+                        // Payment still processing
+                        return $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. This usually takes a few moments. Please return to the app — your subscription will activate automatically once confirmed.');
+                    }
+                } else {
+                    // Status check failed but that's OK — payment may still be processing
+                    Log::warning('⚠️ Pesapal Callback: Status check failed, showing pending page', [
+                        'error' => $statusResult['error'] ?? 'unknown',
+                    ]);
+                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.');
+                }
+
+            } catch (\Exception $statusException) {
+                // Status check threw an exception — show pending, not error
+                Log::warning('⚠️ Pesapal Callback: Exception during status check, showing pending page', [
+                    'error' => $statusException->getMessage(),
+                    'subscription_id' => $subscription->id,
+                ]);
+                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.');
+            }
+
         } catch (\Exception $e) {
             Log::error('💥 Pesapal Callback: CRITICAL ERROR', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace' => substr($e->getTraceAsString(), 0, 500),
             ]);
 
-            return $this->callbackError('Payment verification failed. Please contact support.', $request);
+            return $this->callbackPage('error', 'Something Went Wrong', 'We encountered an unexpected error while processing your payment callback. Please return to the app and check your subscription status. If you were charged, your subscription will be activated automatically.');
         }
     }
 
@@ -1527,7 +1515,285 @@ class SubscriptionApiController extends Controller
     }
 
     /**
-     * Helper: Return callback error
+     * Helper: Return branded callback page for all statuses
+     * Matches the app's dark theme with green/orange branding
+     * 
+     * @param string $status 'success' | 'failed' | 'pending' | 'error'
+     * @param string $title Page title
+     * @param string $message Body message
+     * @return \Illuminate\Http\Response
+     */
+    private function callbackPage(string $status, string $title, string $message)
+    {
+        $escapedTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+        $escapedMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+
+        // Status-specific styling
+        $config = match ($status) {
+            'success' => [
+                'icon' => '<svg width="80" height="80" viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="40" fill="#086433" opacity="0.15"/><circle cx="40" cy="40" r="30" fill="#086433" opacity="0.25"/><path d="M26 40L35 49L54 30" stroke="#47C757" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                'accent' => '#47C757',
+                'glow' => 'rgba(8, 100, 51, 0.3)',
+                'badge' => 'Subscription Active',
+                'badgeBg' => 'rgba(71, 199, 87, 0.15)',
+                'badgeColor' => '#47C757',
+            ],
+            'pending' => [
+                'icon' => '<svg width="80" height="80" viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="40" fill="#FF9800" opacity="0.12"/><circle cx="40" cy="40" r="30" fill="#FF9800" opacity="0.2"/><circle cx="40" cy="40" r="14" stroke="#FF9800" stroke-width="3" fill="none"/><path d="M40 32V40L46 44" stroke="#FF9800" stroke-width="3" stroke-linecap="round"/></svg>',
+                'accent' => '#FF9800',
+                'glow' => 'rgba(255, 152, 0, 0.2)',
+                'badge' => 'Verifying Payment',
+                'badgeBg' => 'rgba(255, 152, 0, 0.15)',
+                'badgeColor' => '#FF9800',
+            ],
+            'failed' => [
+                'icon' => '<svg width="80" height="80" viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="40" fill="#FF5722" opacity="0.12"/><circle cx="40" cy="40" r="30" fill="#FF5722" opacity="0.2"/><path d="M30 30L50 50M50 30L30 50" stroke="#FF5722" stroke-width="4" stroke-linecap="round"/></svg>',
+                'accent' => '#FF5722',
+                'glow' => 'rgba(255, 87, 34, 0.2)',
+                'badge' => 'Payment Failed',
+                'badgeBg' => 'rgba(255, 87, 34, 0.15)',
+                'badgeColor' => '#FF5722',
+            ],
+            default => [ // error
+                'icon' => '<svg width="80" height="80" viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="40" fill="#FF9800" opacity="0.12"/><circle cx="40" cy="40" r="30" fill="#FF9800" opacity="0.2"/><path d="M40 28V44" stroke="#FF9800" stroke-width="4" stroke-linecap="round"/><circle cx="40" cy="52" r="2.5" fill="#FF9800"/></svg>',
+                'accent' => '#FF9800',
+                'glow' => 'rgba(255, 152, 0, 0.2)',
+                'badge' => 'Attention Required',
+                'badgeBg' => 'rgba(255, 152, 0, 0.15)',
+                'badgeColor' => '#FF9800',
+            ],
+        };
+
+        $icon = $config['icon'];
+        $accent = $config['accent'];
+        $glow = $config['glow'];
+        $badge = $config['badge'];
+        $badgeBg = $config['badgeBg'];
+        $badgeColor = $config['badgeColor'];
+
+        // Pre-compute dynamic values for heredoc
+        $pendingClass = ($status === 'pending') ? ' pulse' : '';
+        $ctaHtml = match ($status) {
+            'success' => '<strong>You\'re all set!</strong><br>Close this page and return to the app to start watching.',
+            'pending' => '<span class="spinner"></span> <strong>Checking payment status...</strong><br>This page will update automatically. You can also close it and check in the app.',
+            'failed' => '<strong>Need help?</strong><br>Return to the app and try a different payment method, or contact our support team.',
+            default => '<strong>Return to the app</strong><br>Check your subscription status in the app. If you were charged, your subscription will activate automatically.',
+        };
+
+        // Auto-refresh for pending status (check every 10 seconds, up to 3 times)
+        $autoRefresh = ($status === 'pending')
+            ? "<script>
+                let refreshCount = 0;
+                const maxRefresh = 3;
+                setTimeout(function tick() {
+                    refreshCount++;
+                    if (refreshCount <= maxRefresh) {
+                        location.reload();
+                    }
+                }, 10000);
+               </script>"
+            : '';
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>{$escapedTitle} — UGFlix</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #0D0D1A;
+            color: #FFFFFF;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+        }
+
+        /* Logo */
+        .logo-section {
+            margin-bottom: 32px;
+        }
+        .logo-text {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .logo-ug { color: #FFFFFF; }
+        .logo-flix { color: #47C757; }
+        .logo-tagline {
+            font-size: 11px;
+            color: #6B7280;
+            margin-top: 4px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Status Card */
+        .card {
+            background: linear-gradient(145deg, #151526, #1A1A2E);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 20px;
+            padding: 40px 32px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px {$glow};
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, {$accent}, transparent);
+        }
+
+        /* Icon */
+        .status-icon {
+            margin-bottom: 24px;
+        }
+
+        /* Badge */
+        .status-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            background: {$badgeBg};
+            color: {$badgeColor};
+            border: 1px solid {$badgeColor}33;
+            margin-bottom: 20px;
+        }
+
+        /* Title */
+        .status-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #FFFFFF;
+            line-height: 1.3;
+        }
+
+        /* Message */
+        .status-message {
+            font-size: 15px;
+            color: #9CA3AF;
+            line-height: 1.7;
+            margin-bottom: 28px;
+        }
+
+        /* Divider */
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+            margin: 0 -32px 24px;
+        }
+
+        /* CTA */
+        .cta-text {
+            font-size: 13px;
+            color: #6B7280;
+            line-height: 1.6;
+        }
+        .cta-text strong {
+            color: #9CA3AF;
+        }
+
+        /* Spinner for pending */
+        .spinner-wrap {
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,152,0,0.2);
+            border-top-color: #FF9800;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 32px;
+            font-size: 12px;
+            color: #4B5563;
+        }
+        .footer a {
+            color: #6B7280;
+            text-decoration: none;
+        }
+
+        /* Pulse animation for pending icon */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .pulse { animation: pulse 2s ease-in-out infinite; }
+    </style>
+    {$autoRefresh}
+</head>
+<body>
+    <div class="container">
+        <div class="logo-section">
+            <div class="logo-text">
+                <span class="logo-ug">UG</span><span class="logo-flix">Flix</span>
+            </div>
+            <div class="logo-tagline">Premium Entertainment</div>
+        </div>
+
+        <div class="card">
+            <div class="status-icon{$pendingClass}">
+                {$icon}
+            </div>
+
+            <div class="status-badge">{$badge}</div>
+
+            <h1 class="status-title">{$escapedTitle}</h1>
+            <p class="status-message">{$escapedMessage}</p>
+
+            <div class="divider"></div>
+
+            <p class="cta-text">
+                {$ctaHtml}
+            </p>
+        </div>
+
+        <div class="footer">
+            &copy; 2026 UGFlix &middot; Powered by Pesapal
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+        return response()->make($html, 200, ['Content-Type' => 'text/html; charset=utf-8']);
+    }
+
+    /**
+     * Legacy: Return callback error (kept for backward compatibility)
+     * Now delegates to callbackPage
      */
     private function callbackError($message, $request = null)
     {
@@ -1538,38 +1804,9 @@ class SubscriptionApiController extends Controller
                 'message' => $message,
                 'data' => null,
             ], 500);
-        } else {
-            // Return a user-friendly error page for mobile app users
-            $escapedMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
-            return response()->make("
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset='utf-8'>
-                    <meta name='viewport' content='width=device-width, initial-scale=1'>
-                    <title>Payment Error</title>
-                    <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                               display: flex; justify-content: center; align-items: center; min-height: 100vh; 
-                               margin: 0; background: #1a1a2e; color: #fff; }
-                        .card { text-align: center; padding: 40px; max-width: 400px; 
-                                background: #16213e; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-                        .emoji { font-size: 64px; margin-bottom: 16px; }
-                        h1 { margin: 0 0 12px; font-size: 24px; }
-                        p { color: #a0a0b0; line-height: 1.6; margin: 0; }
-                    </style>
-                </head>
-                <body>
-                    <div class='card'>
-                        <div class='emoji'>⚠️</div>
-                        <h1>Payment Error</h1>
-                        <p>{$escapedMessage}</p>
-                        <p style='margin-top: 16px;'>Please return to the app and try again.</p>
-                    </div>
-                </body>
-                </html>
-            ", 200, ['Content-Type' => 'text/html']);
         }
+
+        return $this->callbackPage('error', 'Payment Error', $message);
     }
 
     /**
