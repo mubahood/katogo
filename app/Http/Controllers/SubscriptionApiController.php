@@ -122,25 +122,34 @@ class SubscriptionApiController extends Controller
                 // Lock user row to prevent race conditions
                 $user->lockForUpdate();
 
-                // Cancel any stale pending subscriptions
+                // Cancel any stale pending subscriptions for this user
+                // Includes all pending subs (not just recent 2 hours) to clean up old dead ones
                 $pendingSubscriptions = $user->subscriptions()
                     ->whereIn('payment_status', ['Pending', 'Processing'])
                     ->where('status', 'Pending')
-                    ->where('created_at', '>', now()->subHours(2))
                     ->get();
 
                 foreach ($pendingSubscriptions as $pendingSub) {
-                    Log::info('Cancelling stale pending subscription', [
-                        'old_subscription_id' => $pendingSub->id,
-                        'user_id' => $user->id,
-                        'age_minutes' => now()->diffInMinutes($pendingSub->created_at),
-                    ]);
+                    $hasPaymentUrl = !empty($pendingSub->payment_url);
+                    $ageMinutes = now()->diffInMinutes($pendingSub->created_at);
+                    
+                    // Cancel if: no payment URL (never got to Pesapal), OR older than 2 hours with no completion
+                    if (!$hasPaymentUrl || $ageMinutes > 120) {
+                        Log::info('Cancelling stale pending subscription', [
+                            'old_subscription_id' => $pendingSub->id,
+                            'user_id' => $user->id,
+                            'age_minutes' => $ageMinutes,
+                            'had_payment_url' => $hasPaymentUrl,
+                        ]);
 
-                    $pendingSub->status = 'Cancelled';
-                    $pendingSub->payment_status = 'Failed';
-                    $pendingSub->cancelled_at = now();
-                    $pendingSub->cancelled_reason = 'Automatically cancelled: new subscription attempt';
-                    $pendingSub->save();
+                        $pendingSub->status = 'Cancelled';
+                        $pendingSub->payment_status = 'Failed';
+                        $pendingSub->cancelled_at = now();
+                        $pendingSub->cancelled_reason = $hasPaymentUrl 
+                            ? 'Automatically cancelled: new subscription attempt (payment not completed)'
+                            : 'Automatically cancelled: payment initialization never completed';
+                        $pendingSub->save();
+                    }
                 }
 
                 // Get plan (active plans only)
@@ -225,15 +234,28 @@ class SubscriptionApiController extends Controller
                 'trace' => substr($e->getTraceAsString(), 0, 500),
             ]);
 
-            // Return user-friendly message, not internal error details in production
-            $message = app()->environment('production')
-                ? 'Unable to process payment at this time. Please try again later.'
-                : $e->getMessage();
+            // CRITICAL: Clean up the subscription if it was created but payment init failed
+            if (isset($subscription) && $subscription && $subscription->id) {
+                if (empty($subscription->pesapal_tracking_id)) {
+                    $subscription->status = 'Failed';
+                    $subscription->payment_status = 'Failed';
+                    $subscription->failed_at = now();
+                    $subscription->payment_failure_reason = 'Payment initialization failed: ' . $e->getMessage();
+                    $subscription->cancelled_reason = 'Payment initialization failed';
+                    $subscription->save();
 
+                    Log::warning('Subscription marked as Failed due to payment init failure', [
+                        'subscription_id' => $subscription->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // Return user-friendly message
             return response()->json([
                 'code' => 0,
                 'status' => 500,
-                'message' => $message,
+                'message' => 'Unable to process payment at this time. Please try again later.',
                 'data' => null,
             ], 500);
         }

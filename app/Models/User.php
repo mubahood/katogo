@@ -583,15 +583,13 @@ class User extends Administrator implements JWTSubject
 
         if ($activeSubscription && $activeSubscription->end_date_time > now()) {
             // EXTEND: Add days to existing subscription
-            $startDate = \Carbon\Carbon::parse($activeSubscription->end_date_time);
-            $endDate = $startDate->copy()->addDays($plan->duration_days);
+            // NOTE: start/end dates are calculated AFTER payment succeeds
+            // The updateSubscriptionStatus() method sets these when payment is confirmed
 
             $subscription = new \App\Models\Subscription([
                 'user_id' => $this->id,
                 'plan_id' => $plan->id,
                 'days' => $plan->duration_days,
-                'start_date_time' => $startDate,
-                'end_date_time' => $endDate,
                 'amount_paid' => $plan->getActualPrice(),
                 'currency' => $plan->currency,
                 'is_extension' => true,
@@ -601,15 +599,13 @@ class User extends Administrator implements JWTSubject
             ]);
         } else {
             // NEW: Create fresh subscription
-            $startDate = now();
-            $endDate = $startDate->copy()->addDays($plan->duration_days);
+            // NOTE: start/end dates are set AFTER payment succeeds, not at creation
+            // The updateSubscriptionStatus() method sets these when payment is confirmed
 
             $subscription = new \App\Models\Subscription([
                 'user_id' => $this->id,
                 'plan_id' => $plan->id,
                 'days' => $plan->duration_days,
-                'start_date_time' => $startDate,
-                'end_date_time' => $endDate,
                 'amount_paid' => $plan->getActualPrice(),
                 'currency' => $plan->currency,
                 'status' => 'Pending', // Will be activated after payment

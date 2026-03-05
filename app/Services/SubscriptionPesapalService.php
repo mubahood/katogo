@@ -782,9 +782,23 @@ class SubscriptionPesapalService
                 $subscription->status = 'Active';
                 $subscription->payment_status = 'Completed';
                 
-                // Only set start_date_time if NOT already active
+                // Only set start_date_time if NOT already active and not already set
                 if (!$isAlreadyActive && !$subscription->start_date_time) {
-                    $subscription->start_date_time = now();
+                    // For extensions, start from end of the subscription being extended
+                    if ($subscription->is_extension && $subscription->extended_from_id) {
+                        $parentSub = Subscription::find($subscription->extended_from_id);
+                        if ($parentSub && $parentSub->end_date_time && $parentSub->end_date_time > now()) {
+                            $subscription->start_date_time = $parentSub->end_date_time;
+                            Log::info('📅 Pesapal: Setting extension start_date_time from parent', [
+                                'parent_id' => $parentSub->id,
+                                'start_date_time' => $subscription->start_date_time,
+                            ]);
+                        } else {
+                            $subscription->start_date_time = now();
+                        }
+                    } else {
+                        $subscription->start_date_time = now();
+                    }
                     Log::info('📅 Pesapal: Setting start_date_time', [
                         'start_date_time' => $subscription->start_date_time,
                     ]);
