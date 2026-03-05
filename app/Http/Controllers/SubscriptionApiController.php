@@ -1170,7 +1170,30 @@ class SubscriptionApiController extends Controller
                     if ($status === 'success') {
                         return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!");
                     } elseif ($status === 'failed') {
-                        return $this->callbackPage('failed', 'Payment Failed', 'Your payment could not be processed. Please return to the app and try again with a different payment method.');
+                        // Build detailed API response message for user
+                        $apiResponse = $result['api_response'] ?? [];
+                        $apiDetail = $apiResponse['payment_status'] ?? 'Failed';
+                        if (!empty($apiResponse['description'])) {
+                            $apiDetail .= ' — ' . $apiResponse['description'];
+                        }
+                        if (!empty($apiResponse['message'])) {
+                            $apiDetail .= ' (' . $apiResponse['message'] . ')';
+                        }
+                        if (!empty($apiResponse['payment_method'])) {
+                            $apiDetail .= ' via ' . $apiResponse['payment_method'];
+                        }
+
+                        // Reload subscription to get payment_url for retry
+                        $subscription->refresh();
+                        $retryUrl = $subscription->payment_url;
+
+                        return $this->callbackPage(
+                            'failed',
+                            'Payment Failed',
+                            'Your payment could not be processed. Please try again or use a different payment method.',
+                            $apiDetail,
+                            $retryUrl
+                        );
                     } else {
                         // Payment still processing
                         return $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. This usually takes a few moments. Please return to the app — your subscription will activate automatically once confirmed.');
@@ -1523,10 +1546,11 @@ class SubscriptionApiController extends Controller
      * @param string $message Body message
      * @return \Illuminate\Http\Response
      */
-    private function callbackPage(string $status, string $title, string $message)
+    private function callbackPage(string $status, string $title, string $message, ?string $apiDetail = null, ?string $retryUrl = null)
     {
         $escapedTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
         $escapedMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+        $escapedApiDetail = $apiDetail ? htmlspecialchars($apiDetail, ENT_QUOTES, 'UTF-8') : null;
 
         // Status-specific styling
         $config = match ($status) {
@@ -1573,10 +1597,47 @@ class SubscriptionApiController extends Controller
 
         // Pre-compute dynamic values for heredoc
         $pendingClass = ($status === 'pending') ? ' pulse' : '';
+
+        // Build API detail box HTML if we have API response detail
+        $apiDetailHtml = '';
+        if ($escapedApiDetail && in_array($status, ['failed', 'error'])) {
+            $apiDetailHtml = <<<APIBOX
+            <div class="api-detail-box">
+                <div class="api-detail-label">Payment Gateway Response</div>
+                <div class="api-detail-text">{$escapedApiDetail}</div>
+            </div>
+APIBOX;
+        }
+
+        // Build retry button HTML
+        $retryButtonHtml = '';
+        if (in_array($status, ['failed', 'error'])) {
+            if ($retryUrl) {
+                $escapedRetryUrl = htmlspecialchars($retryUrl, ENT_QUOTES, 'UTF-8');
+                $retryButtonHtml = <<<RETRY
+            <a href="{$escapedRetryUrl}" class="retry-button">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="vertical-align: middle; margin-right: 8px;">
+                    <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/>
+                </svg>
+                Retry Payment
+            </a>
+RETRY;
+            }
+            // Always show "Return to App" as secondary action
+            $retryButtonHtml .= <<<CLOSEBTN
+            <a href="javascript:void(0)" onclick="window.close(); setTimeout(function(){ document.querySelector('.close-hint').style.display='block'; }, 300);" class="close-button">
+                Return to App
+            </a>
+            <div class="close-hint" style="display:none; margin-top: 8px; font-size: 12px; color: #6B7280;">
+                Close this tab and reopen the app to try again.
+            </div>
+CLOSEBTN;
+        }
+
         $ctaHtml = match ($status) {
             'success' => '<strong>You\'re all set!</strong><br>Close this page and return to the app to start watching.',
             'pending' => '<span class="spinner"></span> <strong>Checking payment status...</strong><br>This page will update automatically. You can also close it and check in the app.',
-            'failed' => '<strong>Need help?</strong><br>Return to the app and try a different payment method, or contact our support team.',
+            'failed' => '<strong>What happened?</strong><br>The payment provider could not process your transaction. You can retry the same payment or return to the app and try a different payment method.',
             default => '<strong>Return to the app</strong><br>Check your subscription status in the app. If you were charged, your subscription will activate automatically.',
         };
 
@@ -1745,6 +1806,82 @@ class SubscriptionApiController extends Controller
             text-decoration: none;
         }
 
+        /* API Detail Box */
+        .api-detail-box {
+            background: rgba(255, 87, 34, 0.08);
+            border: 1px solid rgba(255, 87, 34, 0.2);
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .api-detail-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #FF5722;
+            margin-bottom: 6px;
+        }
+        .api-detail-text {
+            font-size: 13px;
+            color: #E0E0E0;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        /* Retry Button */
+        .retry-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 14px 24px;
+            margin-top: 16px;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #086433, #0a7a3e);
+            color: #FFFFFF;
+            font-size: 15px;
+            font-weight: 700;
+            text-decoration: none;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(8, 100, 51, 0.3);
+            letter-spacing: 0.3px;
+        }
+        .retry-button:hover {
+            background: linear-gradient(135deg, #0a7a3e, #0c9148);
+            box-shadow: 0 6px 20px rgba(8, 100, 51, 0.45);
+            transform: translateY(-1px);
+        }
+        .retry-button:active {
+            transform: translateY(0);
+        }
+
+        /* Close/Return Button */
+        .close-button {
+            display: inline-block;
+            width: 100%;
+            padding: 12px 24px;
+            margin-top: 4px;
+            background: transparent;
+            color: #9CA3AF;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .close-button:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: #FFFFFF;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
         /* Pulse animation for pending icon */
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -1773,11 +1910,15 @@ class SubscriptionApiController extends Controller
             <h1 class="status-title">{$escapedTitle}</h1>
             <p class="status-message">{$escapedMessage}</p>
 
+            {$apiDetailHtml}
+
             <div class="divider"></div>
 
             <p class="cta-text">
                 {$ctaHtml}
             </p>
+
+            {$retryButtonHtml}
         </div>
 
         <div class="footer">

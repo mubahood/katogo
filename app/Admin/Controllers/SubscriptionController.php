@@ -899,7 +899,7 @@ document.addEventListener("DOMContentLoaded", function() {
         $grid->model()->orderBy('id', 'desc');
 
         // Quick search
-        $grid->quickSearch(['user.name', 'user.email', 'pesapal_merchant_reference']);
+        $grid->quickSearch(['user.name', 'user.email', 'pesapal_merchant_reference', 'payment_failure_reason']);
 
         // Filters
         $grid->filter(function ($filter) {
@@ -1034,6 +1034,13 @@ document.addEventListener("DOMContentLoaded", function() {
                 return "<span class='badge badge-{$style[0]}'>{$style[1]} {$payment_status}</span>";
             })->sortable();
 
+        $grid->column('payment_failure_reason', __('⚠️ Failure Reason'))
+            ->display(function ($value) {
+                if (!$value) return '-';
+                $short = \Illuminate\Support\Str::limit($value, 80);
+                return "<span class='text-danger' title='" . htmlspecialchars($value, ENT_QUOTES) . "'>⚠️ {$short}</span>";
+            })->hide();
+
         $grid->column('days_remaining', __('⏱️ Days Left'))
             ->display(function ($value) {
                 $model = $this;
@@ -1158,6 +1165,11 @@ document.addEventListener("DOMContentLoaded", function() {
             'Refunded' => 'default',
         ]);
 
+        $show->field('payment_failure_reason', __('⚠️ Failure Reason'))->as(function ($value) {
+            if (!$value) return '—';
+            return "⚠️ " . $value;
+        })->style('word-break: break-word; color: #dc3545;');
+
         $show->divider('📆 Timeline');
 
         $show->field('start_date_time', __('Start Date'))->as(function ($value) {
@@ -1260,6 +1272,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 ])
                 ->default('Pending')
                 ->rules('required');
+
+            $form->textarea('payment_failure_reason', __('⚠️ Failure Reason'))
+                ->rows(3)
+                ->help('Recorded automatically when a payment fails. Contains the payment gateway response for follow-up.');
 
             $form->select('app_type', __('📱 App Type'))
                 ->options([

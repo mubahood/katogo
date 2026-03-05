@@ -818,6 +818,12 @@ class SubscriptionPesapalService
                     Log::info('🔄 Pesapal: Clearing failed_at timestamp');
                 }
 
+                // Clear payment_failure_reason on success (in case this was a retry after failure)
+                if ($subscription->payment_failure_reason) {
+                    $subscription->payment_failure_reason = null;
+                    Log::info('🔄 Pesapal: Clearing payment_failure_reason (retry succeeded)');
+                }
+
                 // Update pesapal response data
                 $subscription->pesapal_response = array_merge(
                     $subscription->pesapal_response ?? [],
@@ -912,11 +918,37 @@ class SubscriptionPesapalService
                     'status_code' => $statusCode,
                 ]);
 
+                // Build detailed failure reason for admin follow-up
+                $failureDetails = [];
+                $failureDetails[] = 'Status: ' . ($paymentStatus ?? 'Unknown');
+                $failureDetails[] = 'Status Code: ' . ($statusCode ?? 'N/A');
+                if (!empty($statusData['payment_method'])) {
+                    $failureDetails[] = 'Payment Method: ' . $statusData['payment_method'];
+                }
+                if (!empty($statusData['description'])) {
+                    $failureDetails[] = 'Description: ' . $statusData['description'];
+                }
+                if (!empty($statusData['message'])) {
+                    $failureDetails[] = 'Message: ' . $statusData['message'];
+                }
+                if (!empty($statusData['error'])) {
+                    $failureDetails[] = 'Error: ' . (is_array($statusData['error']) ? json_encode($statusData['error']) : $statusData['error']);
+                }
+                if (!empty($statusData['confirmation_code'])) {
+                    $failureDetails[] = 'Confirmation Code: ' . $statusData['confirmation_code'];
+                }
+                if (!empty($statusData['payment_account'])) {
+                    $failureDetails[] = 'Payment Account: ' . $statusData['payment_account'];
+                }
+                $failureDetails[] = 'Timestamp: ' . now()->toDateTimeString();
+                $failureReasonText = implode(' | ', $failureDetails);
+
                 // Update subscription
                 $subscription->status = 'Failed';
                 $subscription->payment_status = 'Failed';
                 $subscription->failed_at = now();
                 $subscription->cancelled_reason = 'Payment failed: ' . $paymentStatus;
+                $subscription->payment_failure_reason = $failureReasonText;
                 $subscription->pesapal_response = array_merge(
                     $subscription->pesapal_response ?? [],
                     ['status_check' => $statusData]
@@ -926,6 +958,7 @@ class SubscriptionPesapalService
                 Log::info('💾 Pesapal: Subscription marked as FAILED', [
                     'subscription_id' => $subscription->id,
                     'failed_at' => $subscription->failed_at,
+                    'failure_reason' => $failureReasonText,
                 ]);
 
                 // Update transaction
@@ -948,6 +981,14 @@ class SubscriptionPesapalService
                     'subscription' => $subscription->fresh(['plan', 'transactions']),
                     'transaction' => $transaction,
                     'message' => 'Payment failed: ' . $paymentStatus,
+                    'failure_reason' => $failureReasonText,
+                    'api_response' => [
+                        'payment_status' => $paymentStatus,
+                        'status_code' => $statusCode,
+                        'payment_method' => $statusData['payment_method'] ?? null,
+                        'description' => $statusData['description'] ?? null,
+                        'message' => $statusData['message'] ?? null,
+                    ],
                 ];
 
             } 

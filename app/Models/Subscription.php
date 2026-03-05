@@ -36,6 +36,7 @@ class Subscription extends Model
         'extended_from_id',
         'cancelled_at',
         'cancelled_reason',
+        'payment_failure_reason',
         'cancelled_by',
         'ip_address',
         'user_agent',
