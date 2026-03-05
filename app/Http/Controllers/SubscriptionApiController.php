@@ -1101,20 +1101,60 @@ class SubscriptionApiController extends Controller
                 'result_status' => $result['status'],
             ]);
 
-            // Redirect to frontend with status
-            $frontendUrl = env('APP_FRONTEND_URL', env('APP_URL'));
-            $redirectUrl = match ($result['status']) {
-                'success' => "{$frontendUrl}/subscription/callback?status=success&tracking_id={$orderTrackingId}",
-                'failed' => "{$frontendUrl}/subscription/callback?status=failed&tracking_id={$orderTrackingId}",
-                'pending' => "{$frontendUrl}/subscription/callback?status=pending&tracking_id={$orderTrackingId}",
-                default => "{$frontendUrl}/subscription/callback?status=unknown&tracking_id={$orderTrackingId}",
+            // Return a user-friendly HTML page since users come from the mobile app's external browser
+            // The app will check payment status via the PendingSubscriptionScreen
+            $status = $result['status'];
+            $statusEmoji = match ($status) {
+                'success' => '✅',
+                'failed' => '❌',
+                'pending' => '⏳',
+                default => '❓',
+            };
+            $statusTitle = match ($status) {
+                'success' => 'Payment Successful!',
+                'failed' => 'Payment Failed',
+                'pending' => 'Payment Processing',
+                default => 'Payment Status Unknown',
+            };
+            $statusMessage = match ($status) {
+                'success' => 'Your subscription has been activated. You can close this page and return to the app.',
+                'failed' => 'Your payment could not be processed. Please return to the app and try again.',
+                'pending' => 'Your payment is being processed. Please return to the app and check your subscription status.',
+                default => 'Please return to the app and check your subscription status.',
             };
 
-            Log::info('🔀 Pesapal Callback: Redirecting to frontend', [
-                'redirect_url' => $redirectUrl,
+            Log::info('🔀 Pesapal Callback: Showing status page to user', [
+                'status' => $status,
+                'tracking_id' => $orderTrackingId,
             ]);
 
-            return redirect($redirectUrl);
+            return response()->make("
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset='utf-8'>
+                    <meta name='viewport' content='width=device-width, initial-scale=1'>
+                    <title>{$statusTitle}</title>
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                               display: flex; justify-content: center; align-items: center; min-height: 100vh; 
+                               margin: 0; background: #1a1a2e; color: #fff; }
+                        .card { text-align: center; padding: 40px; max-width: 400px; 
+                                background: #16213e; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+                        .emoji { font-size: 64px; margin-bottom: 16px; }
+                        h1 { margin: 0 0 12px; font-size: 24px; }
+                        p { color: #a0a0b0; line-height: 1.6; margin: 0; }
+                    </style>
+                </head>
+                <body>
+                    <div class='card'>
+                        <div class='emoji'>{$statusEmoji}</div>
+                        <h1>{$statusTitle}</h1>
+                        <p>{$statusMessage}</p>
+                    </div>
+                </body>
+                </html>
+            ", 200, ['Content-Type' => 'text/html']);
         } catch (\Exception $e) {
             Log::error('💥 Pesapal Callback: CRITICAL ERROR', [
                 'error' => $e->getMessage(),
@@ -1450,9 +1490,36 @@ class SubscriptionApiController extends Controller
                 'data' => null,
             ], 500);
         } else {
-            $frontendUrl = env('APP_FRONTEND_URL', env('APP_URL'));
-            $redirectUrl = "{$frontendUrl}/subscription/callback?status=error&message=" . urlencode($message);
-            return redirect($redirectUrl);
+            // Return a user-friendly error page for mobile app users
+            $escapedMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+            return response()->make("
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset='utf-8'>
+                    <meta name='viewport' content='width=device-width, initial-scale=1'>
+                    <title>Payment Error</title>
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                               display: flex; justify-content: center; align-items: center; min-height: 100vh; 
+                               margin: 0; background: #1a1a2e; color: #fff; }
+                        .card { text-align: center; padding: 40px; max-width: 400px; 
+                                background: #16213e; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+                        .emoji { font-size: 64px; margin-bottom: 16px; }
+                        h1 { margin: 0 0 12px; font-size: 24px; }
+                        p { color: #a0a0b0; line-height: 1.6; margin: 0; }
+                    </style>
+                </head>
+                <body>
+                    <div class='card'>
+                        <div class='emoji'>⚠️</div>
+                        <h1>Payment Error</h1>
+                        <p>{$escapedMessage}</p>
+                        <p style='margin-top: 16px;'>Please return to the app and try again.</p>
+                    </div>
+                </body>
+                </html>
+            ", 200, ['Content-Type' => 'text/html']);
         }
     }
 }

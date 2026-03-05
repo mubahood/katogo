@@ -20,14 +20,28 @@ class SubscriptionPesapalService
     private $baseUrl;
     private $ipnUrl;
     private $callbackUrl;
+    private $appBaseUrl;
 
     public function __construct()
     {
         $this->consumerKey = env('PESAPAL_CONSUMER_KEY');
         $this->consumerSecret = env('PESAPAL_CONSUMER_SECRET');
         $this->baseUrl = env('PESAPAL_PRODUCTION_URL', 'https://pay.pesapal.com/v3');
-        $this->ipnUrl = env('PESAPAL_IPN_URL', url('/api/subscriptions/pesapal/ipn'));
-        $this->callbackUrl = env('PESAPAL_CALLBACK_URL', url('/api/subscriptions/pesapal/callback'));
+        
+        // Use APP_PRODUCTION_URL for externally-reachable URLs (not APP_URL which may be localhost)
+        $this->appBaseUrl = env('APP_PRODUCTION_URL', env('APP_URL', 'https://katogo.schooldynamics.ug'));
+        
+        // CRITICAL FIX: Always construct the correct IPN and callback URLs
+        // The IPN URL MUST match the route: /api/subscriptions/pesapal/ipn
+        // The callback URL MUST match the route: /api/subscriptions/pesapal/callback
+        $this->ipnUrl = rtrim($this->appBaseUrl, '/') . '/api/subscriptions/pesapal/ipn';
+        $this->callbackUrl = rtrim($this->appBaseUrl, '/') . '/api/subscriptions/pesapal/callback';
+        
+        Log::info('Pesapal Service initialized', [
+            'ipn_url' => $this->ipnUrl,
+            'callback_url' => $this->callbackUrl,
+            'base_url' => $this->baseUrl,
+        ]);
     }
 
     /**
@@ -60,12 +74,24 @@ class SubscriptionPesapalService
             ]);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 
             $response = curl_exec($ch);
+            $curlErrno = curl_errno($ch);
+            $curlError = curl_error($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
 
+            // Check for curl errors (network failure, SSL issues, timeout)
+            if ($curlErrno !== 0) {
+                throw new \Exception("Pesapal API connection failed (curl error {$curlErrno}): {$curlError}");
+            }
+
             $data = json_decode($response, true);
+            
+            if ($data === null && $response !== 'null') {
+                throw new \Exception('Pesapal API returned invalid JSON. HTTP ' . $httpCode . '. Response: ' . substr($response, 0, 200));
+            }
 
             if ($httpCode === 200 && isset($data['token'])) {
                 $token = $data['token'];
@@ -118,12 +144,23 @@ class SubscriptionPesapalService
             ]);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 
             $response = curl_exec($ch);
+            $curlErrno = curl_errno($ch);
+            $curlError = curl_error($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
 
+            if ($curlErrno !== 0) {
+                throw new \Exception("IPN registration connection failed (curl error {$curlErrno}): {$curlError}");
+            }
+
             $data = json_decode($response, true);
+            
+            if ($data === null && $response !== 'null') {
+                throw new \Exception('IPN registration returned invalid JSON. HTTP ' . $httpCode);
+            }
 
             if ($httpCode === 200 && isset($data['ipn_id'])) {
                 Log::info('Pesapal Subscription: IPN registered successfully', [
@@ -163,7 +200,21 @@ class SubscriptionPesapalService
     {
         try {
             $token = $this->authenticate();
-            $callbackUrl = $callbackUrl ?: $this->callbackUrl;
+            
+            // CRITICAL FIX: Always use the correct callback URL that matches the route
+            // The Flutter app was sending just the base URL without the callback path
+            // which caused Pesapal to redirect users to the homepage instead of the callback handler
+            // Only allow override if it contains the full callback path
+            if ($callbackUrl && strpos($callbackUrl, '/api/subscriptions/pesapal/callback') !== false) {
+                // Valid callback URL override
+            } else {
+                $callbackUrl = $this->callbackUrl;
+            }
+            
+            Log::info('Pesapal: Using callback URL', [
+                'callback_url' => $callbackUrl,
+                'original_request_url' => func_get_args()[2] ?? 'none',
+            ]);
 
             // Get or register IPN
             if (!$notificationId) {
@@ -206,12 +257,31 @@ class SubscriptionPesapalService
             ]);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 
             $response = curl_exec($ch);
+            $curlErrno = curl_errno($ch);
+            $curlError = curl_error($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
 
+            if ($curlErrno !== 0) {
+                throw new \Exception("Payment submission connection failed (curl error {$curlErrno}): {$curlError}");
+            }
+
             $data = json_decode($response, true);
+            
+            if ($data === null && $response !== 'null') {
+                throw new \Exception('Payment submission returned invalid JSON. HTTP ' . $httpCode . '. Response: ' . substr($response ?? '', 0, 200));
+            }
+
+            Log::info('Pesapal Subscription: SubmitOrderRequest response', [
+                'http_code' => $httpCode,
+                'has_tracking_id' => isset($data['order_tracking_id']),
+                'has_redirect_url' => isset($data['redirect_url']),
+                'callback_url_sent' => $callbackUrl,
+                'ipn_notification_id' => $notificationId,
+            ]);
 
             if ($httpCode === 200 && isset($data['order_tracking_id'])) {
                 // Update subscription with Pesapal details
@@ -280,12 +350,23 @@ class SubscriptionPesapalService
             ]);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 
             $response = curl_exec($ch);
+            $curlErrno = curl_errno($ch);
+            $curlError = curl_error($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
 
+            if ($curlErrno !== 0) {
+                throw new \Exception("Transaction status check connection failed (curl error {$curlErrno}): {$curlError}");
+            }
+
             $data = json_decode($response, true);
+            
+            if ($data === null && $response !== 'null') {
+                throw new \Exception('Transaction status returned invalid JSON. HTTP ' . $httpCode);
+            }
 
             if ($httpCode === 200) {
                 Log::info('Pesapal Subscription: Transaction status retrieved', [
