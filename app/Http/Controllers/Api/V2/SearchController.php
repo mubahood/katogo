@@ -86,7 +86,6 @@ class SearchController extends Controller
 
         // ── Step 2: Also search in movie_models titles (first episodes) ──
         $titleMatchSeriesIds = MovieModel::where('type', 'Series')
-            ->where('status', 'Active')
             ->where('is_first_episode', 'yes')
             ->where(function ($q) use ($searchTerm) {
                 $q->where('title', 'LIKE', '%' . $searchTerm . '%')
@@ -97,6 +96,13 @@ class SearchController extends Controller
             ->filter()
             ->unique()
             ->toArray();
+
+        // Verify these series are active
+        if (!empty($titleMatchSeriesIds)) {
+            $titleMatchSeriesIds = SeriesMovie::whereIn('id', $titleMatchSeriesIds)
+                ->where('is_active', 'Yes')
+                ->pluck('id')->toArray();
+        }
 
         $allSeriesIds = array_unique(array_merge($matchingSeriesIds, $titleMatchSeriesIds));
 
@@ -118,10 +124,10 @@ class SearchController extends Controller
         $pagedSeriesIds = array_slice($allSeriesIds, ($page - 1) * $perPage, $perPage);
 
         // Get first episodes (prefer is_first_episode='yes', fallback to lowest episode_number)
+        // Series visibility controlled by series_movies.is_active, not episode status
         $firstEpisodes = MovieModel::select(self::LIST_FIELDS)
             ->whereIn('category_id', $pagedSeriesIds)
             ->where('type', 'Series')
-            ->where('status', 'Active')
             ->where('is_first_episode', 'yes')
             ->get()
             ->unique('category_id');
@@ -134,7 +140,6 @@ class SearchController extends Controller
             $fallbackEpisodes = MovieModel::select(self::LIST_FIELDS)
                 ->whereIn('category_id', $missingIds)
                 ->where('type', 'Series')
-                ->where('status', 'Active')
                 ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
                 ->orderBy('id', 'asc')
                 ->get()
@@ -491,7 +496,6 @@ class SearchController extends Controller
 
                 $firstEpisodes = MovieModel::whereIn('category_id', $seriesMatches->pluck('id'))
                     ->where('type', 'Series')
-                    ->where('status', 'Active')
                     ->select('id', 'category_id')
                     ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
                     ->orderBy('id', 'asc')
@@ -504,7 +508,7 @@ class SearchController extends Controller
                     if (isset($seriesMap[$ep->category_id])) {
                         $s = $seriesMap[$ep->category_id];
                         $epCount = MovieModel::where('category_id', $ep->category_id)
-                            ->where('type', 'Series')->where('status', 'Active')->count();
+                            ->where('type', 'Series')->count();
                         $seriesInfo[$ep->id] = [
                             'series_name'   => $s->title,
                             'episode_count' => $epCount,
@@ -600,9 +604,17 @@ class SearchController extends Controller
 
         // ── Apply filters ──
         if (!empty($scores)) {
-            $filteredQuery = MovieModel::select('id', 'type')
+            // Collect IDs that came from active series (Phase 2) - these don't need status='Active'
+            $seriesPhase2Ids = array_keys(array_filter($itemTypes, fn($t) => $t === 'series'));
+
+            $filteredQuery = MovieModel::select('id', 'type', 'category_id')
                 ->whereIn('id', array_keys($scores))
-                ->where('status', 'Active');
+                ->where(function ($q) use ($seriesPhase2Ids) {
+                    $q->where('status', 'Active');
+                    if (!empty($seriesPhase2Ids)) {
+                        $q->orWhereIn('id', $seriesPhase2Ids);
+                    }
+                });
 
             if ($typeFilter === 'movie') {
                 $filteredQuery->where('type', 'Movie');
@@ -619,12 +631,61 @@ class SearchController extends Controller
                 $filteredQuery->where('year', $yearFilter);
             }
 
-            $validIds = $filteredQuery->pluck('type', 'id')->toArray();
+            $validRows = $filteredQuery->get();
+            $validIds = $validRows->pluck('type', 'id')->toArray();
             $scores = array_intersect_key($scores, $validIds);
 
             // Correct item types from DB
             foreach ($validIds as $id => $dbType) {
                 $itemTypes[$id] = strtolower($dbType) === 'series' ? 'series' : 'movie';
+            }
+
+            // Deduplicate series: keep only first episode per category_id
+            $categoryMap = $validRows->where('type', 'Series')->pluck('category_id', 'id')->toArray();
+            $seenCategories = [];
+            $removeIds = [];
+
+            foreach ($categoryMap as $id => $catId) {
+                if (!$catId) continue;
+                if (isset($seenCategories[$catId])) {
+                    // Keep whichever has a higher score
+                    $existingId = $seenCategories[$catId];
+                    if (($scores[$id] ?? 0) > ($scores[$existingId] ?? 0)) {
+                        $removeIds[] = $existingId;
+                        $seenCategories[$catId] = $id;
+                    } else {
+                        $removeIds[] = $id;
+                    }
+                } else {
+                    $seenCategories[$catId] = $id;
+                }
+            }
+
+            // For each kept series episode, swap it with the actual first episode if needed
+            foreach ($seenCategories as $catId => $keptId) {
+                $firstEp = MovieModel::where('category_id', $catId)
+                    ->where('type', 'Series')
+                    ->select('id')
+                    ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
+                    ->orderBy('id', 'asc')
+                    ->first();
+
+                if ($firstEp && $firstEp->id !== $keptId) {
+                    // Swap: transfer score to first episode
+                    $scores[$firstEp->id] = $scores[$keptId] ?? 0;
+                    $itemTypes[$firstEp->id] = 'series';
+                    if (isset($seriesInfo[$keptId])) {
+                        $seriesInfo[$firstEp->id] = $seriesInfo[$keptId];
+                        unset($seriesInfo[$keptId]);
+                    }
+                    $removeIds[] = $keptId;
+                }
+            }
+
+            // Remove non-first/duplicate series episodes
+            foreach ($removeIds as $rid) {
+                unset($scores[$rid]);
+                unset($itemTypes[$rid]);
             }
         }
 
@@ -642,7 +703,7 @@ class SearchController extends Controller
             Log::info("[V2:searchAll] q='{$searchTerm}' results=0 ms={$elapsed}");
 
             // Log the search
-            MovieSearch::logSearch($searchTerm, $user->id, 0);
+            MovieSearch::logSearch($searchTerm, 0, [], $user->id, $request);
 
             return $this->success([
                 'items'      => [],
@@ -684,7 +745,8 @@ class SearchController extends Controller
         Log::info("[V2:searchAll] q='{$searchTerm}' type={$typeFilter} results={$total} page={$page} ms={$elapsed}");
 
         // Log the search for history/trending
-        MovieSearch::logSearch($searchTerm, $user->id, $total);
+        $foundIds = array_keys(array_slice($scores, 0, 10, true));
+        MovieSearch::logSearch($searchTerm, $total, $foundIds, $user->id, $request);
 
         // Count types in full result set
         $movieCount  = count(array_filter($itemTypes, fn($t) => $t === 'movie'));

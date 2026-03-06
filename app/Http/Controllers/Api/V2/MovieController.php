@@ -463,6 +463,7 @@ class MovieController extends Controller
         }
 
         // ── Phase 2: Full phrase → First episode of each Series ──
+        // Series visibility is controlled by series_movies.is_active, not episode status
         $seriesMatches = SeriesMovie::where('title', 'LIKE', '%' . $searchTerm . '%')
             ->where('is_active', 'Yes')
             ->pluck('id')
@@ -471,7 +472,6 @@ class MovieController extends Controller
         if (!empty($seriesMatches)) {
             $firstEpisodes = MovieModel::whereIn('category_id', $seriesMatches)
                 ->where('type', 'Series')
-                ->where('status', 'Active')
                 ->select('id', 'category_id')
                 ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
                 ->orderBy('id', 'asc')
@@ -494,12 +494,31 @@ class MovieController extends Controller
                 if (empty($validWords)) break;
 
                 $phrase = implode(' ', $tempWords);
+
+                // Movies
                 $matches = MovieModel::where('type', 'Movie')
                     ->where('status', 'Active')
                     ->where('title', 'LIKE', '%' . $phrase . '%')
                     ->whereNotIn('id', array_keys($movieScores))
                     ->pluck('id')
                     ->toArray();
+
+                // Series (first episodes of active series matching phrase)
+                $phaseSeriesIds = SeriesMovie::where('title', 'LIKE', '%' . $phrase . '%')
+                    ->where('is_active', 'Yes')
+                    ->whereNotIn('id', $seriesMatches) // skip already matched
+                    ->pluck('id')->toArray();
+                if (!empty($phaseSeriesIds)) {
+                    $seriesEps = MovieModel::whereIn('category_id', $phaseSeriesIds)
+                        ->where('type', 'Series')
+                        ->whereNotIn('id', array_keys($movieScores))
+                        ->select('id', 'category_id')
+                        ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
+                        ->orderBy('id', 'asc')
+                        ->get()->unique('category_id');
+                    $matches = array_merge($matches, $seriesEps->pluck('id')->toArray());
+                    $seriesMatches = array_merge($seriesMatches, $phaseSeriesIds);
+                }
 
                 $score = 700 / count($words);
                 foreach ($matches as $id) {
@@ -515,12 +534,31 @@ class MovieController extends Controller
                 if (empty($validWords)) break;
 
                 $phrase = implode(' ', $tempWords);
+
+                // Movies
                 $matches = MovieModel::where('type', 'Movie')
                     ->where('status', 'Active')
                     ->where('title', 'LIKE', '%' . $phrase . '%')
                     ->whereNotIn('id', array_keys($movieScores))
                     ->pluck('id')
                     ->toArray();
+
+                // Series (first episodes of active series matching phrase)
+                $phaseSeriesIds = SeriesMovie::where('title', 'LIKE', '%' . $phrase . '%')
+                    ->where('is_active', 'Yes')
+                    ->whereNotIn('id', $seriesMatches)
+                    ->pluck('id')->toArray();
+                if (!empty($phaseSeriesIds)) {
+                    $seriesEps = MovieModel::whereIn('category_id', $phaseSeriesIds)
+                        ->where('type', 'Series')
+                        ->whereNotIn('id', array_keys($movieScores))
+                        ->select('id', 'category_id')
+                        ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
+                        ->orderBy('id', 'asc')
+                        ->get()->unique('category_id');
+                    $matches = array_merge($matches, $seriesEps->pluck('id')->toArray());
+                    $seriesMatches = array_merge($seriesMatches, $phaseSeriesIds);
+                }
 
                 $score = 500 / count($words);
                 foreach ($matches as $id) {
@@ -532,7 +570,9 @@ class MovieController extends Controller
         // ── Phase 4: Individual significant words ──
         $sigWords = array_filter($words, fn($w) => !in_array(strtolower($w), $ignoreWords) && mb_strlen($w) >= 3);
         if (!empty($sigWords)) {
+            // Active movies matching individual words
             $wordMatchIds = MovieModel::where('status', 'Active')
+                ->where('type', 'Movie')
                 ->where(function ($q) use ($sigWords) {
                     foreach ($sigWords as $w) {
                         $q->orWhere('title', 'LIKE', '%' . $w . '%');
@@ -542,6 +582,27 @@ class MovieController extends Controller
                 ->limit(100)
                 ->pluck('id')
                 ->toArray();
+
+            // Active series matching individual words (first episodes only)
+            $wordSeriesIds = SeriesMovie::where('is_active', 'Yes')
+                ->whereNotIn('id', $seriesMatches)
+                ->where(function ($q) use ($sigWords) {
+                    foreach ($sigWords as $w) {
+                        $q->orWhere('title', 'LIKE', '%' . $w . '%');
+                    }
+                })
+                ->limit(50)
+                ->pluck('id')->toArray();
+            if (!empty($wordSeriesIds)) {
+                $wordSeriesEps = MovieModel::whereIn('category_id', $wordSeriesIds)
+                    ->where('type', 'Series')
+                    ->whereNotIn('id', array_keys($movieScores))
+                    ->select('id', 'category_id')
+                    ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
+                    ->orderBy('id', 'asc')
+                    ->get()->unique('category_id');
+                $wordMatchIds = array_merge($wordMatchIds, $wordSeriesEps->pluck('id')->toArray());
+            }
 
             foreach ($wordMatchIds as $id) {
                 $movieScores[$id] = ($movieScores[$id] ?? 0) + 200;
