@@ -944,7 +944,7 @@ class SearchController extends Controller
             foreach ($firstEps as $ep) {
                 $data = $ep->toArray();
                 $epCount = MovieModel::where('category_id', $ep->category_id)
-                    ->where('type', 'Series')->where('status', 'Active')->count();
+                    ->where('type', 'Series')->count();
                 $data['episode_count'] = $epCount;
                 $data['series_type']   = $epCount <= 3 ? 'MINI' : ($epCount <= 8 ? 'SERIES' : 'PRO');
                 $data['_item_type']    = 'series';

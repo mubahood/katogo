@@ -697,13 +697,14 @@ class MovieController extends Controller
         }
 
         // Episode count & seasons for series
+        // Series visibility controlled by series_movies.is_active, not episode status
         $episodesInfo = null;
         if ($movie->type === 'Series' && !empty($movie->category_id)) {
             $episodesInfo = [
                 'total_episodes' => MovieModel::where('category_id', $movie->category_id)
-                    ->where('status', 'Active')->where('type', 'Series')->count(),
+                    ->where('type', 'Series')->count(),
                 'seasons' => MovieModel::where('category_id', $movie->category_id)
-                    ->where('status', 'Active')->where('type', 'Series')
+                    ->where('type', 'Series')
                     ->whereNotNull('season_number')->where('season_number', '!=', '')
                     ->where('season_number', '!=', '0')
                     ->distinct()->pluck('season_number')
@@ -906,9 +907,9 @@ class MovieController extends Controller
             return $this->error('Series not found.', 404);
         }
 
+        // Series visibility is controlled by series_movies.is_active, not individual episode status
         $query = MovieModel::select(self::EPISODE_FIELDS)
             ->where('category_id', $id)
-            ->where('status', 'Active')
             ->where('type', 'Series');
 
         if ($request->filled('season')) {
@@ -1226,7 +1227,7 @@ class MovieController extends Controller
             ] : null;
 
             $diagnostics['episode_count'] = MovieModel::where('category_id', $movie->category_id)
-                ->where('status', 'Active')->where('type', 'Series')->count();
+                ->where('type', 'Series')->count();
         }
 
         // Check if crawler page exists
@@ -1385,7 +1386,7 @@ class MovieController extends Controller
             }
 
             $beforeCount = MovieModel::where('category_id', $categoryId)
-                ->where('status', 'Active')->where('type', 'Series')->count();
+                ->where('type', 'Series')->count();
 
             if ($crawlerPage) {
                 // Use the existing generate_series_episodes logic
@@ -1400,7 +1401,7 @@ class MovieController extends Controller
             }
 
             $afterCount = MovieModel::where('category_id', $categoryId)
-                ->where('status', 'Active')->where('type', 'Series')->count();
+                ->where('type', 'Series')->count();
 
             $series->refresh();
 
