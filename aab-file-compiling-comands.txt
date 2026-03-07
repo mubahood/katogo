@@ -13,4 +13,27 @@ now we need to update the app version to playstore, in yaml file, increase the a
 </en-US>
 
 
-I want to make 
+I want to make marketing video for this app, the video should knock on each and every feature in the app.
+compose for me a perfect marketing scription for the marketing video
+
+.- home page (simple to use)
+.- Landing page top movies (starts on fly)
+.- Ability to resume movies
+.- resume movies
+.- get latest uganda local news
+.- Latest movies
+.- VJ Junior moivies and other categories
+.- Series movies (Parts ovies, Mini series, Epidodes and Core movies)
+.- Pefect movie details page
+.- Download movie for offline watching (to App or to Galery)
+.- Powerful Movie player with great controls
+    - can resume
+    - view next episodes
+    - can popup (do other things while watching)
+.- Extra modules such as;-
+    - Games (Play Ludo and Matatu)
+    - Play games offline of with other friends online
+.- CONNECT module to chat with firends online 
+.- Help and Support 
+- finalize with a closing message focused on movies
+- request users to down and install the app now.

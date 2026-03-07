@@ -2066,23 +2066,302 @@ Route::get('process-muno-movies', function () {
 });
 
 
-Route::get('crawler', function () {
-    //set unlimited time
-    set_time_limit(600); // 10 minutes
-    ini_set('memory_limit', '512M'); // 512 MB
-    try {
-        Utils::fetch_pages();
-    } catch (\Throwable $th) {
-        echo "Failed to fetch pages because " . $th->getMessage();
+Route::get('crawler', function (Request $request) {
+    set_time_limit(300);
+    ini_set('memory_limit', '512M');
+
+    $startTime   = microtime(true);
+    $timeBudget  = 240; // seconds — safely under MAMP's 300s FastCGI timeout
+    $batchSize   = min((int) $request->get('batch', 20), 100);
+    $userId      = $request->get('uid', '169464');
+    $mode        = $request->get('mode', 'auto'); // auto | discover | process
+    $autoChain   = (bool) $request->get('chain', 1);  // auto-redirect to next batch
+
+    $stats = [
+        'pages_discovered' => 0,
+        'pages_skipped'    => 0,
+        'pages_processed'  => 0,
+        'movies_created'   => 0,
+        'series_detected'  => 0,
+        'fetch_errors'     => 0,
+        'process_errors'   => 0,
+        'time_limited'     => false,
+    ];
+
+    $munowatchWebsite = MovieCrawlerWebsite::where('slug', MovieCrawlerWebsite::MUNOWATCH)->first();
+    if (!$munowatchWebsite) {
+        return response()->json(['error' => 'Munowatch website not found'], 404);
     }
 
-    try {
-        Utils::fetch_pages_content();
-    } catch (\Throwable $th) {
-        echo "Failed to fetch page contents because " . $th->getMessage();
+    // Count pending before starting
+    $pendingBefore = DB::table('movie_crawler_pages')
+        ->where('movie_crawler_website_id', $munowatchWebsite->id)
+        ->where('status', 'pending')
+        ->where('is_muno', 'Yes')
+        ->count();
+
+    // ── Decide what to do ──
+    $doDiscover = ($mode === 'discover' || ($mode === 'auto' && $pendingBefore === 0));
+    $doProcess  = ($mode === 'process' || $mode === 'auto');
+
+    $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+    $headers = [
+        'Authorization' => 'Bearer ' . $baseToken,
+        'X-Api-Key'     => $baseToken,
+        'User-Agent'    => 'okhttp/4.9.0',
+    ];
+
+    $log = []; // structured log entries for output
+
+    // ════════════════════════════════════════════
+    // PHASE 1 — Discover new movies from dashboard
+    // ════════════════════════════════════════════
+    if ($doDiscover) {
+        try {
+            $dashboardUrl  = "https://munowatch.org/api/dashboard/v2/{$userId}";
+            $dashboardJson = Utils::get_url_with_auth($dashboardUrl, $headers);
+            $dashboard     = @json_decode($dashboardJson, true);
+
+            if (!is_array($dashboard) || !isset($dashboard['dashboard'])) {
+                throw new \Exception('Invalid dashboard response — missing "dashboard" key');
+            }
+
+            // Extract all unique movies by vid
+            $allMovies = [];
+            foreach ($dashboard['dashboard'] as $cat) {
+                if (!isset($cat['movies']) || !is_array($cat['movies'])) continue;
+                foreach ($cat['movies'] as $movie) {
+                    $vid = $movie['vid'] ?? $movie['id'] ?? null;
+                    if ($vid && !isset($allMovies[$vid])) {
+                        $allMovies[$vid] = $movie;
+                    }
+                }
+            }
+
+            $log[] = ['type' => 'info', 'msg' => 'Dashboard: ' . count($allMovies) . ' unique movies across ' . count($dashboard['dashboard']) . ' categories'];
+
+            // Find which vids already exist
+            $existingVids = DB::table('movie_crawler_pages')
+                ->where('movie_crawler_website_id', $munowatchWebsite->id)
+                ->where('is_muno', 'Yes')
+                ->whereIn('slug', array_map('strval', array_keys($allMovies)))
+                ->pluck('slug')
+                ->flip()
+                ->toArray();
+
+            $newPages = [];
+            $now = now();
+            foreach ($allMovies as $vid => $movieObj) {
+                if (isset($existingVids[(string)$vid])) {
+                    $stats['pages_skipped']++;
+                    continue;
+                }
+                $newPages[] = [
+                    'movie_crawler_website_id' => $munowatchWebsite->id,
+                    'title'          => $movieObj['title'] ?? '',
+                    'slug'           => (string) $vid,
+                    'movie_id'       => null,
+                    'url'            => "https://munowatch.org/api/preview/v2/{$vid}/{$userId}",
+                    'status'         => 'pending',
+                    'is_muno'        => 'Yes',
+                    'is_generated'   => 'Yes',
+                    'created_at'     => $now,
+                    'updated_at'     => $now,
+                ];
+                $stats['pages_discovered']++;
+            }
+
+            if (!empty($newPages)) {
+                foreach (array_chunk($newPages, 200) as $chunk) {
+                    DB::table('movie_crawler_pages')->insert($chunk);
+                }
+                $log[] = ['type' => 'ok', 'msg' => 'Created ' . $stats['pages_discovered'] . ' new pages, skipped ' . $stats['pages_skipped'] . ' existing'];
+            } else {
+                $log[] = ['type' => 'info', 'msg' => 'No new movies — all ' . $stats['pages_skipped'] . ' already known'];
+            }
+
+            $munowatchWebsite->update([
+                'last_fetched_at' => $now,
+                'fetch_status'    => 'success',
+                'error_message'   => null,
+            ]);
+        } catch (\Throwable $e) {
+            $log[] = ['type' => 'err', 'msg' => 'Dashboard error: ' . $e->getMessage()];
+            Log::error('Crawler discover failed', ['error' => $e->getMessage()]);
+        }
     }
 
-    die("success");
+    // ════════════════════════════════════════════
+    // PHASE 2 — Process pending pages (time-budgeted)
+    // ════════════════════════════════════════════
+    if ($doProcess) {
+        $pendingPages = MovieCrawlerPage::where('movie_crawler_website_id', $munowatchWebsite->id)
+            ->where('status', 'pending')
+            ->where('is_muno', 'Yes')
+            ->orderBy('id', 'desc')
+            ->limit($batchSize)
+            ->get();
+
+        if ($pendingPages->isEmpty()) {
+            $log[] = ['type' => 'info', 'msg' => 'No pending pages to process'];
+        }
+
+        foreach ($pendingPages as $page) {
+            // ── Time-budget check ──
+            $elapsed = microtime(true) - $startTime;
+            if ($elapsed > $timeBudget) {
+                $stats['time_limited'] = true;
+                $log[] = ['type' => 'warn', 'msg' => 'Time budget reached (' . round($elapsed, 1) . 's) — stopping to avoid timeout'];
+                break;
+            }
+
+            try {
+                // Fetch page content if missing
+                if (empty($page->page_content) || strlen(trim($page->page_content)) < 10) {
+                    $page->fetch_page_content(false);
+                    $page->refresh();
+                }
+
+                if (empty($page->page_content) || strlen(trim($page->page_content)) < 10) {
+                    $page->status = 'error';
+                    $page->error_message = 'Empty API response';
+                    $page->save();
+                    $stats['fetch_errors']++;
+                    $log[] = ['type' => 'err', 'msg' => '#' . $page->id . ' (' . $page->slug . ') — empty response'];
+                    continue;
+                }
+
+                // Process content
+                $page->process_munowatch_intelligent();
+                $page->refresh();
+
+                $stats['pages_processed']++;
+
+                if ($page->status === 'error') {
+                    $stats['process_errors']++;
+                    $log[] = ['type' => 'warn', 'msg' => '#' . $page->id . ' — ' . substr($page->error_message ?? 'unknown', 0, 120)];
+                } elseif ($page->type === 'Series') {
+                    $stats['series_detected']++;
+                    $log[] = ['type' => 'series', 'msg' => '#' . $page->id . ' — Series: ' . ($page->title ?: 'Untitled')];
+                } else {
+                    $stats['movies_created']++;
+                    $thumb = null;
+                    $movieRecord = MovieModel::where('external_url', $page->url)->first();
+                    if ($movieRecord && !empty($movieRecord->thumbnail_url)) {
+                        $thumb = $movieRecord->thumbnail_url;
+                    }
+                    $log[] = ['type' => 'ok', 'msg' => '#' . $page->id . ' — ' . ($page->title ?: 'Untitled'), 'thumb' => $thumb];
+                }
+            } catch (\Throwable $e) {
+                $stats['process_errors']++;
+                $page->status = 'error';
+                $page->error_message = substr($e->getMessage(), 0, 500);
+                $page->save();
+                $log[] = ['type' => 'err', 'msg' => '#' . $page->id . ' exception: ' . substr($e->getMessage(), 0, 120)];
+                Log::error('Crawler page error', ['page_id' => $page->id, 'error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════
+    // PHASE 3 — Output
+    // ════════════════════════════════════════════
+    $duration = round(microtime(true) - $startTime, 2);
+
+    $totalPending = DB::table('movie_crawler_pages')
+        ->where('movie_crawler_website_id', $munowatchWebsite->id)
+        ->where('status', 'pending')
+        ->where('is_muno', 'Yes')
+        ->count();
+
+    $totalProcessed = DB::table('movie_crawler_pages')
+        ->where('movie_crawler_website_id', $munowatchWebsite->id)
+        ->where('is_muno', 'Yes')
+        ->where('status', '!=', 'pending')
+        ->count();
+
+    // Auto-chain: redirect to next batch if there are more pending pages
+    $nextUrl = url('crawler') . '?batch=' . $batchSize . '&uid=' . urlencode($userId) . '&mode=process&chain=1';
+    $shouldChain = $autoChain && $totalPending > 0 && $stats['pages_processed'] > 0;
+
+    // ── Build HTML ──
+    echo '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Munowatch Crawler</title>';
+    if ($shouldChain) {
+        echo '<meta http-equiv="refresh" content="2;url=' . htmlspecialchars($nextUrl) . '">';
+    }
+    echo '<style>
+        body{font-family:system-ui,sans-serif;margin:20px;background:#0f0f1e;color:#ccc}
+        h1{color:#ff9800}h2{color:#eee;margin-top:24px}
+        .card{background:#1a1a2e;padding:14px;margin:8px 0;border-radius:6px;border-left:4px solid #333}
+        .ok{border-left-color:#4caf50;color:#a5d6a7}.err{border-left-color:#f44336;color:#ef9a9a}
+        .warn{border-left-color:#ff9800;color:#ffe082}.info{border-left-color:#2196f3;color:#90caf9}
+        .series{border-left-color:#9c27b0;color:#ce93d8}
+        table{width:100%;border-collapse:collapse;margin:12px 0}
+        td{padding:8px 12px;border-bottom:1px solid #2a2a3e}
+        td:first-child{color:#999;width:200px}td:last-child{font-weight:600}
+        .thumb{max-height:80px;border-radius:4px;margin:4px 6px 4px 0;vertical-align:middle}
+        a{color:#ff9800}.progress{background:#1a1a2e;border-radius:4px;overflow:hidden;height:6px;margin:8px 0}
+        .progress-bar{height:100%;background:linear-gradient(90deg,#ff9800,#4caf50);transition:width .3s}
+        .controls{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}
+        .btn{display:inline-block;padding:10px 20px;background:#ff9800;color:#000;border-radius:6px;text-decoration:none;font-weight:600}
+        .btn:hover{background:#ffa726}.btn.stop{background:#f44336;color:#fff}
+    </style></head><body>';
+    echo '<h1>🎬 Munowatch Crawler</h1>';
+
+    // Progress bar
+    $total = $totalPending + $totalProcessed;
+    $pct = $total > 0 ? round(($totalProcessed / $total) * 100) : 100;
+    echo '<div class="progress"><div class="progress-bar" style="width:' . $pct . '%"></div></div>';
+    echo '<div style="text-align:center;color:#666;font-size:13px">' . number_format($totalProcessed) . ' / ' . number_format($total) . ' processed (' . $pct . '%)</div>';
+
+    // Log entries
+    echo '<h2>Activity Log</h2>';
+    foreach ($log as $entry) {
+        $cls = $entry['type'];
+        $thumb = '';
+        if (!empty($entry['thumb'])) {
+            $thumb = '<img class="thumb" src="' . htmlspecialchars($entry['thumb']) . '">';
+        }
+        $icon = match($entry['type']) {
+            'ok'     => '🎬',
+            'err'    => '❌',
+            'warn'   => '⚠️',
+            'series' => '📺',
+            default  => 'ℹ️',
+        };
+        echo '<div class="card ' . $cls . '">' . $thumb . $icon . ' ' . htmlspecialchars($entry['msg']) . '</div>';
+    }
+
+    // Stats table
+    echo '<h2>📊 Summary</h2><table>';
+    echo '<tr><td>New pages discovered</td><td>' . $stats['pages_discovered'] . '</td></tr>';
+    echo '<tr><td>Pages skipped (existing)</td><td>' . $stats['pages_skipped'] . '</td></tr>';
+    echo '<tr><td>Pages processed this batch</td><td>' . $stats['pages_processed'] . '</td></tr>';
+    echo '<tr><td>Movies created</td><td style="color:#4caf50">' . $stats['movies_created'] . '</td></tr>';
+    echo '<tr><td>Series detected</td><td style="color:#9c27b0">' . $stats['series_detected'] . '</td></tr>';
+    echo '<tr><td>Fetch errors</td><td style="color:#f44336">' . $stats['fetch_errors'] . '</td></tr>';
+    echo '<tr><td>Process errors</td><td style="color:#f44336">' . $stats['process_errors'] . '</td></tr>';
+    echo '<tr><td>Still pending</td><td>' . number_format($totalPending) . '</td></tr>';
+    echo '<tr><td>Duration</td><td>' . $duration . 's</td></tr>';
+    echo '</table>';
+
+    // Controls
+    echo '<div class="controls">';
+    if ($totalPending > 0) {
+        if ($shouldChain) {
+            echo '<div class="card warn">⏳ Auto-continuing in 2s... (' . number_format($totalPending) . ' pending)</div>';
+            $stopUrl = url('crawler') . '?batch=' . $batchSize . '&uid=' . urlencode($userId) . '&mode=process&chain=0';
+            echo '<a class="btn stop" href="' . htmlspecialchars($stopUrl) . '">⏹ Stop auto-chain</a>';
+        }
+        echo '<a class="btn" href="' . htmlspecialchars($nextUrl) . '">▶️ Process next batch</a>';
+    } else {
+        echo '<div class="card ok">🎉 All caught up — no pending pages!</div>';
+    }
+    $discoverUrl = url('crawler') . '?mode=discover&uid=' . urlencode($userId);
+    echo '<a class="btn" href="' . htmlspecialchars($discoverUrl) . '">🔍 Re-discover from dashboard</a>';
+    echo '</div>';
+
+    echo '</body></html>';
 });
 
 

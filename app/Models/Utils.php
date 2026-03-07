@@ -6572,7 +6572,11 @@ class Utils
                 if ($statusCode >= 400) {
                     $responseBody = (string) $response->getBody();
                     $errorDetail = strlen($responseBody) > 0 ? substr($responseBody, 0, 200) : $reasonPhrase;
-                    throw new \Exception("Client Error $statusCode: $errorDetail");
+                    throw new \GuzzleHttp\Exception\ClientException(
+                        "HTTP Client Error: Client Error $statusCode: $errorDetail",
+                        new \GuzzleHttp\Psr7\Request($method, $url),
+                        $response
+                    );
                 }
 
                 // Get response body with size validation
