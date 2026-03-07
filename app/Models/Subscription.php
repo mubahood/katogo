@@ -69,9 +69,10 @@ class Subscription extends Model
         parent::boot();
 
         static::creating(function ($subscription) {
-            // Auto-set grace period (3 days after end_date_time)
+            // Auto-set grace period (3 days after end_date_time).
+            // Only when end_date_time is already known at creation (rare for Pending subs).
             if (!$subscription->grace_period_end && $subscription->end_date_time) {
-                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(0);
+                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(3);
             }
 
             $user = User::find($subscription->user_id);
@@ -102,16 +103,25 @@ class Subscription extends Model
         });
 
         static::updating(function ($subscription) {
-            // If status changed to Active, ensure dates are set
+            // If status changed to Active, ensure start + end + grace are all set
             if ($subscription->isDirty('status') && $subscription->status === 'Active') {
                 if (!$subscription->start_date_time) {
                     $subscription->start_date_time = now();
                 }
+                // Ensure end_date_time is always set when Active
+                if (!$subscription->end_date_time) {
+                    $days = max(1, (int) $subscription->days);
+                    $subscription->end_date_time = Carbon::parse($subscription->start_date_time)->addDays($days);
+                }
+                // Ensure grace_period_end is always set when Active
+                if (!$subscription->grace_period_end && $subscription->end_date_time) {
+                    $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(3);
+                }
             }
 
-            // If end_date_time changed, update grace period
-            if ($subscription->isDirty('end_date_time')) {
-                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(0);
+            // If end_date_time changed, keep grace_period_end in sync (3 days)
+            if ($subscription->isDirty('end_date_time') && $subscription->end_date_time) {
+                $subscription->grace_period_end = Carbon::parse($subscription->end_date_time)->addDays(3);
             }
         });
 
@@ -170,17 +180,6 @@ class Subscription extends Model
     {
         return $query->where('status', 'Active')
             ->where('end_date_time', '>', now());
-    }
-    //statusgetter
-    public function getStatusAttribute($value)
-    {
-        $endDate = Carbon::parse($this->end_date_time);
-        $now = now();
-        if ($value === 'Active' && $now->gt($endDate)) {
-            $sql = "UPDATE subscriptions SET status = 'Expired' WHERE id = {$this->id}";
-            return 'Expired';
-        }
-        return $value;
     }
 
     public function scopePending($query)
@@ -370,12 +369,28 @@ class Subscription extends Model
             $this->start_date_time = now();
         }
 
+        // Ensure end_date_time is always valid — never leave it NULL or in the past
+        $days = (int) $this->days;
+        if ($days <= 0) {
+            $this->load('plan');
+            $days = $this->plan ? (int) $this->plan->duration_days : 3;
+            $this->days = $days;
+        }
+        if (!$this->end_date_time || $this->end_date_time->isPast()) {
+            $this->end_date_time = Carbon::parse($this->start_date_time)->addDays($days);
+        }
+
+        // Always keep grace_period_end in sync
+        $this->grace_period_end = Carbon::parse($this->end_date_time)->addDays(3);
+
         $this->save();
 
         Log::info('Subscription activated', [
             'subscription_id' => $this->id,
-            'user_id' => $this->user_id,
-            'end_date' => $this->end_date_time,
+            'user_id'         => $this->user_id,
+            'start_date'      => $this->start_date_time,
+            'end_date'        => $this->end_date_time,
+            'grace_end'       => $this->grace_period_end,
         ]);
     }
 

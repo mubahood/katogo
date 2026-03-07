@@ -49,6 +49,32 @@ class CheckExpiredSubscriptions extends Command
 
         $now = now();
 
+        // ── Step 0: Fix Active subscriptions with NULL end_date_time ────────────
+        // These are corrupted records (payment confirmed but dates never calculated).
+        // Repair them so they expire naturally rather than being left broken forever.
+        $nullEndSubs = Subscription::where('status', 'Active')
+            ->whereNull('end_date_time')
+            ->whereNotNull('start_date_time')
+            ->get();
+
+        if ($nullEndSubs->count() > 0) {
+            $this->warn("⚠️  Found {$nullEndSubs->count()} Active subscription(s) with NULL end_date_time — repairing...");
+            foreach ($nullEndSubs as $sub) {
+                $days = max(1, (int) $sub->days);
+                $sub->end_date_time    = Carbon::parse($sub->start_date_time)->addDays($days);
+                $sub->grace_period_end = Carbon::parse($sub->end_date_time)->addDays(3);
+                if (!$isDryRun) {
+                    $sub->saveQuietly();
+                }
+                Log::info('subscriptions:check-expired repaired NULL end_date_time', [
+                    'id' => $sub->id, 'days' => $days,
+                    'end_date_time' => $sub->end_date_time,
+                ]);
+            }
+            $this->info("  Repaired {$nullEndSubs->count()} subscription(s).");
+        }
+
+        // ── Step 1: Find and mark expired subscriptions ──────────────────────────
         // Find subscriptions that are:
         // 1. Status is 'Active'
         // 2. Grace period has ended (or end_date_time if no grace period)

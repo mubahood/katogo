@@ -782,8 +782,10 @@ class SubscriptionPesapalService
                 $subscription->status = 'Active';
                 $subscription->payment_status = 'Completed';
                 
-                // Only set start_date_time if NOT already active and not already set
-                if (!$isAlreadyActive && !$subscription->start_date_time) {
+                // ALWAYS recalculate start_date_time on FIRST activation.
+                // We never preserve a pre-set start from the Pending phase — it may have
+                // been set months before payment and would cause immediate expiry.
+                if (!$isAlreadyActive) {
                     // For extensions, start from end of the subscription being extended
                     if ($subscription->is_extension && $subscription->extended_from_id) {
                         $parentSub = Subscription::find($subscription->extended_from_id);
@@ -799,22 +801,35 @@ class SubscriptionPesapalService
                     } else {
                         $subscription->start_date_time = now();
                     }
-                    Log::info('📅 Pesapal: Setting start_date_time', [
+                    Log::info('📅 Pesapal: Setting start_date_time (first activation)', [
                         'start_date_time' => $subscription->start_date_time,
                     ]);
                 } else {
-                    Log::info('📅 Pesapal: Keeping existing start_date_time', [
+                    Log::info('📅 Pesapal: Keeping existing start_date_time (already active)', [
                         'start_date_time' => $subscription->start_date_time,
                     ]);
                 }
 
-                // Always calculate/update end_date_time
-                if (!$subscription->end_date_time) {
-                    $startDate = $subscription->start_date_time ?? now();
-                    $subscription->end_date_time = \Carbon\Carbon::parse($startDate)->addDays($subscription->days);
-                    Log::info('📅 Pesapal: Calculated end_date_time', [
-                        'days' => $subscription->days,
-                        'end_date_time' => $subscription->end_date_time,
+                // ALWAYS recalculate end_date_time on first activation.
+                // Never trust a pre-set end_date_time — it may be wrong.
+                if (!$isAlreadyActive) {
+                    $days = (int) $subscription->days;
+                    if ($days <= 0) {
+                        // Fallback: load duration from the plan
+                        $subscription->load('plan');
+                        $days = $subscription->plan ? (int) $subscription->plan->duration_days : 3;
+                        $subscription->days = $days;
+                        Log::warning('⚠️ Pesapal: subscription.days was 0 — loaded from plan', [
+                            'plan_duration_days' => $days,
+                        ]);
+                    }
+                    $subscription->end_date_time = \Carbon\Carbon::parse($subscription->start_date_time)->addDays($days);
+                    $subscription->grace_period_end = \Carbon\Carbon::parse($subscription->end_date_time)->addDays(3);
+                    Log::info('📅 Pesapal: Calculated end_date_time and grace_period_end', [
+                        'days'             => $days,
+                        'start_date_time'  => $subscription->start_date_time,
+                        'end_date_time'    => $subscription->end_date_time,
+                        'grace_period_end' => $subscription->grace_period_end,
                     ]);
                 }
 

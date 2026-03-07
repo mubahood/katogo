@@ -13,7 +13,14 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // Subscription System Commands
-        
+
+        // Repair corrupted subscription dates — runs daily at 00:30 AM (before the expiry check)
+        $schedule->command('subscriptions:repair')
+            ->dailyAt('00:30')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/subscriptions-repair.log'));
+
         // Check for expired subscriptions - runs daily at 1:00 AM
         $schedule->command('subscriptions:check-expired')
             ->dailyAt('01:00')
