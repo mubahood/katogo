@@ -1792,16 +1792,14 @@ class ApiController extends BaseController
                 }
             }
 
-            // Generate JWT token
+            // Generate JWT token (10-year TTL)
             try {
-                // Try to set TTL for long-lasting token (5 years)
-                $token = auth('api')->attempt(['email' => $user->email], true);
+                $token = auth('api')->setTTL(60 * 24 * 365 * 10)->attempt(['email' => $user->email], true);
                 if (!$token) {
-                    // If attempt fails, try direct login
-                    $token = auth('api')->login($user);
+                    $token = auth('api')->setTTL(60 * 24 * 365 * 10)->login($user);
                 }
             } catch (\Exception $e) {
-                $token = auth('api')->login($user);
+                $token = auth('api')->setTTL(60 * 24 * 365 * 10)->login($user);
             }
 
             if (!$token) {
