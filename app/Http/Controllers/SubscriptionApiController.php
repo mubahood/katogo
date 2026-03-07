@@ -1165,11 +1165,14 @@ class SubscriptionApiController extends Controller
                 'current_payment_status' => $subscription->payment_status,
             ]);
 
+            // Capture app_type for use in the Open App button
+            $subAppType = $subscription->app_type ?? null;
+
             // If subscription is already active (IPN arrived first), show success immediately
             if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
                 Log::info('✅ Pesapal Callback: Subscription already active (IPN processed first)');
                 $planName = $subscription->plan->name ?? 'Premium';
-                return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!");
+                return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType);
             }
 
             // Try to get transaction status from Pesapal
@@ -1190,7 +1193,7 @@ class SubscriptionApiController extends Controller
                     $planName = $subscription->plan->name ?? 'Premium';
 
                     if ($status === 'success') {
-                        return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!");
+                        return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType);
                     } elseif ($status === 'failed') {
                         // Build detailed API response message for user
                         $apiResponse = $result['api_response'] ?? [];
@@ -1214,18 +1217,19 @@ class SubscriptionApiController extends Controller
                             'Payment Failed',
                             'Your payment could not be processed. Please try again or use a different payment method.',
                             $apiDetail,
-                            $retryUrl
+                            $retryUrl,
+                            $subAppType
                         );
                     } else {
                         // Payment still processing
-                        return $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. This usually takes a few moments. Please return to the app — your subscription will activate automatically once confirmed.');
+                        return $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. This usually takes a few moments. Please return to the app — your subscription will activate automatically once confirmed.', null, null, $subAppType);
                     }
                 } else {
                     // Status check failed but that's OK — payment may still be processing
                     Log::warning('⚠️ Pesapal Callback: Status check failed, showing pending page', [
                         'error' => $statusResult['error'] ?? 'unknown',
                     ]);
-                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.');
+                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.', null, null, $subAppType);
                 }
 
             } catch (\Exception $statusException) {
@@ -1234,7 +1238,7 @@ class SubscriptionApiController extends Controller
                     'error' => $statusException->getMessage(),
                     'subscription_id' => $subscription->id,
                 ]);
-                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.');
+                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.', null, null, $subAppType);
             }
 
         } catch (\Exception $e) {
@@ -1568,7 +1572,7 @@ class SubscriptionApiController extends Controller
      * @param string $message Body message
      * @return \Illuminate\Http\Response
      */
-    private function callbackPage(string $status, string $title, string $message, ?string $apiDetail = null, ?string $retryUrl = null)
+    private function callbackPage(string $status, string $title, string $message, ?string $apiDetail = null, ?string $retryUrl = null, ?string $appType = null)
     {
         $escapedTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
         $escapedMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
@@ -1616,6 +1620,60 @@ class SubscriptionApiController extends Controller
         $badge = $config['badge'];
         $badgeBg = $config['badgeBg'];
         $badgeColor = $config['badgeColor'];
+
+        // ── Open App button ──────────────────────────────────────────────────
+        // Package IDs and display names per app_type
+        $appMeta = match (strtolower($appType ?? '')) {
+            'lugaflix'  => ['name' => 'LugaFlix', 'package' => 'lugaflix.movies',  'scheme' => 'lugaflix',  'color' => '#3498db'],
+            'muno_app'  => ['name' => 'Muno App',  'package' => 'muno.app',         'scheme' => 'munoapp',   'color' => '#e74c3c'],
+            default     => ['name' => 'UG Flix',   'package' => 'ugflix.com',       'scheme' => 'ugflix',    'color' => '#47C757'],
+        };
+
+        $appName    = $appMeta['name'];
+        $appPackage = $appMeta['package'];
+        $appScheme  = $appMeta['scheme'];
+        $appColor   = $appMeta['color'];
+        $playStoreUrl = htmlspecialchars('https://play.google.com/store/apps/details?id=' . $appPackage, ENT_QUOTES, 'UTF-8');
+
+        // Button shown on success + pending (user needs to return to the app)
+        $openAppHtml = '';
+        if (in_array($status, ['success', 'pending'])) {
+            $openAppHtml = <<<OPENAPP
+
+            <div class="open-app-wrap">
+                <button class="open-app-btn" onclick="openApp()" style="background:{$appColor}">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:8px;flex-shrink:0">
+                        <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/>
+                        <circle cx="12" cy="18" r="1" fill="currentColor"/>
+                    </svg>
+                    Open {$appName}
+                </button>
+                <div class="open-app-hint" id="openAppHint" style="display:none">
+                    App not installed? <a href="{$playStoreUrl}" target="_blank" rel="noopener" style="color:{$appColor}">Get it on Play Store</a>
+                </div>
+            </div>
+
+            <script>
+            function openApp() {
+                var scheme = '{$appScheme}://open';
+                var intentUrl = 'intent://open/#Intent;scheme={$appScheme};package={$appPackage};end';
+                var fallbackUrl = '{$playStoreUrl}';
+
+                // Try intent URL (Android) — falls back to Play Store if not installed
+                var start = Date.now();
+                window.location.href = intentUrl;
+
+                // After 1.5s if we're still here, show the fallback hint
+                setTimeout(function() {
+                    if (Date.now() - start < 3000) {
+                        document.getElementById('openAppHint').style.display = 'block';
+                    }
+                }, 1500);
+            }
+            </script>
+OPENAPP;
+        }
+        // ────────────────────────────────────────────────────────────────────
 
         // Pre-compute dynamic values for heredoc
         $pendingClass = ($status === 'pending') ? ' pulse' : '';
@@ -1910,6 +1968,35 @@ CLOSEBTN;
             50% { opacity: 0.5; }
         }
         .pulse { animation: pulse 2s ease-in-out infinite; }
+
+        /* Open App Button */
+        .open-app-wrap {
+            margin-top: 20px;
+        }
+        .open-app-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 15px 24px;
+            border: none;
+            border-radius: 14px;
+            color: #FFFFFF;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+            transition: opacity 0.2s, transform 0.15s;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+        }
+        .open-app-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        .open-app-btn:active { transform: translateY(0); opacity: 1; }
+        .open-app-hint {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #6B7280;
+            text-align: center;
+        }
     </style>
     {$autoRefresh}
 </head>
@@ -1941,6 +2028,8 @@ CLOSEBTN;
             </p>
 
             {$retryButtonHtml}
+
+            {$openAppHtml}
         </div>
 
         <div class="footer">

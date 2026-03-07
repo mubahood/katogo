@@ -53,6 +53,30 @@ Route::group([
         );
     });
 
+    // API: User search (Select2 AJAX for subscription form)
+    $router->get('api/users', function (\Illuminate\Http\Request $request) {
+        $q = trim($request->get('q', ''));
+        $query = \App\Models\User::limit(20)->select(['id', 'name', 'email']);
+        if ($q !== '') {
+            if (is_numeric($q)) {
+                $query->where('id', $q);
+            } else {
+                $query->where(function ($sq) use ($q) {
+                    $sq->where('name', 'like', "%{$q}%")
+                       ->orWhere('email', 'like', "%{$q}%");
+                });
+            }
+        }
+        $results = $query->get()->map(fn($u) => [
+            'id'   => $u->id,
+            'text' => "{$u->name} ({$u->email})",
+        ])->values()->toArray();
+        return response()->json(['results' => $results]);
+    });
+
+    // API: Admin subscription actions (recheck, activate, cancel, extend, mark-expired)
+    $router->post('api/subscriptions/{id}/action', 'SubscriptionController@adminAction');
+
     $router->resource('companies', CompanyController::class);
     $router->resource('stock-categories', StockCategoryController::class);
     $router->resource('stock-sub-categories', StockSubCategoryController::class);
