@@ -81,10 +81,10 @@ class VideoPlaybackFailure extends Model
         parent::boot();
 
         static::created(function ($failure) {
-            // Step 1: Automatically mark the movie as Inactive when a playback failure is reported
-            $failure->deactivateRelatedMovie();
+            // Do NOT immediately deactivate — let auto-fix attempt repair first.
+            // Only auto-fix should set a movie to Inactive (if fix fails).
 
-            // Step 2: Schedule auto-fix to run AFTER the HTTP response is sent.
+            // Schedule auto-fix to run AFTER the HTTP response is sent.
             // This re-fetches movie data from the external server and repairs the record.
             // Guarded by cooldown (5 min per movie) and re-entry prevention.
             if ($failure->movie_id && !AutoFixMovie::isInProgress()) {

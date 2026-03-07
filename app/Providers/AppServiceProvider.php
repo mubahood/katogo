@@ -22,6 +22,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Enforce Nairobi timezone (EAT / GMT+3) globally
+        date_default_timezone_set('Africa/Nairobi');
+
         // ──────────────────────────────────────────────────────────────
         // CLEANUP: Ensure all Movie-type records have null category_id
         // category_id is a FK to series_movies.id — only Series episodes

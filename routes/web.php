@@ -2551,31 +2551,8 @@ Route::get('/', function () {
 })->name('landing.index');
 
 
-Route::get('set-all-movies-to-no', function () {
-    $data = [
-        'status' => 'Inactive',
-        'is_processed' => 'No',
-        'downloaded_from_google' => 'No',
-        'uploaded_to_from_google' => 'No',
-        'plays_on_google' => 'No',
-        'downloaded_to_new_server' => 'No',
-        'content_type_processed' => 'No',
-        'video_is_downloaded_to_server' => 'No',
-        'video_url_tested_by_curl' => 'No',
-        'video_url_tested_by_curl_works' => 'No',
-        'video_url_tested_by_human' => 'No',
-        'video_url_tested_by_human_works' => 'No',
-        'firebase_transfer_attempted' => 'No',
-        'firebase_transfer_transfer_in_progress' => 'No',
-        'firebase_transfer_successful' => 'No',
-        'firebase_video_tested_by_curl' => 'No',
-        'firebase_video_tested_by_curl_works' => 'No',
-        'firebase_video_tested_by_human' => 'No',
-        'firebase_video_tested_by_human_works' => 'No',
-    ];
-    DB::table('movie_models')->update($data);
-    dd('Done');
-});
+// REMOVED: Dangerous nuclear route that sets ALL movies to Inactive
+// Route 'set-all-movies-to-no' has been disabled to prevent accidental mass deactivation
 
 // SEO-optimized public pages
 Route::get('/movies', [LandingController::class, 'movies'])->name('landing.movies');

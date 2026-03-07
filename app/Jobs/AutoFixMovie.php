@@ -104,6 +104,10 @@ class AutoFixMovie
 
             if (!$hasMunowatchSource) {
                 Log::debug("[AutoFixMovie] Movie #{$movieId} is not from munowatch, skipping auto-fix.");
+                // Deactivate non-munowatch movies since we can't auto-fix them
+                $movie->status = 'Inactive';
+                $movie->muno_success = 'Auto-deactivated: no auto-fix source available on ' . now()->format('Y-m-d H:i:s');
+                $movie->save();
                 return;
             }
 
@@ -118,6 +122,11 @@ class AutoFixMovie
                 Log::info("[AutoFixMovie] Movie #{$movieId} auto-fixed successfully. " . ($result['message'] ?? ''));
             } else {
                 Log::warning("[AutoFixMovie] Movie #{$movieId} auto-fix failed: " . ($result['message'] ?? 'Unknown error'));
+                // Only deactivate the movie AFTER auto-fix has failed
+                $movie->status = 'Inactive';
+                $movie->muno_success = 'Auto-deactivated: auto-fix failed on ' . now()->format('Y-m-d H:i:s') . ' - ' . ($result['message'] ?? 'Unknown');
+                $movie->save();
+                Log::info("[AutoFixMovie] Movie #{$movieId} set to Inactive after failed auto-fix.");
             }
 
         } catch (\Throwable $e) {

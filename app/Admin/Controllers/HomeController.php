@@ -184,6 +184,41 @@ class HomeController extends Controller
 
         $html .= '<div class="db-wrap">';
 
+        // ── CURRENT TIME (EAT) ──
+        $currentTime = Carbon::now('Africa/Nairobi');
+        $html .= '<div style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;border-radius:8px;padding:12px 18px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.15)">';
+        $html .= '<div style="display:flex;align-items:center;gap:10px">';
+        $html .= '<i class="fa fa-clock-o" style="font-size:22px;opacity:.8"></i>';
+        $html .= '<div>';
+        $html .= '<div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;opacity:.7">East Africa Time (GMT+3)</div>';
+        $html .= '<div id="eat-clock" style="font-size:22px;font-weight:700;letter-spacing:1px;font-variant-numeric:tabular-nums">' . $currentTime->format('h:i:s A') . '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '<div style="text-align:right">';
+        $html .= '<div style="font-size:13px;font-weight:600">' . $currentTime->format('l') . '</div>';
+        $html .= '<div style="font-size:11px;opacity:.7">' . $currentTime->format('d F Y') . '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+        // Live-update the clock every second via JS
+        $html .= '<script>
+(function(){
+  function pad(n){return n<10?"0"+n:n;}
+  function tick(){
+    var el=document.getElementById("eat-clock");
+    if(!el)return;
+    var d=new Date();
+    // Convert to EAT (UTC+3)
+    var utc=d.getTime()+d.getTimezoneOffset()*60000;
+    var eat=new Date(utc+3*3600000);
+    var h=eat.getHours(),m=eat.getMinutes(),s=eat.getSeconds();
+    var ap=h>=12?"PM":"AM";
+    h=h%12;if(h===0)h=12;
+    el.textContent=pad(h)+":"+pad(m)+":"+pad(s)+" "+ap;
+  }
+  setInterval(tick,1000);
+}());
+</script>';
+
         // ── SECTION: Content Overview ──
         $html .= '<div class="db-section">Content Overview</div>';
         $html .= '<div class="db-row">';

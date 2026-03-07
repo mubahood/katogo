@@ -87,19 +87,19 @@ class ManifestController extends Controller
         // ── 3. Build manifest ────────────────────────────────
         $userId = $u->id;
 
-        // Daily rotation seed — content cycles each calendar day
-        $cacheDate = Carbon::today()->format('Y-m-d');
+        // Rotation seed — content cycles every 6 hours (4 times per day)
+        $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
 
-        // Featured movie (cached 5 min, rotates daily)
-        $featured = Cache::remember("v2_manifest_featured_{$cacheDate}", 300, function () {
+        // Featured movie (cached 5 min, rotates every 6 hours)
+        $featured = Cache::remember("v2_manifest_featured_{$rotationSlot}", 300, function () {
             return $this->getFeaturedMovie();
         });
 
         // Continue Watching — personal, never cached
         $continueWatching = $this->getContinueWatching($userId);
 
-        // Movie sections (cached 5 min, rotates daily)
-        $movieSections = Cache::remember("v2_manifest_sections_{$cacheDate}", 300, function () {
+        // Movie sections (cached 5 min, rotates every 6 hours)
+        $movieSections = Cache::remember("v2_manifest_sections_{$rotationSlot}", 300, function () {
             return $this->buildMovieSections();
         });
 
@@ -171,7 +171,7 @@ class ManifestController extends Controller
      */
     private function getFeaturedMovie(): ?array
     {
-        $todaySeed = Carbon::today()->dayOfYear;
+        $todaySeed = (int) floor(Carbon::now()->timestamp / 21600);
 
         try {
             // Pick from top 10 movies by downloads, rotating daily
@@ -241,18 +241,18 @@ class ManifestController extends Controller
      *
      * ROTATION STRATEGY:
      *  – Page-cycling: each section has totalPages = ceil(pool / limit).
-     *    currentPage = dayOfYear % totalPages. This guarantees the ENTIRE
+     *    currentPage = rotationSlot % totalPages. This guarantees the ENTIRE
      *    catalogue is shown before any movie repeats in that section.
      *  – Deterministic shuffle: discovery sections use ORDER BY RAND(fixedSeed)
-     *    with a CONSTANT seed per section (not daily). The same shuffled order
-     *    always, but a different PAGE each day — zero overlap between days.
+     *    with a CONSTANT seed per section (not per slot). The same shuffled order
+     *    always, but a different PAGE every 6 hours — zero overlap between slots.
      *  – Soft dedup: adjacent sections exclude each other's IDs so two
      *    neighbouring rows never show the same movie.
      */
     private function buildMovieSections(): array
     {
         $sections       = [];
-        $dayOfYear      = Carbon::today()->dayOfYear;   // 1-365/366
+        $rotationSlot   = (int) floor(Carbon::now()->timestamp / 21600);   // changes every 6 hours
         $prevSectionIds = [];
 
         // Helper: append a section & rotate dedup window
@@ -273,9 +273,9 @@ class ManifestController extends Controller
          * Given a total pool size and desired page size, returns the SQL OFFSET
          * for today so that the full pool is covered before repeating.
          */
-        $cycledOffset = function (int $poolSize, int $pageSize) use ($dayOfYear): int {
+        $cycledOffset = function (int $poolSize, int $pageSize) use ($rotationSlot): int {
             $totalPages = max(1, (int) ceil($poolSize / max(1, $pageSize)));
-            $page = $dayOfYear % $totalPages;
+            $page = $rotationSlot % $totalPages;
             return $page * $pageSize;
         };
 
@@ -329,7 +329,7 @@ class ManifestController extends Controller
         //    (shifted so it doesn't overlap with trending's page)
         // ═══════════════════════════════════════════════════
         $popularPages = max(1, (int) ceil($totalMovies / $limit));
-        $popularPage  = ($dayOfYear + (int) floor($popularPages / 2)) % $popularPages;
+        $popularPage  = ($rotationSlot + (int) floor($popularPages / 2)) % $popularPages;
         $popular = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderBy('views_time_count', 'desc')
@@ -391,7 +391,7 @@ class ManifestController extends Controller
         // 6. MOST DOWNLOADED — page-cycled (offset shifted by 1/3)
         // ═══════════════════════════════════════════════════
         $dlPages  = max(1, (int) ceil($totalMovies / $limit));
-        $dlPage   = ($dayOfYear + (int) floor($dlPages / 3)) % $dlPages;
+        $dlPage   = ($rotationSlot + (int) floor($dlPages / 3)) % $dlPages;
         $mostDownloaded = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderBy('downloads_count', 'desc')
@@ -497,7 +497,7 @@ class ManifestController extends Controller
         if ($topVjs->isNotEmpty()) {
             $vjTotal = $topVjs->count();
             // Rotate: day 0 → VJs 0,1,2 | day 1 → VJs 3,4,5 | …
-            $vjStartIdx = ($dayOfYear * $vjsPerDay) % $vjTotal;
+            $vjStartIdx = ($rotationSlot * $vjsPerDay) % $vjTotal;
             for ($i = 0; $i < $vjTotal && $vjSpotlightCount < $vjsPerDay; $i++) {
                 $vjRow  = $topVjs[($vjStartIdx + $i) % $vjTotal];
                 $vjName = trim($vjRow->vj);
@@ -569,7 +569,7 @@ class ManifestController extends Controller
         $forYouOffset = $cycledOffset($totalMovies, $limit);
         // Shift by 2/3 so it doesn't align with trending/popular pages
         $forYouPages = max(1, (int) ceil($totalMovies / $limit));
-        $forYouPage  = ($dayOfYear + (int) floor($forYouPages * 2 / 3)) % $forYouPages;
+        $forYouPage  = ($rotationSlot + (int) floor($forYouPages * 2 / 3)) % $forYouPages;
         $forYou = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderByRaw('RAND(42)')
@@ -615,7 +615,7 @@ class ManifestController extends Controller
         // ═══════════════════════════════════════════════════
         $classicsOffset = $cycledOffset($totalMovies, $limit);
         $classicsPages  = max(1, (int) ceil($totalMovies / $limit));
-        $classicsPage   = ($dayOfYear + (int) floor($classicsPages / 4)) % $classicsPages;
+        $classicsPage   = ($rotationSlot + (int) floor($classicsPages / 4)) % $classicsPages;
         $classics = $activeMovies()
             ->whereNotIn('id', $prevSectionIds)
             ->orderBy('created_at', 'asc')

@@ -33,11 +33,8 @@ class SeriesMovie extends Model
                     'status' => 'Active',
                     'thumbnail_url' => $model->thumbnail
                 ]);
-            } else {
-                MovieModel::where('category_id', $model->id)->update([
-                    'status' => 'Inactive',
-                ]);
             }
+            // Do NOT mass-set episodes to Inactive on create
             $model->is_active = 'No';
         });
 
@@ -47,11 +44,8 @@ class SeriesMovie extends Model
                     'status' => 'Active',
                     'thumbnail_url' => $model->thumbnail
                 ]);
-            } else {
-                MovieModel::where('category_id', $model->id)->update([
-                    'status' => 'Inactive',
-                ]);
             }
+            // Do NOT mass-set episodes to Inactive on update — only auto-fix should deactivate individual movies
             $count_tot_episodes = MovieModel::where('category_id', $model->id)->count();
             $sql = "UPDATE series_movies SET total_episodes = $count_tot_episodes WHERE id = $model->id";
             DB::update($sql);
