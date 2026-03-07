@@ -1,0 +1,16 @@
+now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (ugflix - /Users/mac/Desktop/github/luganda-translated-movies-mobo)
+
+now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (Muno App - /Users/mac/Desktop/github/muno-app-free-luganda-movies)
+
+now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. let us start with lugaflix app (/Users/mac/Downloads/muno)
+
+<en-US>
+- Fix the error of logging in every time
+- Fixed the error of black screen deadlock after logging in
+- Introduce a series player where episodes will show in the player and you can choose the one you want to play next.
+- Introdcued next & previous button in player
+- Improved app user-interface
+</en-US>
+
+
+I want to make 
