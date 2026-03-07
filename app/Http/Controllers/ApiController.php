@@ -1952,8 +1952,22 @@ class ApiController extends BaseController
             'role_id' => 2,
         ]);
 
+        // Generate JWT token (same as login)
+        $token = auth('api')->setTTL(60 * 24 * 365 * 5)->attempt([
+            'id' => $registered_user->id,
+            'password' => trim($r->password),
+        ]);
+
+        if ($token == null) {
+            Utils::error("Registration succeeded but token generation failed. Please login.");
+        }
+
+        $user_data = $registered_user->toArray();
+        $user_data['token'] = $token;
+        $user_data['remember_token'] = $token;
+
         Utils::success([
-            'user' => $registered_user,
+            'user' => $user_data,
             'company' => Company::find(1),
         ], "Registration successful.");
     }
