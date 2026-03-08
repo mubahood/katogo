@@ -241,7 +241,7 @@ class StreamingStationController extends AdminController
         });
 
         $form->tab('Media & Location', function ($form) {
-            $form->image('logo_url', 'Logo')->removable()->help('Upload station logo image');
+            $form->text('logo_url', 'Logo URL')->help('Direct URL to station logo image');
             $form->text('website_url', 'Website URL');
             $form->text('country', 'Country')->default('Uganda');
             $form->text('language', 'Language')->default('English');
