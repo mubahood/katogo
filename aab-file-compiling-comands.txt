@@ -2,7 +2,7 @@ now we need to update the app version to playstore, in yaml file, increase the a
 
 now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (Muno App - /Users/mac/Desktop/github/muno-app-free-luganda-movies)
 
-now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. let us start with lugaflix app (/Users/mac/Downloads/muno)
+now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. let us start with lugaflix app (/Users/mac/Desktop/github/lugaflix)
 
 <en-US>
 - Fix the error of logging in every time
