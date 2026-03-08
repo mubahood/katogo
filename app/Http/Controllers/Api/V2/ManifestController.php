@@ -95,6 +95,28 @@ class ManifestController extends Controller
             return $this->getFeaturedMovie();
         });
 
+        // Guard: verify cached featured movie is still Active.
+        // A movie can be deactivated (auto-fix failure, admin action) during the 5-min TTL.
+        // One cheap EXISTS query per request; the full re-pick only fires on the rare deactivation.
+        if ($featured && isset($featured['id'])) {
+            $stillActive = MovieModel::where('id', $featured['id'])
+                ->where('status', 'Active')
+                ->exists();
+
+            if (!$stillActive) {
+                $inactiveId = $featured['id'];
+                $fresh = $this->pickNextFeaturedMovie($inactiveId);
+                if ($fresh) {
+                    $featured = $fresh;
+                    Cache::put("v2_manifest_featured_{$rotationSlot}", $featured, 300);
+                    Log::info('V2 Manifest: cached featured movie was inactive, replaced with next active', [
+                        'inactive_id' => $inactiveId,
+                        'new_id'      => $featured['id'],
+                    ]);
+                }
+            }
+        }
+
         // Continue Watching — personal, never cached
         $continueWatching = $this->getContinueWatching($userId);
 
@@ -190,6 +212,38 @@ class ManifestController extends Controller
 
         // Fallback: latest active movie
         $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+            ->orderBy('created_at', 'desc')
+            ->first(self::SLIM_FIELDS);
+
+        return $movie ? $this->slimMovie($movie) : null;
+    }
+
+    /**
+     * Pick the next best active featured movie, excluding a specific ID.
+     * Called when the cached featured movie is found to be inactive.
+     */
+    private function pickNextFeaturedMovie(int $excludeId): ?array
+    {
+        $todaySeed = (int) floor(Carbon::now()->timestamp / 21600);
+
+        try {
+            $candidates = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+                ->where('id', '!=', $excludeId)
+                ->orderBy('downloads_count', 'desc')
+                ->limit(10)
+                ->get(self::SLIM_FIELDS);
+
+            if ($candidates->isNotEmpty()) {
+                $index = $todaySeed % $candidates->count();
+                return $this->slimMovie($candidates[$index]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('V2 Manifest: pickNextFeaturedMovie error', ['error' => $e->getMessage()]);
+        }
+
+        // Fallback: most recently added active movie (excluding inactive one)
+        $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+            ->where('id', '!=', $excludeId)
             ->orderBy('created_at', 'desc')
             ->first(self::SLIM_FIELDS);
 
