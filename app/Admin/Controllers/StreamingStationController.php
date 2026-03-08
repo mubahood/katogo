@@ -9,6 +9,8 @@ use Encore\Admin\Form;
 use Encore\Admin\Grid;
 use Encore\Admin\Show;
 use Encore\Admin\Layout\Content;
+use App\Admin\Actions\Post\BatchActivateStations;
+use App\Admin\Actions\Post\BatchDeactivateStations;
 
 class StreamingStationController extends AdminController
 {
@@ -159,6 +161,8 @@ class StreamingStationController extends AdminController
         // Enable batch operations
         $grid->batchActions(function ($batch) {
             $batch->disableDelete();
+            $batch->add(new BatchActivateStations());
+            $batch->add(new BatchDeactivateStations());
         });
 
         // Export
@@ -237,7 +241,7 @@ class StreamingStationController extends AdminController
         });
 
         $form->tab('Media & Location', function ($form) {
-            $form->text('logo_url', 'Logo URL')->help('Direct URL to station logo image');
+            $form->image('logo_url', 'Logo')->removable()->help('Upload station logo image');
             $form->text('website_url', 'Website URL');
             $form->text('country', 'Country')->default('Uganda');
             $form->text('language', 'Language')->default('English');
