@@ -131,7 +131,15 @@ class StreamingController extends Controller
             return $this->error('Station not found', 404);
         }
 
-        return $this->success($station);
+        // Transform to match expected format
+        $data = $station->toArray();
+        $urls = $data['streaming_urls'] ?? [];
+        $data['stream_url'] = !empty($urls) ? $urls[0]['url'] : null;
+        $data['stream_format'] = !empty($urls) ? $urls[0]['format'] : null;
+        $data['all_urls'] = $urls;
+        unset($data['streaming_urls']);
+
+        return $this->success($data);
     }
 
     /**
