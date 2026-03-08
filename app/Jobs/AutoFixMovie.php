@@ -108,6 +108,7 @@ class AutoFixMovie
                 $movie->status = 'Inactive';
                 $movie->muno_success = 'Auto-deactivated: no auto-fix source available on ' . now()->format('Y-m-d H:i:s');
                 $movie->save();
+                static::invalidateManifestCache($movieId, 'no auto-fix source');
                 return;
             }
 
@@ -127,6 +128,7 @@ class AutoFixMovie
                 $movie->muno_success = 'Auto-deactivated: auto-fix failed on ' . now()->format('Y-m-d H:i:s') . ' - ' . ($result['message'] ?? 'Unknown');
                 $movie->save();
                 Log::info("[AutoFixMovie] Movie #{$movieId} set to Inactive after failed auto-fix.");
+                static::invalidateManifestCache($movieId, $result['message'] ?? 'auto-fix failed');
             }
 
         } catch (\Throwable $e) {
@@ -142,5 +144,41 @@ class AutoFixMovie
     public static function isInProgress(): bool
     {
         return static::$inProgress;
+    }
+
+    /**
+     * Invalidate all manifest cache keys that may contain this movie.
+     *
+     * The V2 manifest uses slot-based cache keys where the slot rotates every 6 hours:
+     *   v2_manifest_featured_{slot}  — the single featured/trending movie
+     *   v2_manifest_sections_{slot}  — all movie list sections (trending, popular, etc.)
+     *   v2_total_movies              — total movie count shown in stats
+     *
+     * We clear the current slot AND the previous slot to handle edge cases where a
+     * request was cached just before a 6-hour boundary flip.
+     */
+    protected static function invalidateManifestCache(int $movieId, string $reason = ''): void
+    {
+        try {
+            $slotNow  = (int) floor(now()->timestamp / 21600);
+            $slotPrev = $slotNow - 1;
+
+            $keys = [
+                "v2_manifest_featured_{$slotNow}",
+                "v2_manifest_sections_{$slotNow}",
+                "v2_manifest_featured_{$slotPrev}",
+                "v2_manifest_sections_{$slotPrev}",
+                'v2_total_movies',
+            ];
+
+            foreach ($keys as $key) {
+                Cache::forget($key);
+            }
+
+            Log::info("[AutoFixMovie] Manifest cache cleared for deactivated movie #{$movieId}. Reason: {$reason}. Keys cleared: " . implode(', ', $keys));
+        } catch (\Throwable $e) {
+            // Never let cache errors break the main flow
+            Log::warning("[AutoFixMovie] Failed to clear manifest cache for movie #{$movieId}: " . $e->getMessage());
+        }
     }
 }

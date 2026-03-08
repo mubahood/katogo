@@ -163,6 +163,13 @@ Route::group([
     $router->resource('coin-transactions', CoinTransactionController::class);
 
     // ============================================
+    // STREAMING MODULE ROUTES (TV & Radio)
+    // ============================================
+    $router->resource('streaming-stations', StreamingStationController::class);
+    $router->resource('streaming-tv', StreamingStationController::class);
+    $router->resource('streaming-radio', StreamingStationController::class);
+
+    // ============================================
     // BLOG MODULE ROUTES
     // ============================================
     $router->resource('blog-posts', BlogPostController::class);
