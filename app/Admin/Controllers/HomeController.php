@@ -67,7 +67,7 @@ class HomeController extends Controller
 
         // ── BATCH: Daily signups by platform (last 30 days) ──
         $thirtyDaysAgo = Carbon::today()->subDays(29)->format('Y-m-d');
-        $dailySignupsRaw = DB::table('users')
+        $dailySignupsRaw = DB::table('admin_users')
             ->select(DB::raw('DATE(created_at) as d'), 'app_type', DB::raw('COUNT(*) as cnt'))
             ->where('created_at', '>=', $thirtyDaysAgo)
             ->groupBy('d', 'app_type')
@@ -75,10 +75,10 @@ class HomeController extends Controller
 
         // ── BATCH: Daily views by platform (last 30 days) ──
         $dailyViewsRaw = DB::table('movie_views')
-            ->join('users', 'users.id', '=', 'movie_views.user_id')
-            ->select(DB::raw('DATE(movie_views.created_at) as d'), 'users.app_type', DB::raw('COUNT(*) as cnt'))
+            ->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')
+            ->select(DB::raw('DATE(movie_views.created_at) as d'), 'admin_users.app_type', DB::raw('COUNT(*) as cnt'))
             ->where('movie_views.created_at', '>=', $thirtyDaysAgo)
-            ->groupBy('d', 'users.app_type')
+            ->groupBy('d', 'admin_users.app_type')
             ->get();
 
         // ── BATCH: Daily downloads (last 30 days) ──
@@ -94,11 +94,11 @@ class HomeController extends Controller
 
         // ── BATCH: Daily revenue by platform (last 30 days) ──
         $dailyRevenueRaw = DB::table('subscription_transactions')
-            ->join('users', 'users.id', '=', 'subscription_transactions.user_id')
-            ->select(DB::raw('DATE(subscription_transactions.created_at) as d'), 'users.app_type', DB::raw('SUM(subscription_transactions.amount) as total'))
+            ->join('admin_users', 'admin_users.id', '=', 'subscription_transactions.user_id')
+            ->select(DB::raw('DATE(subscription_transactions.created_at) as d'), 'admin_users.app_type', DB::raw('SUM(subscription_transactions.amount) as total'))
             ->where('subscription_transactions.status', 'completed')
             ->where('subscription_transactions.created_at', '>=', $thirtyDaysAgo)
-            ->groupBy('d', 'users.app_type')
+            ->groupBy('d', 'admin_users.app_type')
             ->get();
 
         // Build lookup maps from batch results
@@ -146,9 +146,9 @@ class HomeController extends Controller
         }
 
         // Platform view totals (for comparison table)
-        $munoViews    = DB::table('movie_views')->join('users', 'users.id', '=', 'movie_views.user_id')->where('users.app_type', 'muno_app')->count();
-        $lugaflixViews = DB::table('movie_views')->join('users', 'users.id', '=', 'movie_views.user_id')->where('users.app_type', 'lugaflix')->count();
-        $ugflixViews  = DB::table('movie_views')->join('users', 'users.id', '=', 'movie_views.user_id')->where('users.app_type', 'ugflix')->count();
+        $munoViews    = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'muno_app')->count();
+        $lugaflixViews = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'lugaflix')->count();
+        $ugflixViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'ugflix')->count();
 
         // Last 30 days subscriptions list
         $recentSubs = Subscription::with(['user', 'plan'])
