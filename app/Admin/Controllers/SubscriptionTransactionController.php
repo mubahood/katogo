@@ -147,7 +147,7 @@ class SubscriptionTransactionController extends AdminController
         $count = SubscriptionTransaction::where('status', 'Completed')
             ->where('transaction_type', 'Withdrawal')
             ->count();
-        return new InfoBox("Withdrawn ({$count})", 'arrow-circle-up', 'maroon', '/subscription-transactions?transaction_type=Withdrawal&payment_status=all', 'UGX ' . number_format(abs($amount)));
+        return new InfoBox("Withdrawn ({$count})", 'arrow-circle-up', 'maroon', '/subscription-transactions?transaction_type=Withdrawal&status=all', 'UGX ' . number_format(abs($amount)));
     }
 
     /**
@@ -247,9 +247,9 @@ class SubscriptionTransactionController extends AdminController
     {
         $grid = new Grid(new SubscriptionTransaction());
         $grid->model()->orderBy('id', 'desc');
-        //check if payment_status is not set by get
-        if (!request()->has('payment_status')) {
-            $grid->model()->where('payment_status', 'Completed');
+        //check if status is not set by get
+        if (!request()->has('status')) {
+            $grid->model()->where('status', 'Completed');
         }
 
         // Quick filters
@@ -555,6 +555,9 @@ class SubscriptionTransactionController extends AdminController
             $form->hidden('transaction_type')->default('Withdrawal');
             $form->hidden('status')->default('Completed');
             $form->hidden('payment_method')->default('Admin Withdrawal');
+            $form->hidden('subscription_id')->default(0);
+            $form->hidden('user_id')->default(\Admin::user()->id);
+            $form->hidden('merchant_reference')->default('WD-' . date('YmdHis') . '-' . \Admin::user()->id);
         }
 
         $form->saving(function (Form $form) {
