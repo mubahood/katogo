@@ -47,8 +47,8 @@ class SubscriptionTransactionController extends AdminController
             })
             ->row(function (Row $row) {
                 $row->column(3, $this->completedCountBox());
-                $row->column(3, $this->mobileMoneyBox());
-                $row->column(3, $this->cardPaymentsBox());
+                $row->column(3, $this->withdrawalsBox());
+                $row->column(3, $this->netRevenueBox());
                 $row->column(3, $this->refundedBox());
             })
             ->row(function (Row $row) {
@@ -134,6 +134,30 @@ class SubscriptionTransactionController extends AdminController
             })
             ->sum('amount');
         return new InfoBox('Card Payments', 'credit-card', 'blue', '#', 'UGX ' . number_format($amount));
+    }
+
+    /**
+     * Withdrawals info box
+     */
+    protected function withdrawalsBox()
+    {
+        $amount = SubscriptionTransaction::where('status', 'Completed')
+            ->where('transaction_type', 'Withdrawal')
+            ->sum('amount');
+        $count = SubscriptionTransaction::where('status', 'Completed')
+            ->where('transaction_type', 'Withdrawal')
+            ->count();
+        return new InfoBox("Withdrawn ({$count})", 'arrow-circle-up', 'maroon', '/subscription-transactions?transaction_type=Withdrawal&payment_status=all', 'UGX ' . number_format(abs($amount)));
+    }
+
+    /**
+     * Net revenue info box (revenue minus withdrawals)
+     */
+    protected function netRevenueBox()
+    {
+        $net = SubscriptionTransaction::where('status', 'Completed')->sum('amount');
+        $color = $net >= 0 ? 'green' : 'red';
+        return new InfoBox('Net Balance', 'balance-scale', $color, '#', 'UGX ' . number_format($net));
     }
 
     /**
@@ -262,6 +286,7 @@ class SubscriptionTransactionController extends AdminController
                     'Renewal' => '🔄',
                     'Upgrade' => '⬆️',
                     'Refund' => '↩️',
+                    'Withdrawal' => '💸',
                 ];
                 $icon = $icons[$type] ?? '📝';
                 return "{$icon} {$type}";
@@ -271,17 +296,22 @@ class SubscriptionTransactionController extends AdminController
                 'Renewal' => 'success',
                 'Upgrade' => 'info',
                 'Refund' => 'warning',
+                'Withdrawal' => 'danger',
             ])
             ->filter([
                 'Initial' => 'Initial',
                 'Renewal' => 'Renewal',
                 'Upgrade' => 'Upgrade',
                 'Refund' => 'Refund',
+                'Withdrawal' => 'Withdrawal',
             ]);
 
         $grid->column('amount', __('Amount'))
             ->display(function ($amount) {
                 $currency = $this->currency ?? 'UGX';
+                if ($amount < 0) {
+                    return "<strong style='color:red'>- {$currency} " . number_format(abs($amount)) . "</strong>";
+                }
                 $color = $this->status === 'Completed' ? 'green' : ($this->status === 'Failed' ? 'red' : 'orange');
                 return "<strong style='color:{$color}'>{$currency} " . number_format($amount) . "</strong>";
             })->sortable()
@@ -362,6 +392,7 @@ class SubscriptionTransactionController extends AdminController
                     'Renewal' => 'Renewal',
                     'Upgrade' => 'Upgrade',
                     'Refund' => 'Refund',
+                    'Withdrawal' => 'Withdrawal',
                 ]);
             });
 
@@ -385,9 +416,6 @@ class SubscriptionTransactionController extends AdminController
             $export->filename('Transactions_' . date('Y-m-d_H-i'));
             $export->except(['actions']);
         });
-
-        // Disable create (transactions are auto-generated)
-        $grid->disableCreateButton();
 
         return $grid;
     }
@@ -464,45 +492,81 @@ class SubscriptionTransactionController extends AdminController
     {
         $form = new Form(new SubscriptionTransaction());
 
+        $isEditing = $form->isEditing();
+
         $form->display('id', __('Transaction ID'));
         $form->display('created_at', __('Date'));
 
         $form->divider('Transaction Details');
 
-        $form->number('subscription_id', __('Subscription ID'));
-        $form->number('user_id', __('User ID'));
+        if ($isEditing) {
+            $form->number('subscription_id', __('Subscription ID'));
+            $form->number('user_id', __('User ID'));
 
-        $form->select('transaction_type', __('Transaction Type'))->options([
-            'Initial' => 'Initial',
-            'Renewal' => 'Renewal',
-            'Upgrade' => 'Upgrade',
-            'Refund' => 'Refund',
-        ])->default('Initial');
+            $form->select('transaction_type', __('Transaction Type'))->options([
+                'Initial' => 'Initial',
+                'Renewal' => 'Renewal',
+                'Upgrade' => 'Upgrade',
+                'Refund' => 'Refund',
+                'Withdrawal' => 'Withdrawal',
+            ])->default('Initial');
 
-        $form->decimal('amount', __('Amount'));
-        $form->text('currency', __('Currency'))->default('UGX');
+            $form->decimal('amount', __('Amount'));
+            $form->text('currency', __('Currency'))->default('UGX');
 
-        $form->select('status', __('Status'))->options([
-            'Pending' => 'Pending',
-            'Completed' => 'Completed',
-            'Failed' => 'Failed',
-            'Refunded' => 'Refunded',
-        ])->default('Pending');
+            $form->select('status', __('Status'))->options([
+                'Pending' => 'Pending',
+                'Completed' => 'Completed',
+                'Failed' => 'Failed',
+                'Refunded' => 'Refunded',
+            ])->default('Pending');
 
-        $form->divider('Payment Details');
+            $form->divider('Payment Details');
 
-        $form->text('payment_method', __('Payment Method'));
-        $form->text('pesapal_tracking_id', __('Pesapal Tracking ID'));
-        $form->text('merchant_reference', __('Merchant Reference'));
-        $form->text('confirmation_code', __('Confirmation Code'));
-        $form->text('payment_account', __('Payment Account'));
+            $form->text('payment_method', __('Payment Method'));
+            $form->text('pesapal_tracking_id', __('Pesapal Tracking ID'));
+            $form->text('merchant_reference', __('Merchant Reference'));
+            $form->text('confirmation_code', __('Confirmation Code'));
+            $form->text('payment_account', __('Payment Account'));
 
-        $form->divider('Refund (Admin Only)');
+            $form->divider('Refund (Admin Only)');
 
-        $form->textarea('refund_reason', __('Refund Reason'));
-        $form->datetime('refunded_at', __('Refunded At'));
+            $form->textarea('refund_reason', __('Refund Reason'));
+            $form->datetime('refunded_at', __('Refunded At'));
+        } else {
+            // CREATE MODE: simplified withdrawal form
+            $form->html('<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:12px;margin-bottom:15px">' .
+                '<strong>💸 Record a Withdrawal</strong><br>' .
+                '<small>This records money taken out of the platform (e.g. bank transfer, cash out). ' .
+                'The amount will be stored as negative and subtracted from total revenue.</small></div>');
+
+            $form->decimal('amount', __('Withdrawal Amount (UGX)'))
+                ->required()
+                ->rules('required|numeric|min:1')
+                ->help('Enter the amount withdrawn (as a positive number — it will be saved as negative)');
+
+            $form->text('currency', __('Currency'))->default('UGX')->readonly();
+
+            $form->textarea('refund_reason', __('Withdrawal Note / Reason'))
+                ->required()
+                ->rules('required')
+                ->help('Describe what this withdrawal was for (e.g. "Bank transfer to account XXX", "Cash out for expenses")');
+
+            $form->hidden('transaction_type')->default('Withdrawal');
+            $form->hidden('status')->default('Completed');
+            $form->hidden('payment_method')->default('Admin Withdrawal');
+        }
 
         $form->saving(function (Form $form) {
+            // Handle withdrawal: store amount as negative
+            if ($form->transaction_type === 'Withdrawal' && !$form->isEditing()) {
+                $amount = abs((float) $form->amount);
+                $form->amount = -$amount;
+                $form->user_id = \Admin::user()->id;
+                $form->subscription_id = 0;
+                $form->merchant_reference = 'WD-' . date('YmdHis') . '-' . \Admin::user()->id;
+            }
+
             if ($form->status === 'Refunded' && !$form->model()->refunded_by) {
                 $form->refunded_by = \Admin::user()->id;
                 if (!$form->refunded_at) {
