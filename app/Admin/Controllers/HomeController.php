@@ -150,11 +150,15 @@ class HomeController extends Controller
         $lugaflixViews = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'lugaflix')->count();
         $ugflixViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'ugflix')->count();
 
-        // Last 30 days subscriptions list
-        $recentSubs = Subscription::with(['user', 'plan'])
-            ->where('created_at', '>=', Carbon::now()->subDays(30))
-            ->orderBy('created_at', 'desc')
+        // Last 30 days subscriptions — daily aggregates
+        $dailySubsRaw = DB::table('subscriptions')
+            ->select(DB::raw('DATE(created_at) as d'), DB::raw('COUNT(*) as cnt'), DB::raw('SUM(amount_paid) as total'))
+            ->where('created_at', '>=', $thirtyDaysAgo)
+            ->groupBy('d')
+            ->orderBy('d', 'desc')
             ->get();
+        $subsTotal30 = $dailySubsRaw->sum('cnt');
+        $subsAmount30 = $dailySubsRaw->sum('total');
 
         // User distribution percentages
         $uT = max($totalUsers, 1);
@@ -311,39 +315,28 @@ class HomeController extends Controller
         $html .= '<div style="position:relative;height:320px"><canvas id="revenueChart"></canvas></div>';
         $html .= '</div>';
 
-        // Recent 30 days subscriptions list
+        // Daily subscriptions summary (last 30 days)
         $html .= '<div class="db-box" style="flex:1;min-width:460px;max-height:380px;overflow-y:auto">';
-        $html .= '<div class="db-box-title"><i class="fa fa-list" style="color:#6f42c1"></i> Subscriptions — Last 30 Days (' . $recentSubs->count() . ')</div>';
+        $html .= '<div class="db-box-title"><i class="fa fa-list" style="color:#6f42c1"></i> Subscriptions — Last 30 Days (Total: ' . number_format($subsTotal30) . ' | UGX ' . number_format($subsAmount30) . ')</div>';
         $html .= '<table class="db-tbl">';
-        $html .= '<tr><th>#</th><th>User</th><th>Plan</th><th>Amount</th><th>Status</th><th>Platform</th><th>Date</th></tr>';
-        foreach ($recentSubs as $idx => $sub) {
-            $userName = $sub->user ? htmlspecialchars($sub->user->name) : 'N/A';
-            $planName = $sub->plan ? htmlspecialchars($sub->plan->name) : 'N/A';
-            $amount = 'UGX ' . number_format($sub->amount_paid ?? 0);
-            $statusClr = match($sub->status) {
-                'Active' => '#28a745', 'Expired' => '#dc3545', 'Pending' => '#ffc107', 'Cancelled' => '#6c757d', default => '#17a2b8',
-            };
-            $appType = $sub->user->app_type ?? 'N/A';
-            $appClr = match($appType) {
-                'muno_app' => '#e74c3c', 'lugaflix' => '#3498db', 'ugflix' => '#2ecc71', default => '#888',
-            };
-            $appLabel = match($appType) {
-                'muno_app' => 'Muno', 'lugaflix' => 'LugaFlix', 'ugflix' => 'UG Flix', default => $appType,
-            };
-            $date = $sub->created_at ? $sub->created_at->format('d M, H:i') : '';
-            $html .= "<tr>";
-            $html .= "<td>" . ($idx + 1) . "</td>";
-            $html .= "<td style='max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{$userName}</td>";
-            $html .= "<td>{$planName}</td>";
-            $html .= "<td><b>{$amount}</b></td>";
-            $html .= "<td><span class='db-badge' style='background:{$statusClr}'>{$sub->status}</span></td>";
-            $html .= "<td><span class='db-badge' style='background:{$appClr}'>{$appLabel}</span></td>";
-            $html .= "<td style='font-size:10px;color:#888'>{$date}</td>";
-            $html .= "</tr>";
+        $html .= '<tr><th>Date</th><th style="text-align:right">Count</th><th style="text-align:right">Amount (UGX)</th></tr>';
+        foreach ($dailySubsRaw as $row) {
+            $dLabel = Carbon::parse($row->d)->format('D, d M Y');
+            $html .= '<tr>';
+            $html .= '<td>' . $dLabel . '</td>';
+            $html .= '<td style="text-align:right"><b>' . number_format($row->cnt) . '</b></td>';
+            $html .= '<td style="text-align:right"><b>' . number_format($row->total ?? 0) . '</b></td>';
+            $html .= '</tr>';
         }
-        if ($recentSubs->isEmpty()) {
-            $html .= '<tr><td colspan="7" style="text-align:center;color:#999;padding:20px">No subscriptions in the last 30 days</td></tr>';
+        if ($dailySubsRaw->isEmpty()) {
+            $html .= '<tr><td colspan="3" style="text-align:center;color:#999;padding:20px">No subscriptions in the last 30 days</td></tr>';
         }
+        // Totals footer
+        $html .= '<tr style="border-top:2px solid #333;font-weight:700;background:#f8f9fa">';
+        $html .= '<td>TOTAL</td>';
+        $html .= '<td style="text-align:right">' . number_format($subsTotal30) . '</td>';
+        $html .= '<td style="text-align:right">UGX ' . number_format($subsAmount30) . '</td>';
+        $html .= '</tr>';
         $html .= '</table></div>';
 
         $html .= '</div>';
@@ -404,7 +397,7 @@ class HomeController extends Controller
         $html .= '<tr><td>Total Subscriptions</td><td><b>' . number_format($totalSubs) . '</b></td></tr>';
         $html .= '<tr><td>Active</td><td><span class="db-badge" style="background:#28a745">' . number_format($activeSubs) . '</span></td></tr>';
         $html .= '<tr><td>Expired</td><td><span class="db-badge" style="background:#dc3545">' . number_format($expiredSubs) . '</span></td></tr>';
-        $html .= '<tr><td>Last 30 Days</td><td><b>' . $recentSubs->count() . '</b></td></tr>';
+        $html .= '<tr><td>Last 30 Days</td><td><b>' . number_format($subsTotal30) . '</b></td></tr>';
         $html .= '<tr><td>Total Revenue</td><td><b style="color:#f39c12">UGX ' . number_format($subRevenue) . '</b></td></tr>';
         $html .= '</table></div>';
 
