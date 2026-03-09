@@ -414,8 +414,7 @@ HTML;
 
         $html .= '</div>'; // sc-wrap
 
-        // Chart.js — PJAX-compatible: use function + call on DOMContentLoaded AND pjax:end
-        $html .= '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
+        // Chart.js 2.x is already included by Laravel Admin (Chart.bundle.min.js)
         $html .= "<script>
 (function(){
 var _scData = {$chartData};
@@ -429,56 +428,59 @@ function _scInit(){
         lugaflix:{bg:'rgba(52,152,219,.12)', border:'#3498db', bar:'rgba(52,152,219,.7)'},
         ugflix:  {bg:'rgba(46,204,113,.12)', border:'#2ecc71', bar:'rgba(46,204,113,.7)'}
     };
-    var defFont = {family:\"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif\"};
     var gc = 'rgba(0,0,0,.04)';
     var defOpts = {
         responsive:true, maintainAspectRatio:false,
-        plugins:{
-            legend:{position:'top',labels:{usePointStyle:true,pointStyle:'circle',padding:12,font:{size:10,...defFont}}},
-            tooltip:{mode:'index',intersect:false,backgroundColor:'rgba(0,0,0,.85)',titleFont:{size:11},bodyFont:{size:10},padding:8,cornerRadius:5,
-                callbacks:{label:function(ctx){return ctx.dataset.label+': '+(ctx.parsed.y>=1000?'UGX '+ctx.parsed.y.toLocaleString():ctx.parsed.y);}}}
-        },
-        interaction:{mode:'nearest',axis:'x',intersect:false},
-        scales:{x:{grid:{color:gc,drawBorder:false},ticks:{font:{size:9,...defFont},maxRotation:45}},y:{beginAtZero:true,grid:{color:gc,drawBorder:false},ticks:{font:{size:9,...defFont}}}}
+        legend:{position:'top',labels:{usePointStyle:true,padding:12,fontSize:10}},
+        tooltips:{mode:'index',intersect:false,backgroundColor:'rgba(0,0,0,.85)',titleFontSize:11,bodyFontSize:10,cornerRadius:5,
+            callbacks:{label:function(item,data){var lbl=data.datasets[item.datasetIndex].label||'';var v=item.yLabel;return lbl+': '+(v>=1000?'UGX '+v.toLocaleString():v);}}},
+        hover:{mode:'nearest',intersect:false},
+        scales:{xAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,maxRotation:45}}],yAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true}}]}
     };
-    function lds(lbl,data,key,fill){return{label:lbl,data:data,borderColor:P[key].border,backgroundColor:fill?P[key].bg:'transparent',pointBackgroundColor:P[key].border,pointRadius:2,pointHoverRadius:5,borderWidth:2,tension:.35,fill:!!fill};}
+    function lds(lbl,data,key,fill){return{label:lbl,data:data,borderColor:P[key].border,backgroundColor:fill?P[key].bg:'transparent',pointBackgroundColor:P[key].border,pointRadius:2,pointHoverRadius:5,borderWidth:2,lineTension:.35,fill:!!fill};}
+    function cloneOpts(o){return JSON.parse(JSON.stringify(o));}
 
     // 1. Revenue Line
-    _scInstances.push(new Chart(document.getElementById('scRevLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_rev,'muno',1),lds('LugaFlix',_scData.daily.lg_rev,'lugaflix',1),lds('UGFlix',_scData.daily.ug_rev,'ugflix',1)]},options:{...defOpts,scales:{...defOpts.scales,y:{...defOpts.scales.y,ticks:{...defOpts.scales.y.ticks,callback:function(v){return 'UGX '+v.toLocaleString();}}}}}}));
+    var o1=cloneOpts(defOpts);o1.scales.yAxes[0].ticks.callback=function(v){return 'UGX '+v.toLocaleString();};
+    _scInstances.push(new Chart(document.getElementById('scRevLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_rev,'muno',1),lds('LugaFlix',_scData.daily.lg_rev,'lugaflix',1),lds('UGFlix',_scData.daily.ug_rev,'ugflix',1)]},options:o1}));
 
     // 2. Count Line
-    _scInstances.push(new Chart(document.getElementById('scCntLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_cnt,'muno',1),lds('LugaFlix',_scData.daily.lg_cnt,'lugaflix',1),lds('UGFlix',_scData.daily.ug_cnt,'ugflix',1)]},options:defOpts}));
+    _scInstances.push(new Chart(document.getElementById('scCntLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_cnt,'muno',1),lds('LugaFlix',_scData.daily.lg_cnt,'lugaflix',1),lds('UGFlix',_scData.daily.ug_cnt,'ugflix',1)]},options:cloneOpts(defOpts)}));
 
     // 3. Total Bar (dual axis)
-    _scInstances.push(new Chart(document.getElementById('scTotalBar'),{type:'bar',data:{labels:_scData.daily.labels,datasets:[{label:'Revenue (UGX)',data:_scData.daily.total_rev,backgroundColor:'rgba(243,156,18,.7)',borderColor:'#f39c12',borderWidth:1,borderRadius:3,yAxisID:'y',barPercentage:.7},{label:'Subscriptions',data:_scData.daily.total_cnt,type:'line',borderColor:'#007bff',backgroundColor:'rgba(0,123,255,.1)',pointBackgroundColor:'#007bff',pointRadius:2,borderWidth:2,tension:.35,fill:true,yAxisID:'y1'}]},options:{...defOpts,scales:{x:defOpts.scales.x,y:{...defOpts.scales.y,position:'left',ticks:{...defOpts.scales.y.ticks,callback:function(v){return 'UGX '+v.toLocaleString();}}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},ticks:{font:{size:9,...defFont}}}}}}));
+    _scInstances.push(new Chart(document.getElementById('scTotalBar'),{type:'bar',data:{labels:_scData.daily.labels,datasets:[{label:'Revenue (UGX)',data:_scData.daily.total_rev,backgroundColor:'rgba(243,156,18,.7)',borderColor:'#f39c12',borderWidth:1,yAxisID:'y-rev',barPercentage:.7},{label:'Subscriptions',data:_scData.daily.total_cnt,type:'line',borderColor:'#007bff',backgroundColor:'rgba(0,123,255,.1)',pointBackgroundColor:'#007bff',pointRadius:2,borderWidth:2,lineTension:.35,fill:true,yAxisID:'y-cnt'}]},options:{responsive:true,maintainAspectRatio:false,legend:{position:'top',labels:{usePointStyle:true,padding:12,fontSize:10}},tooltips:{mode:'index',intersect:false},hover:{mode:'nearest',intersect:false},scales:{xAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,maxRotation:45}}],yAxes:[{id:'y-rev',position:'left',gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true,callback:function(v){return 'UGX '+v.toLocaleString();}}},{id:'y-cnt',position:'right',gridLines:{drawOnChartArea:false},ticks:{fontSize:9,beginAtZero:true}}]}}}));
 
     // 4. Weekly Revenue Area
-    _scInstances.push(new Chart(document.getElementById('scWeekRev'),{type:'line',data:{labels:_scData.weekly.labels,datasets:[{...lds('Muno',_scData.weekly.muno_rev,'muno',1),fill:'origin'},{...lds('LugaFlix',_scData.weekly.lg_rev,'lugaflix',1),fill:'origin'},{...lds('UGFlix',_scData.weekly.ug_rev,'ugflix',1),fill:'origin'}]},options:{...defOpts,scales:{...defOpts.scales,y:{...defOpts.scales.y,ticks:{...defOpts.scales.y.ticks,callback:function(v){return 'UGX '+v.toLocaleString();}}}}}}));
+    var o4=cloneOpts(defOpts);o4.scales.yAxes[0].ticks.callback=function(v){return 'UGX '+v.toLocaleString();};
+    _scInstances.push(new Chart(document.getElementById('scWeekRev'),{type:'line',data:{labels:_scData.weekly.labels,datasets:[lds('Muno',_scData.weekly.muno_rev,'muno',1),lds('LugaFlix',_scData.weekly.lg_rev,'lugaflix',1),lds('UGFlix',_scData.weekly.ug_rev,'ugflix',1)]},options:o4}));
 
     // 5. Monthly Rev (grouped bar)
-    _scInstances.push(new Chart(document.getElementById('scMonthRev'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_rev,backgroundColor:P.muno.bar,borderRadius:3},{label:'LugaFlix',data:_scData.monthly.lg_rev,backgroundColor:P.lugaflix.bar,borderRadius:3},{label:'UGFlix',data:_scData.monthly.ug_rev,backgroundColor:P.ugflix.bar,borderRadius:3}]},options:{...defOpts,scales:{...defOpts.scales,y:{...defOpts.scales.y,ticks:{...defOpts.scales.y.ticks,callback:function(v){return 'UGX '+v.toLocaleString();}}}}}}));
+    var o5=cloneOpts(defOpts);o5.scales.yAxes[0].ticks.callback=function(v){return 'UGX '+v.toLocaleString();};
+    _scInstances.push(new Chart(document.getElementById('scMonthRev'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_rev,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.monthly.lg_rev,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.monthly.ug_rev,backgroundColor:P.ugflix.bar}]},options:o5}));
 
     // 6. Weekly Count (stacked bar)
-    _scInstances.push(new Chart(document.getElementById('scWeekCnt'),{type:'bar',data:{labels:_scData.weekly.labels,datasets:[{label:'Muno',data:_scData.weekly.muno_cnt,backgroundColor:P.muno.bar,borderRadius:2},{label:'LugaFlix',data:_scData.weekly.lg_cnt,backgroundColor:P.lugaflix.bar,borderRadius:2},{label:'UGFlix',data:_scData.weekly.ug_cnt,backgroundColor:P.ugflix.bar,borderRadius:2}]},options:{...defOpts,scales:{...defOpts.scales,x:{...defOpts.scales.x,stacked:true},y:{...defOpts.scales.y,stacked:true}}}}));
+    var o6=cloneOpts(defOpts);o6.scales.xAxes[0].stacked=true;o6.scales.yAxes[0].stacked=true;
+    _scInstances.push(new Chart(document.getElementById('scWeekCnt'),{type:'bar',data:{labels:_scData.weekly.labels,datasets:[{label:'Muno',data:_scData.weekly.muno_cnt,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.weekly.lg_cnt,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.weekly.ug_cnt,backgroundColor:P.ugflix.bar}]},options:o6}));
 
     // Doughnut defaults
-    var donutOpts = {responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyle:'circle',padding:8,font:{size:9,...defFont}}}}};
+    var donutOpts = {responsive:true,maintainAspectRatio:false,cutoutPercentage:55,legend:{position:'bottom',labels:{usePointStyle:true,padding:8,fontSize:9}}};
 
     // 7. Revenue by Platform
-    _scInstances.push(new Chart(document.getElementById('scRevPie'),{type:'doughnut',data:{labels:['Muno','LugaFlix','UGFlix'],datasets:[{data:[_scData.platform_rev.muno,_scData.platform_rev.lg,_scData.platform_rev.ug],backgroundColor:[P.muno.bar,P.lugaflix.bar,P.ugflix.bar],borderWidth:2,borderColor:'#fff',hoverOffset:8}]},options:{...donutOpts,plugins:{...donutOpts.plugins,tooltip:{callbacks:{label:function(ctx){return ctx.label+': UGX '+ctx.parsed.toLocaleString();}}}}}}));
+    var do7=JSON.parse(JSON.stringify(donutOpts));do7.tooltips={callbacks:{label:function(item,data){return data.labels[item.index]+': UGX '+data.datasets[0].data[item.index].toLocaleString();}}};
+    _scInstances.push(new Chart(document.getElementById('scRevPie'),{type:'doughnut',data:{labels:['Muno','LugaFlix','UGFlix'],datasets:[{data:[_scData.platform_rev.muno,_scData.platform_rev.lg,_scData.platform_rev.ug],backgroundColor:[P.muno.bar,P.lugaflix.bar,P.ugflix.bar],borderWidth:2,borderColor:'#fff',hoverBorderColor:'#fff'}]},options:do7}));
 
     // 8. Plan
     var planColors = ['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#34495e'];
-    _scInstances.push(new Chart(document.getElementById('scPlanPie'),{type:'doughnut',data:{labels:_scData.plans.labels,datasets:[{data:_scData.plans.counts,backgroundColor:planColors.slice(0,_scData.plans.labels.length),borderWidth:2,borderColor:'#fff',hoverOffset:8}]},options:donutOpts}));
+    _scInstances.push(new Chart(document.getElementById('scPlanPie'),{type:'doughnut',data:{labels:_scData.plans.labels,datasets:[{data:_scData.plans.counts,backgroundColor:planColors.slice(0,_scData.plans.labels.length),borderWidth:2,borderColor:'#fff'}]},options:JSON.parse(JSON.stringify(donutOpts))}));
 
     // 9. Payment Status
-    _scInstances.push(new Chart(document.getElementById('scPayPie'),{type:'doughnut',data:{labels:['Completed','Pending','Processing','Failed'],datasets:[{data:[_scData.payment.completed,_scData.payment.pending,_scData.payment.processing,_scData.payment.failed],backgroundColor:['rgba(40,167,69,.8)','rgba(255,193,7,.8)','rgba(23,162,184,.8)','rgba(220,53,69,.8)'],borderWidth:2,borderColor:'#fff',hoverOffset:8}]},options:donutOpts}));
+    _scInstances.push(new Chart(document.getElementById('scPayPie'),{type:'doughnut',data:{labels:['Completed','Pending','Processing','Failed'],datasets:[{data:[_scData.payment.completed,_scData.payment.pending,_scData.payment.processing,_scData.payment.failed],backgroundColor:['rgba(40,167,69,.8)','rgba(255,193,7,.8)','rgba(23,162,184,.8)','rgba(220,53,69,.8)'],borderWidth:2,borderColor:'#fff'}]},options:JSON.parse(JSON.stringify(donutOpts))}));
 
     // 10. Sub Status
-    _scInstances.push(new Chart(document.getElementById('scStatPie'),{type:'doughnut',data:{labels:['Active','Expired','Pending','Cancelled'],datasets:[{data:[_scData.status.active,_scData.status.expired,_scData.status.pending,_scData.status.cancelled],backgroundColor:['rgba(40,167,69,.8)','rgba(220,53,69,.8)','rgba(255,193,7,.8)','rgba(108,117,125,.8)'],borderWidth:2,borderColor:'#fff',hoverOffset:8}]},options:donutOpts}));
+    _scInstances.push(new Chart(document.getElementById('scStatPie'),{type:'doughnut',data:{labels:['Active','Expired','Pending','Cancelled'],datasets:[{data:[_scData.status.active,_scData.status.expired,_scData.status.pending,_scData.status.cancelled],backgroundColor:['rgba(40,167,69,.8)','rgba(220,53,69,.8)','rgba(255,193,7,.8)','rgba(108,117,125,.8)'],borderWidth:2,borderColor:'#fff'}]},options:JSON.parse(JSON.stringify(donutOpts))}));
 
     // 11. Monthly Subs Count
-    _scInstances.push(new Chart(document.getElementById('scMonthCnt'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_cnt,backgroundColor:P.muno.bar,borderRadius:3},{label:'LugaFlix',data:_scData.monthly.lg_cnt,backgroundColor:P.lugaflix.bar,borderRadius:3},{label:'UGFlix',data:_scData.monthly.ug_cnt,backgroundColor:P.ugflix.bar,borderRadius:3}]},options:defOpts}));
+    _scInstances.push(new Chart(document.getElementById('scMonthCnt'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_cnt,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.monthly.lg_cnt,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.monthly.ug_cnt,backgroundColor:P.ugflix.bar}]},options:cloneOpts(defOpts)}));
 }
 // Init on first load
 if(document.readyState === 'loading'){document.addEventListener('DOMContentLoaded',_scInit);}else{_scInit();}

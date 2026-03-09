@@ -282,8 +282,7 @@ class HomeController extends Controller
         }
         $html .= '</div>';
 
-        // ── SECTION: Charts & Analytics ──
-        $html .= '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>';
+        // ── SECTION: Charts & Analytics (uses Chart.js 2.x bundled with Laravel Admin) ──
         $html .= '<div class="db-section">Charts & Analytics</div>';
 
         // Prepare JSON data
@@ -433,24 +432,23 @@ class HomeController extends Controller
 
         $html .= '</div>';
 
-        // ════════ Chart.js Scripts ════════
+        // ════════ Chart.js 2.x Scripts (bundled with Laravel Admin) ════════
         $otherUsers = max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers, 0);
         $html .= '<script>
 document.addEventListener("DOMContentLoaded", function() {
     var labels = ' . $jLabels . ';
-    var gridColor = "rgba(0,0,0,0.04)";
+    var gc = "rgba(0,0,0,0.04)";
 
     var defaultOpts = {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-            legend: { position: "top", labels: { usePointStyle: true, pointStyle: "circle", padding: 12, font: { size: 11 } } },
-            tooltip: { mode: "index", intersect: false, backgroundColor: "rgba(0,0,0,0.8)", cornerRadius: 6, padding: 10 }
-        },
-        interaction: { mode: "nearest", axis: "x", intersect: false },
+        legend: { position: "top", labels: { usePointStyle: true, padding: 12, fontSize: 11 } },
+        tooltips: { mode: "index", intersect: false, backgroundColor: "rgba(0,0,0,0.8)", cornerRadius: 6,
+            xPadding: 10, yPadding: 10 },
+        hover: { mode: "nearest", intersect: false },
         scales: {
-            x: { grid: { color: gridColor, drawBorder: false }, ticks: { font: { size: 9 }, maxRotation: 45 } },
-            y: { beginAtZero: true, grid: { color: gridColor, drawBorder: false }, ticks: { font: { size: 10 } } }
+            xAxes: [{ gridLines: { color: gc, drawBorder: false }, ticks: { fontSize: 9, maxRotation: 45 } }],
+            yAxes: [{ gridLines: { color: gc, drawBorder: false }, ticks: { fontSize: 10, beginAtZero: true } }]
         }
     };
 
@@ -458,13 +456,14 @@ document.addEventListener("DOMContentLoaded", function() {
         return {
             label: label, data: data,
             borderColor: color,
-            backgroundColor: color.replace("1)", "0.1)").replace("rgb(", "rgba("),
+            backgroundColor: "transparent",
             pointBackgroundColor: color,
             pointRadius: 2, pointHoverRadius: 5,
-            borderWidth: width || 2, tension: 0.35, fill: false,
+            borderWidth: width || 2, lineTension: 0.35, fill: false,
             borderDash: dash || []
         };
     }
+    function cloneOpts(o) { return JSON.parse(JSON.stringify(o)); }
 
     // ─── 1. User Registrations (30 days) — per platform + total ───
     new Chart(document.getElementById("signupsChart"), {
@@ -478,7 +477,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 makeLine("UG Flix", ' . $jSignupsUgflix . ', "rgb(46,204,113)", 2, [])
             ]
         },
-        options: defaultOpts
+        options: cloneOpts(defaultOpts)
     });
 
     // ─── 2. Views & Downloads (30 days) ───
@@ -494,10 +493,16 @@ document.addEventListener("DOMContentLoaded", function() {
                 makeLine("Downloads", ' . $jDownloads . ', "rgb(155,89,182)", 2, [5,3])
             ]
         },
-        options: defaultOpts
+        options: cloneOpts(defaultOpts)
     });
 
     // ─── 3. Revenue (30 days) — per platform + total ───
+    var revOpts = cloneOpts(defaultOpts);
+    revOpts.tooltips.callbacks = { label: function(item, data) {
+        var lbl = data.datasets[item.datasetIndex].label || "";
+        return lbl + ": UGX " + (item.yLabel || 0).toLocaleString();
+    }};
+    revOpts.scales.yAxes[0].ticks.callback = function(v) { return "UGX " + v.toLocaleString(); };
     new Chart(document.getElementById("revenueChart"), {
         type: "line",
         data: {
@@ -509,23 +514,12 @@ document.addEventListener("DOMContentLoaded", function() {
                 makeLine("UG Flix", ' . $jRevUgflix . ', "rgb(46,204,113)", 2, [])
             ]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: defaultOpts.plugins.legend,
-                tooltip: {
-                    mode: "index", intersect: false, backgroundColor: "rgba(0,0,0,0.8)", cornerRadius: 6, padding: 10,
-                    callbacks: { label: function(ctx) { return ctx.dataset.label + ": UGX " + (ctx.parsed.y || 0).toLocaleString(); } }
-                }
-            },
-            interaction: defaultOpts.interaction,
-            scales: {
-                x: defaultOpts.scales.x,
-                y: { beginAtZero: true, grid: { color: gridColor, drawBorder: false }, ticks: { font: { size: 10 }, callback: function(v) { return "UGX " + v.toLocaleString(); } } }
-            }
-        }
+        options: revOpts
     });
+
+    // Doughnut defaults (Chart.js 2.x)
+    var donutOpts = { responsive: true, maintainAspectRatio: false, cutoutPercentage: 55,
+        legend: { position: "bottom", labels: { usePointStyle: true, padding: 8, fontSize: 10 } } };
 
     // ─── 4. Users by Platform Doughnut ───
     new Chart(document.getElementById("usersPieChart"), {
@@ -534,10 +528,9 @@ document.addEventListener("DOMContentLoaded", function() {
             labels: ["Muno (' . $mnPct . '%)", "LugaFlix (' . $lgPct . '%)", "UG Flix (' . $ugPct . '%)", "Other (' . (100 - $ugPct - $lgPct - $mnPct) . '%)"],
             datasets: [{ data: [' . $munoUsers . ', ' . $lugaflixUsers . ', ' . $ugflixUsers . ', ' . $otherUsers . '],
                 backgroundColor: ["rgba(231,76,60,0.8)", "rgba(52,152,219,0.8)", "rgba(46,204,113,0.8)", "rgba(189,195,199,0.6)"],
-                borderWidth: 2, borderColor: "#fff", hoverOffset: 8 }]
+                borderWidth: 2, borderColor: "#fff" }]
         },
-        options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
-            plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10 } } } } }
+        options: JSON.parse(JSON.stringify(donutOpts))
     });
 
     // ─── 5. Device OS Doughnut ───
@@ -547,10 +540,9 @@ document.addEventListener("DOMContentLoaded", function() {
             labels: ["Android (' . $anPct . '%)", "iOS (' . (100 - $anPct) . '%)"],
             datasets: [{ data: [' . $androidUsers . ', ' . $iosUsers . '],
                 backgroundColor: ["rgba(40,167,69,0.8)", "rgba(85,85,85,0.8)"],
-                borderWidth: 2, borderColor: "#fff", hoverOffset: 8 }]
+                borderWidth: 2, borderColor: "#fff" }]
         },
-        options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
-            plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10 } } } } }
+        options: JSON.parse(JSON.stringify(donutOpts))
     });
 
     // ─── 6. Subscription Status Doughnut ───
@@ -560,10 +552,9 @@ document.addEventListener("DOMContentLoaded", function() {
             labels: ["Active", "Expired", "Pending"],
             datasets: [{ data: [' . $activeSubs . ', ' . $expiredSubs . ', ' . $pendingSubs . '],
                 backgroundColor: ["rgba(40,167,69,0.8)", "rgba(220,53,69,0.8)", "rgba(255,193,7,0.8)"],
-                borderWidth: 2, borderColor: "#fff", hoverOffset: 8 }]
+                borderWidth: 2, borderColor: "#fff" }]
         },
-        options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
-            plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10 } } } } }
+        options: JSON.parse(JSON.stringify(donutOpts))
     });
 });
 </script>';
