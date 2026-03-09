@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\MovieView;
 use App\Models\SeriesMovie;
 use App\Models\Subscription;
+use App\Models\SubscriptionTransaction;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Encore\Admin\Layout\Content;
@@ -143,6 +144,35 @@ class HomeController extends Controller
         $munoViews    = MovieView::whereHas('user', function($q) { $q->where('app_type', 'muno_app'); })->count();
         $lugaflixViews = MovieView::whereHas('user', function($q) { $q->where('app_type', 'lugaflix'); })->count();
         $ugflixViews  = MovieView::whereHas('user', function($q) { $q->where('app_type', 'ugflix'); })->count();
+
+        // Daily Revenue by Platform (last 30 days)
+        $revenueDaily = [];
+        for ($i = 29; $i >= 0; $i--) {
+            $d = Carbon::today()->subDays($i);
+            $dayRevenue = function($appType) use ($d) {
+                return (float) SubscriptionTransaction::whereDate('subscription_transactions.created_at', $d)
+                    ->where('subscription_transactions.status', 'completed')
+                    ->join('users', 'users.id', '=', 'subscription_transactions.user_id')
+                    ->where('users.app_type', $appType)
+                    ->sum('subscription_transactions.amount');
+            };
+            $muno = $dayRevenue('muno_app');
+            $luga = $dayRevenue('lugaflix');
+            $ugf  = $dayRevenue('ugflix');
+            $revenueDaily[] = [
+                'label' => $d->format('d M'),
+                'muno'  => $muno,
+                'lugaflix' => $luga,
+                'ugflix' => $ugf,
+                'total' => $muno + $luga + $ugf,
+            ];
+        }
+
+        // Last 30 days subscriptions list
+        $recentSubs = Subscription::with(['user', 'plan'])
+            ->where('created_at', '>=', Carbon::now()->subDays(30))
+            ->orderBy('created_at', 'desc')
+            ->get();
 
         // User app pie
         $uT = max($ugflixUsers + $lugaflixUsers + $munoUsers + max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers, 0), 1);
@@ -382,6 +412,66 @@ class HomeController extends Controller
 
         $html .= '</div>'; // row 3
 
+        // ── ROW 3b: Daily Revenue by Platform ──
+        $revLabels = json_encode(array_column($revenueDaily, 'label'));
+        $revMuno = json_encode(array_column($revenueDaily, 'muno'));
+        $revLugaflix = json_encode(array_column($revenueDaily, 'lugaflix'));
+        $revUgflix = json_encode(array_column($revenueDaily, 'ugflix'));
+        $revTotal = json_encode(array_column($revenueDaily, 'total'));
+
+        $html .= '<div class="db-row">';
+        $html .= '<div class="db-box" style="flex:1;min-width:460px">';
+        $html .= '<div class="db-box-title"><i class="fa fa-money" style="color:#f39c12"></i> Daily Revenue by Platform — 30 Days (UGX)</div>';
+        $html .= '<div style="position:relative;height:320px"><canvas id="revenueChart"></canvas></div>';
+        $html .= '</div>';
+
+        // Recent 30 days subscriptions list
+        $html .= '<div class="db-box" style="flex:1;min-width:460px;max-height:380px;overflow-y:auto">';
+        $html .= '<div class="db-box-title"><i class="fa fa-list" style="color:#6f42c1"></i> Subscriptions — Last 30 Days (' . $recentSubs->count() . ')</div>';
+        $html .= '<table class="db-tbl">';
+        $html .= '<tr><th>#</th><th>User</th><th>Plan</th><th>Amount</th><th>Status</th><th>Platform</th><th>Date</th></tr>';
+        foreach ($recentSubs as $idx => $sub) {
+            $userName = $sub->user ? $sub->user->name : 'N/A';
+            $planName = $sub->plan ? $sub->plan->name : 'N/A';
+            $amount = 'UGX ' . number_format($sub->amount_paid ?? 0);
+            $statusClr = match($sub->status) {
+                'Active' => '#28a745',
+                'Expired' => '#dc3545',
+                'Pending' => '#ffc107',
+                'Cancelled' => '#6c757d',
+                default => '#17a2b8',
+            };
+            $appType = $sub->user->app_type ?? 'N/A';
+            $appClr = match($appType) {
+                'muno_app' => '#e74c3c',
+                'lugaflix' => '#3498db',
+                'ugflix' => '#2ecc71',
+                default => '#888',
+            };
+            $appLabel = match($appType) {
+                'muno_app' => 'Muno',
+                'lugaflix' => 'LugaFlix',
+                'ugflix' => 'UG Flix',
+                default => $appType,
+            };
+            $date = $sub->created_at ? $sub->created_at->format('d M, H:i') : '';
+            $html .= "<tr>";
+            $html .= "<td>" . ($idx + 1) . "</td>";
+            $html .= "<td style='max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{$userName}</td>";
+            $html .= "<td>{$planName}</td>";
+            $html .= "<td><b>{$amount}</b></td>";
+            $html .= "<td><span class='db-badge' style='background:{$statusClr}'>{$sub->status}</span></td>";
+            $html .= "<td><span class='db-badge' style='background:{$appClr}'>{$appLabel}</span></td>";
+            $html .= "<td style='font-size:10px;color:#888'>{$date}</td>";
+            $html .= "</tr>";
+        }
+        if ($recentSubs->isEmpty()) {
+            $html .= '<tr><td colspan="7" style="text-align:center;color:#999;padding:20px">No subscriptions in the last 30 days</td></tr>';
+        }
+        $html .= '</table></div>';
+
+        $html .= '</div>'; // row 3b
+
         // ── ROW 4: Doughnut Charts + Platform Comparison + Subscription Summary ──
         $html .= '<div class="db-row">';
 
@@ -443,14 +533,15 @@ class HomeController extends Controller
         }
         $html .= '</table></div>';
 
-        // Subscription summary
+        // Subscription totals card
         $html .= '<div class="db-box" style="flex:1;min-width:240px">';
-        $html .= '<div class="db-box-title"><i class="fa fa-credit-card" style="color:#f39c12"></i> Subscription Summary</div>';
+        $html .= '<div class="db-box-title"><i class="fa fa-credit-card" style="color:#f39c12"></i> Subscription Totals</div>';
         $html .= '<table class="db-tbl">';
         $html .= '<tr><th>Metric</th><th>Value</th></tr>';
         $html .= '<tr><td>Total Subscriptions</td><td><b>' . number_format($totalSubs) . '</b></td></tr>';
         $html .= '<tr><td>Active</td><td><span class="db-badge" style="background:#28a745">' . number_format($activeSubs) . '</span></td></tr>';
         $html .= '<tr><td>Expired</td><td><span class="db-badge" style="background:#dc3545">' . number_format($expiredSubs) . '</span></td></tr>';
+        $html .= '<tr><td>Last 30 Days</td><td><b>' . $recentSubs->count() . '</b></td></tr>';
         $html .= '<tr><td>Total Revenue</td><td><b style="color:#f39c12">UGX ' . number_format($subRevenue) . '</b></td></tr>';
         $html .= '</table></div>';
 
@@ -623,6 +714,36 @@ document.addEventListener("DOMContentLoaded", function() {
         },
         options: { responsive: true, maintainAspectRatio: false, cutout: "55%",
             plugins: { legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 8, font: { size: 10, ...chartFont } } } } }
+    });
+
+    // ─── 11. Daily Revenue by Platform ───
+    new Chart(document.getElementById("revenueChart"), {
+        type: "line",
+        data: {
+            labels: ' . $revLabels . ',
+            datasets: [
+                {
+                    label: "Total", data: ' . $revTotal . ',
+                    borderColor: "#f39c12", backgroundColor: "rgba(243,156,18,0.08)",
+                    pointBackgroundColor: "#e67e22", pointRadius: 3, pointHoverRadius: 6,
+                    borderWidth: 3, tension: 0.35, fill: true, borderDash: []
+                },
+                lineDataset("Muno", ' . $revMuno . ', "muno", false),
+                lineDataset("LugaFlix", ' . $revLugaflix . ', "lugaflix", false),
+                lineDataset("UG Flix", ' . $revUgflix . ', "ugflix", false)
+            ]
+        },
+        options: {
+            ...defaultOpts,
+            scales: {
+                ...defaultOpts.scales,
+                y: { ...defaultOpts.scales.y, ticks: { ...defaultOpts.scales.y.ticks, callback: function(v) { return "UGX " + v.toLocaleString(); } } }
+            },
+            plugins: {
+                ...defaultOpts.plugins,
+                tooltip: { ...defaultOpts.plugins.tooltip, callbacks: { label: function(ctx) { return ctx.dataset.label + ": UGX " + ctx.parsed.y.toLocaleString(); } } }
+            }
+        }
     });
 });
 </script>';
