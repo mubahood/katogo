@@ -55,7 +55,14 @@ class HomeController extends Controller
         $expiredSubs = DB::table('subscriptions')->where('status', 'Expired')->count();
         $totalSubs   = DB::table('subscriptions')->count();
         $subRevenue  = DB::table('subscription_transactions')
-            ->where('status', 'completed')->sum('amount');
+            ->where('status', 'completed')
+            ->where('transaction_type', '!=', 'Withdrawal')
+            ->sum('amount');
+        $totalWithdrawals = DB::table('subscription_transactions')
+            ->where('status', 'completed')
+            ->where('transaction_type', 'Withdrawal')
+            ->sum('amount');
+        $netRevenue = $subRevenue + $totalWithdrawals;
 
         // Views & Downloads
         $totalViews    = MovieView::count();
@@ -97,6 +104,7 @@ class HomeController extends Controller
             ->join('admin_users', 'admin_users.id', '=', 'subscription_transactions.user_id')
             ->select(DB::raw('DATE(subscription_transactions.created_at) as d'), 'admin_users.app_type', DB::raw('SUM(subscription_transactions.amount) as total'))
             ->where('subscription_transactions.status', 'completed')
+            ->where('subscription_transactions.transaction_type', '!=', 'Withdrawal')
             ->where('subscription_transactions.created_at', '>=', $thirtyDaysAgo)
             ->groupBy('d', 'admin_users.app_type')
             ->get();
@@ -266,7 +274,7 @@ class HomeController extends Controller
             ['Downloads', number_format($totalDownloads), '#17a2b8', 'fa-download', admin_url('movie-downloads')],
             ['Watch Hours', number_format($totalWatchHrs) . 'h', '#e83e8c', 'fa-clock-o', '#'],
             ['Active Subs', number_format($activeSubs), '#f39c12', 'fa-star', '#'],
-            ['Revenue', 'UGX ' . number_format($subRevenue), '#f39c12', 'fa-money', '#'],
+            ['Revenue', 'UGX ' . number_format($netRevenue), '#f39c12', 'fa-money', '#'],
             ['Android / iOS', number_format($androidUsers) . ' / ' . number_format($iosUsers), '#28a745', 'fa-mobile', '#'],
         ];
         foreach ($engCards as [$l, $v, $c, $i, $lnk]) {
@@ -400,7 +408,9 @@ class HomeController extends Controller
         $html .= '<tr><td>Active</td><td><span class="db-badge" style="background:#28a745">' . number_format($activeSubs) . '</span></td></tr>';
         $html .= '<tr><td>Expired</td><td><span class="db-badge" style="background:#dc3545">' . number_format($expiredSubs) . '</span></td></tr>';
         $html .= '<tr><td>Last 30 Days</td><td><b>' . number_format($subsTotal30) . '</b></td></tr>';
-        $html .= '<tr><td>Total Revenue</td><td><b style="color:#f39c12">UGX ' . number_format($subRevenue) . '</b></td></tr>';
+        $html .= '<tr><td>Gross Revenue</td><td><b style="color:#28a745">UGX ' . number_format($subRevenue) . '</b></td></tr>';
+        $html .= '<tr><td>Withdrawals</td><td><b style="color:#dc3545">UGX ' . number_format(abs($totalWithdrawals)) . '</b></td></tr>';
+        $html .= '<tr><td>Net Balance</td><td><b style="color:#f39c12">UGX ' . number_format($netRevenue) . '</b></td></tr>';
         $html .= '</table></div>';
 
         // Quick Links

@@ -63,7 +63,9 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function totalRevenueBox()
     {
-        $total = SubscriptionTransaction::where('status', 'Completed')->sum('amount');
+        $total = SubscriptionTransaction::where('status', 'Completed')
+            ->where('transaction_type', '!=', 'Withdrawal')
+            ->sum('amount');
         return new InfoBox('Total Revenue', 'money', 'green', '/subscription-transactions?status=Completed', 'UGX ' . number_format($total));
     }
 
@@ -73,6 +75,7 @@ class SubscriptionTransactionController extends AdminController
     protected function todayRevenueBox()
     {
         $today = SubscriptionTransaction::where('status', 'Completed')
+            ->where('transaction_type', '!=', 'Withdrawal')
             ->whereDate('created_at', Carbon::today())
             ->sum('amount');
         return new InfoBox("Today's Revenue", 'calendar', 'aqua', '#', 'UGX ' . number_format($today));
