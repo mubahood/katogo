@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V2\BlogController as V2BlogController;
 use App\Http\Controllers\Api\V2\SafeModeAnalyticsController as V2SafeModeAnalyticsController;
 use App\Http\Controllers\Api\V2\SubscriptionFixController as V2SubscriptionFixController;
 use App\Http\Controllers\Api\V2\StreamingController as V2StreamingController;
+use App\Http\Controllers\Api\V2\DownloadController as V2DownloadController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -195,6 +196,10 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::get('streaming/stations',         [V2StreamingController::class, 'index']);
         Route::get('streaming/stations/{id}',    [V2StreamingController::class, 'show']);
         Route::get('streaming/categories',       [V2StreamingController::class, 'categories']);
+
+        // Downloads — gallery & in-app tracking
+        Route::post('downloads/record',          [V2DownloadController::class, 'record']);
+        Route::get('downloads/stats',            [V2DownloadController::class, 'stats']);
 
         // SafeMode Analytics
         Route::post('safemode/track',                     [V2SafeModeAnalyticsController::class, 'track']);
