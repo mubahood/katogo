@@ -47,6 +47,10 @@ class SubscriptionController extends AdminController
 
         // Gather all stats in fewer queries
         $totalRevenue = Subscription::where('payment_status', 'Completed')->sum('amount_paid');
+        $totalWithdrawals = SubscriptionTransaction::where('status', 'Completed')
+            ->where('transaction_type', 'Withdrawal')
+            ->sum('amount');
+        $netBalance = $totalRevenue + $totalWithdrawals; // withdrawals are negative
         $activeCount = Subscription::where('status', 'Active')->count();
         $pendingCount = Subscription::where('payment_status', 'Pending')->count();
 
@@ -126,10 +130,18 @@ class SubscriptionController extends AdminController
 <div class="sub-stats">
   <a href="{$base}?payment_status=Completed" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#28a745">
     <div class="icon" style="background:#28a745"><i class="fa fa-money"></i></div>
-    <div class="info"><div class="val">UGX {$this->fmt($totalRevenue)}</div><div class="lbl">Total Revenue</div></div>
+    <div class="info"><div class="val">UGX {$this->fmt($totalRevenue)}</div><div class="lbl">Gross Revenue</div></div>
   </a>
-  <a href="{$base}?status=Active" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#17a2b8">
-    <div class="icon" style="background:#17a2b8"><i class="fa fa-check-circle"></i></div>
+  <div class="sub-stat" style="border-color:#dc3545">
+    <div class="icon" style="background:#dc3545"><i class="fa fa-arrow-circle-up"></i></div>
+    <div class="info"><div class="val">UGX {$this->fmt(abs($totalWithdrawals))}</div><div class="lbl">Withdrawn</div></div>
+  </div>
+  <div class="sub-stat" style="border-color:#17a2b8">
+    <div class="icon" style="background:#17a2b8"><i class="fa fa-balance-scale"></i></div>
+    <div class="info"><div class="val">UGX {$this->fmt($netBalance)}</div><div class="lbl">Net Balance</div></div>
+  </div>
+  <a href="{$base}?status=Active" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#007bff">
+    <div class="icon" style="background:#007bff"><i class="fa fa-check-circle"></i></div>
     <div class="info"><div class="val">{$this->fmt($activeCount)}</div><div class="lbl">Active Subscriptions</div></div>
   </a>
   <div class="sub-stat" style="border-color:#f39c12">
