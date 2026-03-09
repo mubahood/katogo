@@ -150,10 +150,11 @@ class HomeController extends Controller
         $lugaflixViews = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'lugaflix')->count();
         $ugflixViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'ugflix')->count();
 
-        // Last 30 days subscriptions — daily aggregates
-        $dailySubsRaw = DB::table('subscriptions')
-            ->select(DB::raw('DATE(created_at) as d'), DB::raw('COUNT(*) as cnt'), DB::raw('SUM(amount_paid) as total'))
+        // Last 30 days subscriptions — daily aggregates (completed payments only)
+        $dailySubsRaw = DB::table('subscription_transactions')
+            ->select(DB::raw('DATE(created_at) as d'), DB::raw('COUNT(*) as cnt'), DB::raw('SUM(amount) as total'))
             ->where('created_at', '>=', $thirtyDaysAgo)
+            ->where('status', 'completed')
             ->groupBy('d')
             ->orderBy('d', 'desc')
             ->get();
