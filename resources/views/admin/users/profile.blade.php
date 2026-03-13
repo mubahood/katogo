@@ -486,7 +486,7 @@
                             </span>
                         </td>
                         <td><span style="font-size:11px">{{ $dl->status ?? '—' }}</span></td>
-                        <td><small style="color:var(--up-muted)">{{ $dl->file_size ? round($dl->file_size / 1048576, 1).'MB' : '—' }}</small></td>
+                        <td><small style="color:var(--up-muted)">{{ is_numeric($dl->file_size) ? round($dl->file_size / 1048576, 1).'MB' : '—' }}</small></td>
                         <td><small style="color:var(--up-muted)">{{ $dl->created_at ? $dl->created_at->format('d M Y H:i') : '—' }}</small></td>
                     </tr>
                 @endforeach
