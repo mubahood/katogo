@@ -18,6 +18,14 @@ class UserController extends AdminController
     protected $title = 'Users';
 
     /**
+     * Override show to use custom profile blade
+     */
+    public function show($id, Content $content)
+    {
+        return app(UserProfileController::class)->show($id);
+    }
+
+    /**
      * Index with analytics dashboard + grid
      */
     public function index(Content $content)
