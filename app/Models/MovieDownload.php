@@ -15,39 +15,23 @@ class MovieDownload extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    //created boot
     protected static function boot()
     {
         parent::boot();
 
-        static::created(function ($model) {
+        $syncCounts = function ($model) {
             $movie = MovieModel::find($model->movie_model_id);
-            if ($movie != null) {
-                $downloads_counts = MovieDownload::where('movie_model_id', $model->movie_model_id)->count();
-                $movie->downloads_count = $downloads_counts;
+            if ($movie) {
+                $base = MovieDownload::where('movie_model_id', $model->movie_model_id);
+                $movie->downloads_count          = (clone $base)->count();
+                $movie->in_app_downloads_count    = (clone $base)->where('download_type', 'in_app')->count();
+                $movie->gallery_downloads_count   = (clone $base)->where('download_type', 'gallery')->count();
                 $movie->save();
             }
-            //downloads_count
-        });
+        };
 
-        //updated
-        static::updated(function ($model) {
-            $movie = MovieModel::find($model->movie_model_id);
-            if ($movie != null) {
-                $downloads_counts = MovieDownload::where('movie_model_id', $model->movie_model_id)->count();
-                $movie->downloads_count = $downloads_counts;
-                $movie->save();
-            }
-        });
-
-        //deleted
-        static::deleted(function ($model) {
-            $movie = MovieModel::find($model->movie_model_id);
-            if ($movie != null) {
-                $downloads_counts = MovieDownload::where('movie_model_id', $model->movie_model_id)->count();
-                $movie->downloads_count = $downloads_counts;
-                $movie->save();
-            }
-        });
+        static::created($syncCounts);
+        static::updated($syncCounts);
+        static::deleted($syncCounts);
     }
 }

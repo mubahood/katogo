@@ -96,12 +96,19 @@ class DownloadController extends Controller
             $query->where('movie_model_id', (int) $movieId);
         }
 
+        // ── Totals ────────────────────────────────────────
         $totals = (clone $query)->select(
             DB::raw('COUNT(*) as total'),
             DB::raw("SUM(CASE WHEN download_type = 'gallery' THEN 1 ELSE 0 END) as gallery"),
             DB::raw("SUM(CASE WHEN download_type = 'in_app' THEN 1 ELSE 0 END) as in_app")
         )->first();
 
+        // ── Unique users who downloaded ───────────────────
+        $uniqueUsers = (clone $query)->distinct('user_id')->count('user_id');
+        $uniqueUsersGallery = (clone $query)->where('download_type', 'gallery')->distinct('user_id')->count('user_id');
+        $uniqueUsersInApp   = (clone $query)->where('download_type', 'in_app')->distinct('user_id')->count('user_id');
+
+        // ── Daily breakdown ──────────────────────────────
         $daily = (clone $query)->select(
             DB::raw('DATE(created_at) as date'),
             DB::raw('COUNT(*) as total'),
@@ -112,37 +119,104 @@ class DownloadController extends Controller
             ->orderBy('date')
             ->get();
 
+        // ── Weekly breakdown ─────────────────────────────
+        $weekly = (clone $query)->select(
+            DB::raw('YEARWEEK(created_at, 1) as week'),
+            DB::raw('MIN(DATE(created_at)) as week_start'),
+            DB::raw('COUNT(*) as total'),
+            DB::raw("SUM(CASE WHEN download_type = 'gallery' THEN 1 ELSE 0 END) as gallery"),
+            DB::raw("SUM(CASE WHEN download_type = 'in_app' THEN 1 ELSE 0 END) as in_app")
+        )
+            ->groupBy(DB::raw('YEARWEEK(created_at, 1)'))
+            ->orderBy('week')
+            ->get();
+
+        // ── Top movies by total downloads ────────────────
         $topMovies = (clone $query)->select(
             'movie_model_id',
             DB::raw('COUNT(*) as total'),
             DB::raw("SUM(CASE WHEN download_type = 'gallery' THEN 1 ELSE 0 END) as gallery"),
-            DB::raw("SUM(CASE WHEN download_type = 'in_app' THEN 1 ELSE 0 END) as in_app")
+            DB::raw("SUM(CASE WHEN download_type = 'in_app' THEN 1 ELSE 0 END) as in_app"),
+            DB::raw('COUNT(DISTINCT user_id) as unique_users')
         )
             ->groupBy('movie_model_id')
             ->orderByDesc('total')
             ->limit(20)
             ->get()
             ->map(function ($row) {
-                $movie = MovieModel::select('id', 'title', 'thumbnail')->find($row->movie_model_id);
+                $movie = MovieModel::select('id', 'title', 'thumbnail_url')->find($row->movie_model_id);
                 return [
-                    'movie_id'  => $row->movie_model_id,
-                    'title'     => $movie->title ?? 'Unknown',
-                    'thumbnail' => $movie->thumbnail ?? '',
-                    'total'     => (int) $row->total,
-                    'gallery'   => (int) $row->gallery,
-                    'in_app'    => (int) $row->in_app,
+                    'movie_id'     => $row->movie_model_id,
+                    'title'        => $movie->title ?? 'Unknown',
+                    'thumbnail'    => $movie->thumbnail_url ?? '',
+                    'total'        => (int) $row->total,
+                    'gallery'      => (int) $row->gallery,
+                    'in_app'       => (int) $row->in_app,
+                    'unique_users' => (int) $row->unique_users,
+                ];
+            });
+
+        // ── Top movies by gallery downloads only ─────────
+        $topGallery = (clone $query)->where('download_type', 'gallery')
+            ->select(
+                'movie_model_id',
+                DB::raw('COUNT(*) as total'),
+                DB::raw('COUNT(DISTINCT user_id) as unique_users')
+            )
+            ->groupBy('movie_model_id')
+            ->orderByDesc('total')
+            ->limit(20)
+            ->get()
+            ->map(function ($row) {
+                $movie = MovieModel::select('id', 'title', 'thumbnail_url')->find($row->movie_model_id);
+                return [
+                    'movie_id'     => $row->movie_model_id,
+                    'title'        => $movie->title ?? 'Unknown',
+                    'thumbnail'    => $movie->thumbnail_url ?? '',
+                    'total'        => (int) $row->total,
+                    'unique_users' => (int) $row->unique_users,
+                ];
+            });
+
+        // ── Top movies by in-app downloads only ──────────
+        $topInApp = (clone $query)->where('download_type', 'in_app')
+            ->select(
+                'movie_model_id',
+                DB::raw('COUNT(*) as total'),
+                DB::raw('COUNT(DISTINCT user_id) as unique_users')
+            )
+            ->groupBy('movie_model_id')
+            ->orderByDesc('total')
+            ->limit(20)
+            ->get()
+            ->map(function ($row) {
+                $movie = MovieModel::select('id', 'title', 'thumbnail_url')->find($row->movie_model_id);
+                return [
+                    'movie_id'     => $row->movie_model_id,
+                    'title'        => $movie->title ?? 'Unknown',
+                    'thumbnail'    => $movie->thumbnail_url ?? '',
+                    'total'        => (int) $row->total,
+                    'unique_users' => (int) $row->unique_users,
                 ];
             });
 
         return $this->success([
-            'period_days' => $days,
-            'totals'      => [
+            'period_days'  => $days,
+            'totals'       => [
                 'total'   => (int) $totals->total,
                 'gallery' => (int) $totals->gallery,
                 'in_app'  => (int) $totals->in_app,
             ],
-            'daily'       => $daily,
-            'top_movies'  => $topMovies,
+            'unique_users' => [
+                'total'   => $uniqueUsers,
+                'gallery' => $uniqueUsersGallery,
+                'in_app'  => $uniqueUsersInApp,
+            ],
+            'daily'            => $daily,
+            'weekly'           => $weekly,
+            'top_movies'       => $topMovies,
+            'top_gallery'      => $topGallery,
+            'top_in_app'       => $topInApp,
         ]);
     }
 }

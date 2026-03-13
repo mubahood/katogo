@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChatMessage;
+use App\Models\MovieDownload;
 use App\Models\MovieLike;
 use App\Models\MovieModel;
 use App\Models\MovieView;
@@ -841,6 +842,11 @@ class ManifestController extends Controller
             'watch_history_count' => 0,
             'liked_movies_count'  => 0,
             'active_chats_count'  => 0,
+            'downloads'           => [
+                'total'   => 0,
+                'in_app'  => 0,
+                'gallery' => 0,
+            ],
         ];
 
         try {
@@ -851,6 +857,13 @@ class ManifestController extends Controller
             $sent     = ChatMessage::where('sender_id', $u->id)->distinct('receiver_id')->count('receiver_id');
             $received = ChatMessage::where('receiver_id', $u->id)->distinct('sender_id')->count('sender_id');
             $stats['active_chats_count'] = $sent + $received;
+
+            $dlBase = MovieDownload::where('user_id', $u->id);
+            $stats['downloads'] = [
+                'total'   => (clone $dlBase)->count(),
+                'in_app'  => (clone $dlBase)->where('download_type', 'in_app')->count(),
+                'gallery' => (clone $dlBase)->where('download_type', 'gallery')->count(),
+            ];
         } catch (\Exception $e) {
             // Use defaults
         }
