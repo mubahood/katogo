@@ -122,6 +122,7 @@ Route::group([
     $router->get('moderation/logs/{id}', 'ModerationAdminController@getLog')->name('moderation.logs.show');
 
     $router->resource('users', UserController::class);
+    $router->get('users/{id}/profile', 'UserProfileController@show')->name('users.profile');
 
     // Action endpoints
     $router->put('moderation/reports/{id}/status', 'ModerationAdminController@updateReportStatus')->name('moderation.reports.status');
