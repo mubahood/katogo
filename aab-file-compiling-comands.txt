@@ -37,3 +37,21 @@ compose for me a perfect marketing scription for the marketing video
 .- Help and Support 
 - finalize with a closing message focused on movies
 - request users to down and install the app now.
+
+
+.
+
+now I want use to focus on /Applications/MAMP/htdocs/about.u-lits.com/wp-content/plugins/muhindo-police plugin.
+
+I want you to make very very agressive when it comes to security
+- ensure it does not accept any kind of http request leaving the system
+- enable captture checkcekr
+- enable throttle check for ips which make so many requests to the webiste
+- dont allow any comment to the post, block any ip that trys to comment, because we dont suppot comments
+- delete all posts comments , immediately and delete all comments in the site already
+- only and only one user should be in the syusterm, the first user that was created the user with username "admin", the rest users should be deleted and psost and comments that they posted.
+- any ip that try to create any user, should be blocked and logs should be kept
+- ability to have action on vulnarable files or suscpecious files. be well versed about the workdpress files stucture, abiulity to scan the system files, detect those that are out of wordpress steructure and give ability to delete them, as well as suspecuous plugins.
+- have a pwoerful tracker on polugins, disable autmatically sucespscious oplugins , unless the admin whiltelist them
+- come up with more security features to make the plugin very agrresinve in terms of security
+

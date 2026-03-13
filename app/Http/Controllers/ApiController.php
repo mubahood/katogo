@@ -924,7 +924,7 @@ class ApiController extends BaseController
         // Safely get top movie with proper null checks
 
         try {
-            $trending =  TrendingNotification::getTendingMovie();
+            $trending =  TrendingNotification::getTrendingMovie();
             if ($trending != null) {
                 $topMovie = $trending;
             }

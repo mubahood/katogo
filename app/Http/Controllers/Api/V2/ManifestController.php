@@ -193,18 +193,25 @@ class ManifestController extends Controller
      */
     private function getFeaturedMovie(): ?array
     {
-        $todaySeed = (int) floor(Carbon::now()->timestamp / 21600);
+        $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
 
         try {
-            // Pick from top 10 movies by downloads, rotating daily
-            $candidates = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
-                ->orderBy('downloads_count', 'desc')
-                ->limit(10)
-                ->get(self::SLIM_FIELDS);
+            // Count ALL eligible movies so every movie cycles before repeating
+            $totalCandidates = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])->count();
 
-            if ($candidates->isNotEmpty()) {
-                $index = $todaySeed % $candidates->count();
-                return $this->slimMovie($candidates[$index]);
+            if ($totalCandidates > 0) {
+                // Rotate through the full catalogue — with N movies, it takes
+                // N × 6 hours before any movie repeats as featured.
+                $index = $rotationSlot % $totalCandidates;
+                $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+                    ->orderByRaw('(COALESCE(downloads_count, 0) + COALESCE(views_time_count, 0)) DESC')
+                    ->offset($index)
+                    ->limit(1)
+                    ->first(self::SLIM_FIELDS);
+
+                if ($movie) {
+                    return $this->slimMovie($movie);
+                }
             }
         } catch (\Throwable $e) {
             Log::warning('V2 Manifest: featured movie error', ['error' => $e->getMessage()]);
@@ -224,18 +231,25 @@ class ManifestController extends Controller
      */
     private function pickNextFeaturedMovie(int $excludeId): ?array
     {
-        $todaySeed = (int) floor(Carbon::now()->timestamp / 21600);
+        $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
 
         try {
-            $candidates = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+            $totalCandidates = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
                 ->where('id', '!=', $excludeId)
-                ->orderBy('downloads_count', 'desc')
-                ->limit(10)
-                ->get(self::SLIM_FIELDS);
+                ->count();
 
-            if ($candidates->isNotEmpty()) {
-                $index = $todaySeed % $candidates->count();
-                return $this->slimMovie($candidates[$index]);
+            if ($totalCandidates > 0) {
+                $index = $rotationSlot % $totalCandidates;
+                $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+                    ->where('id', '!=', $excludeId)
+                    ->orderByRaw('(COALESCE(downloads_count, 0) + COALESCE(views_time_count, 0)) DESC')
+                    ->offset($index)
+                    ->limit(1)
+                    ->first(self::SLIM_FIELDS);
+
+                if ($movie) {
+                    return $this->slimMovie($movie);
+                }
             }
         } catch (\Throwable $e) {
             Log::warning('V2 Manifest: pickNextFeaturedMovie error', ['error' => $e->getMessage()]);
