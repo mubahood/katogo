@@ -476,35 +476,41 @@ class ApiController extends BaseController
         $heads = [];
         $me = $u;
 
+        // Batch-load all participant user IDs to avoid N+1
+        $participantIds = $chat_heads->map(function ($h) use ($me) {
+            return $h->customer_id == $me->id ? $h->product_owner_id : $h->customer_id;
+        })->unique()->toArray();
+        $participantUsers = User::whereIn('id', $participantIds)->get()->keyBy('id');
+
+        // Batch-load last messages & unread counts (2 queries instead of N*3)
+        $chatHeadIds = $chat_heads->pluck('id')->toArray();
+        $lastMessages = ChatMessage::whereIn('chat_head_id', $chatHeadIds)
+            ->whereIn('id', function ($q) use ($chatHeadIds) {
+                $q->select(DB::raw('MAX(id)'))->from('chat_messages')
+                    ->whereIn('chat_head_id', $chatHeadIds)->groupBy('chat_head_id');
+            })->get()->keyBy('chat_head_id');
+        $unreadCounts = ChatMessage::whereIn('chat_head_id', $chatHeadIds)
+            ->where('receiver_id', $me->id)
+            ->where('status', '!=', 'read')
+            ->select('chat_head_id', DB::raw('COUNT(*) as cnt'))
+            ->groupBy('chat_head_id')
+            ->pluck('cnt', 'chat_head_id');
+
         foreach ($chat_heads as $head) {
             try {
-                // Determine the other participant
                 $their_id = null;
                 $is_customer = ($me->id == $head->customer_id);
+                $their_id = $is_customer ? $head->product_owner_id : $head->customer_id;
 
-                if ($is_customer) {
-                    $their_id = $head->product_owner_id;
-                } else {
-                    $their_id = $head->customer_id;
-                }
-
-                // Get the other user
-                $them = User::find($their_id);
+                // Get from batch-loaded map (no N+1)
+                $them = $participantUsers->get($their_id);
                 if ($them == null) {
-                    // Skip if other user doesn't exist
                     continue;
                 }
 
-                // Get the last message for this chat head
-                $lastMesg = ChatMessage::where('chat_head_id', $head->id)
-                    ->orderBy('created_at', 'desc')
-                    ->first();
-
-                // Calculate unread message counts for the current user
-                $my_unread_count = ChatMessage::where('chat_head_id', $head->id)
-                    ->where('receiver_id', $me->id)
-                    ->where('status', '!=', 'read')
-                    ->count();
+                // Get from batch-loaded data (no N+1)
+                $lastMesg = $lastMessages->get($head->id);
+                $my_unread_count = $unreadCounts->get($head->id, 0);
 
                 // Set unread count in the appropriate field based on role
                 if ($is_customer) {
@@ -580,24 +586,7 @@ class ApiController extends BaseController
 
     public function chat_messages(Request $r)
     {
-
         $u = Utils::get_user($r);
-        if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
-        }
-
-        if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
-        }
-
         if ($u != null) {
             $u = User::find($u->id);
             if ($u != null) {
@@ -638,15 +627,11 @@ class ApiController extends BaseController
         if ($chat_head == null) {
             return $this->error('Chat head not found.');
         }
-        $messages = ChatMessage::where([
+        ChatMessage::where([
             'chat_head_id' => $chat_head->id,
             'receiver_id' => $receiver->id,
-        ])->get();
-        foreach ($messages as $key => $message) {
-            $message->status = 'read';
-            $message->save();
-        }
-        return $this->success(null, 'Makerd as read for chat head: ' . $chat_head->id . ' and receiver: ' . $receiver->id);
+        ])->where('status', '!=', 'read')->update(['status' => 'read']);
+        return $this->success(null, 'Marked as read for chat head: ' . $chat_head->id . ' and receiver: ' . $receiver->id);
     }
 
     public function chat_send(Request $r)
@@ -778,7 +763,7 @@ class ApiController extends BaseController
             ->limit(5)
             ->get();
         //set time limit
-        set_time_limit(900); // 15 minutes 
+        set_time_limit(120); // 2 minutes max for pending payment checks
         // $pendingPayments = SubscriptionTransaction::where('id', 82)->get();
         foreach ($pendingPayments as $key => $pay) {
             if ($pay->status == 'Completed') {
@@ -970,11 +955,11 @@ class ApiController extends BaseController
         $my_list['title'] = "Continue Watching";
 
         if ($watched_movies->count() > 0) {
-            $my_list['movies'] = $watched_movies->take(50)->map(function ($view) {
-                return MovieModel::find($view->movie_model_id);
-            })->filter(function ($movie) {
-                return $movie != null;
-            })->values();
+            $watchedIds = $watched_movies->take(50)->pluck('movie_model_id')->unique()->toArray();
+            $watchedMoviesMap = MovieModel::whereIn('id', $watchedIds)->get($take_only)->keyBy('id');
+            $my_list['movies'] = $watched_movies->take(50)->map(function ($view) use ($watchedMoviesMap) {
+                return $watchedMoviesMap->get($view->movie_model_id);
+            })->filter()->values();
         } else {
             $my_list['movies'] = [];
         }
@@ -1383,7 +1368,7 @@ class ApiController extends BaseController
 
         $model = "App\Models\\" . $modelName;
 
-        $data = $model::where([])->limit(1000000)->get();
+        $data = $model::limit(200)->get();
         Utils::success($data, "Listed successfully. " . $model);
     }
 
@@ -1408,28 +1393,34 @@ class ApiController extends BaseController
             // 2. Video Player Page (Flutter - VideoPlayerScreen)
 
             $model = "App\Models\\MovieModel";
-            $data = [];
-            $temp_data = $model::where([])->limit(1000000)->get();
-            foreach ($temp_data as $key => $movie) {
-                $view = DB::table('movie_views')->where([
-                    'movie_model_id' => $movie->id,
-                    'user_id' => $u->id,
-                ])->first();
-                if ($view != null) {
+            $data = MovieModel::where('status', 'Active')
+                ->where('is_muno', 'Yes')
+                ->orderBy('created_at', 'desc')
+                ->limit(200)
+                ->get();
+
+            // Batch-load views and likes for this user (2 queries instead of N*2)
+            $movieIds = $data->pluck('id')->toArray();
+            $userViews = DB::table('movie_views')
+                ->where('user_id', $u->id)
+                ->whereIn('movie_model_id', $movieIds)
+                ->get()
+                ->keyBy('movie_model_id');
+            $userLikes = DB::table('movie_likes')
+                ->where('user_id', $u->id)
+                ->where('status', 'Active')
+                ->whereIn('movie_model_id', $movieIds)
+                ->pluck('movie_model_id')
+                ->flip();
+
+            foreach ($data as $movie) {
+                $view = $userViews->get($movie->id);
+                if ($view) {
                     $movie->watched_movie = 'Yes';
                     $movie->watch_progress = $view->progress;
                     $movie->watch_status = '';
                 }
-
-
-                $liked = DB::table('movie_likes')->where('movie_model_id', $movie->id)->where('user_id', $u->id)
-                    ->where('status', 'Active')->first();
-                if ($liked != null) {
-                    $movie->liked_movie = 'Yes';
-                } else {
-                    $movie->liked_movie = 'No';
-                }
-                $data[] = $movie;
+                $movie->liked_movie = $userLikes->has($movie->id) ? 'Yes' : 'No';
             }
 
             Utils::success($data, "Listed successfully.");

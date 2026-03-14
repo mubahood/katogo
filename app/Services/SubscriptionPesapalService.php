@@ -48,31 +48,13 @@ class SubscriptionPesapalService
 
     public function __construct()
     {
-        // ===== CREDENTIAL VALIDATION (FAIL-FAST) =====
+        // ===== CREDENTIAL LOADING (validation deferred to first use) =====
         $this->consumerKey = env('PESAPAL_CONSUMER_KEY');
         $this->consumerSecret = env('PESAPAL_CONSUMER_SECRET');
         $this->baseUrl = env('PESAPAL_PRODUCTION_URL', 'https://pay.pesapal.com/v3');
 
-        if (empty($this->consumerKey) || empty($this->consumerSecret)) {
-            $missing = [];
-            if (empty($this->consumerKey)) $missing[] = 'PESAPAL_CONSUMER_KEY';
-            if (empty($this->consumerSecret)) $missing[] = 'PESAPAL_CONSUMER_SECRET';
-            Log::critical('Pesapal: Missing API credentials in .env', ['missing' => $missing]);
-            throw new \RuntimeException('Pesapal payment system misconfigured: missing ' . implode(', ', $missing) . ' in .env');
-        }
-
-        if (empty($this->baseUrl) || !filter_var($this->baseUrl, FILTER_VALIDATE_URL)) {
-            Log::critical('Pesapal: Invalid base URL', ['base_url' => $this->baseUrl]);
-            throw new \RuntimeException('Pesapal payment system misconfigured: invalid PESAPAL_PRODUCTION_URL');
-        }
-
         // Use APP_PRODUCTION_URL for externally-reachable URLs (not APP_URL which may be localhost)
         $this->appBaseUrl = env('APP_PRODUCTION_URL', env('APP_URL', 'https://katogo.schooldynamics.ug'));
-
-        if (empty($this->appBaseUrl) || !filter_var($this->appBaseUrl, FILTER_VALIDATE_URL)) {
-            Log::critical('Pesapal: Invalid app base URL', ['app_base_url' => $this->appBaseUrl]);
-            throw new \RuntimeException('Pesapal payment system misconfigured: APP_PRODUCTION_URL or APP_URL is invalid');
-        }
 
         // Warn if using localhost (common misconfiguration)
         if (strpos($this->appBaseUrl, 'localhost') !== false || strpos($this->appBaseUrl, '127.0.0.1') !== false) {
@@ -245,6 +227,11 @@ class SubscriptionPesapalService
      */
     public function authenticate(bool $forceRefresh = false): string
     {
+        // Validate credentials on first actual use (deferred from constructor for artisan compatibility)
+        if (empty($this->consumerKey) || empty($this->consumerSecret)) {
+            throw new \RuntimeException('Pesapal payment system misconfigured: missing PESAPAL_CONSUMER_KEY or PESAPAL_CONSUMER_SECRET in .env');
+        }
+
         try {
             $cacheKey = $this->tokenCacheKey();
 

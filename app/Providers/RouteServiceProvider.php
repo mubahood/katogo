@@ -24,9 +24,9 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // General API rate limit - very generous to prevent 429 errors
+        // API rate limit — 120 req/min per user (or per IP for guests)
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(1000)->by($request->user()?->id ?: $request->ip());
+            return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
         });
 
         // Higher rate limit for game endpoints (polling every 2 seconds)

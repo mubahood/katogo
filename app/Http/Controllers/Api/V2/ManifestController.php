@@ -91,8 +91,8 @@ class ManifestController extends Controller
         // Rotation seed — content cycles every 6 hours (4 times per day)
         $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
 
-        // Featured movie (cached 5 min, rotates every 6 hours)
-        $featured = Cache::remember("v2_manifest_featured_{$rotationSlot}", 300, function () {
+        // Featured movie (cached 15 min, rotates every 6 hours)
+        $featured = Cache::remember("v2_manifest_featured_{$rotationSlot}", 900, function () {
             return $this->getFeaturedMovie();
         });
 
@@ -109,7 +109,7 @@ class ManifestController extends Controller
                 $fresh = $this->pickNextFeaturedMovie($inactiveId);
                 if ($fresh) {
                     $featured = $fresh;
-                    Cache::put("v2_manifest_featured_{$rotationSlot}", $featured, 300);
+                    Cache::put("v2_manifest_featured_{$rotationSlot}", $featured, 900);
                     Log::info('V2 Manifest: cached featured movie was inactive, replaced with next active', [
                         'inactive_id' => $inactiveId,
                         'new_id'      => $featured['id'],
@@ -121,8 +121,8 @@ class ManifestController extends Controller
         // Continue Watching — personal, never cached
         $continueWatching = $this->getContinueWatching($userId);
 
-        // Movie sections (cached 5 min, rotates every 6 hours)
-        $movieSections = Cache::remember("v2_manifest_sections_{$rotationSlot}", 300, function () {
+        // Movie sections (cached 15 min, rotates every 6 hours)
+        $movieSections = Cache::remember("v2_manifest_sections_{$rotationSlot}", 900, function () {
             return $this->buildMovieSections();
         });
 

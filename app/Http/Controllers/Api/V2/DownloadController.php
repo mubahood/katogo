@@ -132,7 +132,7 @@ class DownloadController extends Controller
             ->get();
 
         // ── Top movies by total downloads ────────────────
-        $topMovies = (clone $query)->select(
+        $topMoviesRaw = (clone $query)->select(
             'movie_model_id',
             DB::raw('COUNT(*) as total'),
             DB::raw("SUM(CASE WHEN download_type = 'gallery' THEN 1 ELSE 0 END) as gallery"),
@@ -142,22 +142,9 @@ class DownloadController extends Controller
             ->groupBy('movie_model_id')
             ->orderByDesc('total')
             ->limit(20)
-            ->get()
-            ->map(function ($row) {
-                $movie = MovieModel::select('id', 'title', 'thumbnail_url')->find($row->movie_model_id);
-                return [
-                    'movie_id'     => $row->movie_model_id,
-                    'title'        => $movie->title ?? 'Unknown',
-                    'thumbnail'    => $movie->thumbnail_url ?? '',
-                    'total'        => (int) $row->total,
-                    'gallery'      => (int) $row->gallery,
-                    'in_app'       => (int) $row->in_app,
-                    'unique_users' => (int) $row->unique_users,
-                ];
-            });
+            ->get();
 
-        // ── Top movies by gallery downloads only ─────────
-        $topGallery = (clone $query)->where('download_type', 'gallery')
+        $topGalleryRaw = (clone $query)->where('download_type', 'gallery')
             ->select(
                 'movie_model_id',
                 DB::raw('COUNT(*) as total'),
@@ -166,20 +153,9 @@ class DownloadController extends Controller
             ->groupBy('movie_model_id')
             ->orderByDesc('total')
             ->limit(20)
-            ->get()
-            ->map(function ($row) {
-                $movie = MovieModel::select('id', 'title', 'thumbnail_url')->find($row->movie_model_id);
-                return [
-                    'movie_id'     => $row->movie_model_id,
-                    'title'        => $movie->title ?? 'Unknown',
-                    'thumbnail'    => $movie->thumbnail_url ?? '',
-                    'total'        => (int) $row->total,
-                    'unique_users' => (int) $row->unique_users,
-                ];
-            });
+            ->get();
 
-        // ── Top movies by in-app downloads only ──────────
-        $topInApp = (clone $query)->where('download_type', 'in_app')
+        $topInAppRaw = (clone $query)->where('download_type', 'in_app')
             ->select(
                 'movie_model_id',
                 DB::raw('COUNT(*) as total'),
@@ -188,17 +164,50 @@ class DownloadController extends Controller
             ->groupBy('movie_model_id')
             ->orderByDesc('total')
             ->limit(20)
-            ->get()
-            ->map(function ($row) {
-                $movie = MovieModel::select('id', 'title', 'thumbnail_url')->find($row->movie_model_id);
-                return [
-                    'movie_id'     => $row->movie_model_id,
-                    'title'        => $movie->title ?? 'Unknown',
-                    'thumbnail'    => $movie->thumbnail_url ?? '',
-                    'total'        => (int) $row->total,
-                    'unique_users' => (int) $row->unique_users,
-                ];
-            });
+            ->get();
+
+        // Batch-load all referenced movies in 1 query instead of N+1
+        $allMovieIds = $topMoviesRaw->pluck('movie_model_id')
+            ->merge($topGalleryRaw->pluck('movie_model_id'))
+            ->merge($topInAppRaw->pluck('movie_model_id'))
+            ->unique()->toArray();
+        $moviesMap = MovieModel::select('id', 'title', 'thumbnail_url')
+            ->whereIn('id', $allMovieIds)->get()->keyBy('id');
+
+        $topMovies = $topMoviesRaw->map(function ($row) use ($moviesMap) {
+            $movie = $moviesMap->get($row->movie_model_id);
+            return [
+                'movie_id'     => $row->movie_model_id,
+                'title'        => $movie->title ?? 'Unknown',
+                'thumbnail'    => $movie->thumbnail_url ?? '',
+                'total'        => (int) $row->total,
+                'gallery'      => (int) $row->gallery,
+                'in_app'       => (int) $row->in_app,
+                'unique_users' => (int) $row->unique_users,
+            ];
+        });
+
+        $topGallery = $topGalleryRaw->map(function ($row) use ($moviesMap) {
+            $movie = $moviesMap->get($row->movie_model_id);
+            return [
+                'movie_id'     => $row->movie_model_id,
+                'title'        => $movie->title ?? 'Unknown',
+                'thumbnail'    => $movie->thumbnail_url ?? '',
+                'total'        => (int) $row->total,
+                'unique_users' => (int) $row->unique_users,
+            ];
+        });
+
+        $topInApp = $topInAppRaw->map(function ($row) use ($moviesMap) {
+            $movie = $moviesMap->get($row->movie_model_id);
+            return [
+                'movie_id'     => $row->movie_model_id,
+                'title'        => $movie->title ?? 'Unknown',
+                'thumbnail'    => $movie->thumbnail_url ?? '',
+                'total'        => (int) $row->total,
+                'unique_users' => (int) $row->unique_users,
+            ];
+        });
 
         return $this->success([
             'period_days'  => $days,
