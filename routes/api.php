@@ -219,45 +219,48 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 });
 
 // ========================================
-// MULTIPLAYER GAME ROUTES (Higher rate limit for polling)
+// MULTIPLAYER GAME ROUTES — DISABLED (resource optimization)
+// All game/coin/ludo endpoints return 503 maintenance response
 // ========================================
+Route::middleware([JwtMiddleware::class])->group(function () {
+    $gameDisabled = function () {
+        return response()->json([
+            'success' => false,
+            'message' => 'Online games are temporarily disabled for maintenance. Please try again later.',
+            'data' => null,
+        ], 503);
+    };
+
+    Route::match(['get','post'], 'game/{any?}', $gameDisabled)->where('any', '.*');
+    Route::match(['get','post'], 'coins/{any?}', $gameDisabled)->where('any', '.*');
+    Route::match(['get','post'], 'ludo/{any?}', $gameDisabled)->where('any', '.*');
+});
+
+/*  ── ORIGINAL GAME ROUTES (commented out) ──────────────────
 Route::middleware([JwtMiddleware::class, 'throttle:game'])->group(function () {
-    // Online Users
     Route::get('game/online-users', [GameController::class, 'onlineUsers']);
-    
-    // Game Invitations
     Route::post('game/invite', [GameController::class, 'sendInvitation']);
     Route::get('game/invitations', [GameController::class, 'getInvitations']);
     Route::get('game/invite/{id}/status', [GameController::class, 'getInvitationStatus']);
     Route::post('game/invite/{id}/accept', [GameController::class, 'acceptInvitation']);
     Route::post('game/invite/{id}/decline', [GameController::class, 'declineInvitation']);
     Route::post('game/invite/{id}/cancel', [GameController::class, 'cancelInvitation']);
-    
-    // Game Sessions
     Route::get('game/session/{id}', [GameController::class, 'getSession']);
     Route::post('game/session/{id}/action', [GameController::class, 'submitAction']);
     Route::post('game/session/{id}/leave', [GameController::class, 'leaveSession']);
-    
-    // Coins
     Route::get('coins/balance', [CoinController::class, 'getBalance']);
     Route::get('coins/history', [CoinController::class, 'getHistory']);
     Route::post('coins/award-offline-win', [CoinController::class, 'awardOfflineWin']);
     Route::get('coins/leaderboard', [CoinController::class, 'getLeaderboard']);
-    
-    // ========================================
-    // LUDO GAME ROUTES
-    // ========================================
-    // Game Invitations (Ludo-specific)
     Route::post('ludo/invite', [LudoController::class, 'sendInvitation']);
     Route::post('ludo/invite/{id}/accept', [LudoController::class, 'acceptInvitation']);
-    
-    // Ludo Sessions
     Route::get('ludo/session/{id}', [LudoController::class, 'getSession']);
     Route::post('ludo/session/{id}/roll', [LudoController::class, 'rollDice']);
     Route::post('ludo/session/{id}/move', [LudoController::class, 'movePiece']);
     Route::post('ludo/session/{id}/pass', [LudoController::class, 'passTurn']);
     Route::post('ludo/session/{id}/leave', [LudoController::class, 'leaveGame']);
 });
+*/
 
 
 

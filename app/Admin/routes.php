@@ -145,23 +145,15 @@ Route::group([
     $router->get('video-transfers/{id}/cancel', 'VideoTransferController@cancel')->name('video-transfers.cancel');
 
     // ============================================
-    // GAME MODULE ROUTES
+    // GAME MODULE ROUTES — DISABLED (resource optimization)
     // ============================================
-    
-    // Game Dashboard (Statistics Overview)
+    /*
     $router->get('game-dashboard', 'GameDashboardController@index')->name('game-dashboard');
-    
-    // Matatu Game Sessions
     $router->resource('game-sessions', GameSessionController::class);
-    
-    // Ludo Game Sessions
     $router->resource('ludo-sessions', LudoSessionController::class);
-    
-    // Game Invitations
     $router->resource('game-invitations', GameInvitationController::class);
-    
-    // Coin Transactions
     $router->resource('coin-transactions', CoinTransactionController::class);
+    */
 
     // ============================================
     // STREAMING MODULE ROUTES (TV & Radio)
