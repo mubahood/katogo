@@ -48,13 +48,13 @@ class SubscriptionPesapalService
 
     public function __construct()
     {
-        // ===== CREDENTIAL LOADING (validation deferred to first use) =====
-        $this->consumerKey = env('PESAPAL_CONSUMER_KEY');
-        $this->consumerSecret = env('PESAPAL_CONSUMER_SECRET');
-        $this->baseUrl = env('PESAPAL_PRODUCTION_URL', 'https://pay.pesapal.com/v3');
+        // ===== CREDENTIAL LOADING (use config() for cache compatibility) =====
+        $this->consumerKey = config('pesapal.consumer_key');
+        $this->consumerSecret = config('pesapal.consumer_secret');
+        $this->baseUrl = config('pesapal.production_url', 'https://pay.pesapal.com/v3');
 
         // Use APP_PRODUCTION_URL for externally-reachable URLs (not APP_URL which may be localhost)
-        $this->appBaseUrl = env('APP_PRODUCTION_URL', env('APP_URL', 'https://katogo.schooldynamics.ug'));
+        $this->appBaseUrl = config('app.production_url', config('app.url', 'https://katogo.schooldynamics.ug'));
 
         // Warn if using localhost (common misconfiguration)
         if (strpos($this->appBaseUrl, 'localhost') !== false || strpos($this->appBaseUrl, '127.0.0.1') !== false) {

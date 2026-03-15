@@ -57,6 +57,8 @@ return [
 
     'url' => env('APP_URL', 'http://katogo.schooldynamics.ug'),
 
+    'production_url' => env('APP_PRODUCTION_URL'),
+
     'asset_url' => env('ASSET_URL'),
 
     /*
