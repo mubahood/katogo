@@ -2856,6 +2856,15 @@ Route::get('/privacy-policy', [LandingController::class, 'privacyPolicy'])->name
 Route::get('/terms-of-service', [LandingController::class, 'termsOfService'])->name('landing.terms-of-service');
 Route::get('/eula', [LandingController::class, 'eula'])->name('landing.eula');
 
+// App Download Landing Page
+Route::get('/app', function () {
+    return view('landing.app-download');
+})->name('landing.app-download');
+
+// Page visit tracking (landing page analytics)
+Route::post('/api/track-visit', [\App\Http\Controllers\PageVisitController::class, 'store']);
+Route::post('/api/track-event', [\App\Http\Controllers\PageVisitController::class, 'event']);
+
 // Account management page (requires authentication)
 Route::get('/account', function () {
     return view('account');

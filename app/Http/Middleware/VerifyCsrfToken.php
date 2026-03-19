@@ -14,5 +14,7 @@ class VerifyCsrfToken extends Middleware
     protected $except = [
         'africa',
         '/africa',
+        'api/track-visit',
+        'api/track-event',
     ];
 }

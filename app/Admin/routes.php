@@ -13,6 +13,8 @@ Route::group([
 
     $router->get('dashboard', 'HomeController@index')->name('home');
 
+    // App Download Landing Page Analytics
+    $router->get('app-download-analytics', 'AppDownloadAnalyticsController@index');
 
 
     $router->resource('munowatch-categories', MunowatchCategoryController::class);
