@@ -1209,8 +1209,7 @@ class DynamicCrudController extends Controller
 
     /**
      * Get a smart random movie for landing page video background
-     * Priority: Recently viewed (>10% progress) OR recently downloaded
-     * Never returns series. Only movies with playable content.
+     * Priority: Recently viewed OR recently downloaded, never series
      * This endpoint is publicly accessible (no authentication required)
      */
     public function random_movie(Request $request)
@@ -1218,84 +1217,59 @@ class DynamicCrudController extends Controller
         try {
             $movieIds = [];
 
-            // ═══════════════════════════════════════════════════════════════
-            // PHASE 1: Recently viewed movies with >10% progress (last 30 days)
-            // ═══════════════════════════════════════════════════════════════
-            $recentlyViewed = MovieView::query()
-                ->selectRaw('DISTINCT movie_model_id')
-                ->whereHas('movie', function ($q) {
-                    $q->where('type', 'Movie')
-                        ->where('status', 'Active')
-                        ->whereNotNull('url')
-                        ->where('url', '!=', '');
-                })
-                ->where('status', 'Active')
-                ->whereRaw('(progress / NULLIF(max_progress, 0)) > 0.10 OR progress > 60')  // >10% progress or >60 seconds watched
+            // Get movies from recent views (>60 seconds watched in last 30 days)
+            $viewedMovies = \DB::table('movie_views')
+                ->select('movie_model_id')
+                ->where('progress', '>', 60)
                 ->where('created_at', '>=', now()->subDays(30))
-                ->inRandomOrder()
-                ->limit(50)
+                ->distinct()
                 ->pluck('movie_model_id')
                 ->toArray();
 
-            $movieIds = array_merge($movieIds, $recentlyViewed);
+            $movieIds = array_merge($movieIds, $viewedMovies);
 
-            // ═══════════════════════════════════════════════════════════════
-            // PHASE 2: Recently downloaded movies (in-app, last 30 days)
-            // ═══════════════════════════════════════════════════════════════
-            $recentlyDownloaded = MovieDownload::query()
-                ->selectRaw('DISTINCT movie_model_id')
-                ->where('download_type', 'in_app')
-                ->whereHas('user')  // Download completed (user exists)
-                ->whereHas('movie', function ($q) {
-                    $q->where('type', 'Movie')
-                        ->where('status', 'Active')
-                        ->whereNotNull('url')
-                        ->where('url', '!=', '');
-                })
+            // Get movies from recent downloads (last 30 days)
+            $downloadedMovies = \DB::table('movie_downloads')
+                ->select('movie_model_id')
                 ->where('created_at', '>=', now()->subDays(30))
-                ->inRandomOrder()
-                ->limit(50)
+                ->distinct()
                 ->pluck('movie_model_id')
                 ->toArray();
 
-            $movieIds = array_merge($movieIds, $recentlyDownloaded);
+            $movieIds = array_merge($movieIds, $downloadedMovies);
             $movieIds = array_unique($movieIds);
 
-            // ═══════════════════════════════════════════════════════════════
-            // PHASE 3: Shuffle and pick from qualified movies
-            // ═══════════════════════════════════════════════════════════════
             $movie = null;
 
+            // Try to pick from smart recommendations
             if (!empty($movieIds)) {
-                // Pick randomly from smart-selected pool
                 shuffle($movieIds);
-                $movie = MovieModel::query()
+                $movie = MovieModel::where('status', 'Active')
+                    ->where('type', 'Movie')
+                    ->whereIn('id', array_slice($movieIds, 0, 30))
+                    ->whereNotNull('url')
+                    ->where('url', '!=', '')
+                    ->inRandomOrder()
                     ->select([
                         'id', 'title', 'url', 'firebase_video_url', 'external_url',
                         'thumbnail_url', 'image_url', 'description',
                         'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj'
                     ])
-                    ->whereIn('id', array_slice($movieIds, 0, 20))
-                    ->inRandomOrder()
                     ->first();
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            // PHASE 4: Fallback - any active movie with video (Movies only)
-            // ═══════════════════════════════════════════════════════════════
+            // Fallback: any active movie
             if (!$movie) {
-                $movie = MovieModel::query()
+                $movie = MovieModel::where('status', 'Active')
+                    ->where('type', 'Movie')
+                    ->whereNotNull('url')
+                    ->where('url', '!=', '')
+                    ->inRandomOrder()
                     ->select([
                         'id', 'title', 'url', 'firebase_video_url', 'external_url',
                         'thumbnail_url', 'image_url', 'description',
                         'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj'
                     ])
-                    ->where('status', 'Active')
-                    ->where('type', 'Movie')
-                    ->whereNotNull('url')
-                    ->where('url', '!=', '')
-                    ->where('content_is_video', 'Yes')
-                    ->inRandomOrder()
                     ->first();
             }
 
@@ -1303,36 +1277,30 @@ class DynamicCrudController extends Controller
                 return $this->error("No movies available", 404);
             }
 
-            // Prepare video URL - prefer Firebase URL, then regular URL
-            $videoUrl = null;
-            if (!empty($movie->firebase_video_url)) {
-                $videoUrl = $movie->firebase_video_url;
-            } elseif (!empty($movie->url)) {
-                $videoUrl = $movie->url;
-            } elseif (!empty($movie->external_url)) {
-                $videoUrl = $movie->external_url;
-            }
+            $videoUrl = !empty($movie->firebase_video_url) 
+                ? $movie->firebase_video_url 
+                : (!empty($movie->url) ? $movie->url : $movie->external_url);
 
-            // Format response for landing page
             $response = [
                 'id' => $movie->id,
                 'title' => $movie->title ?? 'Unknown Movie',
-                'description' => $movie->description ?? 'No description available',
+                'description' => $movie->description ?? '',
                 'video_url' => $videoUrl,
-                'thumbnail_url' => $movie->thumbnail_url,
-                'image_url' => $movie->image_url,
-                'year' => $movie->year,
-                'rating' => $movie->rating,
-                'genre' => $movie->genre,
-                'type' => $movie->type ?? 'Movie',
-                'category' => $movie->category,
-                'actor' => $movie->actor,
-                'vj' => $movie->vj
+                'thumbnail_url' => $movie->thumbnail_url ?? null,
+                'image_url' => $movie->image_url ?? null,
+                'year' => $movie->year ?? null,
+                'rating' => $movie->rating ?? null,
+                'genre' => $movie->genre ?? null,
+                'type' => 'Movie',
+                'category' => $movie->category ?? null,
+                'actor' => $movie->actor ?? null,
+                'vj' => $movie->vj ?? null
             ];
 
             return $this->success($response, "Random movie retrieved successfully.");
         } catch (\Exception $e) {
-            return $this->error("Failed to retrieve random movie: " . $e->getMessage(), 500);
+            \Log::error('random_movie error: ' . $e->getMessage());
+            return $this->error("Failed to retrieve random movie", 500);
         }
     }
 
