@@ -1208,62 +1208,93 @@ class DynamicCrudController extends Controller
     }
 
     /**
-     * Get a random active movie for landing page video background
+     * Get a smart random movie for landing page video background
+     * Priority: Recently viewed (>10% progress) OR recently downloaded
+     * Never returns series. Only movies with playable content.
      * This endpoint is publicly accessible (no authentication required)
      */
     public function random_movie(Request $request)
     {
         try {
-            // Get a random active movie with video URL (Movies only)
-            $movie = MovieModel::query()
-                ->select([
-                    'id',
-                    'title',
-                    'url',
-                    'firebase_video_url',
-                    'external_url',
-                    'thumbnail_url',
-                    'image_url',
-                    'description',
-                    'year',
-                    'rating',
-                    'genre',
-                    'type',
-                    'category',
-                    'actor',
-                    'vj'
-                ])
-                ->where('status', 'Active')
-                ->where('type', 'Movie')
-                ->whereNotNull('url')
-                ->where('url', '!=', '')
-                ->where('content_is_video', 'Yes')
-                ->inRandomOrder()
-                ->first();
+            $movieIds = [];
 
-            if (!$movie) {
-                // Fallback: get any movie with video content (Movies only)
+            // ═══════════════════════════════════════════════════════════════
+            // PHASE 1: Recently viewed movies with >10% progress (last 30 days)
+            // ═══════════════════════════════════════════════════════════════
+            $recentlyViewed = MovieView::query()
+                ->selectRaw('DISTINCT movie_model_id')
+                ->whereHas('movie', function ($q) {
+                    $q->where('type', 'Movie')
+                        ->where('status', 'Active')
+                        ->whereNotNull('url')
+                        ->where('url', '!=', '');
+                })
+                ->where('status', 'Active')
+                ->whereRaw('(progress / NULLIF(max_progress, 0)) > 0.10 OR progress > 60')  // >10% progress or >60 seconds watched
+                ->where('created_at', '>=', now()->subDays(30))
+                ->inRandomOrder()
+                ->limit(50)
+                ->pluck('movie_model_id')
+                ->toArray();
+
+            $movieIds = array_merge($movieIds, $recentlyViewed);
+
+            // ═══════════════════════════════════════════════════════════════
+            // PHASE 2: Recently downloaded movies (in-app, last 30 days)
+            // ═══════════════════════════════════════════════════════════════
+            $recentlyDownloaded = MovieDownload::query()
+                ->selectRaw('DISTINCT movie_model_id')
+                ->where('download_type', 'in_app')
+                ->whereHas('user')  // Download completed (user exists)
+                ->whereHas('movie', function ($q) {
+                    $q->where('type', 'Movie')
+                        ->where('status', 'Active')
+                        ->whereNotNull('url')
+                        ->where('url', '!=', '');
+                })
+                ->where('created_at', '>=', now()->subDays(30))
+                ->inRandomOrder()
+                ->limit(50)
+                ->pluck('movie_model_id')
+                ->toArray();
+
+            $movieIds = array_merge($movieIds, $recentlyDownloaded);
+            $movieIds = array_unique($movieIds);
+
+            // ═══════════════════════════════════════════════════════════════
+            // PHASE 3: Shuffle and pick from qualified movies
+            // ═══════════════════════════════════════════════════════════════
+            $movie = null;
+
+            if (!empty($movieIds)) {
+                // Pick randomly from smart-selected pool
+                shuffle($movieIds);
                 $movie = MovieModel::query()
                     ->select([
-                        'id',
-                        'title',
-                        'url',
-                        'firebase_video_url',
-                        'external_url',
-                        'thumbnail_url',
-                        'image_url',
-                        'description',
-                        'year',
-                        'rating',
-                        'genre',
-                        'type',
-                        'category',
-                        'actor',
-                        'vj'
+                        'id', 'title', 'url', 'firebase_video_url', 'external_url',
+                        'thumbnail_url', 'image_url', 'description',
+                        'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj'
                     ])
+                    ->whereIn('id', array_slice($movieIds, 0, 20))
+                    ->inRandomOrder()
+                    ->first();
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // PHASE 4: Fallback - any active movie with video (Movies only)
+            // ═══════════════════════════════════════════════════════════════
+            if (!$movie) {
+                $movie = MovieModel::query()
+                    ->select([
+                        'id', 'title', 'url', 'firebase_video_url', 'external_url',
+                        'thumbnail_url', 'image_url', 'description',
+                        'year', 'rating', 'genre', 'type', 'category', 'actor', 'vj'
+                    ])
+                    ->where('status', 'Active')
                     ->where('type', 'Movie')
                     ->whereNotNull('url')
                     ->where('url', '!=', '')
+                    ->where('content_is_video', 'Yes')
                     ->inRandomOrder()
                     ->first();
             }

@@ -9,10 +9,16 @@ class MovieDownload extends Model
 {
     use HasFactory;
 
-    //belonsg to user_id
+    //belongs to user_id
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    //belongs to movie
+    public function movie()
+    {
+        return $this->belongsTo(MovieModel::class, 'movie_model_id');
     }
 
     protected static function boot()
