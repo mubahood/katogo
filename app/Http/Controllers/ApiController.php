@@ -1850,9 +1850,9 @@ class ApiController extends BaseController
             }
 
             // Optional: Verify audience (aud) matches your Google Client ID
-            // if ($token_data['aud'] !== 'YOUR_GOOGLE_CLIENT_ID') {
-            //     return false;
-            // }
+            if ($token_data['aud'] !== '1073633720466-fp22v0ttbh8s60fbi3phasq2bcg39gha.apps.googleusercontent.com') {
+                return false;
+            }
 
             return $token_data;
         } catch (\Exception $e) {
