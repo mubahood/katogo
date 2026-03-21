@@ -1849,8 +1849,12 @@ class ApiController extends BaseController
                 return false;
             }
 
-            // Optional: Verify audience (aud) matches your Google Client ID
-            if ($token_data['aud'] !== '1073633720466-fp22v0ttbh8s60fbi3phasq2bcg39gha.apps.googleusercontent.com') {
+            // Verify audience (aud) matches one of our Google Client IDs
+            $valid_client_ids = [
+                '561132731615-vgr65ea6ad5ee0jhr25qv0vic9n0hdic.apps.googleusercontent.com', // Web client (Firebase)
+                '1073633720466-fp22v0ttbh8s60fbi3phasq2bcg39gha.apps.googleusercontent.com', // Legacy client
+            ];
+            if (!in_array($token_data['aud'], $valid_client_ids)) {
                 return false;
             }
 
