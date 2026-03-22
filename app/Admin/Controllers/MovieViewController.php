@@ -300,7 +300,7 @@ class MovieViewController extends AdminController
             $u = User::find($tu->user_id);
             $n = $u ? (mb_strlen($u->name) > 22 ? mb_substr($u->name, 0, 22) . '…' : $u->name) : '#' . $tu->user_id;
             $app = $u ? ($u->app_type ?? '?') : '?';
-            $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : '#999'));
+            $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : ($app === 'web' ? '#9b59b6' : '#999')));
             $html .= "<div class='mv-rank'><div class='mv-rank-num'>#{$rank}</div><div class='mv-rank-name'><a href='" . admin_url("users/{$tu->user_id}") . "' style='color:#333;text-decoration:none'>{$n}</a> <span class='mv-badge' style='background:{$appClr}'>{$app}</span></div><div class='mv-rank-cnt'>{$tu->cnt}</div></div>";
             $rank++;
         }
@@ -315,7 +315,7 @@ class MovieViewController extends AdminController
             $u = User::find($tu->user_id);
             $n = $u ? (mb_strlen($u->name) > 22 ? mb_substr($u->name, 0, 22) . '…' : $u->name) : '#' . $tu->user_id;
             $app = $u ? ($u->app_type ?? '?') : '?';
-            $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : '#999'));
+            $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : ($app === 'web' ? '#9b59b6' : '#999')));
             $html .= "<div class='mv-rank'><div class='mv-rank-num'>#{$rank}</div><div class='mv-rank-name'><a href='" . admin_url("users/{$tu->user_id}") . "' style='color:#333;text-decoration:none'>{$n}</a> <span class='mv-badge' style='background:{$appClr}'>{$app}</span></div><div class='mv-rank-cnt'>{$tu->cnt}</div></div>";
             $rank++;
         }
@@ -388,7 +388,7 @@ class MovieViewController extends AdminController
             $u = $this->user ?: User::find($this->user_id);
             if (!$u) return '-';
             $app = $u->app_type ?? 'unknown';
-            $colors = ['ugflix' => '#e74c3c', 'lugaflix' => '#3498db', 'muno_app' => '#ff9800'];
+            $colors = ['ugflix' => '#e74c3c', 'lugaflix' => '#3498db', 'muno_app' => '#ff9800', 'web' => '#9b59b6'];
             $clr = $colors[$app] ?? '#999';
             $device = $u->platform ?? '?';
             $dIcon = $device === 'android' ? 'fa-android' : ($device === 'ios' ? 'fa-apple' : 'fa-mobile');
@@ -477,7 +477,7 @@ class MovieViewController extends AdminController
             $html .= '<h4 style="margin-bottom:12px;color:#333;border-bottom:2px solid #17a2b8;padding-bottom:6px">👤 User & Subscription</h4>';
             $html .= '<table class="table table-bordered table-condensed" style="margin-bottom:16px">';
             if ($user) {
-                $appClr = ($user->app_type ?? '') === 'ugflix' ? '#e74c3c' : (($user->app_type ?? '') === 'lugaflix' ? '#3498db' : (($user->app_type ?? '') === 'muno_app' ? '#ff9800' : '#999'));
+                $appClr = ($user->app_type ?? '') === 'ugflix' ? '#e74c3c' : (($user->app_type ?? '') === 'lugaflix' ? '#3498db' : (($user->app_type ?? '') === 'muno_app' ? '#ff9800' : (($user->app_type ?? '') === 'web' ? '#9b59b6' : '#999')));
                 $html .= '<tr><td style="width:150px;font-weight:bold">User</td><td><a href="' . admin_url("users/{$user->id}") . '">' . htmlspecialchars($user->name ?? 'N/A') . '</a> (ID: ' . $user->id . ')</td></tr>';
                 $html .= '<tr><td style="font-weight:bold">Email / Phone</td><td>' . htmlspecialchars($user->email ?? 'N/A') . ' · ' . htmlspecialchars($user->phone_number ?? $user->phone ?? 'N/A') . '</td></tr>';
                 $html .= '<tr><td style="font-weight:bold">App / Device</td><td><span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' . $appClr . '">' . ($user->app_type ?? 'unknown') . '</span> · ' . ($user->platform ?? 'unknown') . '</td></tr>';

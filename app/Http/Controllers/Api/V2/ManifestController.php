@@ -52,7 +52,7 @@ class ManifestController extends Controller
      *  – Typed sections with keys (continue_watching, trending, popular, …)
      *  – Server-side caching for shared data (genres, VJs, movie sections)
      *  – Personal data (continue_watching, subscription, stats) always fresh
-     *  – Supports app_type: ugflix, lugaflix, muno_app
+     *  – Supports app_type: ugflix, lugaflix, muno_app, web
      */
     public function index(Request $request)
     {
@@ -69,7 +69,7 @@ class ManifestController extends Controller
         }
 
         $app_type = Utils::get_app_type($request);
-        $validTypes = ['ugflix', 'lugaflix', 'muno_app'];
+        $validTypes = ['ugflix', 'lugaflix', 'muno_app', 'web'];
         if (!in_array($app_type, $validTypes)) {
             $app_type = 'ugflix';
         }

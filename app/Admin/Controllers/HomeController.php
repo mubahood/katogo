@@ -43,6 +43,7 @@ class HomeController extends Controller
         $ugflixUsers   = User::where('app_type', 'ugflix')->count();
         $lugaflixUsers = User::where('app_type', 'lugaflix')->count();
         $munoUsers     = User::where('app_type', 'muno_app')->count();
+        $webUsers      = User::where('app_type', 'web')->count();
         $androidUsers  = User::where('platform', 'android')->count();
         $iosUsers      = User::where('platform', 'ios')->count();
         $guestUsers    = User::where('is_guest', 'Yes')->count();
@@ -125,10 +126,10 @@ class HomeController extends Controller
 
         // Build daily arrays for charts
         $labels30 = [];
-        $signupsMuno = []; $signupsLugaflix = []; $signupsUgflix = []; $signupsTotal = [];
-        $viewsMuno = []; $viewsLugaflix = []; $viewsUgflix = []; $viewsTotal = [];
+        $signupsMuno = []; $signupsLugaflix = []; $signupsUgflix = []; $signupsWeb = []; $signupsTotal = [];
+        $viewsMuno = []; $viewsLugaflix = []; $viewsUgflix = []; $viewsWeb = []; $viewsTotal = [];
         $downloadsDly = [];
-        $revMuno = []; $revLugaflix = []; $revUgflix = []; $revTotal = [];
+        $revMuno = []; $revLugaflix = []; $revUgflix = []; $revWeb = []; $revTotal = [];
 
         for ($i = 29; $i >= 0; $i--) {
             $d = Carbon::today()->subDays($i);
@@ -138,11 +139,13 @@ class HomeController extends Controller
             $signupsMuno[] = $signupsMap[$dk]['muno_app'] ?? 0;
             $signupsLugaflix[] = $signupsMap[$dk]['lugaflix'] ?? 0;
             $signupsUgflix[] = $signupsMap[$dk]['ugflix'] ?? 0;
+            $signupsWeb[] = $signupsMap[$dk]['web'] ?? 0;
             $signupsTotal[] = isset($signupsMap[$dk]) ? array_sum($signupsMap[$dk]) : 0;
 
             $viewsMuno[] = $viewsMap[$dk]['muno_app'] ?? 0;
             $viewsLugaflix[] = $viewsMap[$dk]['lugaflix'] ?? 0;
             $viewsUgflix[] = $viewsMap[$dk]['ugflix'] ?? 0;
+            $viewsWeb[] = $viewsMap[$dk]['web'] ?? 0;
             $viewsTotal[] = isset($viewsMap[$dk]) ? array_sum($viewsMap[$dk]) : 0;
 
             $downloadsDly[] = $downloadsMap[$dk] ?? 0;
@@ -150,6 +153,7 @@ class HomeController extends Controller
             $revMuno[] = $revenueMap[$dk]['muno_app'] ?? 0;
             $revLugaflix[] = $revenueMap[$dk]['lugaflix'] ?? 0;
             $revUgflix[] = $revenueMap[$dk]['ugflix'] ?? 0;
+            $revWeb[] = $revenueMap[$dk]['web'] ?? 0;
             $revTotal[] = isset($revenueMap[$dk]) ? array_sum($revenueMap[$dk]) : 0;
         }
 
@@ -157,6 +161,7 @@ class HomeController extends Controller
         $munoViews    = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'muno_app')->count();
         $lugaflixViews = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'lugaflix')->count();
         $ugflixViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'ugflix')->count();
+        $webViews     = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'web')->count();
 
         // Last 30 days subscriptions — daily aggregates (completed payments only, excludes withdrawals)
         $dailySubsRaw = DB::table('subscription_transactions')
@@ -175,6 +180,7 @@ class HomeController extends Controller
         $ugPct = round(($ugflixUsers / $uT) * 100);
         $lgPct = round(($lugaflixUsers / $uT) * 100);
         $mnPct = round(($munoUsers / $uT) * 100);
+        $wbPct = round(($webUsers / $uT) * 100);
 
         // ═══════════ HTML ═══════════
         $html = '<style>
@@ -258,6 +264,7 @@ class HomeController extends Controller
             ['Ugflix', number_format($ugflixUsers), '#2ecc71', 'fa-play-circle', '#'],
             ['Lugaflix', number_format($lugaflixUsers), '#3498db', 'fa-play-circle-o', '#'],
             ['Muno', number_format($munoUsers), '#e74c3c', 'fa-fire', '#'],
+            ['Web', number_format($webUsers), '#9b59b6', 'fa-globe', '#'],
             ['Guests', number_format($guestUsers), '#95a5a6', 'fa-user-secret', '#'],
         ];
         foreach ($userCards as [$l, $v, $c, $i, $lnk]) {
@@ -290,15 +297,18 @@ class HomeController extends Controller
         $jSignupsMuno = json_encode($signupsMuno);
         $jSignupsLugaflix = json_encode($signupsLugaflix);
         $jSignupsUgflix = json_encode($signupsUgflix);
+        $jSignupsWeb = json_encode($signupsWeb);
         $jSignupsTotal = json_encode($signupsTotal);
         $jViewsMuno = json_encode($viewsMuno);
         $jViewsLugaflix = json_encode($viewsLugaflix);
         $jViewsUgflix = json_encode($viewsUgflix);
+        $jViewsWeb = json_encode($viewsWeb);
         $jViewsTotal = json_encode($viewsTotal);
         $jDownloads = json_encode($downloadsDly);
         $jRevMuno = json_encode($revMuno);
         $jRevLugaflix = json_encode($revLugaflix);
         $jRevUgflix = json_encode($revUgflix);
+        $jRevWeb = json_encode($revWeb);
         $jRevTotal = json_encode($revTotal);
 
         // ── CHART ROW 1: User Registrations + Views & Downloads ──
@@ -388,6 +398,7 @@ class HomeController extends Controller
             ['Muno', $munoUsers, $munoViews, '#e74c3c', 'fa-fire'],
             ['LugaFlix', $lugaflixUsers, $lugaflixViews, '#3498db', 'fa-star'],
             ['UG Flix', $ugflixUsers, $ugflixViews, '#2ecc71', 'fa-bolt'],
+            ['Web', $webUsers, $webViews, '#9b59b6', 'fa-globe'],
         ];
         foreach ($platformCompare as [$pName, $pUsers, $pViews, $pColor, $pIcon]) {
             $avgViews = $pUsers > 0 ? round($pViews / $pUsers, 1) : 0;
@@ -433,7 +444,7 @@ class HomeController extends Controller
         $html .= '</div>';
 
         // ════════ Chart.js 2.x Scripts (bundled with Laravel Admin) ════════
-        $otherUsers = max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers, 0);
+        $otherUsers = max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers - $webUsers, 0);
         $html .= '<script>
 document.addEventListener("DOMContentLoaded", function() {
     var labels = ' . $jLabels . ';
@@ -474,7 +485,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 makeLine("Total", ' . $jSignupsTotal . ', "rgba(0,0,0,0.7)", 3, []),
                 makeLine("Muno", ' . $jSignupsMuno . ', "rgb(231,76,60)", 2, []),
                 makeLine("LugaFlix", ' . $jSignupsLugaflix . ', "rgb(52,152,219)", 2, []),
-                makeLine("UG Flix", ' . $jSignupsUgflix . ', "rgb(46,204,113)", 2, [])
+                makeLine("UG Flix", ' . $jSignupsUgflix . ', "rgb(46,204,113)", 2, []),
+                makeLine("Web", ' . $jSignupsWeb . ', "rgb(155,89,182)", 2, [])
             ]
         },
         options: cloneOpts(defaultOpts)
@@ -490,7 +502,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 makeLine("Muno Views", ' . $jViewsMuno . ', "rgb(231,76,60)", 2, []),
                 makeLine("LugaFlix Views", ' . $jViewsLugaflix . ', "rgb(52,152,219)", 2, []),
                 makeLine("UG Flix Views", ' . $jViewsUgflix . ', "rgb(46,204,113)", 2, []),
-                makeLine("Downloads", ' . $jDownloads . ', "rgb(155,89,182)", 2, [5,3])
+                makeLine("Web Views", ' . $jViewsWeb . ', "rgb(155,89,182)", 2, []),
+                makeLine("Downloads", ' . $jDownloads . ', "rgb(243,156,18)", 2, [5,3])
             ]
         },
         options: cloneOpts(defaultOpts)
@@ -511,7 +524,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 makeLine("Total", ' . $jRevTotal . ', "rgba(243,156,18,1)", 3, []),
                 makeLine("Muno", ' . $jRevMuno . ', "rgb(231,76,60)", 2, []),
                 makeLine("LugaFlix", ' . $jRevLugaflix . ', "rgb(52,152,219)", 2, []),
-                makeLine("UG Flix", ' . $jRevUgflix . ', "rgb(46,204,113)", 2, [])
+                makeLine("UG Flix", ' . $jRevUgflix . ', "rgb(46,204,113)", 2, []),
+                makeLine("Web", ' . $jRevWeb . ', "rgb(155,89,182)", 2, [])
             ]
         },
         options: revOpts
@@ -525,9 +539,9 @@ document.addEventListener("DOMContentLoaded", function() {
     new Chart(document.getElementById("usersPieChart"), {
         type: "doughnut",
         data: {
-            labels: ["Muno (' . $mnPct . '%)", "LugaFlix (' . $lgPct . '%)", "UG Flix (' . $ugPct . '%)", "Other (' . (100 - $ugPct - $lgPct - $mnPct) . '%)"],
-            datasets: [{ data: [' . $munoUsers . ', ' . $lugaflixUsers . ', ' . $ugflixUsers . ', ' . $otherUsers . '],
-                backgroundColor: ["rgba(231,76,60,0.8)", "rgba(52,152,219,0.8)", "rgba(46,204,113,0.8)", "rgba(189,195,199,0.6)"],
+            labels: ["Muno (' . $mnPct . '%)", "LugaFlix (' . $lgPct . '%)", "UG Flix (' . $ugPct . '%)", "Web (' . $wbPct . '%)", "Other"],
+            datasets: [{ data: [' . $munoUsers . ', ' . $lugaflixUsers . ', ' . $ugflixUsers . ', ' . $webUsers . ', ' . $otherUsers . '],
+                backgroundColor: ["rgba(231,76,60,0.8)", "rgba(52,152,219,0.8)", "rgba(46,204,113,0.8)", "rgba(155,89,182,0.8)", "rgba(189,195,199,0.6)"],
                 borderWidth: 2, borderColor: "#fff" }]
         },
         options: JSON.parse(JSON.stringify(donutOpts))

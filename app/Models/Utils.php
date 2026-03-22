@@ -403,6 +403,8 @@ class Utils
                 $platform_type = 'android';
             } else if ($_GET['platform_type'] == 'ios') {
                 $platform_type = 'ios';
+            } else if ($_GET['platform_type'] == 'web') {
+                $platform_type = 'web';
             }
         }
         return $platform_type;
@@ -464,12 +466,23 @@ class Utils
             $request = request();
         }
 
-        // Fallback: try to get from query parameter
-        if ($request->has('app_type')) {
-            return $request->get('app_type');
+        // Check X-App-Type header first (sent by web client on every request)
+        if ($request->hasHeader('X-App-Type')) {
+            $val = strtolower(trim($request->header('X-App-Type')));
+            if (in_array($val, ['ugflix', 'lugaflix', 'muno_app', 'web'])) {
+                return $val;
+            }
         }
 
-        // Default: return 0 if not found
+        // Check body/query parameter
+        if ($request->has('app_type')) {
+            $val = strtolower(trim($request->get('app_type')));
+            if (in_array($val, ['ugflix', 'lugaflix', 'muno_app', 'web'])) {
+                return $val;
+            }
+        }
+
+        // Default
         return 'ugflix';
     }
 

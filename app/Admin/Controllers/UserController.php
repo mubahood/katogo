@@ -50,7 +50,9 @@ class UserController extends AdminController
         // App type breakdown
         $ugflixUsers   = User::where('app_type', 'ugflix')->count();
         $lugaflixUsers = User::where('app_type', 'lugaflix')->count();
-        $otherUsers    = $totalUsers - $ugflixUsers - $lugaflixUsers;
+        $munoUsers     = User::where('app_type', 'muno_app')->count();
+        $webUsers      = User::where('app_type', 'web')->count();
+        $otherUsers    = max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers - $webUsers, 0);
 
         // Platform
         $androidUsers = User::where('platform', 'android')->count();
@@ -82,9 +84,11 @@ class UserController extends AdminController
         $maxDaily = max(array_column($dailySignups, 'count') ?: [1]);
 
         // Pie percentages
-        $pT = max($ugflixUsers + $lugaflixUsers + $otherUsers, 1);
+        $pT = max($ugflixUsers + $lugaflixUsers + $munoUsers + $webUsers + $otherUsers, 1);
         $ugPct = round(($ugflixUsers / $pT) * 100);
         $lgPct = round(($lugaflixUsers / $pT) * 100);
+        $mnPct = round(($munoUsers / $pT) * 100);
+        $wbPct = round(($webUsers / $pT) * 100);
         $dT = max($androidUsers + $iosUsers, 1);
         $anPct = round(($androidUsers / $dT) * 100);
 
@@ -128,8 +132,10 @@ class UserController extends AdminController
         // Row 2: Platform cards
         $html .= '<div class="uc-row">';
         $p2 = [
-            ['Ugflix', number_format($ugflixUsers), '#e74c3c', 'fa-play-circle'],
-            ['Lugaflix', number_format($lugaflixUsers), '#3498db', 'fa-play-circle-o'],
+            ['UGFlix', number_format($ugflixUsers), '#e74c3c', 'fa-play-circle'],
+            ['LugaFlix', number_format($lugaflixUsers), '#3498db', 'fa-play-circle-o'],
+            ['Muno', number_format($munoUsers), '#ff9800', 'fa-fire'],
+            ['Web', number_format($webUsers), '#9b59b6', 'fa-globe'],
             ['Android', number_format($androidUsers), '#28a745', 'fa-android'],
             ['iOS', number_format($iosUsers), '#555', 'fa-apple'],
             ['Total Views', number_format($totalViews), '#007bff', 'fa-eye'],
@@ -159,8 +165,10 @@ class UserController extends AdminController
         $html .= '<div class="uc-box-title">App Type</div>';
         $ugDeg = round(($ugPct / 100) * 360);
         $lgDeg = round(($lgPct / 100) * 360);
-        $html .= "<div class='uc-pie' style='background:conic-gradient(#e74c3c 0deg {$ugDeg}deg, #3498db {$ugDeg}deg " . ($ugDeg + $lgDeg) . "deg, #bdc3c7 " . ($ugDeg + $lgDeg) . "deg 360deg)'></div>";
-        $html .= "<div class='uc-legend'><span style='background:#e74c3c'></span>Ugflix {$ugPct}% <span style='background:#3498db;margin-left:4px'></span>Lugaflix {$lgPct}%</div>";
+        $mnDeg = round(($mnPct / 100) * 360);
+        $wbDeg = round(($wbPct / 100) * 360);
+        $html .= "<div class='uc-pie' style='background:conic-gradient(#e74c3c 0deg {$ugDeg}deg, #3498db {$ugDeg}deg " . ($ugDeg + $lgDeg) . "deg, #ff9800 " . ($ugDeg + $lgDeg) . "deg " . ($ugDeg + $lgDeg + $mnDeg) . "deg, #9b59b6 " . ($ugDeg + $lgDeg + $mnDeg) . "deg " . ($ugDeg + $lgDeg + $mnDeg + $wbDeg) . "deg, #bdc3c7 " . ($ugDeg + $lgDeg + $mnDeg + $wbDeg) . "deg 360deg)'></div>";
+        $html .= "<div class='uc-legend'><span style='background:#e74c3c'></span>UGFlix {$ugPct}% <span style='background:#3498db;margin-left:4px'></span>LugaFlix {$lgPct}% <span style='background:#ff9800;margin-left:4px'></span>Muno {$mnPct}% <span style='background:#9b59b6;margin-left:4px'></span>Web {$wbPct}%</div>";
         $html .= '</div>';
 
         // Device pie
@@ -198,7 +206,7 @@ class UserController extends AdminController
                 $filter->like('phone_number', 'Phone');
             });
             $filter->column(1/4, function ($filter) {
-                $filter->equal('app_type', 'App Type')->select(['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix']);
+                $filter->equal('app_type', 'App Type')->select(['ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno', 'web' => 'Web']);
                 $filter->equal('platform', 'Platform')->select(['android' => 'Android', 'ios' => 'iOS']);
             });
             $filter->column(1/4, function ($filter) {
@@ -222,13 +230,13 @@ class UserController extends AdminController
         });
 
         $grid->column('app_type', 'App')->sortable()
-            ->filter(['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix'])
+            ->filter(['ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno', 'web' => 'Web'])
             ->display(function ($v) {
-                $colors = ['ugflix' => '#e74c3c', 'lugaflix' => '#3498db'];
+                $colors = ['ugflix' => '#e74c3c', 'lugaflix' => '#3498db', 'muno_app' => '#ff9800', 'web' => '#9b59b6'];
                 $clr = $colors[$v] ?? '#999';
                 return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:{$clr}'>" . ($v ?: '?') . "</span>";
             })
-            ->editable('select', ['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix']);
+            ->editable('select', ['ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno', 'web' => 'Web']);
 
         $grid->column('platform', 'Device')->sortable()
             ->filter(['android' => 'Android', 'ios' => 'iOS'])
@@ -417,7 +425,7 @@ class UserController extends AdminController
         $form = new Form(new User());
 
         $form->tab('Account', function ($form) {
-            $form->select('app_type', 'App Type')->options(['ugflix' => 'Ugflix', 'lugaflix' => 'Lugaflix'])->default('ugflix');
+            $form->select('app_type', 'App Type')->options(['ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno', 'web' => 'Web'])->default('ugflix');
             $form->text('username', 'Username');
             $form->text('name', 'Name');
             $form->email('email', 'Email');

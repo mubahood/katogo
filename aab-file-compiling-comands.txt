@@ -55,3 +55,12 @@ I want you to make very very agressive when it comes to security
 - have a pwoerful tracker on polugins, disable autmatically sucespscious oplugins , unless the admin whiltelist them
 - come up with more security features to make the plugin very agrresinve in terms of security
 
+.
+
+now, just like the way we have platform types, like muno, ugflix and luaflix, the web i want it to be identified as its own type of platform as well. we should call it "WEB".
+i WANT YOU to analyze this whole anology of platform types both front and backend.
+these types help us to understand all stats and sources of traffic including the payments.
+i want you yo carefully under how this is implmented both in app and backend. 
+then carefully introduce this web prlatoform keyword.
+introduce it across everything including in payment prefix, and everything including in stats of graphs n dashboard, and all pages .
+ensure perfection and no room for any error.

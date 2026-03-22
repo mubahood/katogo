@@ -119,7 +119,7 @@ class SubscriptionController extends AdminController
 .sub-stat .info{flex:1;min-width:0}
 .sub-stat .info .val{font-size:18px;font-weight:700;color:#222;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sub-stat .info .lbl{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.3px;margin-top:2px}
-.sub-apps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.sub-apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px}
 .sub-app{background:#fff;border-radius:6px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-top:3px solid #ddd}
 .sub-app .app-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .sub-app .app-head i{font-size:14px}
@@ -179,6 +179,7 @@ HTML;
             'lugaflix'  => ['LugaFlix', '#3498db', 'fa-film'],
             'ugflix'    => ['UGFlix',   '#2ecc71', 'fa-play-circle'],
             'muno_app'  => ['Muno App', '#e74c3c', 'fa-television'],
+            'web'       => ['Web',      '#9b59b6', 'fa-globe'],
         ];
         foreach ($appConfigs as $key => [$name, $color, $icon]) {
             $rev = $appRevenue[$key] ?? 0;
@@ -213,21 +214,21 @@ HTML;
         for ($i = 29; $i >= 0; $i--) {
             $d = Carbon::today()->subDays($i)->format('Y-m-d');
             $dailyLabels[] = Carbon::parse($d)->format('d M');
-            $dailyMap[$d] = ['muno_app' => ['rev' => 0, 'cnt' => 0], 'lugaflix' => ['rev' => 0, 'cnt' => 0], 'ugflix' => ['rev' => 0, 'cnt' => 0]];
+            $dailyMap[$d] = ['muno_app' => ['rev' => 0, 'cnt' => 0], 'lugaflix' => ['rev' => 0, 'cnt' => 0], 'ugflix' => ['rev' => 0, 'cnt' => 0], 'web' => ['rev' => 0, 'cnt' => 0]];
         }
         foreach ($dailyRaw as $row) {
             if (isset($dailyMap[$row->d][$row->app_type])) {
                 $dailyMap[$row->d][$row->app_type] = ['rev' => (float)$row->rev, 'cnt' => (int)$row->cnt];
             }
         }
-        $dMunoRev = []; $dLgRev = []; $dUgRev = [];
-        $dMunoCnt = []; $dLgCnt = []; $dUgCnt = [];
+        $dMunoRev = []; $dLgRev = []; $dUgRev = []; $dWebRev = [];
+        $dMunoCnt = []; $dLgCnt = []; $dUgCnt = []; $dWebCnt = [];
         $dTotalRev = []; $dTotalCnt = [];
         foreach ($dailyMap as $vals) {
-            $dMunoRev[] = $vals['muno_app']['rev']; $dLgRev[] = $vals['lugaflix']['rev']; $dUgRev[] = $vals['ugflix']['rev'];
-            $dMunoCnt[] = $vals['muno_app']['cnt']; $dLgCnt[] = $vals['lugaflix']['cnt']; $dUgCnt[] = $vals['ugflix']['cnt'];
-            $dTotalRev[] = $vals['muno_app']['rev'] + $vals['lugaflix']['rev'] + $vals['ugflix']['rev'];
-            $dTotalCnt[] = $vals['muno_app']['cnt'] + $vals['lugaflix']['cnt'] + $vals['ugflix']['cnt'];
+            $dMunoRev[] = $vals['muno_app']['rev']; $dLgRev[] = $vals['lugaflix']['rev']; $dUgRev[] = $vals['ugflix']['rev']; $dWebRev[] = $vals['web']['rev'];
+            $dMunoCnt[] = $vals['muno_app']['cnt']; $dLgCnt[] = $vals['lugaflix']['cnt']; $dUgCnt[] = $vals['ugflix']['cnt']; $dWebCnt[] = $vals['web']['cnt'];
+            $dTotalRev[] = $vals['muno_app']['rev'] + $vals['lugaflix']['rev'] + $vals['ugflix']['rev'] + $vals['web']['rev'];
+            $dTotalCnt[] = $vals['muno_app']['cnt'] + $vals['lugaflix']['cnt'] + $vals['ugflix']['cnt'] + $vals['web']['cnt'];
         }
 
         // Weekly (last 12 weeks) — single query
@@ -245,7 +246,7 @@ HTML;
             // Use YEARWEEK format matching MySQL
             $ywMysql = (string)$ws->isoWeekYear . str_pad($ws->isoWeek, 2, '0', STR_PAD_LEFT);
             $weeklyLabels[] = $ws->format('d M');
-            $weeklyMap[$ywMysql] = ['muno_app' => ['rev' => 0, 'cnt' => 0], 'lugaflix' => ['rev' => 0, 'cnt' => 0], 'ugflix' => ['rev' => 0, 'cnt' => 0]];
+            $weeklyMap[$ywMysql] = ['muno_app' => ['rev' => 0, 'cnt' => 0], 'lugaflix' => ['rev' => 0, 'cnt' => 0], 'ugflix' => ['rev' => 0, 'cnt' => 0], 'web' => ['rev' => 0, 'cnt' => 0]];
         }
         foreach ($weeklyRaw as $row) {
             $yw = (string)$row->yw;
@@ -253,11 +254,11 @@ HTML;
                 $weeklyMap[$yw][$row->app_type] = ['rev' => (float)$row->rev, 'cnt' => (int)$row->cnt];
             }
         }
-        $wMunoRev = []; $wLgRev = []; $wUgRev = [];
-        $wMunoCnt = []; $wLgCnt = []; $wUgCnt = [];
+        $wMunoRev = []; $wLgRev = []; $wUgRev = []; $wWebRev = [];
+        $wMunoCnt = []; $wLgCnt = []; $wUgCnt = []; $wWebCnt = [];
         foreach ($weeklyMap as $vals) {
-            $wMunoRev[] = $vals['muno_app']['rev']; $wLgRev[] = $vals['lugaflix']['rev']; $wUgRev[] = $vals['ugflix']['rev'];
-            $wMunoCnt[] = $vals['muno_app']['cnt']; $wLgCnt[] = $vals['lugaflix']['cnt']; $wUgCnt[] = $vals['ugflix']['cnt'];
+            $wMunoRev[] = $vals['muno_app']['rev']; $wLgRev[] = $vals['lugaflix']['rev']; $wUgRev[] = $vals['ugflix']['rev']; $wWebRev[] = $vals['web']['rev'];
+            $wMunoCnt[] = $vals['muno_app']['cnt']; $wLgCnt[] = $vals['lugaflix']['cnt']; $wUgCnt[] = $vals['ugflix']['cnt']; $wWebCnt[] = $vals['web']['cnt'];
         }
 
         // Monthly (last 6 months) — single query
@@ -273,18 +274,18 @@ HTML;
             $ms = Carbon::now()->subMonths($i)->startOfMonth();
             $ym = $ms->format('Y-m');
             $monthlyLabels[] = $ms->format('M Y');
-            $monthlyMap[$ym] = ['muno_app' => ['rev' => 0, 'cnt' => 0], 'lugaflix' => ['rev' => 0, 'cnt' => 0], 'ugflix' => ['rev' => 0, 'cnt' => 0]];
+            $monthlyMap[$ym] = ['muno_app' => ['rev' => 0, 'cnt' => 0], 'lugaflix' => ['rev' => 0, 'cnt' => 0], 'ugflix' => ['rev' => 0, 'cnt' => 0], 'web' => ['rev' => 0, 'cnt' => 0]];
         }
         foreach ($monthlyRaw as $row) {
             if (isset($monthlyMap[$row->ym][$row->app_type])) {
                 $monthlyMap[$row->ym][$row->app_type] = ['rev' => (float)$row->rev, 'cnt' => (int)$row->cnt];
             }
         }
-        $mMunoRev = []; $mLgRev = []; $mUgRev = [];
-        $mMunoCnt = []; $mLgCnt = []; $mUgCnt = [];
+        $mMunoRev = []; $mLgRev = []; $mUgRev = []; $mWebRev = [];
+        $mMunoCnt = []; $mLgCnt = []; $mUgCnt = []; $mWebCnt = [];
         foreach ($monthlyMap as $vals) {
-            $mMunoRev[] = $vals['muno_app']['rev']; $mLgRev[] = $vals['lugaflix']['rev']; $mUgRev[] = $vals['ugflix']['rev'];
-            $mMunoCnt[] = $vals['muno_app']['cnt']; $mLgCnt[] = $vals['lugaflix']['cnt']; $mUgCnt[] = $vals['ugflix']['cnt'];
+            $mMunoRev[] = $vals['muno_app']['rev']; $mLgRev[] = $vals['lugaflix']['rev']; $mUgRev[] = $vals['ugflix']['rev']; $mWebRev[] = $vals['web']['rev'];
+            $mMunoCnt[] = $vals['muno_app']['cnt']; $mLgCnt[] = $vals['lugaflix']['cnt']; $mUgCnt[] = $vals['ugflix']['cnt']; $mWebCnt[] = $vals['web']['cnt'];
         }
 
         // Plan breakdown
@@ -312,43 +313,46 @@ HTML;
         $munoTotal = (float)($appRevenue['muno_app'] ?? 0);
         $lgTotal   = (float)($appRevenue['lugaflix'] ?? 0);
         $ugTotal   = (float)($appRevenue['ugflix'] ?? 0);
+        $webTotal  = (float)($appRevenue['web'] ?? 0);
 
         // JSON encode
         $j = fn($v) => json_encode($v);
 
         $chartData = json_encode([
-            'daily'   => ['labels' => $dailyLabels, 'muno_rev' => $dMunoRev, 'lg_rev' => $dLgRev, 'ug_rev' => $dUgRev,
-                          'muno_cnt' => $dMunoCnt, 'lg_cnt' => $dLgCnt, 'ug_cnt' => $dUgCnt,
+            'daily'   => ['labels' => $dailyLabels, 'muno_rev' => $dMunoRev, 'lg_rev' => $dLgRev, 'ug_rev' => $dUgRev, 'web_rev' => $dWebRev,
+                          'muno_cnt' => $dMunoCnt, 'lg_cnt' => $dLgCnt, 'ug_cnt' => $dUgCnt, 'web_cnt' => $dWebCnt,
                           'total_rev' => $dTotalRev, 'total_cnt' => $dTotalCnt],
-            'weekly'  => ['labels' => $weeklyLabels, 'muno_rev' => $wMunoRev, 'lg_rev' => $wLgRev, 'ug_rev' => $wUgRev,
-                          'muno_cnt' => $wMunoCnt, 'lg_cnt' => $wLgCnt, 'ug_cnt' => $wUgCnt],
-            'monthly' => ['labels' => $monthlyLabels, 'muno_rev' => $mMunoRev, 'lg_rev' => $mLgRev, 'ug_rev' => $mUgRev,
-                          'muno_cnt' => $mMunoCnt, 'lg_cnt' => $mLgCnt, 'ug_cnt' => $mUgCnt],
+            'weekly'  => ['labels' => $weeklyLabels, 'muno_rev' => $wMunoRev, 'lg_rev' => $wLgRev, 'ug_rev' => $wUgRev, 'web_rev' => $wWebRev,
+                          'muno_cnt' => $wMunoCnt, 'lg_cnt' => $wLgCnt, 'ug_cnt' => $wUgCnt, 'web_cnt' => $wWebCnt],
+            'monthly' => ['labels' => $monthlyLabels, 'muno_rev' => $mMunoRev, 'lg_rev' => $mLgRev, 'ug_rev' => $mUgRev, 'web_rev' => $mWebRev,
+                          'muno_cnt' => $mMunoCnt, 'lg_cnt' => $mLgCnt, 'ug_cnt' => $mUgCnt, 'web_cnt' => $mWebCnt],
             'plans'   => ['labels' => $plans->pluck('name'), 'counts' => $plans->pluck('count'), 'revenues' => $plans->pluck('total')],
             'payment' => ['completed' => $payBreakdown['Completed'] ?? 0, 'pending' => $payBreakdown['Pending'] ?? 0,
                           'processing' => $payBreakdown['Processing'] ?? 0, 'failed' => $payBreakdown['Failed'] ?? 0],
             'status'  => ['active' => $statusBreakdown['Active'] ?? 0, 'expired' => $statusBreakdown['Expired'] ?? 0,
                           'pending' => $statusBreakdown['Pending'] ?? 0, 'cancelled' => $statusBreakdown['Cancelled'] ?? 0],
-            'platform_rev' => ['muno' => $munoTotal, 'lg' => $lgTotal, 'ug' => $ugTotal],
+            'platform_rev' => ['muno' => $munoTotal, 'lg' => $lgTotal, 'ug' => $ugTotal, 'web' => $webTotal],
         ]);
 
         // Platform comparison table
         $munoCount = Subscription::where('app_type', 'muno_app')->where('payment_status', 'Completed')->count();
         $lgCount   = Subscription::where('app_type', 'lugaflix')->where('payment_status', 'Completed')->count();
         $ugCount   = Subscription::where('app_type', 'ugflix')->where('payment_status', 'Completed')->count();
+        $webCount  = Subscription::where('app_type', 'web')->where('payment_status', 'Completed')->count();
 
         $platformTable = '';
         $platforms = [
             ['Muno',    $munoCount, $munoTotal, '#e74c3c'],
             ['LugaFlix',$lgCount,   $lgTotal,   '#3498db'],
             ['UGFlix',  $ugCount,   $ugTotal,   '#2ecc71'],
+            ['Web',     $webCount,  $webTotal,  '#9b59b6'],
         ];
         foreach ($platforms as [$pn, $pc, $pr, $pcol]) {
             $avg = $pc > 0 ? round($pr / $pc) : 0;
             $platformTable .= "<tr><td><b style='color:{$pcol}'>{$pn}</b></td><td><b>" . number_format($pc) . "</b></td><td><b>UGX " . number_format($pr) . "</b></td><td>UGX " . number_format($avg) . "</td></tr>";
         }
-        $grandTotal = $munoTotal + $lgTotal + $ugTotal;
-        $grandCount = $munoCount + $lgCount + $ugCount;
+        $grandTotal = $munoTotal + $lgTotal + $ugTotal + $webTotal;
+        $grandCount = $munoCount + $lgCount + $ugCount + $webCount;
         $grandAvg = $grandCount > 0 ? round($grandTotal / $grandCount) : 0;
         $platformTable .= "<tr style='border-top:2px solid #ddd;font-weight:700'><td>Total</td><td>" . number_format($grandCount) . "</td><td style='color:#f39c12'>UGX " . number_format($grandTotal) . "</td><td>UGX " . number_format($grandAvg) . "</td></tr>";
 
@@ -426,7 +430,8 @@ function _scInit(){
     var P = {
         muno:    {bg:'rgba(231,76,60,.12)',  border:'#e74c3c', bar:'rgba(231,76,60,.7)'},
         lugaflix:{bg:'rgba(52,152,219,.12)', border:'#3498db', bar:'rgba(52,152,219,.7)'},
-        ugflix:  {bg:'rgba(46,204,113,.12)', border:'#2ecc71', bar:'rgba(46,204,113,.7)'}
+        ugflix:  {bg:'rgba(46,204,113,.12)', border:'#2ecc71', bar:'rgba(46,204,113,.7)'},
+        web:     {bg:'rgba(155,89,182,.12)', border:'#9b59b6', bar:'rgba(155,89,182,.7)'}
     };
     var gc = 'rgba(0,0,0,.04)';
     var defOpts = {
@@ -442,32 +447,32 @@ function _scInit(){
 
     // 1. Revenue Line
     var o1=cloneOpts(defOpts);o1.scales.yAxes[0].ticks.callback=function(v){return 'UGX '+v.toLocaleString();};
-    _scInstances.push(new Chart(document.getElementById('scRevLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_rev,'muno',1),lds('LugaFlix',_scData.daily.lg_rev,'lugaflix',1),lds('UGFlix',_scData.daily.ug_rev,'ugflix',1)]},options:o1}));
+    _scInstances.push(new Chart(document.getElementById('scRevLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_rev,'muno',1),lds('LugaFlix',_scData.daily.lg_rev,'lugaflix',1),lds('UGFlix',_scData.daily.ug_rev,'ugflix',1),lds('Web',_scData.daily.web_rev,'web',1)]},options:o1}));
 
     // 2. Count Line
-    _scInstances.push(new Chart(document.getElementById('scCntLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_cnt,'muno',1),lds('LugaFlix',_scData.daily.lg_cnt,'lugaflix',1),lds('UGFlix',_scData.daily.ug_cnt,'ugflix',1)]},options:cloneOpts(defOpts)}));
+    _scInstances.push(new Chart(document.getElementById('scCntLine'),{type:'line',data:{labels:_scData.daily.labels,datasets:[lds('Muno',_scData.daily.muno_cnt,'muno',1),lds('LugaFlix',_scData.daily.lg_cnt,'lugaflix',1),lds('UGFlix',_scData.daily.ug_cnt,'ugflix',1),lds('Web',_scData.daily.web_cnt,'web',1)]},options:cloneOpts(defOpts)}));
 
     // 3. Total Bar (dual axis)
     _scInstances.push(new Chart(document.getElementById('scTotalBar'),{type:'bar',data:{labels:_scData.daily.labels,datasets:[{label:'Revenue (UGX)',data:_scData.daily.total_rev,backgroundColor:'rgba(243,156,18,.7)',borderColor:'#f39c12',borderWidth:1,yAxisID:'y-rev',barPercentage:.7},{label:'Subscriptions',data:_scData.daily.total_cnt,type:'line',borderColor:'#007bff',backgroundColor:'rgba(0,123,255,.1)',pointBackgroundColor:'#007bff',pointRadius:2,borderWidth:2,lineTension:.35,fill:true,yAxisID:'y-cnt'}]},options:{responsive:true,maintainAspectRatio:false,legend:{position:'top',labels:{usePointStyle:true,padding:12,fontSize:10}},tooltips:{mode:'index',intersect:false},hover:{mode:'nearest',intersect:false},scales:{xAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,maxRotation:45}}],yAxes:[{id:'y-rev',position:'left',gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true,callback:function(v){return 'UGX '+v.toLocaleString();}}},{id:'y-cnt',position:'right',gridLines:{drawOnChartArea:false},ticks:{fontSize:9,beginAtZero:true}}]}}}));
 
     // 4. Weekly Revenue Area
     var o4=cloneOpts(defOpts);o4.scales.yAxes[0].ticks.callback=function(v){return 'UGX '+v.toLocaleString();};
-    _scInstances.push(new Chart(document.getElementById('scWeekRev'),{type:'line',data:{labels:_scData.weekly.labels,datasets:[lds('Muno',_scData.weekly.muno_rev,'muno',1),lds('LugaFlix',_scData.weekly.lg_rev,'lugaflix',1),lds('UGFlix',_scData.weekly.ug_rev,'ugflix',1)]},options:o4}));
+    _scInstances.push(new Chart(document.getElementById('scWeekRev'),{type:'line',data:{labels:_scData.weekly.labels,datasets:[lds('Muno',_scData.weekly.muno_rev,'muno',1),lds('LugaFlix',_scData.weekly.lg_rev,'lugaflix',1),lds('UGFlix',_scData.weekly.ug_rev,'ugflix',1),lds('Web',_scData.weekly.web_rev,'web',1)]},options:o4}));
 
     // 5. Monthly Rev (grouped bar)
     var o5=cloneOpts(defOpts);o5.scales.yAxes[0].ticks.callback=function(v){return 'UGX '+v.toLocaleString();};
-    _scInstances.push(new Chart(document.getElementById('scMonthRev'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_rev,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.monthly.lg_rev,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.monthly.ug_rev,backgroundColor:P.ugflix.bar}]},options:o5}));
+    _scInstances.push(new Chart(document.getElementById('scMonthRev'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_rev,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.monthly.lg_rev,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.monthly.ug_rev,backgroundColor:P.ugflix.bar},{label:'Web',data:_scData.monthly.web_rev,backgroundColor:P.web.bar}]},options:o5}));
 
     // 6. Weekly Count (stacked bar)
     var o6=cloneOpts(defOpts);o6.scales.xAxes[0].stacked=true;o6.scales.yAxes[0].stacked=true;
-    _scInstances.push(new Chart(document.getElementById('scWeekCnt'),{type:'bar',data:{labels:_scData.weekly.labels,datasets:[{label:'Muno',data:_scData.weekly.muno_cnt,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.weekly.lg_cnt,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.weekly.ug_cnt,backgroundColor:P.ugflix.bar}]},options:o6}));
+    _scInstances.push(new Chart(document.getElementById('scWeekCnt'),{type:'bar',data:{labels:_scData.weekly.labels,datasets:[{label:'Muno',data:_scData.weekly.muno_cnt,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.weekly.lg_cnt,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.weekly.ug_cnt,backgroundColor:P.ugflix.bar},{label:'Web',data:_scData.weekly.web_cnt,backgroundColor:P.web.bar}]},options:o6}));
 
     // Doughnut defaults
     var donutOpts = {responsive:true,maintainAspectRatio:false,cutoutPercentage:55,legend:{position:'bottom',labels:{usePointStyle:true,padding:8,fontSize:9}}};
 
     // 7. Revenue by Platform
     var do7=JSON.parse(JSON.stringify(donutOpts));do7.tooltips={callbacks:{label:function(item,data){return data.labels[item.index]+': UGX '+data.datasets[0].data[item.index].toLocaleString();}}};
-    _scInstances.push(new Chart(document.getElementById('scRevPie'),{type:'doughnut',data:{labels:['Muno','LugaFlix','UGFlix'],datasets:[{data:[_scData.platform_rev.muno,_scData.platform_rev.lg,_scData.platform_rev.ug],backgroundColor:[P.muno.bar,P.lugaflix.bar,P.ugflix.bar],borderWidth:2,borderColor:'#fff',hoverBorderColor:'#fff'}]},options:do7}));
+    _scInstances.push(new Chart(document.getElementById('scRevPie'),{type:'doughnut',data:{labels:['Muno','LugaFlix','UGFlix','Web'],datasets:[{data:[_scData.platform_rev.muno,_scData.platform_rev.lg,_scData.platform_rev.ug,_scData.platform_rev.web],backgroundColor:[P.muno.bar,P.lugaflix.bar,P.ugflix.bar,P.web.bar],borderWidth:2,borderColor:'#fff',hoverBorderColor:'#fff'}]},options:do7}));
 
     // 8. Plan
     var planColors = ['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#34495e'];
@@ -480,7 +485,7 @@ function _scInit(){
     _scInstances.push(new Chart(document.getElementById('scStatPie'),{type:'doughnut',data:{labels:['Active','Expired','Pending','Cancelled'],datasets:[{data:[_scData.status.active,_scData.status.expired,_scData.status.pending,_scData.status.cancelled],backgroundColor:['rgba(40,167,69,.8)','rgba(220,53,69,.8)','rgba(255,193,7,.8)','rgba(108,117,125,.8)'],borderWidth:2,borderColor:'#fff'}]},options:JSON.parse(JSON.stringify(donutOpts))}));
 
     // 11. Monthly Subs Count
-    _scInstances.push(new Chart(document.getElementById('scMonthCnt'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_cnt,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.monthly.lg_cnt,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.monthly.ug_cnt,backgroundColor:P.ugflix.bar}]},options:cloneOpts(defOpts)}));
+    _scInstances.push(new Chart(document.getElementById('scMonthCnt'),{type:'bar',data:{labels:_scData.monthly.labels,datasets:[{label:'Muno',data:_scData.monthly.muno_cnt,backgroundColor:P.muno.bar},{label:'LugaFlix',data:_scData.monthly.lg_cnt,backgroundColor:P.lugaflix.bar},{label:'UGFlix',data:_scData.monthly.ug_cnt,backgroundColor:P.ugflix.bar},{label:'Web',data:_scData.monthly.web_cnt,backgroundColor:P.web.bar}]},options:cloneOpts(defOpts)}));
 }
 // Init on first load
 if(document.readyState === 'loading'){document.addEventListener('DOMContentLoaded',_scInit);}else{_scInit();}
@@ -627,7 +632,7 @@ $(document).on('pjax:end',_scInit);
                     SubscriptionPlan::pluck('name', 'id')->toArray()
                 );
                 $filter->equal('app_type', 'App Type')->select([
-                    'ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App',
+                    'ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App', 'web' => 'Web',
                 ]);
                 $filter->equal('platform', 'Platform')->select([
                     'android' => 'Android', 'ios' => 'iOS',
@@ -990,7 +995,7 @@ $(function(){
             $form->textarea('payment_failure_reason', 'Failure Reason')->rows(2);
 
             $form->select('app_type', 'App Type')->options([
-                'ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App',
+                'ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App', 'web' => 'Web',
             ]);
             $form->select('platform', 'Platform')->options([
                 'android' => 'Android', 'ios' => 'iOS',

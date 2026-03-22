@@ -81,12 +81,23 @@ class Subscription extends Model
             }
 
             $sub = 'SUB-';
-            if (strtolower($user->app_type) == 'lugaflix') {
-                $sub = 'LUG-';
-                $subscription->app_type = 'lugaflix';
-            } elseif (strtolower($user->app_type) == 'muno_app') {
-                $sub = 'MUN-';
-                $subscription->app_type = 'muno_app';
+            switch (strtolower($user->app_type ?? '')) {
+                case 'lugaflix':
+                    $sub = 'LUG-';
+                    $subscription->app_type = 'lugaflix';
+                    break;
+                case 'muno_app':
+                    $sub = 'MUN-';
+                    $subscription->app_type = 'muno_app';
+                    break;
+                case 'web':
+                    $sub = 'WEB-';
+                    $subscription->app_type = 'web';
+                    break;
+                default:
+                    $sub = 'SUB-';
+                    $subscription->app_type = 'ugflix';
+                    break;
             }
 
             // Generate merchant reference if not provided
