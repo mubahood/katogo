@@ -158,6 +158,13 @@ Route::group([
     */
 
     // ============================================
+    // OFFLINE GAME STATS
+    // ============================================
+    $router->get('game-stats', 'GameStatsController@index')->name('game-stats');
+    $router->get('game-stats/records', 'GameStatsController@records')->name('game-stats.records');
+    $router->get('game-stats/{id}', 'GameStatsController@show')->name('game-stats.show');
+
+    // ============================================
     // STREAMING MODULE ROUTES (TV & Radio)
     // ============================================
     $router->resource('streaming-stations', StreamingStationController::class);

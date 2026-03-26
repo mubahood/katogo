@@ -5,6 +5,7 @@ use App\Http\Controllers\CoinController;
 use App\Http\Controllers\DynamicCrudController;
 use App\Http\Controllers\GameController;
 use App\Http\Controllers\LudoController;
+use App\Http\Controllers\CheckersController;
 use App\Http\Controllers\ModerationController;
 use App\Http\Controllers\SubscriptionApiController;
 use App\Http\Controllers\Api\V2\MovieController as V2MovieController;
@@ -15,6 +16,8 @@ use App\Http\Controllers\Api\V2\SafeModeAnalyticsController as V2SafeModeAnalyti
 use App\Http\Controllers\Api\V2\SubscriptionFixController as V2SubscriptionFixController;
 use App\Http\Controllers\Api\V2\StreamingController as V2StreamingController;
 use App\Http\Controllers\Api\V2\DownloadController as V2DownloadController;
+use App\Http\Controllers\Api\V2\TriviaController as V2TriviaController;
+use App\Http\Controllers\Api\V2\GameStatsController as V2GameStatsController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -215,6 +218,15 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::post('subscriptions/auto-fix',             [V2SubscriptionFixController::class, 'autoFix']);
         Route::post('subscriptions/{id}/force-check',     [V2SubscriptionFixController::class, 'forceCheck']);
         Route::get('subscriptions/{id}/diagnostic',       [V2SubscriptionFixController::class, 'diagnostic']);
+
+        // Movie Trivia — public endpoints (no auth required for question bank)
+        Route::get('trivia/version',    [V2TriviaController::class, 'version']);
+        Route::get('trivia/questions',  [V2TriviaController::class, 'questions']);
+        Route::get('trivia/stats',      [V2TriviaController::class, 'stats']);
+
+        // Game Stats — offline-first sync
+        Route::get('game-stats',        [V2GameStatsController::class, 'index']);
+        Route::post('game-stats/sync',  [V2GameStatsController::class, 'sync']);
     });
 });
 
@@ -234,6 +246,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::match(['get','post'], 'game/{any?}', $gameDisabled)->where('any', '.*');
     Route::match(['get','post'], 'coins/{any?}', $gameDisabled)->where('any', '.*');
     Route::match(['get','post'], 'ludo/{any?}', $gameDisabled)->where('any', '.*');
+    Route::match(['get','post'], 'checkers/{any?}', $gameDisabled)->where('any', '.*');
 });
 
 /*  ── ORIGINAL GAME ROUTES (commented out) ──────────────────
@@ -259,6 +272,17 @@ Route::middleware([JwtMiddleware::class, 'throttle:game'])->group(function () {
     Route::post('ludo/session/{id}/move', [LudoController::class, 'movePiece']);
     Route::post('ludo/session/{id}/pass', [LudoController::class, 'passTurn']);
     Route::post('ludo/session/{id}/leave', [LudoController::class, 'leaveGame']);
+
+    // Checkers Game
+    Route::post('checkers/invite', [CheckersController::class, 'sendInvitation']);
+    Route::post('checkers/invite/{id}/accept', [CheckersController::class, 'acceptInvitation']);
+    Route::post('checkers/room/create', [CheckersController::class, 'createRoom']);
+    Route::post('checkers/room/join', [CheckersController::class, 'joinRoom']);
+    Route::get('checkers/session/{id}', [CheckersController::class, 'getSession']);
+    Route::post('checkers/session/{id}/move', [CheckersController::class, 'makeMove']);
+    Route::post('checkers/session/{id}/leave', [CheckersController::class, 'leaveGame']);
+    Route::get('checkers/session/{id}/chat', [CheckersController::class, 'getChat']);
+    Route::post('checkers/session/{id}/chat', [CheckersController::class, 'sendChat']);
 });
 */
 

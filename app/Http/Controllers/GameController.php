@@ -754,8 +754,7 @@ class GameController extends Controller
                 // 7 CUTS THE GAME! Round ends, count points, lower wins, winner gets x2
                 return $this->handleCutWin($session, $playerId, $card);
             }
-            // If 7 doesn't match cut card suit, just give extra turn
-            $extraTurn = true;
+            // Non-cutting 7 is treated as a normal card — no extra turn
         }
 
         // 8 - Skip opponent (give extra turn in 2-player)
