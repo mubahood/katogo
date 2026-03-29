@@ -756,13 +756,15 @@ $(document).on('pjax:end',_scInit);
             $export->filename('Subscriptions_' . date('Y-m-d'));
             $export->except(['actions', 'days_remaining']);
 
-            $export->column('app_type', function ($value) {
+            $export->column('app_type', function ($value, $original) {
+                $raw = $original ?? strip_tags($value);
                 $map = ['ugflix' => 'UgFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App', 'web' => 'Web'];
-                return $map[strtolower($value ?? '')] ?? ucfirst($value ?? 'Unknown');
+                return $map[strtolower(trim($raw))] ?? ucfirst(trim($raw) ?: 'Unknown');
             });
 
-            $export->column('platform', function ($value) {
-                return ucfirst($value ?? '-');
+            $export->column('platform', function ($value, $original) {
+                $raw = $original ?? strip_tags($value);
+                return ucfirst(trim($raw) ?: '-');
             });
 
             $export->column('user.name', function ($value, $original) {
@@ -777,28 +779,31 @@ $(document).on('pjax:end',_scInit);
                 return $original ?? 0;
             });
 
-            $export->column('status', function ($value) {
-                return strip_tags($value);
+            $export->column('status', function ($value, $original) {
+                return $original ?? strip_tags($value);
             });
 
-            $export->column('payment_status', function ($value) {
-                return strip_tags($value);
+            $export->column('payment_status', function ($value, $original) {
+                return $original ?? strip_tags($value);
             });
 
-            $export->column('start_date_time', function ($value) {
-                return $value ? Carbon::parse(strip_tags($value))->format('Y-m-d H:i') : '';
+            $export->column('start_date_time', function ($value, $original) {
+                $raw = $original ?? strip_tags($value);
+                return $raw ? Carbon::parse($raw)->format('Y-m-d H:i') : '';
             });
 
-            $export->column('end_date_time', function ($value) {
-                return $value ? Carbon::parse(strip_tags($value))->format('Y-m-d H:i') : '';
+            $export->column('end_date_time', function ($value, $original) {
+                $raw = $original ?? strip_tags($value);
+                return $raw ? Carbon::parse($raw)->format('Y-m-d H:i') : '';
             });
 
-            $export->column('created_at', function ($value) {
-                return $value ? Carbon::parse(strip_tags($value))->format('Y-m-d H:i') : '';
+            $export->column('created_at', function ($value, $original) {
+                $raw = $original ?? strip_tags($value);
+                return $raw ? Carbon::parse($raw)->format('Y-m-d H:i') : '';
             });
 
-            $export->column('pesapal_tracking_id', function ($value) {
-                return strip_tags($value);
+            $export->column('pesapal_tracking_id', function ($value, $original) {
+                return $original ?? strip_tags($value);
             });
         });
 
