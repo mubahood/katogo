@@ -40,6 +40,9 @@ class SubscriptionTransactionController extends AdminController
             ->title('💳 Payment Transactions')
             ->description('Monitor all subscription payments and transactions')
             ->row(function (Row $row) {
+                $row->column(12, $this->platformBalanceBox());
+            })
+            ->row(function (Row $row) {
                 $row->column(3, $this->totalRevenueBox());
                 $row->column(3, $this->todayRevenueBox());
                 $row->column(3, $this->pendingPaymentsBox());
@@ -174,6 +177,146 @@ class SubscriptionTransactionController extends AdminController
     }
 
     /**
+     * Platform balance breakdown box
+     */
+    protected function platformBalanceBox()
+    {
+        $platforms = [
+            'lugaflix'  => ['LugaFlix',      '#3498db', 'fa-play-circle-o'],
+            'muno_app'  => ['Muno App',      '#e74c3c', 'fa-fire'],
+            'ugflix'    => ['UgFlix',         '#2ecc71', 'fa-bolt'],
+            'web'       => ['Web (Katogo)',   '#9b59b6', 'fa-globe'],
+        ];
+        $pesapalRate = 0.035;
+
+        $revenueByPlatform = SubscriptionTransaction::where('status', 'Completed')
+            ->where('transaction_type', '!=', 'Withdrawal')
+            ->selectRaw("COALESCE(platform, 'unassigned') as plat, SUM(amount) as total")
+            ->groupBy('plat')
+            ->pluck('total', 'plat');
+
+        $withdrawalsByPlatform = SubscriptionTransaction::where('status', 'Completed')
+            ->where('transaction_type', 'Withdrawal')
+            ->selectRaw("COALESCE(platform, 'unassigned') as plat, SUM(ABS(amount)) as total")
+            ->groupBy('plat')
+            ->pluck('total', 'plat');
+
+        $grandRevenue = 0;
+        $grandPesapal = 0;
+        $grandWithdrawn = 0;
+        $grandBalance = 0;
+        $platformData = [];
+
+        foreach ($platforms as $key => [$label, $color, $icon]) {
+            $revenue = (float) ($revenueByPlatform[$key] ?? 0);
+            $fee = round($revenue * $pesapalRate, 2);
+            $after = $revenue - $fee;
+            $withdrawn = (float) ($withdrawalsByPlatform[$key] ?? 0);
+            $balance = $after - $withdrawn;
+            $grandRevenue += $revenue;
+            $grandPesapal += $fee;
+            $grandWithdrawn += $withdrawn;
+            $grandBalance += $balance;
+            $platformData[] = compact('key', 'label', 'color', 'icon', 'revenue', 'fee', 'after', 'withdrawn', 'balance');
+        }
+
+        // Unassigned
+        $uRev = (float) ($revenueByPlatform['unassigned'] ?? 0);
+        $uWith = (float) ($withdrawalsByPlatform['unassigned'] ?? 0);
+        if ($uRev > 0 || $uWith > 0) {
+            $uFee = round($uRev * $pesapalRate, 2);
+            $uAfter = $uRev - $uFee;
+            $uBal = $uAfter - $uWith;
+            $grandRevenue += $uRev;
+            $grandPesapal += $uFee;
+            $grandWithdrawn += $uWith;
+            $grandBalance += $uBal;
+            $platformData[] = ['key' => 'unassigned', 'label' => 'Unassigned', 'color' => '#95a5a6', 'icon' => 'fa-question-circle', 'revenue' => $uRev, 'fee' => $uFee, 'after' => $uAfter, 'withdrawn' => $uWith, 'balance' => $uBal];
+        }
+
+        $revValues = array_column($platformData, 'revenue');
+        $maxRevenue = !empty($revValues) ? max(max($revValues), 1) : 1;
+
+        // Build styled HTML
+        $html = '
+<style>
+.pb-wrap{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.pb-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.pb-table th{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:10px 14px;font-size:10px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;white-space:nowrap}
+.pb-table th:first-child{border-radius:8px 0 0 0}
+.pb-table th:last-child{border-radius:0 8px 0 0}
+.pb-table td{padding:10px 14px;border-bottom:1px solid #f0f0f0;vertical-align:middle;transition:all .2s ease}
+.pb-table tr.pb-row:hover td{background:#f8fafd;transform:scale(1.001)}
+.pb-table tr.pb-row{cursor:default}
+.pb-plat{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+.pb-plat .pb-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px rgba(0,0,0,.08)}
+.pb-plat i{font-size:12px;opacity:.6}
+.pb-amt{text-align:right;font-variant-numeric:tabular-nums;font-size:13px;white-space:nowrap}
+.pb-fee{color:#dc3545;font-size:12px}
+.pb-bar-wrap{width:100%;height:6px;background:#eee;border-radius:3px;margin-top:4px;overflow:hidden}
+.pb-bar{height:100%;border-radius:3px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+.pb-bal{font-weight:700;font-size:14px}
+.pb-total td{background:linear-gradient(135deg,#f8f9fa,#eef1f5)!important;border-top:2px solid #333;font-weight:700;padding:12px 14px}
+.pb-total td:first-child{border-radius:0 0 0 8px}
+.pb-total td:last-child{border-radius:0 0 8px 0}
+.pb-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;letter-spacing:.3px}
+@media(max-width:768px){
+  .pb-table{font-size:11px}
+  .pb-table th,.pb-table td{padding:6px 8px}
+  .pb-hide-sm{display:none}
+}
+</style>
+<div class="pb-wrap">
+<table class="pb-table">
+<thead>
+<tr>
+  <th style="text-align:left">Platform</th>
+  <th style="text-align:right">Total Revenue</th>
+  <th style="text-align:right" class="pb-hide-sm">Pesapal (3.5%)</th>
+  <th style="text-align:right">After Fees</th>
+  <th style="text-align:right">Withdrawn</th>
+  <th style="text-align:right">Balance</th>
+</tr>
+</thead>
+<tbody>';
+
+        foreach ($platformData as $p) {
+            $bClr = $p['balance'] >= 0 ? '#28a745' : '#dc3545';
+            $barPct = $maxRevenue > 0 ? round(($p['revenue'] / $maxRevenue) * 100) : 0;
+            $isUnassigned = $p['key'] === 'unassigned';
+
+            $html .= '<tr class="pb-row">';
+            $html .= '<td><div class="pb-plat"><span class="pb-dot" style="background:' . $p['color'] . '"></span><i class="fa ' . $p['icon'] . '" style="color:' . $p['color'] . '"></i> ' . htmlspecialchars($p['label']) . '</div>'
+                . '<div class="pb-bar-wrap"><div class="pb-bar" style="width:' . $barPct . '%;background:' . $p['color'] . '"></div></div></td>';
+            $html .= '<td class="pb-amt"><strong>UGX ' . number_format($p['revenue']) . '</strong></td>';
+            $html .= '<td class="pb-amt pb-fee pb-hide-sm">- UGX ' . number_format($p['fee']) . '</td>';
+            $html .= '<td class="pb-amt">UGX ' . number_format($p['after']) . '</td>';
+            $html .= '<td class="pb-amt pb-fee">- UGX ' . number_format($p['withdrawn']) . '</td>';
+            $html .= '<td class="pb-amt"><span class="pb-badge" style="background:' . $bClr . '">UGX ' . number_format($p['balance']) . '</span></td>';
+            $html .= '</tr>';
+        }
+
+        // Grand total
+        $tClr = $grandBalance >= 0 ? '#28a745' : '#dc3545';
+        $html .= '<tr class="pb-total">';
+        $html .= '<td><strong style="font-size:13px">TOTAL</strong></td>';
+        $html .= '<td class="pb-amt"><strong>UGX ' . number_format($grandRevenue) . '</strong></td>';
+        $html .= '<td class="pb-amt pb-fee pb-hide-sm"><strong>- UGX ' . number_format($grandPesapal) . '</strong></td>';
+        $html .= '<td class="pb-amt"><strong>UGX ' . number_format($grandRevenue - $grandPesapal) . '</strong></td>';
+        $html .= '<td class="pb-amt pb-fee"><strong>- UGX ' . number_format($grandWithdrawn) . '</strong></td>';
+        $html .= '<td class="pb-amt"><span class="pb-badge" style="background:' . $tClr . ';font-size:12px;padding:3px 12px">UGX ' . number_format($grandBalance) . '</span></td>';
+        $html .= '</tr>';
+
+        $html .= '</tbody></table></div>';
+
+        $box = new Box('📊 Platform Balance Summary', $html);
+        $box->style('primary');
+        $box->solid();
+
+        return $box;
+    }
+
+    /**
      * Revenue chart box (last 7 days)
      */
     protected function revenueChartBox()
@@ -300,14 +443,25 @@ class SubscriptionTransactionController extends AdminController
                 'Upgrade' => 'info',
                 'Refund' => 'warning',
                 'Withdrawal' => 'danger',
-            ])
-            ->filter([
-                'Initial' => 'Initial',
-                'Renewal' => 'Renewal',
-                'Upgrade' => 'Upgrade',
-                'Refund' => 'Refund',
-                'Withdrawal' => 'Withdrawal',
             ]);
+
+        $grid->column('platform', __('Platform'))
+            ->display(function ($platform) {
+                $labels = [
+                    'lugaflix' => '🎬 LugaFlix',
+                    'muno_app' => '📱 Muno',
+                    'ugflix' => '🎥 UgFlix',
+                    'web' => '🌐 Web',
+                ];
+                return $labels[$platform] ?? ($platform ?: '-');
+            })
+            ->label([
+                'lugaflix' => 'success',
+                'muno_app' => 'primary',
+                'ugflix' => 'info',
+                'web' => 'default',
+            ])
+            ->sortable();
 
         $grid->column('amount', __('Amount'))
             ->display(function ($amount) {
@@ -338,13 +492,7 @@ class SubscriptionTransactionController extends AdminController
                 'Failed' => 'danger',
                 'Refunded' => 'info',
             ])
-            ->sortable()
-            ->filter([
-                'Pending' => 'Pending',
-                'Completed' => 'Completed',
-                'Failed' => 'Failed',
-                'Refunded' => 'Refunded',
-            ]);
+            ->sortable();
 
         $grid->column('payment_method', __('Method'))
             ->display(function ($method) {
@@ -396,6 +544,13 @@ class SubscriptionTransactionController extends AdminController
                     'Upgrade' => 'Upgrade',
                     'Refund' => 'Refund',
                     'Withdrawal' => 'Withdrawal',
+                ]);
+
+                $filter->equal('platform', 'Platform')->select([
+                    'lugaflix' => 'LugaFlix',
+                    'muno_app' => 'Muno App',
+                    'ugflix' => 'UgFlix',
+                    'web' => 'Web (Katogo)',
                 ]);
             });
 
@@ -451,6 +606,15 @@ class SubscriptionTransactionController extends AdminController
         $show->divider();
 
         $show->field('transaction_type', __('Transaction Type'));
+        $show->field('platform', __('Platform'))->as(function ($platform) {
+            $labels = [
+                'lugaflix' => 'LugaFlix',
+                'muno_app' => 'Muno App',
+                'ugflix' => 'UgFlix',
+                'web' => 'Web (Katogo)',
+            ];
+            return $labels[$platform] ?? ($platform ?: 'N/A');
+        });
         $show->field('amount', __('Amount'))->as(function ($amount) {
             $currency = $this->currency ?? 'UGX';
             return "{$currency} " . number_format($amount, 2);
@@ -514,6 +678,13 @@ class SubscriptionTransactionController extends AdminController
                 'Withdrawal' => 'Withdrawal',
             ])->default('Initial');
 
+            $form->select('platform', __('Platform'))->options([
+                'lugaflix' => 'LugaFlix',
+                'muno_app' => 'Muno App',
+                'ugflix' => 'UgFlix',
+                'web' => 'Web (Katogo)',
+            ]);
+
             $form->decimal('amount', __('Amount'));
             $form->text('currency', __('Currency'))->default('UGX');
 
@@ -542,6 +713,17 @@ class SubscriptionTransactionController extends AdminController
                 '<strong>💸 Record a Withdrawal</strong><br>' .
                 '<small>This records money taken out of the platform (e.g. bank transfer, cash out). ' .
                 'The amount will be stored as negative and subtracted from total revenue.</small></div>');
+
+            $form->select('platform', __('Platform'))
+                ->options([
+                    'lugaflix' => 'LugaFlix',
+                    'muno_app' => 'Muno App',
+                    'ugflix' => 'UgFlix',
+                    'web' => 'Web (Katogo)',
+                ])
+                ->required()
+                ->rules('required')
+                ->help('Which platform is this withdrawal from?');
 
             $form->decimal('amount', __('Withdrawal Amount (UGX)'))
                 ->required()

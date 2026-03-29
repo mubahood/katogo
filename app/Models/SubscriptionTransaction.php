@@ -15,6 +15,7 @@ class SubscriptionTransaction extends Model
         'subscription_id',
         'user_id',
         'transaction_type',
+        'platform',
         'amount',
         'currency',
         'status',
