@@ -251,6 +251,86 @@ class HomeController extends Controller
 }());
 </script>';
 
+        // ── SECTION: Platform Balance Summary ──
+        $html .= '<div class="db-section">Platform Balance Summary</div>';
+        $html .= '<div class="db-row">';
+        $html .= '<div class="db-box" style="flex:1;min-width:100%;padding:0;overflow:hidden">';
+        $html .= '<style>
+.hpb-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
+.hpb-table th{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:9px 12px;font-size:9px;text-transform:uppercase;letter-spacing:.7px;font-weight:600;white-space:nowrap}
+.hpb-table th:first-child{border-radius:6px 0 0 0}
+.hpb-table th:last-child{border-radius:0 6px 0 0}
+.hpb-table td{padding:8px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle;transition:background .15s}
+.hpb-table tr.hpb-row:hover td{background:#f0f5ff}
+.hpb-plat{display:flex;align-items:center;gap:6px;font-weight:600}
+.hpb-plat .hpb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px rgba(0,0,0,.06)}
+.hpb-amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hpb-fee{color:#dc3545;font-size:11px}
+.hpb-bar{height:4px;border-radius:2px;margin-top:3px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+.hpb-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#fff;letter-spacing:.2px}
+.hpb-total td{background:linear-gradient(135deg,#f8f9fa,#eef1f5)!important;border-top:2px solid #333;font-weight:700;padding:10px 12px}
+.hpb-total td:first-child{border-radius:0 0 0 6px}
+.hpb-total td:last-child{border-radius:0 0 6px 0}
+@media(max-width:768px){.hpb-table{font-size:10px}.hpb-table th,.hpb-table td{padding:5px 6px}.hpb-hide-sm{display:none}}
+</style>';
+        $html .= '<table class="hpb-table">';
+        $html .= '<thead><tr><th style="text-align:left">Platform</th><th style="text-align:right">Revenue</th><th style="text-align:right" class="hpb-hide-sm">Pesapal (3.5%)</th><th style="text-align:right">After Fees</th><th style="text-align:right">Withdrawn</th><th style="text-align:right">Balance</th></tr></thead>';
+        $html .= '<tbody>';
+
+        $platDefs = ['lugaflix' => ['LugaFlix', '#3498db', 'fa-play-circle-o'], 'muno_app' => ['Muno App', '#e74c3c', 'fa-fire'], 'ugflix' => ['UgFlix', '#2ecc71', 'fa-bolt'], 'web' => ['Web (Katogo)', '#9b59b6', 'fa-globe']];
+        $gRev = 0; $gPesa = 0; $gWith = 0; $gBal = 0;
+        $allPlatData = [];
+
+        foreach ($platDefs as $pk => [$pLabel, $pColor, $pIcon]) {
+            $pRev = (float) ($platformRevenueRaw[$pk] ?? 0);
+            $pFee = round($pRev * $pesapalRate, 2);
+            $pAfter = $pRev - $pFee;
+            $pWith = (float) ($platformWithdrawalsRaw[$pk] ?? 0);
+            $pBal = $pAfter - $pWith;
+            $gRev += $pRev; $gPesa += $pFee; $gWith += $pWith; $gBal += $pBal;
+            $allPlatData[] = ['label' => $pLabel, 'color' => $pColor, 'icon' => $pIcon, 'rev' => $pRev, 'fee' => $pFee, 'after' => $pAfter, 'with' => $pWith, 'bal' => $pBal, 'key' => $pk];
+        }
+
+        // Unassigned
+        $uRev = (float) ($platformRevenueRaw['unassigned'] ?? 0);
+        $uWith = (float) ($platformWithdrawalsRaw['unassigned'] ?? 0);
+        if ($uRev > 0 || $uWith > 0) {
+            $uFee = round($uRev * $pesapalRate, 2);
+            $uAfter = $uRev - $uFee;
+            $uBal = $uAfter - $uWith;
+            $gRev += $uRev; $gPesa += $uFee; $gWith += $uWith; $gBal += $uBal;
+            $allPlatData[] = ['label' => 'Unassigned', 'color' => '#95a5a6', 'icon' => 'fa-question-circle', 'rev' => $uRev, 'fee' => $uFee, 'after' => $uAfter, 'with' => $uWith, 'bal' => $uBal, 'key' => 'unassigned'];
+        }
+
+        $revValues = array_column($allPlatData, 'rev');
+        $maxRev = !empty($revValues) ? max(max($revValues), 1) : 1;
+
+        foreach ($allPlatData as $p) {
+            $bClr = $p['bal'] >= 0 ? '#28a745' : '#dc3545';
+            $barPct = $maxRev > 0 ? round(($p['rev'] / $maxRev) * 100) : 0;
+            $html .= '<tr class="hpb-row">';
+            $html .= "<td><div class='hpb-plat'><span class='hpb-dot' style='background:{$p['color']}'></span><i class='fa {$p['icon']}' style='color:{$p['color']};font-size:11px;opacity:.6'></i> {$p['label']}</div><div style='width:100%;height:4px;background:#eee;border-radius:2px;margin-top:3px;overflow:hidden'><div class='hpb-bar' style='width:{$barPct}%;background:{$p['color']}'></div></div></td>";
+            $html .= "<td class='hpb-amt'><b>UGX " . number_format($p['rev']) . "</b></td>";
+            $html .= "<td class='hpb-amt hpb-fee hpb-hide-sm'>- UGX " . number_format($p['fee']) . "</td>";
+            $html .= "<td class='hpb-amt'>UGX " . number_format($p['after']) . "</td>";
+            $html .= "<td class='hpb-amt hpb-fee'>- UGX " . number_format($p['with']) . "</td>";
+            $html .= "<td class='hpb-amt'><span class='hpb-badge' style='background:{$bClr}'>UGX " . number_format($p['bal']) . "</span></td>";
+            $html .= '</tr>';
+        }
+
+        // Totals
+        $tClr = $gBal >= 0 ? '#28a745' : '#dc3545';
+        $html .= '<tr class="hpb-total">';
+        $html .= '<td><b style="font-size:11px">TOTAL</b></td>';
+        $html .= "<td class='hpb-amt'><b>UGX " . number_format($gRev) . "</b></td>";
+        $html .= "<td class='hpb-amt hpb-fee hpb-hide-sm'><b>- UGX " . number_format($gPesa) . "</b></td>";
+        $html .= "<td class='hpb-amt'><b>UGX " . number_format($gRev - $gPesa) . "</b></td>";
+        $html .= "<td class='hpb-amt hpb-fee'><b>- UGX " . number_format($gWith) . "</b></td>";
+        $html .= "<td class='hpb-amt'><span class='hpb-badge' style='background:{$tClr};font-size:11px;padding:3px 10px'>UGX " . number_format($gBal) . "</span></td>";
+        $html .= '</tr>';
+        $html .= '</tbody></table></div>';
+        $html .= '</div>';
+
         // ── SECTION: Content Overview ──
         $html .= '<div class="db-section">Content Overview</div>';
         $html .= '<div class="db-row">';
@@ -456,86 +536,6 @@ class HomeController extends Controller
         }
         $html .= '</div>';
 
-        $html .= '</div>';
-
-        // ── SECTION: Platform Balance Summary ──
-        $html .= '<div class="db-section">Platform Balance Summary</div>';
-        $html .= '<div class="db-row">';
-        $html .= '<div class="db-box" style="flex:1;min-width:100%;padding:0;overflow:hidden">';
-        $html .= '<style>
-.hpb-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
-.hpb-table th{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:9px 12px;font-size:9px;text-transform:uppercase;letter-spacing:.7px;font-weight:600;white-space:nowrap}
-.hpb-table th:first-child{border-radius:6px 0 0 0}
-.hpb-table th:last-child{border-radius:0 6px 0 0}
-.hpb-table td{padding:8px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle;transition:background .15s}
-.hpb-table tr.hpb-row:hover td{background:#f0f5ff}
-.hpb-plat{display:flex;align-items:center;gap:6px;font-weight:600}
-.hpb-plat .hpb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px rgba(0,0,0,.06)}
-.hpb-amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.hpb-fee{color:#dc3545;font-size:11px}
-.hpb-bar{height:4px;border-radius:2px;margin-top:3px;transition:width .8s cubic-bezier(.4,0,.2,1)}
-.hpb-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#fff;letter-spacing:.2px}
-.hpb-total td{background:linear-gradient(135deg,#f8f9fa,#eef1f5)!important;border-top:2px solid #333;font-weight:700;padding:10px 12px}
-.hpb-total td:first-child{border-radius:0 0 0 6px}
-.hpb-total td:last-child{border-radius:0 0 6px 0}
-@media(max-width:768px){.hpb-table{font-size:10px}.hpb-table th,.hpb-table td{padding:5px 6px}.hpb-hide-sm{display:none}}
-</style>';
-        $html .= '<table class="hpb-table">';
-        $html .= '<thead><tr><th style="text-align:left">Platform</th><th style="text-align:right">Revenue</th><th style="text-align:right" class="hpb-hide-sm">Pesapal (3.5%)</th><th style="text-align:right">After Fees</th><th style="text-align:right">Withdrawn</th><th style="text-align:right">Balance</th></tr></thead>';
-        $html .= '<tbody>';
-
-        $platDefs = ['lugaflix' => ['LugaFlix', '#3498db', 'fa-play-circle-o'], 'muno_app' => ['Muno App', '#e74c3c', 'fa-fire'], 'ugflix' => ['UgFlix', '#2ecc71', 'fa-bolt'], 'web' => ['Web (Katogo)', '#9b59b6', 'fa-globe']];
-        $gRev = 0; $gPesa = 0; $gWith = 0; $gBal = 0;
-        $allPlatData = [];
-
-        foreach ($platDefs as $pk => [$pLabel, $pColor, $pIcon]) {
-            $pRev = (float) ($platformRevenueRaw[$pk] ?? 0);
-            $pFee = round($pRev * $pesapalRate, 2);
-            $pAfter = $pRev - $pFee;
-            $pWith = (float) ($platformWithdrawalsRaw[$pk] ?? 0);
-            $pBal = $pAfter - $pWith;
-            $gRev += $pRev; $gPesa += $pFee; $gWith += $pWith; $gBal += $pBal;
-            $allPlatData[] = ['label' => $pLabel, 'color' => $pColor, 'icon' => $pIcon, 'rev' => $pRev, 'fee' => $pFee, 'after' => $pAfter, 'with' => $pWith, 'bal' => $pBal, 'key' => $pk];
-        }
-
-        // Unassigned
-        $uRev = (float) ($platformRevenueRaw['unassigned'] ?? 0);
-        $uWith = (float) ($platformWithdrawalsRaw['unassigned'] ?? 0);
-        if ($uRev > 0 || $uWith > 0) {
-            $uFee = round($uRev * $pesapalRate, 2);
-            $uAfter = $uRev - $uFee;
-            $uBal = $uAfter - $uWith;
-            $gRev += $uRev; $gPesa += $uFee; $gWith += $uWith; $gBal += $uBal;
-            $allPlatData[] = ['label' => 'Unassigned', 'color' => '#95a5a6', 'icon' => 'fa-question-circle', 'rev' => $uRev, 'fee' => $uFee, 'after' => $uAfter, 'with' => $uWith, 'bal' => $uBal, 'key' => 'unassigned'];
-        }
-
-        $revValues = array_column($allPlatData, 'rev');
-        $maxRev = !empty($revValues) ? max(max($revValues), 1) : 1;
-
-        foreach ($allPlatData as $p) {
-            $bClr = $p['bal'] >= 0 ? '#28a745' : '#dc3545';
-            $barPct = $maxRev > 0 ? round(($p['rev'] / $maxRev) * 100) : 0;
-            $html .= '<tr class="hpb-row">';
-            $html .= "<td><div class='hpb-plat'><span class='hpb-dot' style='background:{$p['color']}'></span><i class='fa {$p['icon']}' style='color:{$p['color']};font-size:11px;opacity:.6'></i> {$p['label']}</div><div style='width:100%;height:4px;background:#eee;border-radius:2px;margin-top:3px;overflow:hidden'><div class='hpb-bar' style='width:{$barPct}%;background:{$p['color']}'></div></div></td>";
-            $html .= "<td class='hpb-amt'><b>UGX " . number_format($p['rev']) . "</b></td>";
-            $html .= "<td class='hpb-amt hpb-fee hpb-hide-sm'>- UGX " . number_format($p['fee']) . "</td>";
-            $html .= "<td class='hpb-amt'>UGX " . number_format($p['after']) . "</td>";
-            $html .= "<td class='hpb-amt hpb-fee'>- UGX " . number_format($p['with']) . "</td>";
-            $html .= "<td class='hpb-amt'><span class='hpb-badge' style='background:{$bClr}'>UGX " . number_format($p['bal']) . "</span></td>";
-            $html .= '</tr>';
-        }
-
-        // Totals
-        $tClr = $gBal >= 0 ? '#28a745' : '#dc3545';
-        $html .= '<tr class="hpb-total">';
-        $html .= '<td><b style="font-size:11px">TOTAL</b></td>';
-        $html .= "<td class='hpb-amt'><b>UGX " . number_format($gRev) . "</b></td>";
-        $html .= "<td class='hpb-amt hpb-fee hpb-hide-sm'><b>- UGX " . number_format($gPesa) . "</b></td>";
-        $html .= "<td class='hpb-amt'><b>UGX " . number_format($gRev - $gPesa) . "</b></td>";
-        $html .= "<td class='hpb-amt hpb-fee'><b>- UGX " . number_format($gWith) . "</b></td>";
-        $html .= "<td class='hpb-amt'><span class='hpb-badge' style='background:{$tClr};font-size:11px;padding:3px 10px'>UGX " . number_format($gBal) . "</span></td>";
-        $html .= '</tr>';
-        $html .= '</tbody></table></div>';
         $html .= '</div>';
 
         // ════════ Chart.js 2.x Scripts (bundled with Laravel Admin) ════════
