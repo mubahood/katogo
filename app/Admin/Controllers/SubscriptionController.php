@@ -751,10 +751,55 @@ $(document).on('pjax:end',_scInit);
             return "<small title='" . e($v) . "'>{$short}</small>";
         })->hide();
 
-        // Export
+        // Export — clean, human-readable CSV (no HTML)
         $grid->export(function ($export) {
             $export->filename('Subscriptions_' . date('Y-m-d'));
-            $export->except(['actions']);
+            $export->except(['actions', 'days_remaining']);
+
+            $export->column('app_type', function ($value) {
+                $map = ['ugflix' => 'UgFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App', 'web' => 'Web'];
+                return $map[strtolower($value ?? '')] ?? ucfirst($value ?? 'Unknown');
+            });
+
+            $export->column('platform', function ($value) {
+                return ucfirst($value ?? '-');
+            });
+
+            $export->column('user.name', function ($value, $original) {
+                return strip_tags($value);
+            });
+
+            $export->column('plan.name', function ($value, $original) {
+                return strip_tags($value);
+            });
+
+            $export->column('amount_paid', function ($value, $original) {
+                return $original ?? 0;
+            });
+
+            $export->column('status', function ($value) {
+                return strip_tags($value);
+            });
+
+            $export->column('payment_status', function ($value) {
+                return strip_tags($value);
+            });
+
+            $export->column('start_date_time', function ($value) {
+                return $value ? Carbon::parse(strip_tags($value))->format('Y-m-d H:i') : '';
+            });
+
+            $export->column('end_date_time', function ($value) {
+                return $value ? Carbon::parse(strip_tags($value))->format('Y-m-d H:i') : '';
+            });
+
+            $export->column('created_at', function ($value) {
+                return $value ? Carbon::parse(strip_tags($value))->format('Y-m-d H:i') : '';
+            });
+
+            $export->column('pesapal_tracking_id', function ($value) {
+                return strip_tags($value);
+            });
         });
 
         $grid->batchActions(function ($batch) {
