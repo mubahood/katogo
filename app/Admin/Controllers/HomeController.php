@@ -55,10 +55,9 @@ class HomeController extends Controller
             ->count();
         $expiredSubs = DB::table('subscriptions')->where('status', 'Expired')->count();
         $totalSubs   = DB::table('subscriptions')->count();
-        $subRevenue  = DB::table('subscription_transactions')
-            ->where('status', 'completed')
-            ->where('transaction_type', '!=', 'Withdrawal')
-            ->sum('amount');
+        $subRevenue  = DB::table('subscriptions')
+            ->where('payment_status', 'Completed')
+            ->sum('amount_paid');
         $totalWithdrawals = DB::table('subscription_transactions')
             ->where('status', 'completed')
             ->where('transaction_type', 'Withdrawal')
@@ -67,10 +66,9 @@ class HomeController extends Controller
 
         // Platform balance breakdown
         $pesapalRate = 0.035;
-        $platformRevenueRaw = DB::table('subscription_transactions')
-            ->where('status', 'Completed')
-            ->where('transaction_type', '!=', 'Withdrawal')
-            ->selectRaw("COALESCE(platform, 'unassigned') as plat, SUM(amount) as total")
+        $platformRevenueRaw = DB::table('subscriptions')
+            ->where('payment_status', 'Completed')
+            ->selectRaw("COALESCE(app_type, 'unassigned') as plat, SUM(amount_paid) as total")
             ->groupBy('plat')
             ->pluck('total', 'plat');
         $platformWithdrawalsRaw = DB::table('subscription_transactions')

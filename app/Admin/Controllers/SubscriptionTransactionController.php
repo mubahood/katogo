@@ -189,9 +189,9 @@ class SubscriptionTransactionController extends AdminController
         ];
         $pesapalRate = 0.035;
 
-        $revenueByPlatform = SubscriptionTransaction::where('status', 'Completed')
-            ->where('transaction_type', '!=', 'Withdrawal')
-            ->selectRaw("COALESCE(platform, 'unassigned') as plat, SUM(amount) as total")
+        $revenueByPlatform = DB::table('subscriptions')
+            ->where('payment_status', 'Completed')
+            ->selectRaw("COALESCE(app_type, 'unassigned') as plat, SUM(amount_paid) as total")
             ->groupBy('plat')
             ->pluck('total', 'plat');
 
