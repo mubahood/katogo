@@ -11,6 +11,7 @@ use App\Models\Utils;
 use App\Traits\ApiResponser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -796,6 +797,13 @@ class SearchController extends Controller
             return $this->error('Query required.', 422);
         }
 
+        // Cache suggestions for 5 min per query+limit combo
+        $cacheKey = "v2_suggestions_" . md5($q . $limit);
+        $cached = Cache::get($cacheKey);
+        if ($cached !== null) {
+            return $this->success($cached, "Suggestions retrieved.");
+        }
+
         // Movie title suggestions
         $movieTitles = MovieModel::where('type', 'Movie')
             ->where('status', 'Active')
@@ -867,10 +875,15 @@ class SearchController extends Controller
             return $aStart <=> $bStart;
         });
 
-        return $this->success([
+        $result = [
             'suggestions' => array_slice($suggestions, 0, 20),
             'query'       => $q,
-        ], "Suggestions retrieved.");
+        ];
+
+        // Cache for 5 minutes
+        Cache::put($cacheKey, $result, 300);
+
+        return $this->success($result, "Suggestions retrieved.");
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -75,8 +75,16 @@ class ManifestController extends Controller
         if ($platform) {
             $u->platform = $platform;
         }
-        $u->last_online_at = now();
-        $u->save();
+        // Throttle user profile update to once per 5 min
+        $profileCacheKey = "v2_profile_update_{$u->id}";
+        if (!Cache::has($profileCacheKey)) {
+            Cache::put($profileCacheKey, true, 300);
+            DB::table('users')->where('id', $u->id)->update(array_filter([
+                'app_type' => $app_type,
+                'platform' => $platform,
+                'last_online_at' => now(),
+            ]));
+        }
 
         // ── 2. Throttled payment check: once per 5 min per user ──
         $paymentCacheKey = "v2_pay_check_{$u->id}";

@@ -726,18 +726,22 @@ class ApiController extends BaseController
     {
         $u = Utils::get_user($r);
         if ($u != null) {
-            $app_type = Utils::get_app_type($r);
-            $app_types = ['ugflix', 'lugaflix', 'muno_app', 'web'];
-            if (!in_array($app_type, $app_types)) {
-                $app_type = 'ugflix';
+            // Throttle user profile update to once per 5 min
+            $profileCacheKey = "v1_profile_update_{$u->id}";
+            if (!Cache::has($profileCacheKey)) {
+                Cache::put($profileCacheKey, true, 300);
+                $app_type = Utils::get_app_type($r);
+                $app_types = ['ugflix', 'lugaflix', 'muno_app', 'web'];
+                if (!in_array($app_type, $app_types)) {
+                    $app_type = 'ugflix';
+                }
+                $platform = Utils::get_platform_from_request($r);
+                DB::table('users')->where('id', $u->id)->update(array_filter([
+                    'app_type' => $app_type,
+                    'platform' => $platform,
+                    'last_online_at' => now(),
+                ]));
             }
-            $u->app_type = $app_type; 
-            $platform = Utils::get_platform_from_request($r);
-            if ($platform != null) {
-                $u->platform = $platform;
-            }
-            $u->last_online_at = now();
-            $u->save();
         }
         if ($u == null) {
             return $this->error('User not found.');
@@ -774,6 +778,13 @@ class ApiController extends BaseController
             }
         }
         // $u->autoAssignFreeTrial();
+
+        // Full response cache: return cached manifest JSON without rebuilding
+        $manifestCacheKey = "v1_manifest_resp_{$u->id}";
+        $cachedManifest = Cache::get($manifestCacheKey);
+        if ($cachedManifest !== null) {
+            return Utils::success($cachedManifest, "Listed successfully.");
+        }
 
         $APP_VERSION = 20;
         $UPDATE_NOTES = "- Fixed download disappearance bug
@@ -1245,6 +1256,9 @@ class ApiController extends BaseController
                 'bearer_token' => 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
             ],
         ];
+
+        // Cache full manifest response for 2 minutes
+        Cache::put($manifestCacheKey, $manifest, 120);
 
         return Utils::success($manifest, "Listed successfully.");
     }
