@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\StreamingStation;
 use App\Traits\ApiResponser;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class StreamingController extends Controller
 {
@@ -171,87 +172,86 @@ class StreamingController extends Controller
      */
     public function home()
     {
-        $featured = StreamingStation::active()
-            ->featured()
-            ->select(self::STATION_LIST_FIELDS)
-            ->with(['activeUrls' => function ($q) {
-                $q->select(['id', 'streaming_station_id', 'url', 'label', 'format', 'quality', 'bitrate', 'is_default', 'referrer_url', 'needs_token_refresh'])
-                  ->orderByDesc('is_default')
-                  ->orderBy('sort_order');
-            }])
-            ->orderBy('sort_order')
-            ->orderByDesc('votes')
-            ->limit(20)
-            ->get();
+        $data = Cache::remember('streaming_home', 300, function () {
+            $featured = StreamingStation::active()
+                ->featured()
+                ->select(self::STATION_LIST_FIELDS)
+                ->with(['activeUrls' => function ($q) {
+                    $q->select(['id', 'streaming_station_id', 'url', 'label', 'format', 'quality', 'bitrate', 'is_default', 'referrer_url', 'needs_token_refresh'])
+                      ->orderByDesc('is_default')
+                      ->orderBy('sort_order');
+                }])
+                ->orderBy('sort_order')
+                ->orderByDesc('votes')
+                ->limit(20)
+                ->get();
 
-        // Get TV channels grouped by category
-        $tvChannels = StreamingStation::active()
-            ->tv()
-            ->select(self::STATION_LIST_FIELDS)
-            ->with(['activeUrls' => function ($q) {
-                $q->select(['id', 'streaming_station_id', 'url', 'label', 'format', 'quality', 'bitrate', 'is_default', 'referrer_url', 'needs_token_refresh'])
-                  ->orderByDesc('is_default')
-                  ->orderBy('sort_order');
-            }])
-            ->orderBy('sort_order')
-            ->orderByDesc('votes')
-            ->get();
+            $tvChannels = StreamingStation::active()
+                ->tv()
+                ->select(self::STATION_LIST_FIELDS)
+                ->with(['activeUrls' => function ($q) {
+                    $q->select(['id', 'streaming_station_id', 'url', 'label', 'format', 'quality', 'bitrate', 'is_default', 'referrer_url', 'needs_token_refresh'])
+                      ->orderByDesc('is_default')
+                      ->orderBy('sort_order');
+                }])
+                ->orderBy('sort_order')
+                ->orderByDesc('votes')
+                ->get();
 
-        // Get Radio stations grouped by category
-        $radioStations = StreamingStation::active()
-            ->radio()
-            ->select(self::STATION_LIST_FIELDS)
-            ->with(['activeUrls' => function ($q) {
-                $q->select(['id', 'streaming_station_id', 'url', 'label', 'format', 'quality', 'bitrate', 'is_default', 'referrer_url', 'needs_token_refresh'])
-                  ->orderByDesc('is_default')
-                  ->orderBy('sort_order');
-            }])
-            ->orderBy('sort_order')
-            ->orderByDesc('votes')
-            ->get();
+            $radioStations = StreamingStation::active()
+                ->radio()
+                ->select(self::STATION_LIST_FIELDS)
+                ->with(['activeUrls' => function ($q) {
+                    $q->select(['id', 'streaming_station_id', 'url', 'label', 'format', 'quality', 'bitrate', 'is_default', 'referrer_url', 'needs_token_refresh'])
+                      ->orderByDesc('is_default')
+                      ->orderBy('sort_order');
+                }])
+                ->orderBy('sort_order')
+                ->orderByDesc('votes')
+                ->get();
 
-        // Transform helper
-        $transform = function ($stations) {
-            return $stations->map(function ($station) {
-                $data = $station->toArray();
-                $urls = $data['active_urls'] ?? [];
-                $data['stream_url'] = !empty($urls) ? $urls[0]['url'] : null;
-                $data['stream_format'] = !empty($urls) ? $urls[0]['format'] : null;
-                $data['all_urls'] = $urls;
-                unset($data['active_urls']);
-                return $data;
-            });
-        };
+            $transform = function ($stations) {
+                return $stations->map(function ($station) {
+                    $data = $station->toArray();
+                    $urls = $data['active_urls'] ?? [];
+                    $data['stream_url'] = !empty($urls) ? $urls[0]['url'] : null;
+                    $data['stream_format'] = !empty($urls) ? $urls[0]['format'] : null;
+                    $data['all_urls'] = $urls;
+                    unset($data['active_urls']);
+                    return $data;
+                });
+            };
 
-        // Group by category
-        $tvByCategory = $transform($tvChannels)->groupBy('category');
-        $radioByCategory = $transform($radioStations)->groupBy('category');
+            $tvByCategory = $transform($tvChannels)->groupBy('category');
+            $radioByCategory = $transform($radioStations)->groupBy('category');
 
-        // Build sections
-        $tvSections = [];
-        foreach ($tvByCategory as $category => $items) {
-            $tvSections[] = [
-                'category' => $category,
-                'items' => $items->values(),
+            $tvSections = [];
+            foreach ($tvByCategory as $category => $items) {
+                $tvSections[] = [
+                    'category' => $category,
+                    'items' => $items->values(),
+                ];
+            }
+
+            $radioSections = [];
+            foreach ($radioByCategory as $category => $items) {
+                $radioSections[] = [
+                    'category' => $category,
+                    'items' => $items->values(),
+                ];
+            }
+
+            return [
+                'featured' => $transform($featured)->values(),
+                'tv_sections' => $tvSections,
+                'radio_sections' => $radioSections,
+                'stats' => [
+                    'tv_count' => StreamingStation::active()->tv()->count(),
+                    'radio_count' => StreamingStation::active()->radio()->count(),
+                ],
             ];
-        }
+        });
 
-        $radioSections = [];
-        foreach ($radioByCategory as $category => $items) {
-            $radioSections[] = [
-                'category' => $category,
-                'items' => $items->values(),
-            ];
-        }
-
-        return $this->success([
-            'featured' => $transform($featured)->values(),
-            'tv_sections' => $tvSections,
-            'radio_sections' => $radioSections,
-            'stats' => [
-                'tv_count' => StreamingStation::active()->tv()->count(),
-                'radio_count' => StreamingStation::active()->radio()->count(),
-            ],
-        ]);
+        return $this->success($data);
     }
 }

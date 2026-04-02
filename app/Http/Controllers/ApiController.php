@@ -1339,14 +1339,24 @@ class ApiController extends BaseController
         if ($u == null) {
             Utils::error("Unauthonticated.");
         }
-        $movie = MovieModel::find($r->get('movie_id'));
+
+        $movieId = $r->get('movie_id');
+
+        // Throttle: only save progress once every 30 seconds per user+movie
+        $throttleKey = "svp_{$u->id}_{$movieId}";
+        if (Cache::has($throttleKey)) {
+            // Return success without doing any DB work
+            Utils::success(null, "Progress saved successfully.");
+            return;
+        }
+
+        $movie = MovieModel::find($movieId);
         if ($movie == null) {
             Utils::error("Movie not found.");
         }
 
         // last_online_at column doesn't exist in production - skip the update
         // (app_type, platform, last_online_at columns are not in the users table)
-
 
         $view = MovieView::where([
             'movie_model_id' => $movie->id,
@@ -1361,6 +1371,10 @@ class ApiController extends BaseController
         $view->max_progress = $r->get('max_progress');
         $view->status = $r->get('status');
         $view->save();
+
+        // Set throttle for 30 seconds
+        Cache::put($throttleKey, true, 30);
+
         Utils::success($view, "Progress saved successfully.");
     }
     public function my_update(Request $r, $model)

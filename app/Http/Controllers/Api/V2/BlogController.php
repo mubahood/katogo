@@ -12,6 +12,7 @@ use App\Traits\ApiResponser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * ═══════════════════════════════════════════════════════════
@@ -381,28 +382,30 @@ class BlogController extends Controller
         $seenRaw = $request->get('seen_ids', '');
         $seenIds = array_filter(array_map('intval', explode(',', $seenRaw)));
 
-        $query = BlogPost::select(['id', 'title', 'category', 'created_at'])
-            ->where('status', 'Active')
-            ->where('created_at', '>=', now()->subDays(90))
-            ->orderByDesc('is_pinned')
-            ->orderByDesc('created_at')
-            ->limit(10); // fetch extra to account for filtering
+        // Cache marquee posts for 5 minutes per seen_ids combination
+        $cacheKey = 'blog_marquee_' . md5(implode(',', $seenIds));
+        $posts = Cache::remember($cacheKey, 300, function () use ($seenIds) {
+            $query = BlogPost::select(['id', 'title', 'category', 'created_at'])
+                ->where('status', 'Active')
+                ->where('created_at', '>=', now()->subDays(90))
+                ->orderByDesc('is_pinned')
+                ->orderByDesc('created_at')
+                ->limit(10);
 
-        if (!empty($seenIds)) {
-            $query->whereNotIn('id', $seenIds);
-        }
+            if (!empty($seenIds)) {
+                $query->whereNotIn('id', $seenIds);
+            }
 
-        $posts = $query->get()->take(5)->map(function ($p) {
-            return [
-                'id'         => $p->id,
-                'title'      => $p->title,
-                'category'   => $p->category,
-                'time_ago'   => $this->timeAgo($p->created_at),
-                'created_at' => $p->created_at,
-            ];
-        })->values()->toArray();
-
-        Log::info("[V2:blog] marquee count=" . count($posts) . " seen=" . count($seenIds));
+            return $query->get()->take(5)->map(function ($p) {
+                return [
+                    'id'         => $p->id,
+                    'title'      => $p->title,
+                    'category'   => $p->category,
+                    'time_ago'   => $this->timeAgo($p->created_at),
+                    'created_at' => $p->created_at,
+                ];
+            })->values()->toArray();
+        });
 
         return $this->success(['posts' => $posts]);
     }

@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Subscription API Controller
@@ -782,53 +783,59 @@ class SubscriptionApiController extends Controller
                 ], 401);
             }
 
-            // Find pending subscription with Pending or Processing payment status
-            $pendingSubscription = $user->subscriptions()
-                ->with('plan')
-                ->whereIn('payment_status', ['Pending', 'Processing'])
-                ->orderBy('created_at', 'DESC')
-                ->first();
+            // Throttle: cache per user for 60 seconds
+            $cacheKey = "sub_pending_{$user->id}";
+            $result = Cache::remember($cacheKey, 60, function () use ($user) {
+                // Find pending subscription with Pending or Processing payment status
+                $pendingSubscription = $user->subscriptions()
+                    ->with('plan')
+                    ->whereIn('payment_status', ['Pending', 'Processing'])
+                    ->orderBy('created_at', 'DESC')
+                    ->first();
 
-            if ($pendingSubscription) {
-                return response()->json([
+                if ($pendingSubscription) {
+                    return [
+                        'code' => 1,
+                        'status' => 200,
+                        'message' => 'Pending subscription found',
+                        'data' => [
+                            'has_pending' => true,
+                            'pending_subscription' => [
+                                'id' => $pendingSubscription->id,
+                                'user_id' => $pendingSubscription->user_id,
+                                'plan' => $pendingSubscription->plan ? [
+                                    'id' => $pendingSubscription->plan->id,
+                                    'name' => $pendingSubscription->plan->name,
+                                    'currency' => $pendingSubscription->plan->currency,
+                                    'price' => $pendingSubscription->plan->price,
+                                    'duration_days' => $pendingSubscription->plan->duration_days,
+                                ] : null,
+                                'amount' => $pendingSubscription->amount_paid,
+                                'currency' => $pendingSubscription->currency,
+                                'status' => $pendingSubscription->status,
+                                'payment_status' => $pendingSubscription->payment_status,
+                                'order_tracking_id' => $pendingSubscription->pesapal_tracking_id,
+                                'merchant_reference' => $pendingSubscription->pesapal_merchant_reference,
+                                'payment_url' => $pendingSubscription->payment_url ?? null,
+                                'created_at' => $pendingSubscription->created_at->toIso8601String(),
+                                'expires_at' => null,
+                            ],
+                        ],
+                    ];
+                }
+
+                return [
                     'code' => 1,
                     'status' => 200,
-                    'message' => 'Pending subscription found',
+                    'message' => 'No pending subscription. USER ID: ' . $user->id,
                     'data' => [
-                        'has_pending' => true,
-                        'pending_subscription' => [
-                            'id' => $pendingSubscription->id,
-                            'user_id' => $pendingSubscription->user_id,
-                            'plan' => $pendingSubscription->plan ? [
-                                'id' => $pendingSubscription->plan->id,
-                                'name' => $pendingSubscription->plan->name,
-                                'currency' => $pendingSubscription->plan->currency,
-                                'price' => $pendingSubscription->plan->price,
-                                'duration_days' => $pendingSubscription->plan->duration_days,
-                            ] : null,
-                            'amount' => $pendingSubscription->amount_paid,
-                            'currency' => $pendingSubscription->currency,
-                            'status' => $pendingSubscription->status,
-                            'payment_status' => $pendingSubscription->payment_status,
-                            'order_tracking_id' => $pendingSubscription->pesapal_tracking_id,
-                            'merchant_reference' => $pendingSubscription->pesapal_merchant_reference,
-                            'payment_url' => $pendingSubscription->payment_url ?? null,
-                            'created_at' => $pendingSubscription->created_at->toIso8601String(),
-                            'expires_at' => null, // Can add expiry logic if needed
-                        ],
+                        'has_pending' => false,
+                        'pending_subscription' => null,
                     ],
-                ]);
-            }
+                ];
+            });
 
-            return response()->json([
-                'code' => 1,
-                'status' => 200,
-                'message' => 'No pending subscription. USER ID: ' . $user->id,
-                'data' => [
-                    'has_pending' => false,
-                    'pending_subscription' => null,
-                ],
-            ]);
+            return response()->json($result);
         } catch (\Exception $e) {
             Log::error('Failed to get pending subscription', [
                 'user_id' => $request->user()?->id,
