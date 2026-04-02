@@ -171,7 +171,7 @@ class ManifestController extends Controller
             'elapsed_ms' => $elapsed,
         ]);
 
-        return Utils::success([
+        $responseData = [
             'featured'      => $featured,
             'sections'      => $sections,
             'genres'        => $genres,
@@ -180,7 +180,15 @@ class ManifestController extends Controller
             'subscription'  => $subscription,
             'stats'         => $stats,
             'safemode_auth' => $safemodeAuth,
-        ], 'Manifest loaded.');
+        ];
+
+        // Write pre-bootstrap cache file
+        $cacheDir = storage_path('api_cache');
+        if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
+        $cacheKey = md5(request()->fullUrl());
+        @file_put_contents("{$cacheDir}/{$cacheKey}", json_encode(['code' => 1, 'message' => 'Manifest loaded.', 'data' => $responseData]));
+
+        return Utils::success($responseData, 'Manifest loaded.');
     }
 
     // ═══════════════════════════════════════════════════════
