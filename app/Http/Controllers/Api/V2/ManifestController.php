@@ -78,8 +78,12 @@ class ManifestController extends Controller
         $u->last_online_at = now();
         $u->save();
 
-        // ── 2. Background: check pending payments ────────────
-        $this->checkPendingPayments($u->id);
+        // ── 2. Throttled payment check: once per 5 min per user ──
+        $paymentCacheKey = "v2_pay_check_{$u->id}";
+        if (!Cache::has($paymentCacheKey)) {
+            Cache::put($paymentCacheKey, true, 300);
+            $this->checkPendingPayments($u->id);
+        }
 
         // ── 3. Build manifest ────────────────────────────────
         $userId = $u->id;

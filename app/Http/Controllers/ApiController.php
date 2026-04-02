@@ -743,29 +743,33 @@ class ApiController extends BaseController
             return $this->error('User not found.');
         }
 
-        $pendingPayments = SubscriptionTransaction::whereNotIn('status', ['Completed'])
-            ->where('created_at', '>=', Carbon::now()->subHours(24 * 3)) // only check last 72 hours
-            ->where('user_id', $u->id)
-            ->orderBy('id', 'desc')
-            ->limit(5)
-            ->get();
-        //set time limit
-        set_time_limit(120); // 2 minutes max for pending payment checks
-        // $pendingPayments = SubscriptionTransaction::where('id', 82)->get();
-        foreach ($pendingPayments as $key => $pay) {
-            if ($pay->status == 'Completed') {
-                continue;
-            }
-            $number_of_times_checked = (int) $pay->number_of_times_checked;
-            if ($number_of_times_checked > 20) {
-                //mark as failed
-                $pay->status = 'Failed';
-                $pay->refund_reason = 'Payment not completed after multiple checks.';
-                $pay->save();
-                continue;
-            }
+        // Throttled payment check: only once per 5 minutes per user (avoids blocking manifest with external Pesapal API calls)
+        $paymentCacheKey = "v1_pay_check_{$u->id}";
+        if (!Cache::has($paymentCacheKey)) {
+            Cache::put($paymentCacheKey, true, 300); // 5 min throttle
             try {
-                $pay->check_payment_status();
+                $pendingPayments = SubscriptionTransaction::whereNotIn('status', ['Completed'])
+                    ->where('created_at', '>=', Carbon::now()->subHours(72))
+                    ->where('user_id', $u->id)
+                    ->orderBy('id', 'desc')
+                    ->limit(3)
+                    ->get();
+                foreach ($pendingPayments as $pay) {
+                    if ($pay->status == 'Completed') {
+                        continue;
+                    }
+                    $number_of_times_checked = (int) $pay->number_of_times_checked;
+                    if ($number_of_times_checked > 20) {
+                        $pay->status = 'Failed';
+                        $pay->refund_reason = 'Payment not completed after multiple checks.';
+                        $pay->save();
+                        continue;
+                    }
+                    try {
+                        $pay->check_payment_status();
+                    } catch (\Throwable $th) {
+                    }
+                }
             } catch (\Throwable $th) {
             }
         }
@@ -785,108 +789,96 @@ class ApiController extends BaseController
 
         // ═══════════════════════════════════════════════════════════
         //  DAILY ROTATION — movies cycle based on last_listing_date
-        //
-        //  Strategy:
-        //  1. Use a daily boundary (6am) for a full 24h window
-        //  2. Movies stamped "today" are the current batch
-        //  3. When < 200 stamped for today, pick movies with the
-        //     OLDEST last_listing_date (= not shown for the longest)
-        //  4. This guarantees every movie in the catalogue gets its
-        //     turn before any movie repeats
+        //  Cached for 10 min to avoid repeated heavy queries
         // ═══════════════════════════════════════════════════════════
-        $today_6am = Carbon::today()->addHours(6);
-        // Before 6am? Use yesterday's boundary so the current batch persists
-        if (Carbon::now()->hour < 6) {
-            $today_6am = Carbon::yesterday()->addHours(6);
-        }
+        $oldest_listed_movies = Cache::remember('v1_rotation_movies', 600, function () use ($take_only) {
+            $today_6am = Carbon::today()->addHours(6);
+            if (Carbon::now()->hour < 6) {
+                $today_6am = Carbon::yesterday()->addHours(6);
+            }
 
-        // Movies already stamped for today's cycle
-        $todays_batch = MovieModel::where([
-            'status' => 'Active',
-            'type' => 'Movie',
-        ])
-            ->where('is_muno', 'Yes')
-            ->whereNotNull('last_listing_date')
-            ->where('last_listing_date', '>=', $today_6am)
-            ->orderBy('created_at', 'desc')
-            ->limit(200)
-            ->get($take_only);
-
-        // If fewer than 200 stamped for today, stamp a fresh batch
-        if ($todays_batch->count() < 200) {
-            $already_listed_ids = $todays_batch->pluck('id')->toArray();
-            $needed = 200 - $todays_batch->count();
-
-            // Priority 1: Movies never listed (NULL last_listing_date)
-            $to_stamp = MovieModel::where([
+            $todays_batch = MovieModel::where([
                 'status' => 'Active',
                 'type' => 'Movie',
             ])
                 ->where('is_muno', 'Yes')
-                ->whereNull('last_listing_date')
-                ->whereNotIn('id', $already_listed_ids)
+                ->whereNotNull('last_listing_date')
+                ->where('last_listing_date', '>=', $today_6am)
                 ->orderBy('created_at', 'desc')
-                ->limit($needed)
-                ->get();
+                ->limit(200)
+                ->get($take_only);
 
-            // Priority 2: Movies with OLDEST last_listing_date (true rotation)
-            if ($to_stamp->count() < $needed) {
-                $exclude_ids = array_merge($already_listed_ids, $to_stamp->pluck('id')->toArray());
-                $still_needed = $needed - $to_stamp->count();
-                $extra = MovieModel::where([
+            if ($todays_batch->count() < 200) {
+                $already_listed_ids = $todays_batch->pluck('id')->toArray();
+                $needed = 200 - $todays_batch->count();
+
+                $to_stamp = MovieModel::where([
                     'status' => 'Active',
                     'type' => 'Movie',
                 ])
                     ->where('is_muno', 'Yes')
-                    ->whereNotIn('id', $exclude_ids)
-                    ->orderBy('last_listing_date', 'asc')   // KEY: oldest-listed first = true rotation
-                    ->limit($still_needed)
+                    ->whereNull('last_listing_date')
+                    ->whereNotIn('id', $already_listed_ids)
+                    ->orderBy('created_at', 'desc')
+                    ->limit($needed)
                     ->get();
-                $to_stamp = $to_stamp->merge($extra);
+
+                if ($to_stamp->count() < $needed) {
+                    $exclude_ids = array_merge($already_listed_ids, $to_stamp->pluck('id')->toArray());
+                    $still_needed = $needed - $to_stamp->count();
+                    $extra = MovieModel::where([
+                        'status' => 'Active',
+                        'type' => 'Movie',
+                    ])
+                        ->where('is_muno', 'Yes')
+                        ->whereNotIn('id', $exclude_ids)
+                        ->orderBy('last_listing_date', 'asc')
+                        ->limit($still_needed)
+                        ->get();
+                    $to_stamp = $to_stamp->merge($extra);
+                }
+
+                if ($to_stamp->isNotEmpty()) {
+                    DB::table('movie_models')
+                        ->whereIn('id', $to_stamp->pluck('id')->toArray())
+                        ->update(['last_listing_date' => $today_6am]);
+                }
             }
 
-            // Stamp the new batch with today's boundary
-            if ($to_stamp->isNotEmpty()) {
-                DB::table('movie_models')
-                    ->whereIn('id', $to_stamp->pluck('id')->toArray())
-                    ->update(['last_listing_date' => $today_6am]);
-            }
-        }
-
-        // Re-fetch today's full batch (after stamping)
-        $oldest_listed_movies = MovieModel::where([
-            'status' => 'Active',
-            'type' => 'Movie',
-        ])
-            ->where('is_muno', 'Yes')
-            ->whereNotNull('last_listing_date')
-            ->where('last_listing_date', '>=', $today_6am)
-            ->orderBy('created_at', 'desc')
-            ->limit(200)
-            ->get($take_only);
-
-        // Fallback: if somehow still too few, include recently-listed movies
-        if ($oldest_listed_movies->count() < 10) {
-            $oldest_listed_movies = MovieModel::where([
+            $result = MovieModel::where([
                 'status' => 'Active',
                 'type' => 'Movie',
             ])
                 ->where('is_muno', 'Yes')
-                ->orderBy('last_listing_date', 'desc')  // most recently listed first
-                ->limit(200)
-                ->get($take_only);
-        }
-
-        // Final fallback: any active movies
-        if ($oldest_listed_movies->count() === 0) {
-            $oldest_listed_movies = MovieModel::where([
-                'status' => 'Active',
-                'type' => 'Movie',
-            ])
+                ->whereNotNull('last_listing_date')
+                ->where('last_listing_date', '>=', $today_6am)
                 ->orderBy('created_at', 'desc')
                 ->limit(200)
                 ->get($take_only);
-        }
+
+            if ($result->count() < 10) {
+                $result = MovieModel::where([
+                    'status' => 'Active',
+                    'type' => 'Movie',
+                ])
+                    ->where('is_muno', 'Yes')
+                    ->orderBy('last_listing_date', 'desc')
+                    ->limit(200)
+                    ->get($take_only);
+            }
+
+            if ($result->count() === 0) {
+                $result = MovieModel::where([
+                    'status' => 'Active',
+                    'type' => 'Movie',
+                ])
+                    ->orderBy('created_at', 'desc')
+                    ->limit(200)
+                    ->get($take_only);
+            }
+
+            return $result;
+        });
 
 
         $now = Carbon::now();
