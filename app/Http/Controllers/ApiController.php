@@ -913,24 +913,26 @@ class ApiController extends BaseController
 
 
 
-        //watched_movies continue watching
-        $watched_movies = collect();
-        if ($u && $u->id) {
-            $watched_movies = MovieView::where('user_id', $u->id)
-                ->orderBy('updated_at', 'desc')
-                ->limit(50)
-                ->get();
-        }
-
+        //watched_movies continue watching - cached per user for 2 min
         $my_list = [];
         $my_list['title'] = "Continue Watching";
 
-        if ($watched_movies->count() > 0) {
-            $watchedIds = $watched_movies->take(50)->pluck('movie_model_id')->unique()->toArray();
-            $watchedMoviesMap = MovieModel::whereIn('id', $watchedIds)->get($take_only)->keyBy('id');
-            $my_list['movies'] = $watched_movies->take(50)->map(function ($view) use ($watchedMoviesMap) {
-                return $watchedMoviesMap->get($view->movie_model_id);
-            })->filter()->values();
+        if ($u && $u->id) {
+            $my_list['movies'] = Cache::remember("v1_watching_{$u->id}", 120, function () use ($u, $take_only) {
+                $watched_movies = MovieView::where('user_id', $u->id)
+                    ->orderBy('updated_at', 'desc')
+                    ->limit(50)
+                    ->get();
+
+                if ($watched_movies->count() > 0) {
+                    $watchedIds = $watched_movies->pluck('movie_model_id')->unique()->toArray();
+                    $watchedMoviesMap = MovieModel::whereIn('id', $watchedIds)->get($take_only)->keyBy('id');
+                    return $watched_movies->map(function ($view) use ($watchedMoviesMap) {
+                        return $watchedMoviesMap->get($view->movie_model_id);
+                    })->filter()->values();
+                }
+                return collect();
+            });
         } else {
             $my_list['movies'] = [];
         }
@@ -1090,9 +1092,11 @@ class ApiController extends BaseController
             return $unique_vj;
         });
 
-        $iosMovies = MovieModel::where(['platform_type' => 'ios'])->get();
-
         $platform_type = Utils::get_platform();
+        $iosMovies = ($platform_type == 'ios') ? Cache::remember('v1_ios_movies', 600, function () {
+            return MovieModel::where(['platform_type' => 'ios'])->limit(100)->get();
+        }) : collect();
+
         if ($platform_type == 'ios' && $iosMovies->count() > 0) {
             $lists = [];
             $item = [];
@@ -1116,7 +1120,7 @@ class ApiController extends BaseController
                 $topMovie = $movies->first();
             }
         }
-        // Get subscription information for authenticated user
+        // Get subscription information for authenticated user - cached per user for 2 min
         $subscription_info = [
             'has_active_subscription' => false,
             'days_remaining' => 0,
@@ -1129,41 +1133,38 @@ class ApiController extends BaseController
 
         if ($u && $u->id) {
             try {
+                $subscription_info = Cache::remember("v1_sub_info_{$u->id}", 120, function () use ($u) {
+                    $subscription_status = $u->getSubscriptionStatus();
 
-                $subscription_status = $u->getSubscriptionStatus();
+                    // CRITICAL: Validate subscription data consistency
+                    $has_active = $subscription_status['has_active_subscription'] ?? false;
+                    $days_remaining = $subscription_status['days_remaining'] ?? 0;
+                    $status = $subscription_status['status'] ?? 'No Active Subscription';
 
-                // CRITICAL: Validate subscription data consistency
-                $has_active = $subscription_status['has_active_subscription'] ?? false;
-                $days_remaining = $subscription_status['days_remaining'] ?? 0;
-                $status = $subscription_status['status'] ?? 'No Active Subscription';
+                    // VALIDATION: If days_remaining > 0 or status is Active, has_active_subscription MUST be true
+                    if (($days_remaining > 0 || $status === 'Active') && !$has_active) {
+                        \Log::error('🚨 CRITICAL: Subscription data inconsistency detected!', [
+                            'user_id' => $u->id,
+                            'has_active_subscription' => $has_active,
+                            'days_remaining' => $days_remaining,
+                            'status' => $status,
+                            'ERROR' => 'has_active_subscription is false but subscription appears active',
+                        ]);
 
+                        // FIX IT: Force has_active_subscription to true if logic indicates active
+                        $has_active = true;
+                    }
 
-
-                // VALIDATION: If days_remaining > 0 or status is Active, has_active_subscription MUST be true
-                if (($days_remaining > 0 || $status === 'Active') && !$has_active) {
-                    \Log::error('🚨 CRITICAL: Subscription data inconsistency detected!', [
-                        'user_id' => $u->id,
+                    return [
                         'has_active_subscription' => $has_active,
                         'days_remaining' => $days_remaining,
-                        'status' => $status,
-                        'ERROR' => 'has_active_subscription is false but subscription appears active',
-                    ]);
-
-                    // FIX IT: Force has_active_subscription to true if logic indicates active
-                    $has_active = true;
-                }
-
-                $subscription_info = [
-                    'has_active_subscription' => $has_active,
-                    'days_remaining' => $days_remaining,
-                    'hours_remaining' => $subscription_status['hours_remaining'] ?? 0,
-                    'is_in_grace_period' => $subscription_status['is_in_grace_period'] ?? false,
-                    'subscription_status' => $status,
-                    'end_date' => $subscription_status['end_date'] ?? null,
-                    'require_subscription' => !$has_active,
-                ];
-
-             
+                        'hours_remaining' => $subscription_status['hours_remaining'] ?? 0,
+                        'is_in_grace_period' => $subscription_status['is_in_grace_period'] ?? false,
+                        'subscription_status' => $status,
+                        'end_date' => $subscription_status['end_date'] ?? null,
+                        'require_subscription' => !$has_active,
+                    ];
+                });
             } catch (\Exception $e) {
                 // If subscription check fails, use default values
                 \Log::error('💥 Failed to get subscription status in manifest', [
