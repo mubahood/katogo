@@ -17,21 +17,32 @@ $_pbc_uri = $_SERVER['REQUEST_URI'] ?? '';
 $_pbc_method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($_pbc_method === 'GET' && strpos($_pbc_uri, '/api/') !== false) {
     $_pbc_path = strtok($_pbc_uri, '?');
-    $_pbc_ttls = [
-        '/api/v2/manifest'        => 45,
+    // Shared endpoints: cache by path only (same for all users)
+    $_pbc_shared = [
         '/api/v2/streaming/home'  => 120,
         '/api/v2/blog/marquee'    => 120,
+    ];
+    // Per-user endpoints: cache by path + user_id
+    $_pbc_peruser = [
+        '/api/v2/manifest'        => 45,
         '/api/manifest'           => 45,
     ];
-    if (isset($_pbc_ttls[$_pbc_path])) {
-        $_pbc_key = md5($_pbc_uri);
-        $_pbc_file = __DIR__ . '/../storage/api_cache/' . $_pbc_key;
-        if (file_exists($_pbc_file) && (time() - filemtime($_pbc_file)) < $_pbc_ttls[$_pbc_path]) {
-            header('Content-Type: application/json');
-            header('X-Cache: HIT');
-            readfile($_pbc_file);
-            exit;
-        }
+    $_pbc_file = null;
+    if (isset($_pbc_shared[$_pbc_path])) {
+        $_pbc_ttl = $_pbc_shared[$_pbc_path];
+        $_pbc_file = __DIR__ . '/../storage/api_cache/shared_' . md5($_pbc_path);
+    } elseif (isset($_pbc_peruser[$_pbc_path])) {
+        parse_str($_SERVER['QUERY_STRING'] ?? '', $_pbc_qs);
+        $_pbc_uid = $_pbc_qs['logged_in_user_id'] ?? '0';
+        $_pbc_app = $_pbc_qs['app_type'] ?? '';
+        $_pbc_ttl = $_pbc_peruser[$_pbc_path];
+        $_pbc_file = __DIR__ . '/../storage/api_cache/u_' . md5($_pbc_path . $_pbc_uid . $_pbc_app);
+    }
+    if ($_pbc_file && file_exists($_pbc_file) && (time() - filemtime($_pbc_file)) < $_pbc_ttl) {
+        header('Content-Type: application/json');
+        header('X-Cache: HIT');
+        readfile($_pbc_file);
+        exit;
     }
 }
 

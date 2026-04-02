@@ -407,11 +407,10 @@ class BlogController extends Controller
             })->values()->toArray();
         });
 
-        // Write pre-bootstrap cache
+        // Write pre-bootstrap cache (shared - same for all users)
         $cacheDir = storage_path('api_cache');
         if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
-        $pbcKey = md5(request()->fullUrl());
-        @file_put_contents("{$cacheDir}/{$pbcKey}", json_encode(['code' => 1, 'status' => 1, 'message' => '', 'data' => ['posts' => $posts]]));
+        @file_put_contents("{$cacheDir}/shared_" . md5('/api/v2/blog/marquee'), json_encode(['code' => 1, 'status' => 1, 'message' => '', 'data' => ['posts' => $posts]]));
 
         return $this->success(['posts' => $posts]);
     }

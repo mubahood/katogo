@@ -182,11 +182,11 @@ class ManifestController extends Controller
             'safemode_auth' => $safemodeAuth,
         ];
 
-        // Write pre-bootstrap cache file
+        // Write pre-bootstrap cache (per user+app_type)
         $cacheDir = storage_path('api_cache');
         if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
-        $cacheKey = md5(request()->fullUrl());
-        @file_put_contents("{$cacheDir}/{$cacheKey}", json_encode(['code' => 1, 'message' => 'Manifest loaded.', 'data' => $responseData]));
+        $pbcKey = 'u_' . md5('/api/v2/manifest' . $userId . $app_type);
+        @file_put_contents("{$cacheDir}/{$pbcKey}", json_encode(['code' => 1, 'message' => 'Manifest loaded.', 'data' => $responseData]));
 
         return Utils::success($responseData, 'Manifest loaded.');
     }
