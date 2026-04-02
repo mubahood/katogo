@@ -9,6 +9,16 @@
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
+    # Pre-bootstrap API cache: route cached endpoints through lightweight handler
+    RewriteCond %{REQUEST_METHOD} GET
+    RewriteRule ^api/v2/manifest$ api_cache.php [L,QSA]
+    RewriteCond %{REQUEST_METHOD} GET
+    RewriteRule ^api/manifest$ api_cache.php [L,QSA]
+    RewriteCond %{REQUEST_METHOD} GET
+    RewriteRule ^api/v2/streaming/home$ api_cache.php [L,QSA]
+    RewriteCond %{REQUEST_METHOD} GET
+    RewriteRule ^api/v2/blog/marquee$ api_cache.php [L,QSA]
+
     # Redirect Trailing Slashes If Not A Folder...
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} (.+)/$

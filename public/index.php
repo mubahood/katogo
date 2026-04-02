@@ -15,9 +15,6 @@ define('LARAVEL_START', microtime(true));
 */
 $_pbc_uri = $_SERVER['REQUEST_URI'] ?? '';
 $_pbc_method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-// Debug: log what index.php sees (temporary - remove after debugging)
-@file_put_contents(__DIR__ . '/../storage/logs/pbc_debug.log',
-    date('H:i:s') . " METHOD={$_pbc_method} URI={$_pbc_uri}\n", FILE_APPEND);
 if ($_pbc_method === 'GET' && strpos($_pbc_uri, '/api/') !== false) {
     $_pbc_path = strtok($_pbc_uri, '?');
     // Shared endpoints: cache by path only (same for all users)
@@ -46,14 +43,6 @@ if ($_pbc_method === 'GET' && strpos($_pbc_uri, '/api/') !== false) {
         header('X-Cache: HIT');
         readfile($_pbc_file);
         exit;
-    }
-    // Debug: log cache miss reason (temporary)
-    if ($_pbc_file) {
-        $exists = file_exists($_pbc_file) ? 'Y' : 'N';
-        $age = file_exists($_pbc_file) ? (time() - filemtime($_pbc_file)) : -1;
-        @file_put_contents(__DIR__ . '/../storage/logs/pbc_debug.log',
-            date('H:i:s') . " MISS path={$_pbc_path} file=" . basename($_pbc_file) . " exists={$exists} age={$age} ttl={$_pbc_ttl}\n",
-            FILE_APPEND);
     }
 }
 
