@@ -885,13 +885,11 @@ class ApiController extends BaseController
         $today = $now->format('d');
         $topMovie = null;
 
-        // Safely get top movie with proper null checks
-
+        // Safely get top movie — cached 10 min
         try {
-            $trending =  TrendingNotification::getTrendingMovie();
-            if ($trending != null) {
-                $topMovie = $trending;
-            }
+            $topMovie = Cache::remember('v1_top_movie', 600, function () {
+                return TrendingNotification::getTrendingMovie();
+            });
         } catch (\Throwable $th) {
         }
 
@@ -899,14 +897,6 @@ class ApiController extends BaseController
 
         $lists = [];
         $movies = $oldest_listed_movies;
-        $my_view_ids = [];
-
-        // Safely get user's viewed movies
-        if ($u && $u->id) {
-            $my_view_ids = MovieView::where('user_id', $u->id)
-                ->pluck('movie_model_id')
-                ->toArray();
-        }
 
         //add latest movies list
         $my_list = [];
@@ -947,21 +937,16 @@ class ApiController extends BaseController
 
         $lists[] = $my_list;
 
-        //top movies
+        //top movies - cached globally for 5 min
         if (count($movies) > 10) {
-
-            //top movies 
-            //movies with most views_time_count but not in my_view_ids
-            $top_movies = MovieModel::whereNotIn('id', $my_view_ids)
-                ->where('status', 'Active')
-                ->where('type', 'Movie')
-                ->where('is_muno', 'Yes')
-                ->orderBy('views_time_count', 'desc')
-                ->limit(20)
-                ->get($take_only);
-
-            //shuffle $top_movies
-            // $top_movies = $top_movies->shuffle(); 
+            $top_movies = Cache::remember('v1_top_movies', 300, function () use ($take_only) {
+                return MovieModel::where('status', 'Active')
+                    ->where('type', 'Movie')
+                    ->where('is_muno', 'Yes')
+                    ->orderBy('views_time_count', 'desc')
+                    ->limit(20)
+                    ->get($take_only);
+            });
 
             if ($top_movies->count() > 0) {
                 $my_list = [];
@@ -973,53 +958,16 @@ class ApiController extends BaseController
 
 
 
-        //trending movies
+        //trending movies - cached globally for 5 min
         if (count($movies) > 20) {
-
-            $note_include_ids = [];
-            //get trending movies that are not in my_view_ids
-            if (is_array($my_view_ids) || is_object($my_view_ids)) {
-                foreach ($my_view_ids as $id) {
-                    $note_include_ids[] = $id;
-                }
-            }
-
-            //add already added movies add to note_include_ids
-            foreach ($lists as $key => $list) {
-                if (!isset($list['movies']) || count($list['movies']) < 1) {
-                    continue;
-                }
-                foreach ($list['movies'] as $key2 => $movie) {
-                    if ($movie && isset($movie->id)) {
-                        $note_include_ids[] = $movie->id;
-                    }
-                }
-            }
-
-
-            //trending movies
-            $trending_movies = MovieModel::whereNotIn('id', $note_include_ids)
-                ->where('status', 'Active')
-                ->where('type', 'Movie')
-                ->where('is_muno', 'Yes')
-                ->orderBy('downloads_count', 'desc')
-                ->limit(30)
-                ->get($take_only);
-
-            //shuffle $trending_movies
-            $trending_movies = $trending_movies->shuffle();
-
-
-            //if trending movies is empty, return empty list
-            if ($trending_movies->count() < 1) {
-                //get top 10 of that platform
-                $trending_movies = MovieModel::where('status', 'Active')
+            $trending_movies = Cache::remember('v1_trending_movies', 300, function () use ($take_only) {
+                return MovieModel::where('status', 'Active')
                     ->where('type', 'Movie')
                     ->where('is_muno', 'Yes')
                     ->orderBy('downloads_count', 'desc')
-                    ->limit(10)
+                    ->limit(30)
                     ->get($take_only);
-            }
+            })->shuffle();
 
             if ($trending_movies->count() > 0) {
                 $my_list = [];
@@ -1039,49 +987,42 @@ class ApiController extends BaseController
             $lists[] = $my_list;
         }
 
-        // Genre sections — filtered by actual genre, with daily page-cycling
+        // Genre sections — cached per genre for 10 min
         $genre_sections = ['Drama', 'Action', 'Comedy', 'Romance', 'Thriller'];
         $dayOfYear = Carbon::today()->dayOfYear;
-        $already_listed_genre_ids = [];
         foreach ($genre_sections as $genre_name) {
-            $genre_query = MovieModel::where('status', 'Active')
-                ->where('type', 'Movie')
-                ->where('is_muno', 'Yes')
-                ->where('genre', 'LIKE', "%{$genre_name}%")
-                ->whereNotIn('id', $already_listed_genre_ids);
-
-            $genre_total = $genre_query->count();
-            if ($genre_total < 3) continue;
-
-            // Page-cycle through genre catalogue daily
-            $genre_pages = max(1, (int) ceil($genre_total / 20));
-            $genre_page  = $dayOfYear % $genre_pages;
-            $genre_movies = $genre_query
-                ->orderByRaw('RAND(' . crc32($genre_name) . ')')
-                ->offset($genre_page * 20)
-                ->limit(20)
-                ->get($take_only);
-
-            // Wrap around if near end
-            if ($genre_movies->count() < 3) {
-                $genre_movies = MovieModel::where('status', 'Active')
+            $genre_movies = Cache::remember("v1_genre_{$genre_name}_{$dayOfYear}", 600, function () use ($genre_name, $dayOfYear, $take_only) {
+                $genre_query = MovieModel::where('status', 'Active')
                     ->where('type', 'Movie')
                     ->where('is_muno', 'Yes')
-                    ->where('genre', 'LIKE', "%{$genre_name}%")
+                    ->where('genre', 'LIKE', "%{$genre_name}%");
+
+                $genre_total = $genre_query->count();
+                if ($genre_total < 3) return collect();
+
+                $genre_pages = max(1, (int) ceil($genre_total / 20));
+                $genre_page  = $dayOfYear % $genre_pages;
+                $result = (clone $genre_query)
                     ->orderByRaw('RAND(' . crc32($genre_name) . ')')
+                    ->offset($genre_page * 20)
                     ->limit(20)
                     ->get($take_only);
-            }
+
+                if ($result->count() < 3) {
+                    $result = (clone $genre_query)
+                        ->orderByRaw('RAND(' . crc32($genre_name) . ')')
+                        ->limit(20)
+                        ->get($take_only);
+                }
+
+                return $result;
+            });
 
             if ($genre_movies->count() >= 3) {
                 $my_list = [];
                 $my_list['title'] = "{$genre_name} Movies";
                 $my_list['movies'] = $genre_movies;
                 $lists[] = $my_list;
-                $already_listed_genre_ids = array_merge(
-                    $already_listed_genre_ids,
-                    $genre_movies->pluck('id')->toArray()
-                );
             }
         }
 
