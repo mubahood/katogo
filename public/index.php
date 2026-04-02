@@ -44,6 +44,14 @@ if ($_pbc_method === 'GET' && strpos($_pbc_uri, '/api/') !== false) {
         readfile($_pbc_file);
         exit;
     }
+    // Debug: log cache miss reason (temporary)
+    if ($_pbc_file) {
+        $exists = file_exists($_pbc_file) ? 'Y' : 'N';
+        $age = file_exists($_pbc_file) ? (time() - filemtime($_pbc_file)) : -1;
+        @file_put_contents(__DIR__ . '/../storage/logs/pbc_debug.log',
+            date('H:i:s') . " MISS path={$_pbc_path} file=" . basename($_pbc_file) . " exists={$exists} age={$age} ttl={$_pbc_ttl}\n",
+            FILE_APPEND);
+    }
 }
 
 /*
