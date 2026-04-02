@@ -23,6 +23,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -454,11 +455,8 @@ class ApiController extends BaseController
         $u = Utils::get_user($r);
 
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
         if ($u == null) {
             return $this->error('User not found.');
@@ -588,11 +586,8 @@ class ApiController extends BaseController
     {
         $u = Utils::get_user($r);
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
         if ($u == null) {
             $administrator_id = Utils::get_user_id($r);
@@ -639,11 +634,8 @@ class ApiController extends BaseController
 
         $u = Utils::get_user($r);
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
         $sender = $u;
         if ($sender == null) {
@@ -734,27 +726,22 @@ class ApiController extends BaseController
     {
         $u = Utils::get_user($r);
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $app_type = Utils::get_app_type($r);
-                $app_types = ['ugflix', 'lugaflix', 'muno_app', 'web'];
-                if (!in_array($app_type, $app_types)) {
-                    $app_type = 'ugflix';
-                }
-                $u->app_type = $app_type; 
-                $platform = Utils::get_platform_from_request($r);
-                if ($platform != null) {
-                    $u->platform = $platform;
-                }
-                $u->last_online_at = now();
-                $u->save();
+            $app_type = Utils::get_app_type($r);
+            $app_types = ['ugflix', 'lugaflix', 'muno_app', 'web'];
+            if (!in_array($app_type, $app_types)) {
+                $app_type = 'ugflix';
             }
+            $u->app_type = $app_type; 
+            $platform = Utils::get_platform_from_request($r);
+            if ($platform != null) {
+                $u->platform = $platform;
+            }
+            $u->last_online_at = now();
+            $u->save();
         }
         if ($u == null) {
             return $this->error('User not found.');
         }
-
-        $u = User::find($u->id);
 
         $pendingPayments = SubscriptionTransaction::whereNotIn('status', ['Completed'])
             ->where('created_at', '>=', Carbon::now()->subHours(24 * 3)) // only check last 72 hours
@@ -932,12 +919,14 @@ class ApiController extends BaseController
         //add latest movies list
         $my_list = [];
         $my_list['title'] = "Latest Movies";
-        $my_list['movies'] = MovieModel::where('status', 'Active')
-            ->where('type', 'Movie')
-            ->where('is_muno', 'Yes')
-            ->orderBy('created_at', 'desc')
-            ->limit(20)
-            ->get($take_only);
+        $my_list['movies'] = Cache::remember('v1_latest_movies', 300, function () use ($take_only) {
+            return MovieModel::where('status', 'Active')
+                ->where('type', 'Movie')
+                ->where('is_muno', 'Yes')
+                ->orderBy('created_at', 'desc')
+                ->limit(20)
+                ->get($take_only);
+        });
         $lists[] = $my_list;
 
 
@@ -1107,63 +1096,66 @@ class ApiController extends BaseController
 
 
 
-        $unique_genres = [];
-        try {
-            $sql = "SELECT DISTINCT genre FROM movie_models WHERE genre IS NOT NULL AND genre != ''";
-            $genres = DB::select($sql);
-            foreach ($genres as $key => $genre) {
-                if (isset($genre->genre) && !empty($genre->genre)) {
-                    $slilts = explode(",", $genre->genre);
-                    foreach ($slilts as $key => $slit) {
-                        $slit = trim($slit);
-                        if (strlen($slit) > 0 && !in_array($slit, $unique_genres)) {
-                            $unique_genres[] = $slit;
-                        }
-                    }
-                }
-            }
-
-            $temp_genres = $unique_genres;
+        $unique_genres = Cache::remember('v1_manifest_genres', 600, function () {
             $unique_genres = [];
-            //slits using /
-            foreach ($temp_genres as $key => $genre) {
-                if (!empty($genre)) {
-                    $slilts = explode("/", $genre);
-                    foreach ($slilts as $key => $slit) {
-                        $slit = trim($slit);
-                        if (strlen($slit) >= 2 && !in_array($slit, $unique_genres)) {
-                            $unique_genres[] = $slit;
+            try {
+                $sql = "SELECT DISTINCT genre FROM movie_models WHERE genre IS NOT NULL AND genre != ''";
+                $genres = DB::select($sql);
+                foreach ($genres as $key => $genre) {
+                    if (isset($genre->genre) && !empty($genre->genre)) {
+                        $slilts = explode(",", $genre->genre);
+                        foreach ($slilts as $key => $slit) {
+                            $slit = trim($slit);
+                            if (strlen($slit) > 0 && !in_array($slit, $unique_genres)) {
+                                $unique_genres[] = $slit;
+                            }
                         }
                     }
                 }
-            }
-        } catch (\Exception $e) {
-            // If genre processing fails, continue with empty array
-            $unique_genres = [];
-        }
 
-        $unique_vj = [];
-        try {
-            $sql = "SELECT DISTINCT vj FROM movie_models WHERE vj IS NOT NULL AND vj != ''";
-            $vjs = DB::select($sql);
-            foreach ($vjs as $key => $vj) {
-                if (isset($vj->vj) && !empty($vj->vj)) {
-                    $slilts = explode(",", $vj->vj);
-                    foreach ($slilts as $key => $slit) {
-                        $slit = trim($slit);
-                        //remove vj from vj
-                        $slit = str_replace(["vj", "VJ", "Vj"], "", $slit);
-                        $slit = str_replace([" ", "-"], "", $slit);
-                        if (strlen($slit) > 0 && !in_array($slit, $unique_vj)) {
-                            $unique_vj[] = $slit;
+                $temp_genres = $unique_genres;
+                $unique_genres = [];
+                //slits using /
+                foreach ($temp_genres as $key => $genre) {
+                    if (!empty($genre)) {
+                        $slilts = explode("/", $genre);
+                        foreach ($slilts as $key => $slit) {
+                            $slit = trim($slit);
+                            if (strlen($slit) >= 2 && !in_array($slit, $unique_genres)) {
+                                $unique_genres[] = $slit;
+                            }
                         }
                     }
                 }
+            } catch (\Exception $e) {
+                $unique_genres = [];
             }
-        } catch (\Exception $e) {
-            // If VJ processing fails, continue with empty array
+            return $unique_genres;
+        });
+
+        $unique_vj = Cache::remember('v1_manifest_vjs', 600, function () {
             $unique_vj = [];
-        }
+            try {
+                $sql = "SELECT DISTINCT vj FROM movie_models WHERE vj IS NOT NULL AND vj != ''";
+                $vjs = DB::select($sql);
+                foreach ($vjs as $key => $vj) {
+                    if (isset($vj->vj) && !empty($vj->vj)) {
+                        $slilts = explode(",", $vj->vj);
+                        foreach ($slilts as $key => $slit) {
+                            $slit = trim($slit);
+                            $slit = str_replace(["vj", "VJ", "Vj"], "", $slit);
+                            $slit = str_replace([" ", "-"], "", $slit);
+                            if (strlen($slit) > 0 && !in_array($slit, $unique_vj)) {
+                                $unique_vj[] = $slit;
+                            }
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                $unique_vj = [];
+            }
+            return $unique_vj;
+        });
 
         $iosMovies = MovieModel::where(['platform_type' => 'ios'])->get();
 
@@ -1261,36 +1253,26 @@ class ApiController extends BaseController
 
         if ($u && $u->id) {
             try {
-                // Count watchlist items
-                $dashboard_stats['watchlist_count'] = \App\Models\MovieWishlist::where('user_id', $u->id)
-                    ->count();
-
-                // Count watch history
-                $dashboard_stats['watch_history_count'] = \App\Models\MovieView::where('user_id', $u->id)
-                    ->count();
-
-                // Count liked movies
-                $dashboard_stats['liked_movies_count'] = \App\Models\MovieLike::where('user_id', $u->id)
-                    ->count();
-
-                // Count user's products
-                $dashboard_stats['products_count'] = \App\Models\Product::where('user_id', $u->id)
-                    ->count();
-
-                // Count active chats (messages sent by user)
-                $sent_count = \App\Models\ChatMessage::where('sender_id', $u->id)
-                    ->distinct('receiver_id')
-                    ->count('receiver_id');
-
-                // Count active chats (messages received by user)
-                $received_count = \App\Models\ChatMessage::where('receiver_id', $u->id)
-                    ->distinct('sender_id')
-                    ->count('sender_id');
-
-                $dashboard_stats['active_chats_count'] = $sent_count + $received_count;
-
-                // Orders count - set to 0 for now (Order model doesn't exist yet)
-                $dashboard_stats['total_orders_count'] = 0;
+                $dashboard_stats = Cache::remember("v1_dash_stats_{$u->id}", 120, function () use ($u) {
+                    $stats = [
+                        'watchlist_count' => 0,
+                        'watch_history_count' => 0,
+                        'liked_movies_count' => 0,
+                        'products_count' => 0,
+                        'active_chats_count' => 0,
+                        'total_orders_count' => 0,
+                    ];
+                    $stats['watchlist_count'] = \App\Models\MovieWishlist::where('user_id', $u->id)->count();
+                    $stats['watch_history_count'] = \App\Models\MovieView::where('user_id', $u->id)->count();
+                    $stats['liked_movies_count'] = \App\Models\MovieLike::where('user_id', $u->id)->count();
+                    $stats['products_count'] = \App\Models\Product::where('user_id', $u->id)->count();
+                    $sent_count = \App\Models\ChatMessage::where('sender_id', $u->id)
+                        ->distinct('receiver_id')->count('receiver_id');
+                    $received_count = \App\Models\ChatMessage::where('receiver_id', $u->id)
+                        ->distinct('sender_id')->count('sender_id');
+                    $stats['active_chats_count'] = $sent_count + $received_count;
+                    return $stats;
+                });
             } catch (\Exception $e) {
                 // If stats collection fails, use default values (already set above)
             }

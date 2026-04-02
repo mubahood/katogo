@@ -27,6 +27,15 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Process\Process;
 
+/*
+|--------------------------------------------------------------------------
+| Protected Processing Routes
+|--------------------------------------------------------------------------
+| These routes require ?key=PROCESSING_ROUTE_KEY in the URL.
+| Example: /process-episodes-new?key=your_secret_key
+*/
+Route::middleware('processing.auth')->group(function () {
+
 Route::get('process-episodes-new', function (Request $request) {
     $episodePages = MovieCrawlerPage::where('is_episode', 'Yes')
         ->where('is_muno', 'Yes')
@@ -2472,6 +2481,7 @@ Route::get('migrate', function () {
     return Artisan::output();
 });
 
+}); // End of processing.auth middleware group
 
 // Basic Authentication Routes
 Route::get('/login', function () {
@@ -2482,6 +2492,9 @@ Route::post('/logout', function () {
     auth()->logout();
     return redirect('/');
 })->name('logout');
+
+// Dating crawler routes also protected
+Route::middleware('processing.auth')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
@@ -2812,6 +2825,8 @@ Route::get('process-dating-profile/{page_id}', function ($pageId) {
         echo "<pre style='padding: 10px; background: #f8f9fa; border: 1px solid #dee2e6; overflow: auto;'>" . htmlspecialchars($e->getTraceAsString()) . "</pre>";
         echo "</details>";
     }
+});
+
 });
 
 /*

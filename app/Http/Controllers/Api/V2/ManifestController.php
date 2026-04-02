@@ -63,10 +63,6 @@ class ManifestController extends Controller
         if (!$u) {
             return Utils::error('User not found.');
         }
-        $u = User::find($u->id);
-        if (!$u) {
-            return Utils::error('User not found.');
-        }
 
         $app_type = Utils::get_app_type($request);
         $validTypes = ['ugflix', 'lugaflix', 'muno_app', 'web'];
@@ -837,38 +833,38 @@ class ManifestController extends Controller
      */
     private function getDashboardStats(User $u): array
     {
-        $stats = [
-            'watchlist_count'     => 0,
-            'watch_history_count' => 0,
-            'liked_movies_count'  => 0,
-            'active_chats_count'  => 0,
-            'downloads'           => [
-                'total'   => 0,
-                'in_app'  => 0,
-                'gallery' => 0,
-            ],
-        ];
-
-        try {
-            $stats['watchlist_count']     = MovieWishlist::where('user_id', $u->id)->count();
-            $stats['watch_history_count'] = MovieView::where('user_id', $u->id)->count();
-            $stats['liked_movies_count']  = MovieLike::where('user_id', $u->id)->count();
-
-            $sent     = ChatMessage::where('sender_id', $u->id)->distinct('receiver_id')->count('receiver_id');
-            $received = ChatMessage::where('receiver_id', $u->id)->distinct('sender_id')->count('sender_id');
-            $stats['active_chats_count'] = $sent + $received;
-
-            $dlBase = MovieDownload::where('user_id', $u->id);
-            $stats['downloads'] = [
-                'total'   => (clone $dlBase)->count(),
-                'in_app'  => (clone $dlBase)->where('download_type', 'in_app')->count(),
-                'gallery' => (clone $dlBase)->where('download_type', 'gallery')->count(),
+        return Cache::remember("v2_dash_stats_{$u->id}", 120, function () use ($u) {
+            $stats = [
+                'watchlist_count'     => 0,
+                'watch_history_count' => 0,
+                'liked_movies_count'  => 0,
+                'active_chats_count'  => 0,
+                'downloads'           => ['total' => 0, 'in_app' => 0, 'gallery' => 0],
             ];
-        } catch (\Exception $e) {
-            // Use defaults
-        }
 
-        return $stats;
+            try {
+                $stats['watchlist_count']     = MovieWishlist::where('user_id', $u->id)->count();
+                $stats['watch_history_count'] = MovieView::where('user_id', $u->id)->count();
+                $stats['liked_movies_count']  = MovieLike::where('user_id', $u->id)->count();
+
+                $sent     = ChatMessage::where('sender_id', $u->id)->distinct('receiver_id')->count('receiver_id');
+                $received = ChatMessage::where('receiver_id', $u->id)->distinct('sender_id')->count('sender_id');
+                $stats['active_chats_count'] = $sent + $received;
+
+                $dl = MovieDownload::where('user_id', $u->id)
+                    ->selectRaw('COUNT(*) as total, SUM(CASE WHEN download_type = "in_app" THEN 1 ELSE 0 END) as in_app, SUM(CASE WHEN download_type = "gallery" THEN 1 ELSE 0 END) as gallery')
+                    ->first();
+                $stats['downloads'] = [
+                    'total'   => $dl->total ?? 0,
+                    'in_app'  => $dl->in_app ?? 0,
+                    'gallery' => $dl->gallery ?? 0,
+                ];
+            } catch (\Exception $e) {
+                // Use defaults
+            }
+
+            return $stats;
+        });
     }
 
     /**

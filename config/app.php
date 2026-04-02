@@ -76,6 +76,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Processing Route Secret Key
+    |--------------------------------------------------------------------------
+    |
+    | Used to protect internal batch processing web routes from public access.
+    |
+    */
+
+    'processing_route_key' => env('PROCESSING_ROUTE_KEY'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |

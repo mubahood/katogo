@@ -5116,90 +5116,23 @@ class Utils
     }
     public static function get_user(Request $r)
     {
-
-
+        // 1. Try JWT auth (single query via guard)
         $u = auth('api')->user();
-        $logged_in_user_id = $r->header('logged_in_user_id');
-        if ($logged_in_user_id) $u = User::find($logged_in_user_id);
-        if ($u != null) {
-            $u = User::find($u->id);
-            // $u->autoAssignFreeTrial();
-            return $u;
-        }
 
-        $u = auth('api')->user();
-        if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                try {
-                    // $u->autoAssignFreeTrial();
-                    return $u;
-                } catch (\Throwable $th) {
-                    //throw $th;
-                }
-            }
-        } else {
-            return $u;
-        }
-
-        if ($u != null) {
-            try {
-                // $u->autoAssignFreeTrial();
-                return $u;
-            } catch (\Throwable $th) {
-                //throw $th;
+        // 2. Override with explicit logged_in_user_id header/param if provided
+        if (!$u) {
+            $logged_in_user_id = $r->header('logged_in_user_id')
+                ?? $r->input('logged_in_user_id');
+            if ($logged_in_user_id) {
+                $u = User::find($logged_in_user_id);
             }
         }
 
-
-        $logged_in_user_id = $r->header('logged_in_user_id');
-        if ($logged_in_user_id == null) {
-            $logged_in_user_id = $r->get('logged_in_user_id');
-        }
-        if ($logged_in_user_id == null) {
-            $logged_in_user_id = $r->input('logged_in_user_id');
-        }
-        if ($logged_in_user_id == null) {
-            $logged_in_user_id = $r->logged_in_user_id;
-        }
-
-        $u = User::find($logged_in_user_id);
-        if ($u == null) {
-            $logged_in_user_id = $r->get('logged_in_user_id');
-            $u = User::find($logged_in_user_id);
-            if ($u != null) {
-                try {
-                    // $u->autoAssignFreeTrial();
-                } catch (\Throwable $th) {
-                    //throw $th;
-                }
-            }
-        } else {
-            return $u;
-        }
-
-
-        if ($u == null) {
+        // 3. Fallback to guest user
+        if (!$u) {
             $u = self::get_guest_user();
-
-            if ($u != null) {
-                try {
-                    // $u->autoAssignFreeTrial();
-                } catch (\Throwable $th) {
-                    //throw $th;
-                }
-            }
-        } else {
-            return $u;
         }
 
-        if ($u != null) {
-            try {
-                // $u->autoAssignFreeTrial();
-            } catch (\Throwable $th) {
-                //throw $th;
-            }
-        }
         return $u;
     }
 

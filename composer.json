@@ -16,17 +16,17 @@
         "laravel-admin-ext/media-player": "^1.1",
         "laravel/framework": "^10.10",
         "laravel/sanctum": "^3.3",
-        "laravel/tinker": "^2.8",
-        "rap2hpoutre/laravel-log-viewer": "^2.5",
         "tymon/jwt-auth": "^2.2"
     },
     "require-dev": {
         "fakerphp/faker": "^1.9.1",
         "laravel/pint": "^1.0",
         "laravel/sail": "^1.18",
+        "laravel/tinker": "^2.8",
         "mockery/mockery": "^1.4.4",
         "nunomaduro/collision": "^7.0",
         "phpunit/phpunit": "^10.1",
+        "rap2hpoutre/laravel-log-viewer": "^2.5",
         "spatie/laravel-ignition": "^2.0"
     },
     "autoload": {

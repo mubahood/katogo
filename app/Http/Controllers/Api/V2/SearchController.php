@@ -1022,11 +1022,7 @@ class SearchController extends Controller
 
     private function resolveUser(Request $request): ?User
     {
-        $u = Utils::get_user($request);
-        if ($u) {
-            $u = User::find($u->id);
-        }
-        return $u;
+        return Utils::get_user($request);
     }
 
     private function cleanUrls(array $items): array

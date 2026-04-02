@@ -77,25 +77,13 @@ class MovieModel extends Model
         parent::boot();
 
         static::created(function ($model) {
-            //create//total_episodes
-            if ($model->type == 'Series') {
-                $series = SeriesMovie::find($model->category_id);
-                if ($series != null) {
-                    $count_tot_episodes = MovieModel::where('category_id', $series->id)->count();
-                    $sql = "UPDATE series_movies SET total_episodes = $count_tot_episodes WHERE id = $series->id";
-                    DB::update($sql);
-                }
+            if ($model->type == 'Series' && $model->category_id) {
+                DB::statement("UPDATE series_movies SET total_episodes = (SELECT COUNT(*) FROM movie_models WHERE category_id = ?) WHERE id = ?", [$model->category_id, $model->category_id]);
             }
         });
         static::updated(function ($model) {
-            //create//total_episodes
-            if ($model->type == 'Series') {
-                $series = SeriesMovie::find($model->category_id);
-                if ($series != null) {
-                    $count_tot_episodes = MovieModel::where('category_id', $series->id)->count();
-                    $sql = "UPDATE series_movies SET total_episodes = $count_tot_episodes WHERE id = $series->id";
-                    DB::update($sql);
-                }
+            if ($model->type == 'Series' && $model->category_id) {
+                DB::statement("UPDATE series_movies SET total_episodes = (SELECT COUNT(*) FROM movie_models WHERE category_id = ?) WHERE id = ?", [$model->category_id, $model->category_id]);
             }
         });
         static::creating(function ($model) {

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Utils;
 use App\Traits\ApiResponser;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -680,9 +681,13 @@ class MovieController extends Controller
             return $this->error('Movie not found.', 404);
         }
 
-        // Live counts
-        $movie->views_count = MovieView::where('movie_model_id', $id)->count();
-        $movie->likes_count = MovieLike::where('movie_model_id', $id)->count();
+        // Cached counts (refresh every 5 minutes)
+        $movie->views_count = Cache::remember("movie_{$id}_views", 300, function () use ($id) {
+            return MovieView::where('movie_model_id', $id)->count();
+        });
+        $movie->likes_count = Cache::remember("movie_{$id}_likes", 300, function () use ($id) {
+            return MovieLike::where('movie_model_id', $id)->count();
+        });
 
         $movieData = $this->cleanUrlSingle($movie->toArray());
 
@@ -968,11 +973,8 @@ class MovieController extends Controller
     {
         $u = Utils::get_user($request);
         if ($u) {
-            $u = User::find($u->id);
-            if ($u) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
         return $u;
     }

@@ -25,7 +25,8 @@ return [
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
         'http://localhost:8888',
-        '*'
+        'https://katogo.ugnews24.info',
+        'https://about.u-lits.com',
     ],
 
     'allowed_origins_patterns' => [],

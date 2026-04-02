@@ -26,13 +26,20 @@ class MovieDownload extends Model
         parent::boot();
 
         $syncCounts = function ($model) {
-            $movie = MovieModel::find($model->movie_model_id);
-            if ($movie) {
-                $base = MovieDownload::where('movie_model_id', $model->movie_model_id);
-                $movie->downloads_count          = (clone $base)->count();
-                $movie->in_app_downloads_count    = (clone $base)->where('download_type', 'in_app')->count();
-                $movie->gallery_downloads_count   = (clone $base)->where('download_type', 'gallery')->count();
-                $movie->save();
+            $counts = MovieDownload::where('movie_model_id', $model->movie_model_id)
+                ->selectRaw('
+                    COUNT(*) as total,
+                    SUM(CASE WHEN download_type = "in_app" THEN 1 ELSE 0 END) as in_app,
+                    SUM(CASE WHEN download_type = "gallery" THEN 1 ELSE 0 END) as gallery
+                ')
+                ->first();
+
+            if ($counts) {
+                MovieModel::where('id', $model->movie_model_id)->update([
+                    'downloads_count' => $counts->total ?? 0,
+                    'in_app_downloads_count' => $counts->in_app ?? 0,
+                    'gallery_downloads_count' => $counts->gallery ?? 0,
+                ]);
             }
         };
 

@@ -33,11 +33,8 @@ class DynamicCrudController extends Controller
 
         $u = Utils::get_user($request);
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
 
         // 1) Check if user is authenticated
@@ -111,11 +108,8 @@ class DynamicCrudController extends Controller
     {
         $u = Utils::get_user($request);
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
         if (!$u) return $this->error("User not authenticated.");
 
@@ -170,13 +164,9 @@ class DynamicCrudController extends Controller
     {
         $u = Utils::get_user($request);
 
-
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
 
         $logged_in_user_id = $request->header('logged_in_user_id');
@@ -755,11 +745,8 @@ class DynamicCrudController extends Controller
     {
         $u = Utils::get_user($request);
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
         if (!$u) return $this->error("User not authenticated.");
 
@@ -1336,11 +1323,8 @@ class DynamicCrudController extends Controller
     {
         $u = Utils::get_user($request);
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
-            }
+            $u->last_online_at = now();
+            $u->save();
         }
         if ($u == null) {
             return $this->error('User not found.');
@@ -1490,10 +1474,9 @@ class DynamicCrudController extends Controller
         // ===== SUBSCRIPTION PROTECTION =====
         // Get the current user for authentication
         $u = Utils::get_user($request);
-      
 
-        // Refresh user data and update last online
-        $current = User::find($u->id);
+        // Update last online
+        $current = $u;
         if ($current == null) {
             return $this->error('User not found.', 404);
         }

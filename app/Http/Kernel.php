@@ -69,5 +69,6 @@ class Kernel extends HttpKernel
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         'subscription' => \App\Http\Middleware\CheckSubscription::class,
         'no-referrer' => \App\Http\Middleware\NoReferrerPolicy::class,
+        'processing.auth' => \App\Http\Middleware\ProcessingRouteAuth::class,
     ];
 }
