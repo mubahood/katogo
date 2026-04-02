@@ -1358,11 +1358,12 @@ class ApiController extends BaseController
             Utils::error("Movie not found.");
         }
 
+        // Throttle last_online_at update to once per 5 minutes
         if ($u != null) {
-            $u = User::find($u->id);
-            if ($u != null) {
-                $u->last_online_at = now();
-                $u->save();
+            $cacheKey = "last_online_{$u->id}";
+            if (!Cache::has($cacheKey)) {
+                Cache::put($cacheKey, true, 300);
+                DB::table('users')->where('id', $u->id)->update(['last_online_at' => now()]);
             }
         }
 

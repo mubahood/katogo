@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class MovieView extends Model
 {
@@ -24,17 +25,27 @@ class MovieView extends Model
     ]; 
 
 
-    //boot
+    //boot - throttle view count updates to once per 5 min per movie
     protected static function boot()
     {
         parent::boot();
 
         static::updated(function ($model) {
-            $model->update_views();
+            $model->throttled_update_views();
         });
         static::created(function ($model) {
-            $model->update_views();
+            $model->throttled_update_views();
         });
+    }
+
+    // Throttled view update - only recalculate counts once per 5 min per movie
+    public function throttled_update_views(){
+        $cacheKey = "mv_views_update_{$this->movie_model_id}";
+        if (Cache::has($cacheKey)) {
+            return; // Skip - already updated recently
+        }
+        Cache::put($cacheKey, true, 300); // 5 min throttle
+        $this->update_views();
     }
 
     //udpated movie views
