@@ -725,24 +725,6 @@ class ApiController extends BaseController
     public function manifest(Request $r)
     {
         $u = Utils::get_user($r);
-        if ($u != null) {
-            // Throttle user profile update to once per 5 min
-            $profileCacheKey = "v1_profile_update_{$u->id}";
-            if (!Cache::has($profileCacheKey)) {
-                Cache::put($profileCacheKey, true, 300);
-                $app_type = Utils::get_app_type($r);
-                $app_types = ['ugflix', 'lugaflix', 'muno_app', 'web'];
-                if (!in_array($app_type, $app_types)) {
-                    $app_type = 'ugflix';
-                }
-                $platform = Utils::get_platform_from_request($r);
-                DB::table('users')->where('id', $u->id)->update(array_filter([
-                    'app_type' => $app_type,
-                    'platform' => $platform,
-                    'last_online_at' => now(),
-                ]));
-            }
-        }
         if ($u == null) {
             return $this->error('User not found.');
         }
@@ -1372,14 +1354,8 @@ class ApiController extends BaseController
             Utils::error("Movie not found.");
         }
 
-        // Throttle last_online_at update to once per 5 minutes
-        if ($u != null) {
-            $cacheKey = "last_online_{$u->id}";
-            if (!Cache::has($cacheKey)) {
-                Cache::put($cacheKey, true, 300);
-                DB::table('users')->where('id', $u->id)->update(['last_online_at' => now()]);
-            }
-        }
+        // last_online_at column doesn't exist in production - skip the update
+        // (app_type, platform, last_online_at columns are not in the users table)
 
 
         $view = MovieView::where([
