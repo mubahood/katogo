@@ -1,3 +1,8 @@
+# Enable LiteSpeed Cache for API responses
+<IfModule LiteSpeed>
+    CacheLookup on
+</IfModule>
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
@@ -8,16 +13,6 @@
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-
-    # Pre-bootstrap API cache: route cached endpoints through lightweight handler
-    RewriteCond %{REQUEST_METHOD} GET
-    RewriteRule ^api/v2/manifest$ api_cache.php?_pbc_path=/api/v2/manifest [L,QSA]
-    RewriteCond %{REQUEST_METHOD} GET
-    RewriteRule ^api/manifest$ api_cache.php?_pbc_path=/api/manifest [L,QSA]
-    RewriteCond %{REQUEST_METHOD} GET
-    RewriteRule ^api/v2/streaming/home$ api_cache.php?_pbc_path=/api/v2/streaming/home [L,QSA]
-    RewriteCond %{REQUEST_METHOD} GET
-    RewriteRule ^api/v2/blog/marquee$ api_cache.php?_pbc_path=/api/v2/blog/marquee [L,QSA]
 
     # Redirect Trailing Slashes If Not A Folder...
     RewriteCond %{REQUEST_FILENAME} !-d

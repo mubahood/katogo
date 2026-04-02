@@ -188,6 +188,10 @@ class ManifestController extends Controller
         $pbcKey = 'u_' . md5('/api/v2/manifest' . $userId . $app_type);
         @file_put_contents("{$cacheDir}/{$pbcKey}", json_encode(['code' => 1, 'message' => 'Manifest loaded.', 'data' => $responseData]));
 
+        // LiteSpeed Cache: cache per unique URL (user_id+app_type in query string)
+        header('X-LiteSpeed-Cache-Control: public, max-age=45');
+        header('X-LiteSpeed-Tag: manifest_v2');
+
         return Utils::success($responseData, 'Manifest loaded.');
     }
 

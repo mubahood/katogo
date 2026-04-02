@@ -1240,6 +1240,10 @@ class ApiController extends BaseController
         $pbcKey = 'u_' . md5('/api/manifest' . $pbcUid . $pbcApp);
         @file_put_contents("{$cacheDir}/{$pbcKey}", json_encode(['code' => 1, 'message' => 'Listed successfully.', 'data' => $manifest]));
 
+        // LiteSpeed Cache: cache per unique URL (user_id+app_type in query string)
+        header('X-LiteSpeed-Cache-Control: public, max-age=45');
+        header('X-LiteSpeed-Tag: manifest_v1');
+
         return Utils::success($manifest, "Listed successfully.");
     }
 

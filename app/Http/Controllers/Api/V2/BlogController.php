@@ -412,6 +412,10 @@ class BlogController extends Controller
         if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
         @file_put_contents("{$cacheDir}/shared_" . md5('/api/v2/blog/marquee'), json_encode(['code' => 1, 'status' => 1, 'message' => '', 'data' => ['posts' => $posts]]));
 
+        // LiteSpeed Cache: cache this response at the web server level
+        header('X-LiteSpeed-Cache-Control: public, max-age=120');
+        header('X-LiteSpeed-Tag: blog_marquee');
+
         return $this->success(['posts' => $posts]);
     }
 
