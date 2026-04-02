@@ -8,11 +8,11 @@
 
 // Debug: temporarily log what this file sees
 @file_put_contents(__DIR__ . '/../storage/logs/pbc_debug.log',
-    date('H:i:s') . ' URI=' . ($_SERVER['REQUEST_URI'] ?? 'null')
-    . ' QS=' . ($_SERVER['QUERY_STRING'] ?? 'null')
-    . ' REDIR=' . ($_SERVER['REDIRECT_URL'] ?? 'null')
-    . ' SCRIPT=' . ($_SERVER['SCRIPT_URL'] ?? 'null')
-    . ' ORIG=' . ($_SERVER['REQUEST_URI'] ?? 'null')
+    date('H:i:s') . ' ALL=' . json_encode(array_filter($_SERVER, function($k) {
+        return in_array($k, ['REQUEST_URI','QUERY_STRING','REDIRECT_URL','SCRIPT_URL',
+            'ORIG_PATH_INFO','PATH_INFO','SCRIPT_NAME','SCRIPT_FILENAME','PHP_SELF',
+            'REQUEST_METHOD','REDIRECT_QUERY_STRING','HTTP_X_REWRITE_URL']);
+    }, ARRAY_FILTER_USE_KEY))
     . "\n", FILE_APPEND);
 
 $uri = $_SERVER['REQUEST_URI'] ?? '';
