@@ -4,25 +4,10 @@
  * 
  * Serves cached API responses without loading Laravel.
  * If cache miss or expired, falls through to normal Laravel bootstrap.
+ * The original path is passed via _pbc_path query parameter by .htaccess.
  */
-
-// Debug: temporarily log what this file sees
-@file_put_contents(__DIR__ . '/../storage/logs/pbc_debug.log',
-    date('H:i:s') . ' ALL=' . json_encode(array_filter($_SERVER, function($k) {
-        return in_array($k, ['REQUEST_URI','QUERY_STRING','REDIRECT_URL','SCRIPT_URL',
-            'ORIG_PATH_INFO','PATH_INFO','SCRIPT_NAME','SCRIPT_FILENAME','PHP_SELF',
-            'REQUEST_METHOD','REDIRECT_QUERY_STRING','HTTP_X_REWRITE_URL']);
-    }, ARRAY_FILTER_USE_KEY))
-    . "\n", FILE_APPEND);
-
-$uri = $_SERVER['REQUEST_URI'] ?? '';
-$path = strtok($uri, '?');
-
-// LiteSpeed sometimes rewrites REQUEST_URI to the handler file — check REDIRECT_URL as fallback
-if (strpos($path, 'api_cache.php') !== false || strpos($path, '/api/') === false) {
-    $path = $_SERVER['REDIRECT_URL'] ?? $_SERVER['SCRIPT_URL'] ?? $path;
-}
-
+$path = $_GET['_pbc_path'] ?? '';
+$cacheDir = __DIR__ . '/../storage/api_cache';
 // Shared endpoints: same response for all users
 $shared = [
     '/api/v2/streaming/home'  => 120,
@@ -36,7 +21,6 @@ $peruser = [
 
 $file = null;
 $ttl = 0;
-$cacheDir = __DIR__ . '/../storage/api_cache';
 
 if (isset($shared[$path])) {
     $ttl = $shared[$path];
