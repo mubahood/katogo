@@ -15,6 +15,9 @@ define('LARAVEL_START', microtime(true));
 */
 $_pbc_uri = $_SERVER['REQUEST_URI'] ?? '';
 $_pbc_method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+// Debug: log what index.php sees (temporary - remove after debugging)
+@file_put_contents(__DIR__ . '/../storage/logs/pbc_debug.log',
+    date('H:i:s') . " METHOD={$_pbc_method} URI={$_pbc_uri}\n", FILE_APPEND);
 if ($_pbc_method === 'GET' && strpos($_pbc_uri, '/api/') !== false) {
     $_pbc_path = strtok($_pbc_uri, '?');
     // Shared endpoints: cache by path only (same for all users)
