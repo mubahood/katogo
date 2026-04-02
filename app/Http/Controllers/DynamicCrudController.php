@@ -10,6 +10,7 @@ use App\Models\MovieSearch;
 use App\Models\User;
 use App\Models\Utils;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use App\Traits\ApiResponser;
@@ -814,14 +815,6 @@ class DynamicCrudController extends Controller
 
         // ENHANCED INTELLIGENT SEARCH ENGINE or title_like
         if ($request->filled('search') || $request->filled('title_like')) {
-            
-            \Log::info('🎬 SEARCH BLOCK ENTERED (MOVIES)', [
-                'has_search' => $request->filled('search'),
-                'has_title_like' => $request->filled('title_like'),
-                'search_value' => $request->get('search'),
-                'title_like_value' => $request->get('title_like')
-            ]);
-
             $searchTerm = null;
             if ($request->filled('search')) {
                 $searchTerm = trim($request->get('search'));
@@ -831,9 +824,16 @@ class DynamicCrudController extends Controller
                 $searchTerm = trim($request->get('title_like'));
             }
 
-
-            $isLiveSearch = $request->get('live_search', false); // Check if this is live search
+            $isLiveSearch = $request->get('live_search', false);
             $perPage = $isLiveSearch ? 25 : $request->get('per_page', 21);
+            $currentPage = $request->get('page', 1);
+
+            // Cache search results for 2 minutes per query+page
+            $cacheKey = 'movie_search_' . md5($searchTerm . $perPage . $currentPage . ($isLiveSearch ? '1' : '0'));
+            $cachedResult = Cache::get($cacheKey);
+            if ($cachedResult) {
+                return $this->success($cachedResult, "Search Movies retrieved successfully.");
+            }
 
             // Words to ignore when breaking down search
             $ignoreWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'for', 'and', 'that', 'with', 'to', 'is', 'are', 'was', 'were'];
@@ -1054,64 +1054,19 @@ class DynamicCrudController extends Controller
                 ]
             ];
 
-            // 🔍 LOG SEARCH FOR ALL PLATFORMS (WEB + MOBILE)
-            $userAgent = $request->userAgent() ?? '';
-            $isMobileApp = stripos($userAgent, 'okhttp') !== false || 
-                           stripos($userAgent, 'dart') !== false ||
-                           $request->header('X-App-Platform') === 'mobile';
-            $u = Utils::get_user($request); 
-            \Log::info('🔍 SEARCH ANALYTICS CHECKPOINT (MOVIES)', [
-                'endpoint' => '/movies',
-                'searchTerm' => $searchTerm,
-                'userAgent' => $userAgent,
-                'isMobileApp' => $isMobileApp,
-                'hasUser' => $u ? true : false,
-                'userId' => $u ? $u->id : null,
-                'totalResults' => $totalResults,
-                'willAttemptLog' => !empty($searchTerm) // Changed: Now logs regardless of platform
-            ]);
-            
-            // LOG ALL SEARCHES - Mobile and Web
+            // Cache for 2 minutes
+            Cache::put($cacheKey, $response, 120);
+
+            // Log search (throttled)
             if (!empty($searchTerm)) {
                 try {
+                    $u = Utils::get_user($request);
                     $userId = $u ? $u->id : null;
                     $foundMovieIds = array_slice(array_keys($movieScores), 0, 10);
-                    
-                    \Log::info('🔍 ATTEMPTING TO LOG SEARCH (MOVIES)', [
-                        'searchTerm' => $searchTerm,
-                        'resultsCount' => $totalResults,
-                        'foundMovieIds' => $foundMovieIds,
-                        'userId' => $userId,
-                        'platform' => $isMobileApp ? 'mobile' : 'web'
-                    ]);
-                    
-                    $searchRecord = MovieSearch::logSearch(
-                        $searchTerm,
-                        $totalResults,
-                        $foundMovieIds,
-                        $userId,
-                        $request
-                    );
-                    
-                    \Log::info('✅ SEARCH LOGGED SUCCESSFULLY (MOVIES)', [
-                        'search_id' => $searchRecord ? $searchRecord->id : 'null',
-                        'search_term' => $searchTerm,
-                        'platform' => $isMobileApp ? 'mobile' : 'web'
-                    ]);
-                    
+                    MovieSearch::logSearch($searchTerm, $totalResults, $foundMovieIds, $userId, $request);
                 } catch (\Exception $e) {
-                    \Log::error('❌ FAILED TO LOG MOVIE SEARCH (MOVIES)', [
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
-                        'search_term' => $searchTerm,
-                        'user_id' => $userId ?? null
-                    ]);
+                    // silently fail
                 }
-            } else {
-                \Log::info('⏭️ SKIPPING SEARCH LOG (MOVIES)', [
-                    'reason' => 'Empty search term',
-                    'searchTerm' => $searchTerm
-                ]);
             }
 
             return $this->success($response, "Search Movies retrieved successfully.");

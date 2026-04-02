@@ -1055,13 +1055,23 @@ class MovieController extends Controller
     public function playback(Request $request, $id)
     {
         $user = $this->resolveUser($request);
+        $event = $request->input('event', 'progress');
+
+        // Throttle progress events: once per 60s per user+movie
+        if ($event === 'progress' && $user) {
+            $throttleKey = "pb_{$user->id}_{$id}";
+            if (Cache::has($throttleKey)) {
+                return $this->success(['event' => $event, 'movie_id' => (int) $id], 'Playback recorded');
+            }
+            Cache::put($throttleKey, true, 60);
+        }
+
         $movie = MovieModel::find($id);
 
         if (!$movie) {
             return $this->error('Movie not found', 404);
         }
 
-        $event      = $request->input('event', 'progress');
         $position   = (int) $request->input('position', 0);
         $duration   = (int) $request->input('duration', 0);
         $percentage = $request->input('percentage', $duration > 0 ? round(($position / $duration) * 100, 1) : 0);
@@ -1082,9 +1092,6 @@ class MovieController extends Controller
         if ($event === 'start') {
             $movie->increment('views_count');
         }
-
-        Log::info("V2 Playback [{$event}] movie={$id} pos={$position}/{$duration} ({$percentage}%)" .
-            ($user ? " user={$user->id}" : ' guest'));
 
         return $this->success([
             'event'      => $event,
