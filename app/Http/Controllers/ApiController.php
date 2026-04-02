@@ -761,13 +761,6 @@ class ApiController extends BaseController
         }
         // $u->autoAssignFreeTrial();
 
-        // Full response cache: return cached manifest JSON without rebuilding
-        $manifestCacheKey = "v1_manifest_resp_{$u->id}";
-        $cachedManifest = Cache::get($manifestCacheKey);
-        if ($cachedManifest !== null) {
-            return Utils::success($cachedManifest, "Listed successfully.");
-        }
-
         $APP_VERSION = 20;
         $UPDATE_NOTES = "- Fixed download disappearance bug
         - Added subscription management with free trial
@@ -1238,9 +1231,6 @@ class ApiController extends BaseController
                 'bearer_token' => 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
             ],
         ];
-
-        // Cache full manifest response for 2 minutes
-        Cache::put($manifestCacheKey, $manifest, 120);
 
         return Utils::success($manifest, "Listed successfully.");
     }
