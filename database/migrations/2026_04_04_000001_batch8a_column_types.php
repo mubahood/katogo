@@ -66,12 +66,14 @@ return new class extends Migration
 
         // P3-30..P3-42: ALTER movie_downloads columns (VARCHAR / DECIMAL / BOOLEAN / INT)
         // local_id is NOT NULL in original schema; keep NOT NULL.
+        // download_progress = percentage 0-100 (DECIMAL 5,2 is fine, max 100)
+        // watch_progress = seconds watched — can exceed 1000s for long films, use INT UNSIGNED
         DB::statement("
             ALTER TABLE movie_downloads
                 MODIFY COLUMN local_id           VARCHAR(500)      NOT NULL,
                 MODIFY COLUMN local_video_link   VARCHAR(2000)     NULL,
                 MODIFY COLUMN download_progress  DECIMAL(5,2)      NULL,
-                MODIFY COLUMN watch_progress     DECIMAL(5,2)      NULL,
+                MODIFY COLUMN watch_progress     INT UNSIGNED      NULL,
                 MODIFY COLUMN title              VARCHAR(500)      NULL,
                 MODIFY COLUMN url                VARCHAR(2000)     NULL,
                 MODIFY COLUMN image_url          VARCHAR(2000)     NULL,
