@@ -191,6 +191,7 @@ class ManifestController extends Controller
         // LiteSpeed Cache: cache per unique URL (user_id+app_type in query string)
         header('X-LiteSpeed-Cache-Control: public, max-age=45');
         header('X-LiteSpeed-Tag: manifest_v2');
+        header('Cache-Control: public, max-age=45');
 
         return Utils::success($responseData, 'Manifest loaded.');
     }

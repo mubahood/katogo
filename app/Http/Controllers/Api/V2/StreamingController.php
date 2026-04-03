@@ -258,9 +258,9 @@ class StreamingController extends Controller
         @file_put_contents("{$cacheDir}/shared_" . md5('/api/v2/streaming/home'), json_encode(['code' => 1, 'status' => 1, 'message' => '', 'data' => $data]));
 
         // LiteSpeed Cache: cache this response at the web server level
-        header('X-LiteSpeed-Cache-Control: public, max-age=120');
-        header('X-LiteSpeed-Tag: streaming_home');
-
-        return $this->success($data);
+        return $this->success($data)
+            ->header('X-LiteSpeed-Cache-Control', 'public, max-age=120')
+            ->header('X-LiteSpeed-Tag', 'streaming_home')
+            ->header('Cache-Control', 'public, max-age=120');
     }
 }
