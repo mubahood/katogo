@@ -21,9 +21,10 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/subscriptions-repair.log'));
 
-        // Check for expired subscriptions - runs daily at 1:00 AM
+        // Check for expired subscriptions — runs every hour (P7-13)
+        // Hourly instead of daily so users' statuses flip within minutes of expiry.
         $schedule->command('subscriptions:check-expired')
-            ->dailyAt('01:00')
+            ->hourly()
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/subscriptions-check-expired.log'));
@@ -163,6 +164,70 @@ class Kernel extends ConsoleKernel
                 ->where('deleted_at', '<', now()->subYear())
                 ->delete();
         })->weeklyOn(0, '04:45')->name('purge-old-content-reports')->withoutOverlapping();
+
+        // ──────────────────────────────────────────────────────────────────
+        // VIDEO PLAYBACK FAILURE CLEANUP (P6-01 / P6-02)
+        // ──────────────────────────────────────────────────────────────────
+
+        // Weekly: Delete resolved video_playback_failures older than 3 months (P6-01)
+        $schedule->call(function () {
+            \DB::table('video_playback_failures')
+                ->where('status', 'resolved')
+                ->where('created_at', '<', now()->subMonths(3))
+                ->delete();
+        })->weeklyOn(0, '05:00')->name('purge-resolved-vpf')->withoutOverlapping();
+
+        // Weekly: Delete ignored video_playback_failures older than 1 month (P6-02)
+        $schedule->call(function () {
+            \DB::table('video_playback_failures')
+                ->where('status', 'ignored')
+                ->where('created_at', '<', now()->subMonth())
+                ->delete();
+        })->weeklyOn(0, '05:05')->name('purge-ignored-vpf')->withoutOverlapping();
+
+        // ──────────────────────────────────────────────────────────────────
+        // SOFT-DELETE PURGE (P6-09 / P7-11)
+        // ──────────────────────────────────────────────────────────────────
+
+        // Monthly: Force-delete soft-deleted user_blocks older than 1 year (P6-09 / P7-11)
+        $schedule->call(function () {
+            \DB::table('user_blocks')
+                ->whereNotNull('deleted_at')
+                ->where('deleted_at', '<', now()->subYear())
+                ->delete();
+        })->monthlyOn(2, '05:00')->name('purge-old-user-blocks')->withoutOverlapping();
+
+        // ──────────────────────────────────────────────────────────────────
+        // DENORMALIZED COUNT SYNC (P7-08)
+        // Recalculates views_count / downloads_count / likes_count on movie_models
+        // from the real source tables — keeps displayed counts accurate even if
+        // individual increment/decrement calls get missed.
+        // ──────────────────────────────────────────────────────────────────
+
+        $schedule->call(function () {
+            \DB::statement("
+                UPDATE movie_models mm
+                LEFT JOIN (
+                    SELECT movie_model_id, COUNT(*) AS cnt
+                    FROM movie_views
+                    GROUP BY movie_model_id
+                ) v ON v.movie_model_id = mm.id
+                LEFT JOIN (
+                    SELECT movie_model_id, COUNT(*) AS cnt
+                    FROM movie_downloads
+                    GROUP BY movie_model_id
+                ) d ON d.movie_model_id = mm.id
+                LEFT JOIN (
+                    SELECT movie_model_id, COUNT(*) AS cnt
+                    FROM movie_likes
+                    GROUP BY movie_model_id
+                ) l ON l.movie_model_id = mm.id
+                SET
+                    mm.views_count     = COALESCE(v.cnt, 0),
+                    mm.downloads_count = COALESCE(d.cnt, 0),
+                    mm.likes_count     = COALESCE(l.cnt, 0)
+            ");
+        })->weeklyOn(0, '05:30')->name('sync-movie-counts')->withoutOverlapping();
     }
 
     /**

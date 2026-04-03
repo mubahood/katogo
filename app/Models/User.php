@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\HasApiTokens;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
@@ -304,22 +305,26 @@ class User extends Administrator implements JWTSubject
      */
     public function activeSubscription()
     {
-        // CRITICAL: Get ALL Active subscriptions and check properly
-        // Don't filter by end_date_time here - let isActive() handle it with grace period
-        $subscriptions = $this->subscriptions()
-            ->where('status', 'Active')
-            ->where('payment_status', 'Completed') // Only completed payments
-            ->orderBy('end_date_time', 'desc')
-            ->get();
+        // Cache per user for 2 minutes to avoid repeated DB hits on same request
+        // or across multiple quick successive requests (P5-02)
+        return Cache::remember("active_sub_{$this->id}", 120, function () {
+            // CRITICAL: Get ALL Active subscriptions and check properly
+            // Don't filter by end_date_time here - let isActive() handle it with grace period
+            $subscriptions = $this->subscriptions()
+                ->where('status', 'Active')
+                ->where('payment_status', 'Completed') // Only completed payments
+                ->orderBy('end_date_time', 'desc')
+                ->get();
 
-        // CRITICAL: Check each subscription with grace period included
-        foreach ($subscriptions as $subscription) {
-            if ($subscription->isActive(true)) { // Include grace period
-                return $subscription;
+            // CRITICAL: Check each subscription with grace period included
+            foreach ($subscriptions as $subscription) {
+                if ($subscription->isActive(true)) { // Include grace period
+                    return $subscription;
+                }
             }
-        }
 
-        return null;
+            return null;
+        }); // end Cache::remember active_sub
     }
 
     /**

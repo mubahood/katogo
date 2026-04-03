@@ -131,21 +131,21 @@ Create migration `2026_04_02_000002_optimize_column_types.php`:
 - [x] **P3-27** Change `movie_models.likes_count` from TEXT → INT UNSIGNED DEFAULT 0
 - [x] **P3-28** Change `movie_models.dislikes_count` from TEXT → INT UNSIGNED DEFAULT 0
 - [x] **P3-29** Change `movie_models.comments_count` from TEXT → INT UNSIGNED DEFAULT 0
-- [ ] **P3-30** Change `movie_downloads.local_id` from TEXT → VARCHAR(500)
-- [ ] **P3-31** Change `movie_downloads.url` from TEXT → VARCHAR(2000)
-- [ ] **P3-32** Change `movie_downloads.local_video_link` from TEXT → VARCHAR(2000)
-- [ ] **P3-33** Change `movie_downloads.image_url` from TEXT → VARCHAR(2000)
-- [ ] **P3-34** Change `movie_downloads.title` from TEXT → VARCHAR(500)
-- [ ] **P3-35** Change `movie_downloads.description` from TEXT → VARCHAR(5000) or keep TEXT
-- [ ] **P3-36** Change `movie_downloads.genre` from TEXT → VARCHAR(255)
-- [ ] **P3-37** Change `movie_downloads.vj` from TEXT → VARCHAR(255)
-- [ ] **P3-38** Change `movie_downloads.download_progress` from TEXT → DECIMAL(5,2)
-- [ ] **P3-39** Change `movie_downloads.watch_progress` from TEXT → DECIMAL(5,2)
-- [ ] **P3-40** Change `movie_downloads.is_premium` from TEXT → BOOLEAN
-- [ ] **P3-41** Change `movie_downloads.episode_number` from TEXT → INT UNSIGNED
-- [ ] **P3-42** Change `movie_downloads.is_first_episode` from TEXT → BOOLEAN
-- [ ] **P3-43** Change `series_movies.title` from TEXT → VARCHAR(500)
-- [ ] **P3-44** Change `series_movies.Category` from TEXT → VARCHAR(500)
+- [x] **P3-30** Change `movie_downloads.local_id` from TEXT → VARCHAR(500)
+- [x] **P3-31** Change `movie_downloads.url` from TEXT → VARCHAR(2000)
+- [x] **P3-32** Change `movie_downloads.local_video_link` from TEXT → VARCHAR(2000)
+- [x] **P3-33** Change `movie_downloads.image_url` from TEXT → VARCHAR(2000)
+- [x] **P3-34** Change `movie_downloads.title` from TEXT → VARCHAR(500)
+- [x] **P3-35** Change `movie_downloads.description` from TEXT → VARCHAR(5000) or keep TEXT
+- [x] **P3-36** Change `movie_downloads.genre` from TEXT → VARCHAR(255)
+- [x] **P3-37** Change `movie_downloads.vj` from TEXT → VARCHAR(255)
+- [x] **P3-38** Change `movie_downloads.download_progress` from TEXT → DECIMAL(5,2)
+- [x] **P3-39** Change `movie_downloads.watch_progress` from TEXT → DECIMAL(5,2)
+- [x] **P3-40** Change `movie_downloads.is_premium` from TEXT → BOOLEAN
+- [x] **P3-41** Change `movie_downloads.episode_number` from TEXT → INT UNSIGNED
+- [x] **P3-42** Change `movie_downloads.is_first_episode` from TEXT → BOOLEAN
+- [x] **P3-43** Change `series_movies.title` from TEXT → VARCHAR(500)
+- [x] **P3-44** Change `series_movies.Category` from TEXT → VARCHAR(500)
 
 > **NOTE:** TEXT columns cannot be indexed by MySQL. Converting to VARCHAR enables indexing and reduces per-row storage from 65KB to actual needed bytes. **Estimated savings: 3+ GB on movie_models alone (50k rows).**
 
@@ -224,7 +224,7 @@ Files: `app/Models/SeriesMovie.php`, `app/Models/MovieModel.php`
 File: `app/Http/Controllers/Api/V2/ManifestController.php`
 
 - [x] **P5-01** Cache `getDashboardStats()` per user for 2 minutes — V1 and V2 manifest endpoints ✅
-- [ ] **P5-02** Cache active subscription check for 2 minutes per user
+- [x] **P5-02** Cache active subscription check for 2 minutes per user
 - [x] **P5-03** Add HTTP `Cache-Control: private, max-age=60, stale-while-revalidate=30` header to V2 manifest response ✅
 - [ ] **P5-04** Add ETag header based on content hash for conditional requests
 - [x] **P5-05** Increase manifest featured+sections cache TTL from 15 min to 30 min (1800s) ✅
@@ -259,15 +259,15 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 ## PHASE 6: DATABASE CLEANUP (Est. Impact: -30% DB size, faster queries)
 
 ### 6.1 Data That Can Be Purged
-- [ ] **P6-01** `video_playback_failures` — Delete rows where `status = 'resolved'` and `created_at < 3 months ago`
-- [ ] **P6-02** `video_playback_failures` — Delete rows where `status = 'ignored'` and `created_at < 1 month ago`
+- [x] **P6-01** `video_playback_failures` — Delete rows where `status = 'resolved'` and `created_at < 3 months ago`
+- [x] **P6-02** `video_playback_failures` — Delete rows where `status = 'ignored'` and `created_at < 1 month ago`
 - [x] **P6-03** `movie_crawler_pages` — Delete rows where `status = 'processed'` — *page_content set NULL for processed rows*
 - [x] **P6-04** `movie_crawler_pages.page_content` — Set to NULL after processing (currently stores entire HTML pages as LONGTEXT, up to 16MB each) — *done via SQL on production*
 - [x] **P6-05** `movie_crawler_websites.response_data` — Set to NULL after page processing (stores full HTML responses)
 - [x] **P6-06** `subscription_transactions.request_payload` — Truncate after 6 months (JSON payloads accumulate)
 - [x] **P6-07** `subscription_transactions.response_payload` — Truncate after 6 months
 - [x] **P6-08** `content_reports` (soft deleted) — Force delete records older than 1 year: `ContentReport::onlyTrashed()->where('deleted_at', '<', now()->subYear())->forceDelete()`
-- [ ] **P6-09** `user_blocks` (soft deleted) — Force delete expired+removed records older than 1 year
+- [x] **P6-09** `user_blocks` (soft deleted) — Force delete expired+removed records older than 1 year
 - [x] **P6-10** *(also purge game_invitations >7 days, via scheduler)* `game_invitations` — Delete expired invitations: `WHERE status = 'expired' AND created_at < 30 days ago`
 - [x] **P6-11** `game_sessions` — Delete abandoned/completed sessions older than 30 days
 - [x] **P6-12** `ludo_sessions` — Delete expired/completed sessions older than 30 days
@@ -310,14 +310,14 @@ Add to `app/Console/Kernel.php`:
 - [x] **P7-05** Daily: purge expired game invitations — `purge-expired-game-invitations` at 02:15 via scheduler ✅
 - [x] **P7-06** Daily: purge abandoned game sessions older than 24 hours
 - [x] **P7-07** Daily: expire old password reset tokens
-- [ ] **P7-08** Weekly: batch-update denormalized counts on `movie_models` (views_count, likes_count, downloads_count)
-- [ ] **P7-09** Weekly: purge resolved video playback failures older than 3 months
+- [x] **P7-08** Weekly: batch-update denormalized counts on `movie_models` (views_count, likes_count, downloads_count)
+- [x] **P7-09** Weekly: purge resolved video playback failures older than 3 months
 - [ ] **P7-10** Monthly: archive old movie_views, movie_downloads, chat_messages (older than 6 months)
-- [ ] **P7-11** Monthly: force-delete soft-deleted records older than 1 year
+- [x] **P7-11** Monthly: force-delete soft-deleted records older than 1 year
 - [ ] **P7-12** Monthly: clear crawler page_content data for processed pages
 
 ### 7.3 Subscription Expiry Processing
-- [ ] **P7-13** Schedule subscription expiry checker to run every hour (not on every API request)
+- [x] **P7-13** Schedule subscription expiry checker to run every hour (not on every API request)
 - [ ] **P7-14** Move expiry notification emails to queue
 
 ---
@@ -429,7 +429,7 @@ File: `app/Models/Utils.php`
 ### 11.2 Admin Grid Optimization
 - [ ] **P11-05** Add `$grid->model()->select()` to admin grids to select only needed columns (not `SELECT *`)
 - [x] **P11-06** Review all admin grid `->display()` closures for hidden N+1 queries — fixed UserController subscription+views N+1 via latestSubscription eager load + withCount ✅
-- [ ] **P11-07** Ensure all grids with relationships use `->with()` eager loading
+- [x] **P11-07** Ensure all grids with relationships use `->with()` eager loading
 
 ### 11.3 CSV Export Optimization
 - [ ] **P11-08** Ensure all admin grid CSV exports output clean text (no HTML) — already done for SubscriptionController
@@ -508,17 +508,17 @@ These high-impact items were completed but were not in the original plan:
 
 ## TOTAL TASK COUNT
 
-> Last counted: 3 April 2026 (after batch 7 — verified by grep)
+> Last counted: 4 April 2026 (after batch 8 — verified by grep)
 
 | Status | Count |
 |--------|-------|
-| Not Started `[ ]` | **91** |
+| Not Started `[ ]` | **67** |
 | In Progress `[~]` | 0 |
-| Completed `[x]` | **142** |
+| Completed `[x]` | **166** |
 | Blocked `[!]` | 0 |
 | **TOTAL** | **233** |
 
-> **Progress: 61% complete** (142/233 tasks done). *Batch 7 Apr 3: +22 tasks — subscriptions index (P3-06), movie_models TEXT→VARCHAR/INT (P3-20..29), P3-15 views_count index, P3-17/18 verified done, FULLTEXT index (P5-11), CORS methods+headers (P2-25/26), time/memory caps (P2-18/19), User boot hook dead-code removal (P4-11/12), UserController subscription+views N+1 fix (P11-06).*
+> **Progress: 71% complete** (166/233 tasks done). *Batch 8 Apr 4: +24 tasks — movie_downloads TEXT→narrower types (P3-30..42), series_movies TEXT→VARCHAR (P3-43/44), vpf cleanup crons (P6-01/02), user_blocks purge (P6-09), weekly count sync (P7-08/09), soft-delete purge (P7-11), expiry check hourly (P7-13), MovieViewController subscription N+1 fix (P11-07), activeSubscription 2-min cache (P5-02).*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
@@ -526,15 +526,15 @@ These high-impact items were completed but were not in the original plan:
 | Phase 0 (out-of-plan wins) | 9 | 9 | 100% |
 | Phase 1 (Env & Config) | 16 | 18 | 89% |
 | Phase 2 (Security) | 26 | 30 | 87% |
-| Phase 3 (DB Indexes) | 29 | 44 | 66% |
+| Phase 3 (DB Indexes) | 44 | 44 | 100% |
 | Phase 4 (N+1 Fixes) | 16 | 18 | 89% |
-| Phase 5 (API Caching) | 14 | 16 | 88% |
+| Phase 5 (API Caching) | 15 | 16 | 94% |
 | Phase 6 (DB Cleanup) | 13 | 28 | 46% |
-| Phase 7 (Scheduled Jobs) | 5 | 14 | 36% |
+| Phase 7 (Scheduled Jobs) | 9 | 14 | 64% |
 | Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
 | Phase 9 (Packages) | 0 | 10 | 0% |
 | Phase 10 (Architecture) | 0 | 15 | 0% |
-| Phase 11 (Admin Panel) | 5 | 10 | 50% |
+| Phase 11 (Admin Panel) | 6 | 10 | 60% |
 | Phase 12 (MySQL Tuning) | 0 | 7 | 0% |
 | Phase 13 (Monitoring) | 0 | 6 | 0% |
 

@@ -347,7 +347,7 @@ class MovieViewController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new MovieView());
-        $grid->model()->with(['movie', 'user'])->orderBy('updated_at', 'desc');
+        $grid->model()->with(['movie', 'user.latestSubscription'])->orderBy('updated_at', 'desc');
 
         $grid->quickSearch('ip_address', 'device', 'platform', 'browser', 'country', 'city');
 
@@ -413,8 +413,7 @@ class MovieViewController extends AdminController
         $grid->column('sub_status', 'Subscription')->display(function () {
             $u = $this->user ?: User::find($this->user_id);
             if (!$u) return '-';
-            $sub = Subscription::where('user_id', $u->id)
-                ->orderBy('end_date_time', 'desc')->first();
+            $sub = $u->latestSubscription;
             if (!$sub) {
                 return '<span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:#95a5a6">Free</span>';
             }
@@ -451,7 +450,7 @@ class MovieViewController extends AdminController
         $grid->column('_expand', 'Details')->expand(function ($model) {
             $movie = $model->movie ?: ($model->movie_model_id ? MovieModel::find($model->movie_model_id) : null);
             $user  = $model->user ?: ($model->user_id ? User::find($model->user_id) : null);
-            $sub = $user ? Subscription::where('user_id', $user->id)->orderBy('end_date_time', 'desc')->first() : null;
+            $sub = $user ? $user->latestSubscription : null;
 
             $html = '<div style="padding:15px;background:#f9f9f9;border-radius:8px;font-size:12px">';
 
