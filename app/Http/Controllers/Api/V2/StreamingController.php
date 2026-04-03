@@ -261,6 +261,7 @@ class StreamingController extends Controller
         return $this->success($data)
             ->header('X-LiteSpeed-Cache-Control', 'public, max-age=120')
             ->header('X-LiteSpeed-Tag', 'streaming_home')
-            ->header('Cache-Control', 'public, max-age=120');
+            ->header('Cache-Control', 'public, max-age=120')
+            ->withoutHeader('Vary');
     }
 }

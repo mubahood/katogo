@@ -416,7 +416,8 @@ class BlogController extends Controller
         return $this->success(['posts' => $posts])
             ->header('X-LiteSpeed-Cache-Control', 'public, max-age=120')
             ->header('X-LiteSpeed-Tag', 'blog_marquee')
-            ->header('Cache-Control', 'public, max-age=120');
+            ->header('Cache-Control', 'public, max-age=120')
+            ->withoutHeader('Vary');
     }
 
     // ────────────────────────────────────────────────
