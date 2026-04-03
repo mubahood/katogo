@@ -28,13 +28,15 @@ class LiteSpeedCacheGlobal
 
         $tag = $request->attributes->get('_lscache_tag');
 
-        // Set LSCache headers AFTER all other middleware (including HandleCors)
-        $response->headers->set('X-LiteSpeed-Cache-Control', "public, max-age={$maxAge}");
+        // Set cache-control on the response object (for the client)
         $response->headers->set('Cache-Control', "public, max-age={$maxAge}");
         $response->headers->remove('Vary');
 
+        // Use PHP native header() for LiteSpeed-specific headers
+        // LiteSpeed intercepts these during header output
+        header("X-LiteSpeed-Cache-Control: public, max-age={$maxAge}");
         if ($tag) {
-            $response->headers->set('X-LiteSpeed-Tag', $tag);
+            header("X-LiteSpeed-Tag: {$tag}");
         }
 
         return $response;
