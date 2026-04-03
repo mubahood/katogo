@@ -2473,6 +2473,13 @@ Route::get('munowatch-series-crawler', function () {
     }
 });
 
+Route::get('my-migrate', function () {
+    // Artisan::call('migrate');
+    //do run laravel migration command
+    Artisan::call('migrate', ['--force' => true]);
+    //returning the output
+    return Artisan::output();
+});
 Route::get('migrate', function () {
     // Artisan::call('migrate');
     //do run laravel migration command
