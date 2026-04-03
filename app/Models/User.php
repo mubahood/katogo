@@ -60,30 +60,9 @@ class User extends Administrator implements JWTSubject
                 $model->password = bcrypt('admin');
             }
 
-            if ($model->phone_number == null && strlen($model->phone_number) > 6) {
-                $phone_number = $model->phone_number;
-                $existing_user = User::where('phone_number', $phone_number)->first();
-                if ($existing_user != null) {
-                    throw new \Exception('Phone number already exists');
-                }
-            }
-
-            if ($model->email == null && strlen($model->email) > 6) {
-                $email = $model->email;
-                $existing_user = User::where('email', $email)->first();
-                if ($existing_user != null) {
-                    throw new \Exception('Email already exists');
-                }
-            }
-
-            //do the same for username
-            if ($model->username == null && strlen($model->username) > 6) {
-                $username = $model->username;
-                $existing_user = User::where('username', $username)->first();
-                if ($existing_user != null) {
-                    throw new \Exception('Username already exists');
-                }
-            }
+            // Uniqueness is enforced at the DB level (unique index on email).
+            // The old query-based checks here had inverted conditions (== null)
+            // so they never fired — removed to eliminate dead code (P4-11).
 
             return $model;
         });
@@ -103,28 +82,8 @@ class User extends Administrator implements JWTSubject
                 $model->name = $name;
             }
 
-            if ($model->phone_number == null && strlen($model->phone_number) > 6) {
-                $phone_number = $model->phone_number;
-                $existing_user = User::where('phone_number', $phone_number)->where('id', '!=', $model->id)->first();
-                if ($existing_user != null) {
-                    throw new \Exception('Phone number already exists');
-                }
-            }
-            if ($model->email == null && strlen($model->email) > 6) {
-                $email = $model->email;
-                $existing_user = User::where('email', $email)->where('id', '!=', $model->id)->first();
-                if ($existing_user != null) {
-                    throw new \Exception('Email already exists');
-                }
-            }
-            //do the same for username
-            if ($model->username == null && strlen($model->username) > 6) {
-                $username = $model->username;
-                $existing_user = User::where('username', $username)->where('id', '!=', $model->id)->first();
-                if ($existing_user != null) {
-                    throw new \Exception('Username already exists');
-                }
-            }
+            // Uniqueness enforced at DB level — old query-based checks had
+            // inverted conditions (== null) and never fired. Removed (P4-12).
 
             $model->username = $model->email;
             return $model;
@@ -308,6 +267,24 @@ class User extends Administrator implements JWTSubject
     public function subscriptions()
     {
         return $this->hasMany(\App\Models\Subscription::class, 'user_id');
+    }
+
+    /**
+     * Most recent subscription — used for admin grid eager loading (P11-06).
+     * Avoids N+1 when listing users in the admin panel.
+     */
+    public function latestSubscription()
+    {
+        return $this->hasOne(\App\Models\Subscription::class, 'user_id')
+            ->orderBy('end_date_time', 'desc');
+    }
+
+    /**
+     * Movie views relationship — used for withCount() in admin grid (P11-06).
+     */
+    public function movieViews()
+    {
+        return $this->hasMany(\App\Models\MovieView::class, 'user_id');
     }
 
     /**

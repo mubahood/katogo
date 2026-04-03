@@ -192,6 +192,9 @@ class UserController extends AdminController
     {
         $grid = new Grid(new User());
         $grid->model()->orderBy('id', 'desc');
+        // P11-06: Eager-load latest subscription + pre-aggregate view count
+        // to prevent N+1 (was 2 extra queries PER user row on the grid page).
+        $grid->model()->with('latestSubscription')->withCount('movieViews');
 
         $grid->quickSearch('name', 'username', 'email', 'phone_number');
 
@@ -246,9 +249,9 @@ class UserController extends AdminController
                 return "<i class='fa {$icon}' style='color:{$clr}'></i> " . ($v ?: '?');
             });
 
-        // Subscription status
+        // Subscription status — uses eager-loaded latestSubscription (no extra query per row)
         $grid->column('subscription', 'Subscription')->display(function () {
-            $sub = Subscription::where('user_id', $this->id)->orderBy('end_date_time', 'desc')->first();
+            $sub = $this->latestSubscription;
             if (!$sub) {
                 return "<span style='display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:#95a5a6'>Free</span>";
             }
@@ -259,9 +262,9 @@ class UserController extends AdminController
                  . ($end ? "<br><small class='text-muted'>{$end}</small>" : '');
         });
 
-        // View count
+        // View count — uses withCount('movieViews') pre-aggregated value (no extra query per row)
         $grid->column('views', 'Views')->display(function () {
-            $cnt = MovieView::where('user_id', $this->id)->count();
+            $cnt = $this->movie_views_count ?? 0;
             return $cnt > 0 ? "<span class='label label-info'>{$cnt}</span>" : '<small class="text-muted">0</small>';
         });
 

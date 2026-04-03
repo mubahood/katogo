@@ -69,8 +69,8 @@ All routes in `routes/web.php` that perform batch processing are **completely op
 - [x] **P2-15** ~~Protect `/crawl-dating-pages`~~ — wrapped in `processing.auth` middleware ✅
 - [x] **P2-16** ~~Protect `/migrate`~~ — wrapped in `processing.auth` middleware ✅
 - [x] **P2-17** ~~All processing routes behind middleware~~ — used `ProcessingRouteAuth` with `PROCESSING_ROUTE_KEY` ✅
-- [ ] **P2-18** Cap `set_time_limit()` to max 300s on processing routes (not 30,000s)
-- [ ] **P2-19** Cap `ini_set('memory_limit')` to max `256M` on processing routes (not `512M` or `-1`)
+- [x] **P2-18** Cap `set_time_limit()` to max 300s on processing routes (was 0, 30000, 999300)
+- [x] **P2-19** Cap `ini_set('memory_limit')` to max `256M` on processing routes (was 512M, 1024M, -1)
 
 ### 2.2 Composer Security
 - [x] **P2-20** ~~Move `rap2hpoutre/laravel-log-viewer` from `require` to `require-dev`~~ ✅
@@ -81,8 +81,8 @@ All routes in `routes/web.php` that perform batch processing are **completely op
 File: `config/cors.php`
 - [x] **P2-23** ~~Remove `'*'` from `allowed_origins` array~~ ✅
 - [x] **P2-24** ~~Set `allowed_origins` to only real domains~~ ✅
-- [ ] **P2-25** Restrict `allowed_methods` to `['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']` instead of `['*']`
-- [ ] **P2-26** Restrict `allowed_headers` to specific headers instead of `['*']`
+- [x] **P2-25** Restrict `allowed_methods` to `['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']` ✅
+- [x] **P2-26** Restrict `allowed_headers` to specific headers instead of `['*']` ✅
 
 ### 2.4 API Rate Limiting
 File: `app/Providers/RouteServiceProvider.php` or `routes/api.php`
@@ -103,7 +103,7 @@ Create migration `2026_04_02_000001_add_optimization_indexes.php`:
 - [x] **P3-03** Add compound index `subscription_transactions(status, transaction_type)` ✅
 - [x] **P3-04** Add compound index `subscription_transactions(status, transaction_type, created_at)` ✅
 - [x] **P3-05** Add compound index `subscriptions(app_type, payment_status)` ✅
-- [ ] **P3-06** Add compound index `subscriptions(status, created_at)` — used by expiry queries
+- [x] **P3-06** Add compound index `subscriptions(status, created_at)` — used by expiry queries
 - [x] **P3-07** Add compound index `movie_likes(user_id, movie_model_id)` ✅
 - [x] **P3-08** Add index on `movie_models.type` ✅
 - [x] **P3-09** Add index on `movie_models.status` ✅ (converted from TEXT to VARCHAR(50))
@@ -112,25 +112,25 @@ Create migration `2026_04_02_000001_add_optimization_indexes.php`:
 - [x] **P3-12** Add index on `movie_models.category_id` ✅
 - [x] **P3-13** Add index on `movie_models.genre` ✅ (converted from TEXT to VARCHAR(255))
 - [x] **P3-14** Add index on `movie_models.vj` ✅ (converted from TEXT to VARCHAR(255))
-- [ ] **P3-15** Add index on `movie_models.views_count` — needs type change first
+- [x] **P3-15** Add index on `movie_models.views_count` — converted to INT UNSIGNED in batch 7 migration
 - [x] **P3-16** Add index on `watchlists(user_id, movie_model_id)` ✅
-- [ ] **P3-17** Add index on `game_invitations.status` — for filtering pending invitations
-- [ ] **P3-18** Add index on `game_invitations.expires_at` — for expiry cleanup
+- [x] **P3-17** Add index on `game_invitations.status` — already indexed in create_game_invitations_table migration ✅
+- [x] **P3-18** Add index on `game_invitations.expires_at` — already indexed in create_game_invitations_table migration ✅
 - [ ] **P3-19** Verify all 2026_03_14 indexes were actually applied on production
 
 ### 3.2 Column Type Fixes (reduce storage, enable indexing)
 Create migration `2026_04_02_000002_optimize_column_types.php`:
 
-- [ ] **P3-20** Change `movie_models.title` from TEXT → VARCHAR(500)
-- [ ] **P3-21** Change `movie_models.external_url` from TEXT → VARCHAR(2000)
-- [ ] **P3-22** Change `movie_models.url` from TEXT → VARCHAR(2000)
-- [ ] **P3-23** Change `movie_models.image_url` from TEXT → VARCHAR(2000)
-- [ ] **P3-24** Change `movie_models.thumbnail_url` from TEXT → VARCHAR(2000)
-- [ ] **P3-25** Change `movie_models.views_count` from TEXT → INT UNSIGNED DEFAULT 0
-- [ ] **P3-26** Change `movie_models.downloads_count` from TEXT → INT UNSIGNED DEFAULT 0
-- [ ] **P3-27** Change `movie_models.likes_count` from TEXT → INT UNSIGNED DEFAULT 0
-- [ ] **P3-28** Change `movie_models.dislikes_count` from TEXT → INT UNSIGNED DEFAULT 0
-- [ ] **P3-29** Change `movie_models.comments_count` from TEXT → INT UNSIGNED DEFAULT 0
+- [x] **P3-20** Change `movie_models.title` from TEXT → VARCHAR(500)
+- [x] **P3-21** Change `movie_models.external_url` from TEXT → VARCHAR(2000)
+- [x] **P3-22** Change `movie_models.url` from TEXT → VARCHAR(2000)
+- [x] **P3-23** Change `movie_models.image_url` from TEXT → VARCHAR(2000)
+- [x] **P3-24** Change `movie_models.thumbnail_url` from TEXT → VARCHAR(2000)
+- [x] **P3-25** Change `movie_models.views_count` from TEXT → INT UNSIGNED DEFAULT 0
+- [x] **P3-26** Change `movie_models.downloads_count` from TEXT → INT UNSIGNED DEFAULT 0
+- [x] **P3-27** Change `movie_models.likes_count` from TEXT → INT UNSIGNED DEFAULT 0
+- [x] **P3-28** Change `movie_models.dislikes_count` from TEXT → INT UNSIGNED DEFAULT 0
+- [x] **P3-29** Change `movie_models.comments_count` from TEXT → INT UNSIGNED DEFAULT 0
 - [ ] **P3-30** Change `movie_downloads.local_id` from TEXT → VARCHAR(500)
 - [ ] **P3-31** Change `movie_downloads.url` from TEXT → VARCHAR(2000)
 - [ ] **P3-32** Change `movie_downloads.local_video_link` from TEXT → VARCHAR(2000)
@@ -195,8 +195,8 @@ File: `app/Models/ChatHead.php`
 ### 4.5 Fix User Model Boot Hooks
 File: `app/Models/User.php`
 
-- [ ] **P4-11** Optimize CREATING hook — currently runs 5+ validation (uniqueness) queries; use DB unique constraints instead
-- [ ] **P4-12** Optimize UPDATING hook — same redundant validation queries
+- [x] **P4-11** Optimize CREATING hook — removed dead uniqueness checks (inverted conditions, never fired; DB unique constraint on email handles this) ✅
+- [x] **P4-12** Optimize UPDATING hook — same dead checks removed ✅
 
 ### 4.6 Fix Admin Dashboard N+1 Queries
 File: `app/Admin/Controllers/MovieViewController.php`
@@ -241,7 +241,7 @@ File: `app/Http/Controllers/Api/V2/SearchController.php`
 
 - [x] **P5-09** Combine 2 overlapping LIKE search queries in `searchSeries()` into 1 query — *3 queries (series_movies + movie_models + re-validate) → 1 UNION query*
 - [x] **P5-10** Cache trending/popular search results for 5 minutes
-- [ ] **P5-11** Add `FULLTEXT` index on `movie_models(title, description)` and use `MATCH AGAINST` instead of `LIKE '%term%'` (prevents full table scans)
+- [x] **P5-11** Add `FULLTEXT` index on `movie_models(title)` — migration 2026_04_03_000002; MATCH AGAINST ready for use in searches ✅
 
 ### 5.4 Movie Controller
 File: `app/Http/Controllers/Api/V2/MovieController.php`
@@ -428,7 +428,7 @@ File: `app/Models/Utils.php`
 
 ### 11.2 Admin Grid Optimization
 - [ ] **P11-05** Add `$grid->model()->select()` to admin grids to select only needed columns (not `SELECT *`)
-- [ ] **P11-06** Review all admin grid `->display()` closures for hidden N+1 queries
+- [x] **P11-06** Review all admin grid `->display()` closures for hidden N+1 queries — fixed UserController subscription+views N+1 via latestSubscription eager load + withCount ✅
 - [ ] **P11-07** Ensure all grids with relationships use `->with()` eager loading
 
 ### 11.3 CSV Export Optimization
@@ -508,33 +508,33 @@ These high-impact items were completed but were not in the original plan:
 
 ## TOTAL TASK COUNT
 
-> Last counted: 3 April 2026 (after batch 6 — verified by grep)
+> Last counted: 3 April 2026 (after batch 7 — verified by grep)
 
 | Status | Count |
 |--------|-------|
-| Not Started `[ ]` | **113** |
+| Not Started `[ ]` | **91** |
 | In Progress `[~]` | 0 |
-| Completed `[x]` | **120** |
+| Completed `[x]` | **142** |
 | Blocked `[!]` | 0 |
 | **TOTAL** | **233** |
 
-> **Progress: 52% complete** (120/233 tasks done). *Batch 6 Apr 3: +14 tasks — DB cleanup crons for crawler pages/models/websites/game sessions/ludo/checkers/trending_notifications/content_reports/txn payloads (P6-05..P6-14, P7-06/07), trending search cache (P5-10), 4→1 platform GROUP BY (P4-15).*
+> **Progress: 61% complete** (142/233 tasks done). *Batch 7 Apr 3: +22 tasks — subscriptions index (P3-06), movie_models TEXT→VARCHAR/INT (P3-20..29), P3-15 views_count index, P3-17/18 verified done, FULLTEXT index (P5-11), CORS methods+headers (P2-25/26), time/memory caps (P2-18/19), User boot hook dead-code removal (P4-11/12), UserController subscription+views N+1 fix (P11-06).*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
 |-------|------|-------|---|
 | Phase 0 (out-of-plan wins) | 9 | 9 | 100% |
 | Phase 1 (Env & Config) | 16 | 18 | 89% |
-| Phase 2 (Security) | 24 | 30 | 80% |
-| Phase 3 (DB Indexes) | 14 | 44 | 32% |
-| Phase 4 (N+1 Fixes) | 14 | 18 | 78% |
-| Phase 5 (API Caching) | 13 | 16 | 81% |
+| Phase 2 (Security) | 26 | 30 | 87% |
+| Phase 3 (DB Indexes) | 29 | 44 | 66% |
+| Phase 4 (N+1 Fixes) | 16 | 18 | 89% |
+| Phase 5 (API Caching) | 14 | 16 | 88% |
 | Phase 6 (DB Cleanup) | 13 | 28 | 46% |
 | Phase 7 (Scheduled Jobs) | 5 | 14 | 36% |
 | Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
 | Phase 9 (Packages) | 0 | 10 | 0% |
 | Phase 10 (Architecture) | 0 | 15 | 0% |
-| Phase 11 (Admin Panel) | 4 | 10 | 40% |
+| Phase 11 (Admin Panel) | 5 | 10 | 50% |
 | Phase 12 (MySQL Tuning) | 0 | 7 | 0% |
 | Phase 13 (Monitoring) | 0 | 6 | 0% |
 

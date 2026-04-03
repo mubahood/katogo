@@ -17,7 +17,7 @@ return [
 
     'paths' => ['api/*', 'katogo/api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
     'allowed_origins' => [
         'http://localhost:3000',
@@ -32,7 +32,6 @@ return [
     'allowed_origins_patterns' => [],
 
     'allowed_headers' => [
-        '*',
         'Authorization',
         'Tok',
         'logged_in_user_id',

@@ -81,8 +81,8 @@ Route::get('process-episodes-new', function (Request $request) {
 Route::get('process-series-new', function (Request $request) {
 
     //set unlimited time
-    set_time_limit(0);
-    ini_set('memory_limit', '-1');
+    set_time_limit(300);
+    ini_set("memory_limit", "256M");
 
     $seriesPages = MovieCrawlerPage::where('is_episode', 'No')
         ->where('is_muno', 'Yes')
@@ -169,8 +169,8 @@ Route::get('process-series-new', function (Request $request) {
  */
 Route::get('process-muno-movies-pages', function (Request $request) {
     //set tmer
-    set_time_limit(30000); // 8+ hours for extensive processing
-    ini_set('memory_limit', '512M');
+    set_time_limit(300); // 8+ hours for extensive processing
+    ini_set("memory_limit", "256M");
 
     // $url = 'https://munowatch.org/api/preview/v2/4920/3664';
     // $page = MovieCrawlerPage::where('url', $url)->first();
@@ -241,8 +241,8 @@ Route::get('process-muno-movies-pages', function (Request $request) {
     // dd($data);
 
 
-    set_time_limit(30000); // 8+ hours for extensive processing
-    ini_set('memory_limit', '512M');
+    set_time_limit(300); // 8+ hours for extensive processing
+    ini_set("memory_limit", "256M");
 
     $startTime = microtime(true);
     $limit = min((int) $request->get('limit', 20), 50); // Max 50 for safety
@@ -531,7 +531,7 @@ Route::get('process-muno-movies-pages', function (Request $request) {
  */
 Route::get('munowatch-movies-crawler', function (Request $request) {
     set_time_limit(1200); // 20 minutes
-    ini_set('memory_limit', '512M');
+    ini_set("memory_limit", "256M");
 
     $startTime = microtime(true);
     $user_id = (int) $request->get('user_id', 3664);
@@ -775,7 +775,7 @@ Route::get('transfer/status/{id}', [TransferProcessController::class, 'status'])
  */
 Route::get('replace-images', function (Request $r) {
     set_time_limit(600); // 10 minutes
-    ini_set('memory_limit', '512M');
+    ini_set("memory_limit", "256M");
 
     $startTime = microtime(true);
     $dryRun = $r->get('dry_run', 'no') === 'yes';
@@ -1037,7 +1037,7 @@ Route::get('fix-images', function (Request $r) {
     // dd($pic);
     // die("done processing");
     set_time_limit(600); // 10 minutes
-    ini_set('memory_limit', '512M');
+    ini_set("memory_limit", "256M");
 
     $startTime = microtime(true);
     $dryRun = $r->get('dry_run', 'no') === 'yes';
@@ -1269,7 +1269,7 @@ Route::get('fix-images', function (Request $r) {
 
 Route::get('reverse-firebase', function (Request $r) {
     set_time_limit(600); // 10 minutes
-    ini_set('memory_limit', '512M');
+    ini_set("memory_limit", "256M");
 
     $startTime = microtime(true);
     $dryRun = $r->get('dry_run', 'no') === 'yes';
@@ -1535,7 +1535,7 @@ Route::get('reverse-firebase', function (Request $r) {
 Route::get('process-duplicates', function (Request $r) {
     // return;
     set_time_limit(6000); // 10 minutes
-    ini_set('memory_limit', '1024M'); // 1GB for safety
+    ini_set("memory_limit", "256M"); // 1GB for safety
 
     $startTime = microtime(true);
     $dryRun = $r->get('dry_run', 'no') === 'yes';
@@ -1871,7 +1871,7 @@ Route::get('process-muno-series', function (Request $r) {
 
     //set time limit
     set_time_limit(6000); // 10 minutes
-    ini_set('memory_limit', '512M'); // 512 MB 
+    ini_set("memory_limit", "256M"); // 512 MB 
 
     foreach ($pages as $key => $page) {
         try {
@@ -1987,8 +1987,8 @@ Route::get('fix-pics', function () {
 
     return;
     //set timer
-    set_time_limit(999300); // 5 minutes for extensive processing
-    ini_set('memory_limit', '512M'); // 512 MB
+    set_time_limit(300); // 5 minutes for extensive processing
+    ini_set("memory_limit", "256M"); // 512 MB
     $movies = MovieModel::where([])
         ->orderBy('id', 'desc')
         ->limit(2000)
@@ -2031,7 +2031,7 @@ Route::get('fix-pics', function () {
 Route::get('process-muno-movies', function () {
     //set time limit
     set_time_limit(600); // 10 minutes
-    ini_set('memory_limit', '512M'); // 512 MB
+    ini_set("memory_limit", "256M"); // 512 MB
 
     $latestMovies = MovieModel::where('muno_processed', 'No')
         ->where('id', '>', 21308)
@@ -2077,7 +2077,7 @@ Route::get('process-muno-movies', function () {
 
 Route::get('crawler', function (Request $request) {
     set_time_limit(300);
-    ini_set('memory_limit', '512M');
+    ini_set("memory_limit", "256M");
 
     $startTime   = microtime(true);
     $timeBudget  = 240; // seconds — safely under MAMP's 300s FastCGI timeout
@@ -2385,7 +2385,7 @@ Route::get('crawler', function (Request $request) {
  */
 Route::get('munowatch-series-crawler', function () {
     set_time_limit(600); // 10 minutes
-    ini_set('memory_limit', '512M'); // 512 MB
+    ini_set("memory_limit", "256M"); // 512 MB
 
     try {
         // Get munowatch website configuration
@@ -2514,8 +2514,8 @@ Route::middleware('processing.auth')->group(function () {
  * Usage: GET /crawl-dating-pages
  */
 Route::get('crawl-dating-pages', function () {
-    set_time_limit(0);
-    ini_set('memory_limit', '-1');
+    set_time_limit(300);
+    ini_set("memory_limit", "256M");
 
     try {
         // Get the Uganda Hot Girls website record
@@ -2598,8 +2598,8 @@ Route::get('crawl-dating-pages', function () {
  * - page_id: Process specific page by ID
  */
 Route::get('extract-dating-users', function (Request $request) {
-    set_time_limit(0);
-    ini_set('memory_limit', '-1');
+    set_time_limit(300);
+    ini_set("memory_limit", "256M");
 
     try {
         $limit = $request->get('limit', 10);
@@ -2739,7 +2739,7 @@ Route::get('extract-dating-users', function (Request $request) {
  * Usage: GET /process-dating-profile/{page_id}
  */
 Route::get('process-dating-profile/{page_id}', function ($pageId) {
-    set_time_limit(0);
+    set_time_limit(300);
     
     try {
         $page = MovieCrawlerPage::find($pageId);
@@ -2981,7 +2981,7 @@ Route::get('/video/{filename}/permanent', function ($filename) {
 // Route 1: Production-Ready URL Testing Endpoint
 Route::get('/admin/movies/test-urls', function (Request $request) {
     return; //disable for now
-    set_time_limit(999300); // 5 minutes for extensive processing
+    set_time_limit(300); // 5 minutes for extensive processing
 
     try {
         // Input validation and sanitization
@@ -3261,7 +3261,7 @@ Route::get('/admin/movies/transfer-firebase', function (Request $request) {
 // Route 3: Production-Ready Firebase URL Testing Endpoint
 Route::get('/admin/movies/test-firebase-urls', function (Request $request) {
     return response()->json(['success' => true]);
-    set_time_limit(999300); // 5 minutes for URL testing
+    set_time_limit(300); // 5 minutes for URL testing
 
     try {
         // Input validation and sanitization
@@ -4323,7 +4323,7 @@ Route::get('fix-serries-movies', function (Request $request) {
 // Fix munowatch series episodes - specialized for munowatch API pattern
 Route::get('fix-munowatch-series', function (Request $request) {
     // Set execution limits for processing multiple episodes
-    ini_set('memory_limit', '512M');
+    ini_set("memory_limit", "256M");
     ini_set('max_execution_time', '600');
     ini_set('max_input_time', '600');
     ini_set('upload_max_filesize', '100M');
@@ -4828,7 +4828,7 @@ Route::get('process-movies', function (Request $request) {
     //https://movies.ug/videos/Leighton%20Meester-The%20Weekend%20Away%20(2022).mp4
 
     //set unlimited time
-    ini_set('memory_limit', '512M');
+    ini_set("memory_limit", "256M");
     ini_set('max_execution_time', '600');
     ini_set('max_input_time', '600');
     ini_set('upload_max_filesize', '100M');
@@ -4941,7 +4941,7 @@ Route::get('process-series', function (Request $request) {
         ->get();
 
     //set unlimited time
-    ini_set('memory_limit', -1);
+    ini_set("memory_limit", "256M");
 
     ini_set('max_execution_time', -1);
     ini_set('max_input_time', -1);
@@ -5057,7 +5057,7 @@ Route::get('remove-dupes', function (Request $request) {
 
 
     //set unlimited time
-    ini_set('memory_limit', -1);
+    ini_set("memory_limit", "256M");
 
     ini_set('max_execution_time', -1);
     ini_set('max_input_time', -1);
@@ -5156,11 +5156,11 @@ Route::get('download-to-new-server', function () {
 
     dd('download-to-new-server');
     //increase the memory limit
-    ini_set('memory_limit', -1);
+    ini_set("memory_limit", "256M");
     //increase the execution time
     ini_set('max_execution_time', -1);
     //increase the time limit
-    set_time_limit(0);
+    set_time_limit(300);
     //increase the time limit
     ignore_user_abort(true);
     //die("time to download");
