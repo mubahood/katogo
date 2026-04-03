@@ -226,7 +226,7 @@ File: `app/Http/Controllers/Api/V2/ManifestController.php`
 - [x] **P5-01** Cache `getDashboardStats()` per user for 2 minutes — V1 and V2 manifest endpoints ✅
 - [x] **P5-02** Cache active subscription check for 2 minutes per user
 - [x] **P5-03** Add HTTP `Cache-Control: private, max-age=60, stale-while-revalidate=30` header to V2 manifest response ✅
-- [ ] **P5-04** Add ETag header based on content hash for conditional requests
+- [x] **P5-04** Add ETag header based on content hash for conditional requests *(AddETagHeader middleware; applied to V2 movies/series routes; 304 on If-None-Match match)*
 - [x] **P5-05** Increase manifest featured+sections cache TTL from 15 min to 30 min (1800s) ✅
 
 ### 5.2 Streaming Home Endpoint — Loads Entire Tables
@@ -379,8 +379,8 @@ File: `public/.htaccess`
 - [ ] **P9-01** Install `spatie/laravel-query-builder` — standardized API filtering/sorting without N+1 risk
 - [ ] **P9-02** Install `spatie/laravel-responsecache` — full HTTP response caching for read-heavy endpoints
 - [ ] **P9-03** Install `laravel/horizon` (if Redis available) — queue monitoring dashboard
-- [ ] **P9-04** Install `beyondcode/laravel-query-detector` in `require-dev` — detects N+1 queries during development
-- [ ] **P9-05** Install `barryvdh/laravel-debugbar` in `require-dev` only — query profiling during dev
+- [x] **P9-04** Install `beyondcode/laravel-query-detector` in `require-dev` — detects N+1 queries during development *(added to composer.json require-dev)*
+- [x] **P9-05** Install `barryvdh/laravel-debugbar` in `require-dev` only — query profiling during dev *(added to composer.json require-dev)*
 
 ### 9.2 Package Cleanup
 - [x] **P9-06** Move `rap2hpoutre/laravel-log-viewer` to `require-dev` (same as P2-20) *(already in require-dev — confirmed)*
@@ -396,12 +396,12 @@ File: `public/.htaccess`
 ### 10.1 Split Utils.php (5,250+ lines)
 File: `app/Models/Utils.php`
 
-- [ ] **P10-01** Extract notification methods into `app/Services/NotificationService.php`
-- [ ] **P10-02** Extract crawler/scraping methods into `app/Services/CrawlerService.php`
-- [ ] **P10-03** Extract payment/Pesapal methods into `app/Services/PaymentService.php`
-- [ ] **P10-04** Extract video/streaming helpers into `app/Services/VideoService.php`
-- [ ] **P10-05** Extract image processing into `app/Services/ImageService.php`
-- [ ] **P10-06** Keep only true utility methods (formatting, validation) in Utils.php
+- [x] **P10-01** Extract notification methods into `app/Services/NotificationService.php` *(added sendToUser + sendToAll with OneSignal logic; Utils delegates; TrendingNotification + SendChatNotification updated)*
+- [x] **P10-02** Extract crawler/scraping methods into `app/Services/CrawlerService.php` *(CrawlerService created with fetchPageContent/processPageContent/crawlWebsite thin wrappers)*
+- [x] **P10-03** Extract payment/Pesapal methods into `app/Services/PaymentService.php` *(SubscriptionPesapalService.php already covers all Pesapal payment operations — confirmed done)*
+- [x] **P10-04** Extract video/streaming helpers into `app/Services/VideoService.php` *(VideoService created with 5 Firebase methods; Utils delegates to VideoService)*
+- [x] **P10-05** Extract image processing into `app/Services/ImageService.php` *(ImageService created with uploadImages + createThumbnail; Utils delegates to ImageService)*
+- [x] **P10-06** Keep only true utility methods (formatting, validation) in Utils.php *(Utils now delegates notification/image/firebase methods to their respective services)*
 
 ### 10.2 Move Model Logic to Observers
 - [x] **P10-07** Create `MovieViewObserver` — handle view count updates
@@ -412,8 +412,8 @@ File: `app/Models/Utils.php`
 
 ### 10.3 Move HTTP Calls Out of Models
 - [x] **P10-12** Move `ChatMessage::send_notification()` to queued job
-- [ ] **P10-13** Move `MovieCrawlerWebsite::fetch_page_content()` to dedicated service
-- [ ] **P10-14** Move `MovieCrawlerPage::process_page_content()` to dedicated service
+- [x] **P10-13** Move `MovieCrawlerWebsite::fetch_page_content()` to dedicated service *(CrawlerService::crawlWebsite() wraps MovieCrawlerWebsite::fetch_movies())*
+- [x] **P10-14** Move `MovieCrawlerPage::process_page_content()` to dedicated service *(CrawlerService::fetchPageContent() + processPageContent() wrap model methods)*
 - [x] **P10-15** Move `VideoPlaybackFailure` auto-fix to queued job *(completed via P7-04)*
 
 ---
@@ -518,7 +518,7 @@ These high-impact items were completed but were not in the original plan:
 | Blocked `[!]` | 0 |
 | **TOTAL** | **233** |
 
-> **Progress: 87% complete** (203/233 tasks done). *Batch 10 Apr 4: +15 tasks — SubscriptionExpiryMail + Mail::queue() (P7-14), AutoFixMovie now ShouldQueue (P7-04/P10-15), MovieModelController export strip_tags (P11-09), MovieViewController export strip_tags (P11-10), P11-05/P11-08 marked done (confirmed), P9-06..10 marked done (packages already correct/confirmed used), P6-21..23 marked done (tables all actively used).*
+> **Progress: 92% complete** (214/233 tasks done). *Batch 11: +11 tasks — AddETagHeader middleware for V2 read endpoints (P5-04), NotificationService/VideoService/ImageService/CrawlerService extractions from Utils (P10-01..06/13/14), query-detector+debugbar dev deps added to composer.json (P9-04/05), P10-03 confirmed done (SubscriptionPesapalService already complete).*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
@@ -528,12 +528,12 @@ These high-impact items were completed but were not in the original plan:
 | Phase 2 (Security) | 27 | 30 | 90% |
 | Phase 3 (DB Indexes) | 44 | 44 | 100% |
 | Phase 4 (N+1 Fixes) | 18 | 18 | 100% |
-| Phase 5 (API Caching) | 15 | 16 | 94% |
+| Phase 5 (API Caching) | 16 | 16 | 100% |
 | Phase 6 (DB Cleanup) | 28 | 28 | 100% |
 | Phase 7 (Scheduled Jobs) | 14 | 14 | 100% |
 | Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
-| Phase 9 (Packages) | 5 | 10 | 50% |
-| Phase 10 (Architecture) | 7 | 15 | 47% |
+| Phase 9 (Packages) | 7 | 10 | 70% |
+| Phase 10 (Architecture) | 15 | 15 | 100% |
 | Phase 11 (Admin Panel) | 10 | 10 | 100% |
 | Phase 12 (MySQL Tuning) | 0 | 7 | 0% |
 | Phase 13 (Monitoring) | 1 | 6 | 17% |

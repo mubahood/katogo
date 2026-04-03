@@ -225,7 +225,7 @@ class TrendingNotification extends Model
         }
 
         try {
-            Utils::sendNotificationToAll([
+            NotificationService::sendToAll([
                 'title' => $getLatestNoteSent->title,
                 'body' => $getLatestNoteSent->description,
                 'image' => $getLatestNoteSent->image_url,

@@ -521,95 +521,15 @@ class Utils
 
     public static function upload_images_2($files, $is_single_file = false)
     {
-
-        ini_set('memory_limit', '-1');
-        if ($files == null || empty($files)) {
-            return $is_single_file ? "" : [];
-        }
-        $uploaded_images = array();
-        foreach ($files as $file) {
-
-            if (
-                isset($file['name']) &&
-                isset($file['type']) &&
-                isset($file['tmp_name']) &&
-                isset($file['error']) &&
-                isset($file['size'])
-            ) {
-                $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
-                $file_name = time() . "-" . rand(100000, 1000000) . "." . $ext;
-                $destination = Utils::docs_root() . '/storage/images/' . $file_name;
-
-                $res = move_uploaded_file($file['tmp_name'], $destination);
-                if (!$res) {
-                    continue;
-                }
-                //$uploaded_images[] = $destination;
-                $uploaded_images[] = $file_name;
-            }
-        }
-
-        $single_file = "";
-        if (isset($uploaded_images[0])) {
-            $single_file = $uploaded_images[0];
-        }
-
-
-        return $is_single_file ? $single_file : $uploaded_images;
+        // Delegates to ImageService (P10-05)
+        return \App\Services\ImageService::uploadImages($files, $is_single_file);
     }
 
 
     public static function create_thumbail($params = array())
     {
-
-        ini_set('memory_limit', '-1');
-
-        if (
-            !isset($params['source']) ||
-            !isset($params['target'])
-        ) {
-            return [];
-        }
-
-
-
-        if (!file_exists($params['source'])) {
-            $img = url('assets/images/logo.png');
-            return $img;
-        }
-
-
-        $image = new Zebra_Image();
-
-        $image->auto_handle_exif_orientation = true;
-        $image->source_path = "" . $params['source'];
-        $image->target_path = "" . $params['target'];
-
-        $size = filesize($image->source_path) / (1024 * 1024);
-        if ($size < 1) {
-            copy($params['source'], $params['target']);
-            return;
-        }
-
-        if (isset($params['quality'])) {
-            $image->jpeg_quality = $params['quality'];
-        }
-
-        $image->preserve_aspect_ratio = true;
-        $image->enlarge_smaller_images = true;
-        $image->preserve_time = true;
-        $image->handle_exif_orientation_tag = true;
-
-        $img_size = getimagesize($image->source_path); // returns an array that is filled with info
-
-        $image->jpeg_quality = Utils::get_jpeg_quality(filesize($image->source_path));
-        $image->preserve_aspect_ratio = true;
-        $image->enlarge_smaller_images = true;
-        if (!$image->resize(0, 0, ZEBRA_IMAGE_CROP_CENTER)) {
-            return $image->source_path;
-        } else {
-            return $image->target_path;
-        }
+        // Delegates to ImageService (P10-05)
+        return \App\Services\ImageService::createThumbnail($params);
     }
 
 
@@ -701,120 +621,16 @@ class Utils
 
     public static function sendNotificationToAll($params)
     {
-        $title = env('APP_NAME');
-        $body = null;
-        $url = 'https://katogo.schooldynamics.ug/logo.png';
-        $img = null;
-        $type = null;
-        $movie_id = null;
-        $data = [];
-        $buttons = [];
-        $schedule = null;
-        if (isset($params['title'])) {
-            $title = $params['title'];
-        }
-        if (isset($params['body'])) {
-            $body = $params['body'];
-        }
-        if ($body == null) {
-            throw new Exception("Body is required.", 1);
-        }
-        if (isset($params['url'])) {
-            $url = $params['url'];
-        }
-        if (isset($params['image'])) {
-            $img = $params['image'];
-        }
-        if (isset($params['data'])) {
-            $data = $params['data'];
-        }
-        if (isset($params['buttons'])) {
-            $buttons = $buttons['data'];
-        }
-        if (isset($params['schedule'])) {
-            $schedule = $buttons['schedule'];
-        }
-
-        $url = null;
-        try {
-            OneSignalFacade::addParams(
-                [
-                    'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
-                    'large_icon' => $img,
-                    'big_picture' => $img,
-                    'chrome_big_picture' => $img,
-                    'chrome_web_image' => $img,
-                    'small_icon' => 'logo',
-                ]
-            )->sendNotificationToAll(
-                $body,
-                $url = $url,
-                $data = $data,
-                $buttons = $buttons,
-                $schedule =  $schedule,
-                $headings = $title,
-            );
-        } catch (\Throwable $th) {
-            throw $th;
-        }
+        // Delegates to NotificationService (P10-01)
+        \App\Services\NotificationService::sendToAll($params);
     }
 
 
     //send notification to user
     public static function sendNotificationToUser($user, $params)
     {
-        $title = env('APP_NAME');
-        $body = null;
-        $url = 'https://katogo.schooldynamics.ug/logo.png';
-        $img = null;
-        $type = null;
-        $movie_id = null;
-        $data = [];
-        if (isset($params['title'])) {
-            $title = $params['title'];
-        }
-        if (isset($params['body'])) {
-            $body = $params['body'];
-        }
-        if ($body == null) {
-            throw new Exception("Body is required.", 1);
-        }
-        if (isset($params['url'])) {
-            $url = $params['url'];
-        }
-        if (isset($params['image'])) {
-            $img = $params['image'];
-        }
-        if (isset($params['data'])) {
-            $data = $params['data'];
-        }
-        $title = null;
-        if (isset($params['title'])) {
-            $title = $params['title'];
-        }
-
-        try {
-            OneSignalFacade::addParams(
-                [
-                    'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
-                    'large_icon' => $img,
-                    'big_picture' => $img,
-                    'chrome_big_picture' => $img,
-                    'chrome_web_image' => $img,
-                    'small_icon' => 'logo',
-                ]
-            )->sendNotificationToUser(
-                'my-id-' . $user->id,
-                $body,
-                null,
-                null,
-                null,
-                null,
-                $headings = $title,
-            );
-        } catch (\Throwable $th) {
-            throw $th;
-        }
+        // Delegates to NotificationService (P10-01)
+        \App\Services\NotificationService::sendToUser($user, $params);
     }
 
 
@@ -6117,48 +5933,7 @@ class Utils
      */
     public static function ensureFirebaseFolder($folderPath)
     {
-        try {
-            $storage = app('firebase.storage');
-            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
-
-            // Check if folder exists by trying to list objects with the folder prefix
-            $objects = $bucket->objects(['prefix' => $folderPath . '/']);
-            $folderExists = false;
-
-            foreach ($objects as $object) {
-                $folderExists = true;
-                break; // If we find any object with this prefix, folder exists
-            }
-
-            if (!$folderExists) {
-                // Create folder by uploading a temporary marker file
-                $markerPath = $folderPath . '/.folder_marker';
-                $bucket->upload('', [
-                    'name' => $markerPath,
-                    'metadata' => [
-                        'contentType' => 'text/plain',
-                        'metadata' => [
-                            'created_at' => now()->toISOString(),
-                            'type' => 'folder_marker'
-                        ]
-                    ]
-                ]);
-            }
-
-            return [
-                'success' => true,
-                'folder_exists' => $folderExists,
-                'folder_created' => !$folderExists,
-                'error' => null
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => 'Failed to ensure folder exists: ' . $e->getMessage(),
-                'folder_exists' => false,
-                'folder_created' => false
-            ];
-        }
+        return \App\Services\VideoService::ensureFirebaseFolder($folderPath);
     }
 
     /**
@@ -6169,45 +5944,7 @@ class Utils
      */
     public static function getFirebasePermanentUrl($firebasePath)
     {
-        try {
-            $storage = app('firebase.storage');
-            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
-            $object = $bucket->object($firebasePath);
-
-            if (!$object->exists()) {
-                return [
-                    'success' => false,
-                    'error' => 'File not found in Firebase Storage',
-                    'url' => null
-                ];
-            }
-
-            // Make object publicly readable
-            $object->update([
-                'acl' => [
-                    [
-                        'entity' => 'allUsers',
-                        'role' => 'READER'
-                    ]
-                ]
-            ]);
-
-            // Generate permanent public URL
-            $publicUrl = "https://storage.googleapis.com/" . config('firebase.storage.bucket') . "/" . $firebasePath;
-
-            return [
-                'success' => true,
-                'error' => null,
-                'url' => $publicUrl,
-                'expires' => 'never'
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => 'Failed to create permanent URL: ' . $e->getMessage(),
-                'url' => null
-            ];
-        }
+        return \App\Services\VideoService::getFirebasePermanentUrl($firebasePath);
     }
 
     /**
@@ -6220,128 +5957,8 @@ class Utils
      */
     public static function uploadVideoToFirebase($videoUrl, $fileName = null, $folder = null)
     {
-        try {
-            // Validate video URL
-            if (empty($videoUrl)) {
-                return [
-                    'success' => false,
-                    'error' => 'Video URL cannot be empty',
-                    'firebase_url' => null
-                ];
-            }
-
-            // Get Firebase Storage instance
-            $storage = app('firebase.storage');
-            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
-
-            // Generate filename if not provided
-            if (!$fileName) {
-                $fileName = 'video_' . time() . '_' . rand(1000, 9999);
-            }
-
-            // Set folder path
-            $folderPath = $folder ?: config('firebase.storage.default_folder', 'movies');
-
-            // Ensure folder exists before upload
-            $folderResult = self::ensureFirebaseFolder($folderPath);
-            if (!$folderResult['success']) {
-                return [
-                    'success' => false,
-                    'error' => 'Failed to ensure folder exists: ' . $folderResult['error'],
-                    'firebase_url' => null
-                ];
-            }
-
-            $firebasePath = $folderPath . '/' . $fileName . '.mp4';
-
-            // Create a temporary file for streaming download
-            $tempFile = tempnam(sys_get_temp_dir(), 'firebase_video_');
-            $fp = fopen($tempFile, 'w+');
-
-            // Download video content to temporary file (streaming)
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $videoUrl);
-            curl_setopt($ch, CURLOPT_FILE, $fp); // Write directly to file
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 600); // 10 minutes timeout for large files
-            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; Laravel Firebase Uploader)');
-
-            $result = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            $fileSize = curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
-            curl_close($ch);
-            fclose($fp);
-
-            if ($result === false || !empty($error)) {
-                unlink($tempFile);
-                return [
-                    'success' => false,
-                    'error' => 'Failed to download video: ' . $error,
-                    'firebase_url' => null
-                ];
-            }
-
-            if ($httpCode !== 200) {
-                unlink($tempFile);
-                return [
-                    'success' => false,
-                    'error' => 'Failed to download video. HTTP code: ' . $httpCode,
-                    'firebase_url' => null
-                ];
-            }
-
-            // Get file size before upload
-            $actualFileSize = filesize($tempFile);
-
-            // Upload to Firebase Storage using file stream
-            $fileStream = fopen($tempFile, 'r');
-            if (!$fileStream) {
-                unlink($tempFile);
-                return [
-                    'success' => false,
-                    'error' => 'Failed to open temporary file for upload',
-                    'firebase_url' => null
-                ];
-            }
-
-            $object = $bucket->upload($fileStream, [
-                'name' => $firebasePath,
-                'metadata' => [
-                    'contentType' => 'video/mp4',
-                    'metadata' => [
-                        'uploaded_at' => now()->toISOString(),
-                        'original_url' => $videoUrl,
-                        'uploaded_by' => 'laravel_app'
-                    ]
-                ]
-            ]);
-
-            if (is_resource($fileStream)) {
-                fclose($fileStream);
-            }
-
-            // Clean up temporary file
-            unlink($tempFile);
-
-            // Generate download URL
-            $downloadUrl = $object->signedUrl(new \DateTime('+1 year'));
-
-            return [
-                'success' => true,
-                'error' => null,
-                'firebase_url' => $downloadUrl,
-                'firebase_path' => $firebasePath,
-                'file_size' => $actualFileSize
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => 'Firebase upload failed: ' . $e->getMessage(),
-                'firebase_url' => null
-            ];
-        }
+        // Delegates to VideoService (P10-04)
+        return \App\Services\VideoService::uploadVideoToFirebase($videoUrl, $fileName, $folder);
     }
 
     /**
@@ -6353,35 +5970,7 @@ class Utils
      */
     public static function getFirebaseDownloadUrl($firebasePath, $expirationHours = 24)
     {
-        try {
-            $storage = app('firebase.storage');
-            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
-            $object = $bucket->object($firebasePath);
-
-            if (!$object->exists()) {
-                return [
-                    'success' => false,
-                    'error' => 'File not found in Firebase Storage',
-                    'url' => null
-                ];
-            }
-
-            $expirationTime = new \DateTime('+' . $expirationHours . ' hours');
-            $downloadUrl = $object->signedUrl($expirationTime);
-
-            return [
-                'success' => true,
-                'error' => null,
-                'url' => $downloadUrl,
-                'expires_at' => $expirationTime->format('Y-m-d H:i:s')
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => 'Failed to generate download URL: ' . $e->getMessage(),
-                'url' => null
-            ];
-        }
+        return \App\Services\VideoService::getFirebaseDownloadUrl($firebasePath, $expirationHours);
     }
 
     /**
@@ -6392,31 +5981,7 @@ class Utils
      */
     public static function deleteFirebaseVideo($firebasePath)
     {
-        try {
-            $storage = app('firebase.storage');
-            $bucket = $storage->getBucket(config('firebase.storage.bucket'));
-            $object = $bucket->object($firebasePath);
-
-            if (!$object->exists()) {
-                return [
-                    'success' => false,
-                    'error' => 'File not found in Firebase Storage'
-                ];
-            }
-
-            $object->delete();
-
-            return [
-                'success' => true,
-                'error' => null,
-                'message' => 'File deleted successfully'
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => 'Failed to delete file: ' . $e->getMessage()
-            ];
-        }
+        return \App\Services\VideoService::deleteFirebaseVideo($firebasePath);
     }
 
     /**

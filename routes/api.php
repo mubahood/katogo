@@ -161,12 +161,14 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         // V2 Manifest — optimised, lean, cached
         Route::get('manifest',            [V2ManifestController::class, 'index'])->middleware('lscache:45,manifest_v2');
 
-        Route::get('movies',              [V2MovieController::class, 'index']);
-        Route::get('movies/search',       [V2MovieController::class, 'search']);
-        Route::get('movies/{id}',         [V2MovieController::class, 'show']);
-        Route::get('movies/{id}/related', [V2MovieController::class, 'related']);
-        Route::get('series',              [V2MovieController::class, 'seriesIndex']);
-        Route::get('series/{id}/episodes',[V2MovieController::class, 'episodes']);
+        Route::middleware('etag')->group(function () {
+            Route::get('movies',              [V2MovieController::class, 'index']);
+            Route::get('movies/search',       [V2MovieController::class, 'search']);
+            Route::get('movies/{id}',         [V2MovieController::class, 'show']);
+            Route::get('movies/{id}/related', [V2MovieController::class, 'related']);
+            Route::get('series',              [V2MovieController::class, 'seriesIndex']);
+            Route::get('series/{id}/episodes',[V2MovieController::class, 'episodes']);
+        });
 
         // Playback reporting
         Route::post('movies/{id}/playback', [V2MovieController::class, 'playback']);

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\TrendingNotification;
 use App\Models\Utils;
+use Berkayk\OneSignal\OneSignalFacade;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -125,7 +126,7 @@ class NotificationService
             foreach ($eligibleUsers as $user) {
                 try {
                     // Send individual notification
-                    Utils::sendNotificationToUser($user, $notificationData);
+                    static::sendToUser($user, $notificationData);
                     
                     // Update user's notification tracking using direct DB update
                     DB::table('admin_users')
@@ -264,5 +265,75 @@ class NotificationService
             'users_with_push_disabled' => User::where('push_notifications', 'No')->count(),
             'users_with_preferences_disabled' => User::where('notification_preferences', 'No')->count(),
         ];
+    }
+
+    /**
+     * Send a OneSignal push notification to a single user.
+     *
+     * @param  \App\Models\User  $user
+     * @param  array{title?:string, body:string, image?:string, data?:array}  $params
+     */
+    public static function sendToUser($user, array $params): void
+    {
+        $body  = $params['body']  ?? null;
+        $title = $params['title'] ?? null;
+        $img   = $params['image'] ?? null;
+        $data  = $params['data']  ?? [];
+
+        if ($body === null) {
+            throw new \Exception('Notification body is required.');
+        }
+
+        OneSignalFacade::addParams([
+            'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
+            'large_icon'         => $img,
+            'big_picture'        => $img,
+            'chrome_big_picture' => $img,
+            'chrome_web_image'   => $img,
+            'small_icon'         => 'logo',
+        ])->sendNotificationToUser(
+            'my-id-' . $user->id,
+            $body,
+            null,
+            $data,
+            null,
+            null,
+            $title,
+        );
+    }
+
+    /**
+     * Broadcast a OneSignal push notification to all subscribed users.
+     *
+     * @param  array{title?:string, body:string, image?:string, data?:array, buttons?:array, schedule?:string}  $params
+     */
+    public static function sendToAll(array $params): void
+    {
+        $body     = $params['body']     ?? null;
+        $title    = $params['title']    ?? null;
+        $img      = $params['image']    ?? null;
+        $data     = $params['data']     ?? [];
+        $buttons  = $params['buttons']  ?? [];
+        $schedule = $params['schedule'] ?? null;
+
+        if ($body === null) {
+            throw new \Exception('Notification body is required.');
+        }
+
+        OneSignalFacade::addParams([
+            'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
+            'large_icon'         => $img,
+            'big_picture'        => $img,
+            'chrome_big_picture' => $img,
+            'chrome_web_image'   => $img,
+            'small_icon'         => 'logo',
+        ])->sendNotificationToAll(
+            $body,
+            null,
+            $data,
+            $buttons,
+            $schedule,
+            $title,
+        );
     }
 }

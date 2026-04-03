@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\User;
-use App\Models\Utils;
+use App\Services\NotificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -47,7 +47,7 @@ class SendChatNotification implements ShouldQueue
             return;
         }
 
-        Utils::sendNotificationToUser($user, [
+        NotificationService::sendToUser($user, [
             'title' => $this->title,
             'body'  => $this->body,
         ]);

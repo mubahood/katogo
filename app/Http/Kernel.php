@@ -72,5 +72,6 @@ class Kernel extends HttpKernel
         'subscription' => \App\Http\Middleware\CheckSubscription::class,
         'no-referrer' => \App\Http\Middleware\NoReferrerPolicy::class,
         'processing.auth' => \App\Http\Middleware\ProcessingRouteAuth::class,
+        'etag' => \App\Http\Middleware\AddETagHeader::class,
     ];
 }
