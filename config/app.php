@@ -184,7 +184,6 @@ return [
         App\Providers\FirebaseServiceProvider::class,
         Tymon\JWTAuth\Providers\LaravelServiceProvider::class, 
         Berkayk\OneSignal\OneSignalServiceProvider::class,
-        Rap2hpoutre\LaravelLogViewer\LaravelLogViewerServiceProvider::class,
 
     ])->toArray(),
 
