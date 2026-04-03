@@ -17,6 +17,7 @@ use Encore\Admin\Layout\Column;
 use Encore\Admin\Widgets\Box;
 use Encore\Admin\Widgets\InfoBox;
 use Encore\Admin\Widgets\Table;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class SubscriptionTransactionController extends AdminController
@@ -62,14 +63,47 @@ class SubscriptionTransactionController extends AdminController
     }
 
     /**
+     * Consolidated stats query — cached 5 min to avoid N+1 per box (P11-04)
+     */
+    private function getStats(): array
+    {
+        return Cache::remember('sub_txn_stats', 300, function () {
+            $row = SubscriptionTransaction::selectRaw("
+                SUM(CASE WHEN status='Completed' AND transaction_type != 'Withdrawal' THEN amount ELSE 0 END) as total_revenue,
+                SUM(CASE WHEN status='Completed' AND transaction_type != 'Withdrawal' AND DATE(created_at)=CURDATE() THEN amount ELSE 0 END) as today_revenue,
+                SUM(CASE WHEN status='Pending' THEN amount ELSE 0 END) as pending_amount,
+                COUNT(CASE WHEN status='Pending' THEN 1 END) as pending_count,
+                COUNT(CASE WHEN status='Failed' THEN 1 END) as failed_count,
+                COUNT(CASE WHEN status='Completed' THEN 1 END) as completed_count,
+                SUM(CASE WHEN status='Completed' AND transaction_type='Withdrawal' THEN amount ELSE 0 END) as withdrawal_amount,
+                COUNT(CASE WHEN status='Completed' AND transaction_type='Withdrawal' THEN 1 END) as withdrawal_count,
+                SUM(CASE WHEN status='Completed' THEN amount ELSE 0 END) as net_amount,
+                SUM(CASE WHEN status='Refunded' THEN amount ELSE 0 END) as refunded_amount,
+                COUNT(CASE WHEN status='Refunded' THEN 1 END) as refunded_count
+            ")->first();
+            return [
+                'total_revenue'     => (float) ($row->total_revenue     ?? 0),
+                'today_revenue'     => (float) ($row->today_revenue     ?? 0),
+                'pending_amount'    => (float) ($row->pending_amount    ?? 0),
+                'pending_count'     => (int)   ($row->pending_count     ?? 0),
+                'failed_count'      => (int)   ($row->failed_count      ?? 0),
+                'completed_count'   => (int)   ($row->completed_count   ?? 0),
+                'withdrawal_amount' => (float) ($row->withdrawal_amount ?? 0),
+                'withdrawal_count'  => (int)   ($row->withdrawal_count  ?? 0),
+                'net_amount'        => (float) ($row->net_amount        ?? 0),
+                'refunded_amount'   => (float) ($row->refunded_amount   ?? 0),
+                'refunded_count'    => (int)   ($row->refunded_count    ?? 0),
+            ];
+        });
+    }
+
+    /**
      * Total revenue info box
      */
     protected function totalRevenueBox()
     {
-        $total = SubscriptionTransaction::where('status', 'Completed')
-            ->where('transaction_type', '!=', 'Withdrawal')
-            ->sum('amount');
-        return new InfoBox('Total Revenue', 'money', 'green', '/subscription-transactions?status=Completed', 'UGX ' . number_format($total));
+        $s = $this->getStats();
+        return new InfoBox('Total Revenue', 'money', 'green', '/subscription-transactions?status=Completed', 'UGX ' . number_format($s['total_revenue']));
     }
 
     /**
@@ -77,11 +111,8 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function todayRevenueBox()
     {
-        $today = SubscriptionTransaction::where('status', 'Completed')
-            ->where('transaction_type', '!=', 'Withdrawal')
-            ->whereDate('created_at', Carbon::today())
-            ->sum('amount');
-        return new InfoBox("Today's Revenue", 'calendar', 'aqua', '#', 'UGX ' . number_format($today));
+        $s = $this->getStats();
+        return new InfoBox("Today's Revenue", 'calendar', 'aqua', '#', 'UGX ' . number_format($s['today_revenue']));
     }
 
     /**
@@ -89,9 +120,8 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function pendingPaymentsBox()
     {
-        $count = SubscriptionTransaction::where('status', 'Pending')->count();
-        $amount = SubscriptionTransaction::where('status', 'Pending')->sum('amount');
-        return new InfoBox("Pending ({$count})", 'clock-o', 'yellow', '/subscription-transactions?status=Pending', 'UGX ' . number_format($amount));
+        $s = $this->getStats();
+        return new InfoBox("Pending ({$s['pending_count']})", 'clock-o', 'yellow', '/subscription-transactions?status=Pending', 'UGX ' . number_format($s['pending_amount']));
     }
 
     /**
@@ -99,8 +129,8 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function failedPaymentsBox()
     {
-        $count = SubscriptionTransaction::where('status', 'Failed')->count();
-        return new InfoBox('Failed Payments', 'times-circle', 'red', '/subscription-transactions?status=Failed', $count);
+        $s = $this->getStats();
+        return new InfoBox('Failed Payments', 'times-circle', 'red', '/subscription-transactions?status=Failed', $s['failed_count']);
     }
 
     /**
@@ -108,8 +138,8 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function completedCountBox()
     {
-        $count = SubscriptionTransaction::where('status', 'Completed')->count();
-        return new InfoBox('Completed Txns', 'check-circle', 'green', '/subscription-transactions?status=Completed', number_format($count));
+        $s = $this->getStats();
+        return new InfoBox('Completed Txns', 'check-circle', 'green', '/subscription-transactions?status=Completed', number_format($s['completed_count']));
     }
 
     /**
@@ -147,13 +177,8 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function withdrawalsBox()
     {
-        $amount = SubscriptionTransaction::where('status', 'Completed')
-            ->where('transaction_type', 'Withdrawal')
-            ->sum('amount');
-        $count = SubscriptionTransaction::where('status', 'Completed')
-            ->where('transaction_type', 'Withdrawal')
-            ->count();
-        return new InfoBox("Withdrawn ({$count})", 'arrow-circle-up', 'maroon', '/subscription-transactions?transaction_type=Withdrawal&status=all', 'UGX ' . number_format(abs($amount)));
+        $s = $this->getStats();
+        return new InfoBox("Withdrawn ({$s['withdrawal_count']})", 'arrow-circle-up', 'maroon', '/subscription-transactions?transaction_type=Withdrawal&status=all', 'UGX ' . number_format(abs($s['withdrawal_amount'])));
     }
 
     /**
@@ -161,9 +186,9 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function netRevenueBox()
     {
-        $net = SubscriptionTransaction::where('status', 'Completed')->sum('amount');
-        $color = $net >= 0 ? 'green' : 'red';
-        return new InfoBox('Net Balance', 'balance-scale', $color, '#', 'UGX ' . number_format($net));
+        $s = $this->getStats();
+        $color = $s['net_amount'] >= 0 ? 'green' : 'red';
+        return new InfoBox('Net Balance', 'balance-scale', $color, '#', 'UGX ' . number_format($s['net_amount']));
     }
 
     /**
@@ -171,9 +196,8 @@ class SubscriptionTransactionController extends AdminController
      */
     protected function refundedBox()
     {
-        $amount = SubscriptionTransaction::where('status', 'Refunded')->sum('amount');
-        $count = SubscriptionTransaction::where('status', 'Refunded')->count();
-        return new InfoBox("Refunded ({$count})", 'undo', 'gray', '/subscription-transactions?status=Refunded', 'UGX ' . number_format($amount));
+        $s = $this->getStats();
+        return new InfoBox("Refunded ({$s['refunded_count']})", 'undo', 'gray', '/subscription-transactions?status=Refunded', 'UGX ' . number_format($s['refunded_amount']));
     }
 
     /**

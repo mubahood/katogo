@@ -19,6 +19,7 @@ use Encore\Admin\Widgets\Box;
 use Encore\Admin\Widgets\InfoBox;
 use Encore\Admin\Widgets\Table;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class MovieViewController extends AdminController
 {
@@ -41,6 +42,7 @@ class MovieViewController extends AdminController
      */
     protected function dashboard()
     {
+        return Cache::remember('movie_view_dashboard', 300, function () {
         // ── Gather Stats ──
         $totalViews   = MovieView::count();
         $todayViews   = MovieView::whereDate('created_at', Carbon::today())->count();
@@ -142,6 +144,16 @@ class MovieViewController extends AdminController
             ->groupBy('user_id')
             ->orderByDesc('cnt')
             ->limit(5)->get();
+
+        // Batch-load top movie/user data to avoid N+1 in top-5 loops (P4-13, P4-14)
+        $allMovieIds = $topMovies->pluck('movie_model_id')
+            ->merge($topMovies30->pluck('movie_model_id'))
+            ->unique()->filter()->toArray();
+        $allUserIds = $topUsers->pluck('user_id')
+            ->merge($topUsers30->pluck('user_id'))
+            ->unique()->filter()->toArray();
+        $topMovieModels = $allMovieIds ? MovieModel::whereIn('id', $allMovieIds)->get()->keyBy('id') : collect();
+        $topUserModels  = $allUserIds  ? User::whereIn('id', $allUserIds)->select('id', 'name', 'app_type')->get()->keyBy('id') : collect();
 
         // Platform pie percentages (all time)
         $pTotal = max($ugflixViews + $lugaflixViews + $munoAppViews + $unknownViews, 1);
@@ -271,7 +283,7 @@ class MovieViewController extends AdminController
         $html .= '<div class="mv-box-title">Top 5 Movies (All Time)</div>';
         $rank = 1;
         foreach ($topMovies as $tm) {
-            $m = MovieModel::find($tm->movie_model_id);
+            $m = $topMovieModels->get($tm->movie_model_id);
             $t = $m ? (mb_strlen($m->title) > 28 ? mb_substr($m->title, 0, 28) . '…' : $m->title) : '#' . $tm->movie_model_id;
             $html .= "<div class='mv-rank'><div class='mv-rank-num'>#{$rank}</div><div class='mv-rank-name'><a href='" . admin_url("movies-movies/{$tm->movie_model_id}") . "' style='color:#333;text-decoration:none' title='" . htmlspecialchars($m->title ?? '') . "'>{$t}</a></div><div class='mv-rank-cnt'>{$tm->cnt}</div></div>";
             $rank++;
@@ -284,7 +296,7 @@ class MovieViewController extends AdminController
         $html .= '<div class="mv-box-title">Top 5 Movies (30 Days)</div>';
         $rank = 1;
         foreach ($topMovies30 as $tm) {
-            $m = MovieModel::find($tm->movie_model_id);
+            $m = $topMovieModels->get($tm->movie_model_id);
             $t = $m ? (mb_strlen($m->title) > 28 ? mb_substr($m->title, 0, 28) . '…' : $m->title) : '#' . $tm->movie_model_id;
             $html .= "<div class='mv-rank'><div class='mv-rank-num'>#{$rank}</div><div class='mv-rank-name'><a href='" . admin_url("movies-movies/{$tm->movie_model_id}") . "' style='color:#333;text-decoration:none' title='" . htmlspecialchars($m->title ?? '') . "'>{$t}</a></div><div class='mv-rank-cnt'>{$tm->cnt}</div></div>";
             $rank++;
@@ -297,7 +309,7 @@ class MovieViewController extends AdminController
         $html .= '<div class="mv-box-title">Top 5 Users (All Time)</div>';
         $rank = 1;
         foreach ($topUsers as $tu) {
-            $u = User::find($tu->user_id);
+            $u = $topUserModels->get($tu->user_id);
             $n = $u ? (mb_strlen($u->name) > 22 ? mb_substr($u->name, 0, 22) . '…' : $u->name) : '#' . $tu->user_id;
             $app = $u ? ($u->app_type ?? '?') : '?';
             $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : ($app === 'web' ? '#9b59b6' : '#999')));
@@ -312,7 +324,7 @@ class MovieViewController extends AdminController
         $html .= '<div class="mv-box-title">Top 5 Users (30 Days)</div>';
         $rank = 1;
         foreach ($topUsers30 as $tu) {
-            $u = User::find($tu->user_id);
+            $u = $topUserModels->get($tu->user_id);
             $n = $u ? (mb_strlen($u->name) > 22 ? mb_substr($u->name, 0, 22) . '…' : $u->name) : '#' . $tu->user_id;
             $app = $u ? ($u->app_type ?? '?') : '?';
             $appClr = $app === 'ugflix' ? '#e74c3c' : ($app === 'lugaflix' ? '#3498db' : ($app === 'muno_app' ? '#ff9800' : ($app === 'web' ? '#9b59b6' : '#999')));
@@ -326,6 +338,7 @@ class MovieViewController extends AdminController
         $html .= '</div>'; // end mv-wrap
 
         return $html;
+        }); // end Cache::remember movie_view_dashboard
     }
 
     /**

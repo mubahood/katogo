@@ -18,6 +18,7 @@ use Encore\Admin\Widgets\Box;
 use Encore\Admin\Widgets\Table;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -43,6 +44,7 @@ class SubscriptionController extends AdminController
     // ─── COMPACT STAT CARDS ─────────────────────────────────────────────
     protected function buildStatsCards()
     {
+        return Cache::remember('subscription_stats_cards', 300, function () {
         $now = Carbon::now();
 
         // Gather all stats in fewer queries
@@ -197,6 +199,7 @@ HTML;
 
         $html .= '</div>';
         return $html;
+        }); // end Cache::remember subscription_stats_cards
     }
 
     // ─── CHARTS (PJAX-SAFE) ─────────────────────────────────────────────
