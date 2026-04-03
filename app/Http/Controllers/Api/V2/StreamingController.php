@@ -172,7 +172,7 @@ class StreamingController extends Controller
      */
     public function home()
     {
-        $data = Cache::remember('streaming_home', 300, function () {
+        $data = Cache::remember('streaming_home', 600, function () {
             $featured = StreamingStation::active()
                 ->featured()
                 ->select(self::STATION_LIST_FIELDS)
@@ -196,6 +196,7 @@ class StreamingController extends Controller
                 }])
                 ->orderBy('sort_order')
                 ->orderByDesc('votes')
+                ->limit(100)
                 ->get();
 
             $radioStations = StreamingStation::active()
@@ -208,6 +209,7 @@ class StreamingController extends Controller
                 }])
                 ->orderBy('sort_order')
                 ->orderByDesc('votes')
+                ->limit(100)
                 ->get();
 
             $transform = function ($stations) {
@@ -246,8 +248,8 @@ class StreamingController extends Controller
                 'tv_sections' => $tvSections,
                 'radio_sections' => $radioSections,
                 'stats' => [
-                    'tv_count' => StreamingStation::active()->tv()->count(),
-                    'radio_count' => StreamingStation::active()->radio()->count(),
+                    'tv_count' => $tvChannels->count(),
+                    'radio_count' => $radioStations->count(),
                 ],
             ];
         });

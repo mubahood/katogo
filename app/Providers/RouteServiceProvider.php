@@ -29,6 +29,16 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
         });
 
+        // Strict rate limit for auth endpoints — 10/min per IP (prevents brute-force)
+        RateLimiter::for('auth', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip());
+        });
+
+        // Search endpoints — 30/min per user
+        RateLimiter::for('search', function (Request $request) {
+            return Limit::perMinute(30)->by($request->user()?->id ?: $request->ip());
+        });
+
         // Higher rate limit for game endpoints (polling every 2 seconds)
         RateLimiter::for('game', function (Request $request) {
             $userKey = $request->user()?->id ?: $request->ip();

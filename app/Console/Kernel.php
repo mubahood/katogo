@@ -48,6 +48,21 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/subscriptions-expiry-notifications-1day.log'));
+
+        // Daily: purge expired password reset tokens (older than 60 minutes)
+        $schedule->call(function () {
+            \DB::table('password_reset_tokens')
+                ->where('created_at', '<', now()->subMinutes(60))
+                ->delete();
+        })->dailyAt('02:00')->name('purge-expired-password-tokens')->withoutOverlapping();
+
+        // Daily: purge expired game invitations
+        $schedule->call(function () {
+            \DB::table('game_invitations')
+                ->where('status', 'expired')
+                ->where('created_at', '<', now()->subDays(30))
+                ->delete();
+        })->dailyAt('02:15')->name('purge-expired-game-invitations')->withoutOverlapping();
     }
 
     /**

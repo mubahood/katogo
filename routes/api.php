@@ -28,11 +28,13 @@ use App\Http\Middleware\JwtMiddleware;
 
 
 
-Route::post('auth/password-reset', [ApiController::class, 'password_reset']);
-Route::post('auth/register', [ApiController::class, 'register']);
-Route::post('auth/request-password-reset-code', [ApiController::class, 'request_password_reset_code']);
-Route::post('auth/login', [ApiController::class, 'login']);
-Route::post('auth/google', [ApiController::class, 'googleAuth']);
+Route::middleware('throttle:auth')->group(function () {
+    Route::post('auth/password-reset', [ApiController::class, 'password_reset']);
+    Route::post('auth/register', [ApiController::class, 'register']);
+    Route::post('auth/request-password-reset-code', [ApiController::class, 'request_password_reset_code']);
+    Route::post('auth/login', [ApiController::class, 'login']);
+    Route::post('auth/google', [ApiController::class, 'googleAuth']);
+});
 
 // Content filtering endpoint (used by app's automated systems)
 Route::post('moderation/filter-content', [ModerationController::class, 'filterContent']);

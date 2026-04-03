@@ -90,7 +90,7 @@ class ManifestController extends Controller
         $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
 
         // Featured movie (cached 15 min, rotates every 6 hours)
-        $featured = Cache::remember("v2_manifest_featured_{$rotationSlot}", 900, function () {
+        $featured = Cache::remember("v2_manifest_featured_{$rotationSlot}", 1800, function () {
             return $this->getFeaturedMovie();
         });
 
@@ -120,7 +120,7 @@ class ManifestController extends Controller
         $continueWatching = $this->getContinueWatching($userId);
 
         // Movie sections (cached 15 min, rotates every 6 hours)
-        $movieSections = Cache::remember("v2_manifest_sections_{$rotationSlot}", 900, function () {
+        $movieSections = Cache::remember("v2_manifest_sections_{$rotationSlot}", 1800, function () {
             return $this->buildMovieSections();
         });
 
@@ -194,7 +194,7 @@ class ManifestController extends Controller
             'code' => 1,
             'message' => 'Manifest loaded.',
             'data' => $responseData,
-        ]);
+        ])->header('Cache-Control', 'private, max-age=60, stale-while-revalidate=30');
     }
 
     // ═══════════════════════════════════════════════════════
