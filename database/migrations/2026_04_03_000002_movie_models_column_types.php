@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Schema;
  * Batch 7B — movie_models column type optimisations:
  *
  * P3-20  title           TEXT  → VARCHAR(500)
- * P3-21  external_url    TEXT  → VARCHAR(2000)
- * P3-22  url             TEXT  → VARCHAR(2000)
- * P3-23  image_url       TEXT  → VARCHAR(2000)
- * P3-24  thumbnail_url   TEXT  → VARCHAR(2000)
+ * P3-21  external_url    TEXT  → VARCHAR(1000)
+ * P3-22  url             TEXT  → VARCHAR(1000)
+ * P3-23  image_url       TEXT  → VARCHAR(500)
+ * P3-24  thumbnail_url   TEXT  → VARCHAR(500)
  * P3-25  views_count     TEXT  → INT UNSIGNED DEFAULT 0
  * P3-26  downloads_count TEXT  → INT UNSIGNED DEFAULT 0
  * P3-27  likes_count     TEXT  → INT UNSIGNED DEFAULT 0
@@ -38,10 +38,10 @@ return new class extends Migration
         // VARCHAR is stored inline (no off-page pointer), reduces row size,
         // and allows indexing without prefix length prefixes.
         DB::statement('ALTER TABLE movie_models MODIFY COLUMN title VARCHAR(500) DEFAULT NULL');
-        DB::statement('ALTER TABLE movie_models MODIFY COLUMN external_url VARCHAR(2000) DEFAULT NULL');
-        DB::statement('ALTER TABLE movie_models MODIFY COLUMN url VARCHAR(2000) DEFAULT NULL');
-        DB::statement('ALTER TABLE movie_models MODIFY COLUMN image_url VARCHAR(2000) DEFAULT NULL');
-        DB::statement('ALTER TABLE movie_models MODIFY COLUMN thumbnail_url VARCHAR(2000) DEFAULT NULL');
+        DB::statement('ALTER TABLE movie_models MODIFY COLUMN external_url VARCHAR(1000) DEFAULT NULL');
+        DB::statement('ALTER TABLE movie_models MODIFY COLUMN url VARCHAR(1000) DEFAULT NULL');
+        DB::statement('ALTER TABLE movie_models MODIFY COLUMN image_url VARCHAR(500) DEFAULT NULL');
+        DB::statement('ALTER TABLE movie_models MODIFY COLUMN thumbnail_url VARCHAR(500) DEFAULT NULL');
 
         // ── Count columns: TEXT → INT UNSIGNED ───────────────────────────────
         // Counts were stored as TEXT (e.g. "42" or ""). Convert to INT.
