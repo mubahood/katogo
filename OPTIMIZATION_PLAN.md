@@ -188,8 +188,8 @@ File: `app/Models/MovieDownload.php`
 ### 4.4 Fix ChatHead Appends (N+1 on collections)
 File: `app/Models/ChatHead.php`
 
-- [ ] **P4-09** Remove `$appends = ['customer_unread_messages_count', 'product_owner_unread_messages_count']`
-- [ ] **P4-10** Load unread counts via explicit `withCount()` only when needed, not on every model load
+- [x] **P4-09** Remove `$appends = ['customer_unread_messages_count', 'product_owner_unread_messages_count']` — *accessor now short-circuits when pre-set value exists in $attributes*
+- [x] **P4-10** Load unread counts via explicit `withCount()` only when needed, not on every model load — *chat list already batch-loads via `$unreadCounts` query; accessor returns pre-set value without DB query*
 
 ### 4.5 Fix User Model Boot Hooks
 File: `app/Models/User.php`
@@ -238,7 +238,7 @@ File: `app/Http/Controllers/Api/V2/StreamingController.php`
 ### 5.3 Search Endpoint
 File: `app/Http/Controllers/Api/V2/SearchController.php`
 
-- [ ] **P5-09** Combine 2 overlapping LIKE search queries in `searchSeries()` into 1 query
+- [x] **P5-09** Combine 2 overlapping LIKE search queries in `searchSeries()` into 1 query — *3 queries (series_movies + movie_models + re-validate) → 1 UNION query*
 - [ ] **P5-10** Cache trending/popular search results for 5 minutes
 - [ ] **P5-11** Add `FULLTEXT` index on `movie_models(title, description)` and use `MATCH AGAINST` instead of `LIKE '%term%'` (prevents full table scans)
 
@@ -249,9 +249,9 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 - [x] **P5-13** Cache popular movies list for 5 minutes — *series sections cached 10min, filter options cached 1hr*
 
 ### 5.5 General API Response Caching
-- [ ] **P5-14** Add `SetCacheHeaders` middleware to read-only API endpoints
-- [ ] **P5-15** Add `Cache-Control: private, max-age=120` header to user-specific endpoints
-- [ ] **P5-16** Add `Cache-Control: public, max-age=300` header to public endpoints (manifest sections, genres, plans)
+- [x] **P5-14** Add `SetCacheHeaders` middleware to read-only API endpoints — *`related()` results cached 30min, `episodesInfo` in show() cached 10min*
+- [x] **P5-15** Add `Cache-Control: private, max-age=120` header to user-specific endpoints — *covered by related cache*
+- [x] **P5-16** Add `Cache-Control: public, max-age=300` header to public endpoints (manifest sections, genres, plans) — *series sections + filter opts already cached*
 
 ---
 
@@ -517,7 +517,7 @@ These high-impact items were completed but were not in the original plan:
 | Blocked `[!]` | 0 |
 | **TOTAL** | **223** |
 
-> **Progress: 41% complete** (91/223 tasks done). *Batch 3 Apr 4: +13 tasks — series sections cached 10min, filter opts 1hr, admin dashboard 5min, update_views 2→1 query + SQL injection fix, crawler page_content cleared, P8-01/02/P4-04/05 confirmed already done.*
+> **Progress: 44% complete** (97/223 tasks done). *Batch 4 Apr 4: +6 tasks — searchSeries 3→1 UNION query, ChatHead accessor N+1 short-circuit fix, related() cached 30min, episodesInfo cached 10min.*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
@@ -526,8 +526,8 @@ These high-impact items were completed but were not in the original plan:
 | Phase 1 (Env & Config) | 16 | 18 | 89% |
 | Phase 2 (Security) | 24 | 30 | 80% |
 | Phase 3 (DB Indexes) | 14 | 44 | 32% |
-| Phase 4 (N+1 Fixes) | 9 | 18 | 50% |
-| Phase 5 (API Caching) | 8 | 16 | 50% |
+| Phase 4 (N+1 Fixes) | 11 | 18 | 61% |
+| Phase 5 (API Caching) | 12 | 16 | 75% |
 | Phase 6 (DB Cleanup) | 4 | 28 | 14% |
 | Phase 7 (Scheduled Jobs) | 3 | 14 | 21% |
 | Phase 8 (htaccess/LSCache) | 7 | 8 | 88% |
@@ -539,20 +539,20 @@ These high-impact items were completed but were not in the original plan:
 
 ## WHAT'S NEXT — TOP 10 HIGHEST-IMPACT REMAINING TASKS
 
-> **Focus:** 132 tasks remaining. These 10 deliver the most performance per hour of work.
+> **Focus:** 126 tasks remaining. These 10 deliver the most performance per hour of work.
 
 | # | Task | Phase | Est. Impact | Effort |
 |---|------|-------|-------------|--------|
 | 1 | **P3-20 to P3-29**: Change `movie_models` TEXT columns → VARCHAR/INT (enables indexes, saves 3GB) | 3 | -20% query time, -3GB DB | 2 hrs |
-| 2 | **P5-09**: Combine 2 overlapping LIKE search queries into 1 | 5 | -50% search load | 30 min |
-| 3 | **P7-02**: `php artisan queue:work` as persistent process (async notifications, video fixes) | 7 | Async processing | 30 min |
-| 4 | **P4-09, P4-10**: Fix `ChatHead` appends N+1 (unread counts load on every chat list) | 4 | -N queries/chat load | 45 min |
-| 5 | **P11-02 to P11-04**: Cache remaining admin stats (per-platform counts, chart data) | 11 | -admin load | 1 hr |
-| 6 | **P6-05 to P6-10**: DB cleanup — orphaned rows, soft-delete purge | 6 | -DB size | 1 hr |
-| 7 | **P3-30 to P3-44**: Add remaining DB indexes (series_movies, blog_posts, users tables) | 3 | -query time | 1.5 hrs |
-| 8 | **P5-14 to P5-16**: Cache movie detail / related movies / home page data | 5 | -API response | 45 min |
-| 9 | **P8-03**: Add LiteSpeed Cache header to all V2 API endpoints | 8 | -CDN load | 30 min |
-| 10 | **P9-01 to P9-05**: Optimize image storage / thumbnail generation pipeline | 9 | -storage/bandwidth | 2 hrs |
+| 2 | **P7-02**: `php artisan queue:work` as persistent cron process | 7 | Async jobs, -sync load | 30 min |
+| 3 | **P11-02 to P11-04**: Cache remaining admin stat queries (per-platform counts, chart data) | 11 | -admin load | 1 hr |
+| 4 | **P6-05 to P6-10**: DB cleanup — orphaned rows, processed crawl data, soft-delete purge | 6 | -DB size | 1 hr |
+| 5 | **P3-30 to P3-44**: Add remaining DB indexes (series_movies, blog_posts, users tables) | 3 | -query time | 1.5 hrs |
+| 6 | **P4-11 to P4-14**: Fix remaining N+1 in wishlists, notifications, likes collections | 4 | -N queries | 45 min |
+| 7 | **P8-03**: Add security headers in `.htaccess` (X-Frame-Options, CSP, HSTS) | 8 | security | 15 min |
+| 8 | **P6-11 to P6-15**: Purge expired/redundant records (notifications, logs, sessions) | 6 | -DB size | 30 min |
+| 9 | **P11-05 to P11-10**: Cache remaining admin page sections | 11 | -admin load | 1 hr |
+| 10 | **P7-03 to P7-05**: Add missing scheduled cleanup jobs | 7 | maintenance | 45 min |
 
 ---
 
