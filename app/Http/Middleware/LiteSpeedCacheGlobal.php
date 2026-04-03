@@ -37,8 +37,6 @@ class LiteSpeedCacheGlobal
         if ($tag) {
             $response->headers->set('X-LiteSpeed-Tag', $tag);
         }
-        // Debug: confirm middleware ran
-        $response->headers->set('X-LSCache-Debug', 'middleware-applied');
 
         return $response;
     }
