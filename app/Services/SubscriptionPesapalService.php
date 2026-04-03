@@ -41,10 +41,10 @@ class SubscriptionPesapalService
     private const IPN_CACHE_SECONDS = 86400;
 
     /** @var int cURL timeout in seconds */
-    private const CURL_TIMEOUT = 30;
+    private const CURL_TIMEOUT = 15;
 
     /** @var int cURL connection timeout in seconds */
-    private const CURL_CONNECT_TIMEOUT = 10;
+    private const CURL_CONNECT_TIMEOUT = 5;
 
     public function __construct()
     {
