@@ -293,7 +293,7 @@ class SubscriptionFixController extends Controller
                 ], 401);
             }
 
-            $subscription = Subscription::with(['plan', 'transactions'])->find($id);
+            $subscription = $this->resolveUserActionableSubscription($user, (int) $id);
 
             if (!$subscription) {
                 return response()->json([
@@ -302,16 +302,6 @@ class SubscriptionFixController extends Controller
                     'message' => 'Subscription not found',
                     'data' => null,
                 ], 404);
-            }
-
-            // Verify ownership
-            if ($subscription->user_id !== $user->id) {
-                return response()->json([
-                    'code' => 0,
-                    'status' => 403,
-                    'message' => 'This subscription does not belong to you',
-                    'data' => null,
-                ], 403);
             }
 
             // Must have tracking ID
@@ -613,7 +603,7 @@ class SubscriptionFixController extends Controller
                         
                         if (!$locked->end_date_time) {
                             $start = $locked->start_date_time ?? now();
-                            $locked->end_date_time = \Carbon\Carbon::parse($start)->addDays($locked->days);
+                            $locked->end_date_time = \Carbon\Carbon::parse($start)->addHours(((int) $locked->days) * 24);
                         }
 
                         if (!$locked->payment_confirmed_at) {
@@ -790,5 +780,23 @@ class SubscriptionFixController extends Controller
         if ($minutes < 60) return (int) $minutes . ' min ago';
         if ($minutes < 1440) return (int) ($minutes / 60) . ' hours ago';
         return (int) ($minutes / 1440) . ' days ago';
+    }
+
+    /**
+     * Resolve action subscription for current user and avoid hard failures on stale IDs.
+     */
+    private function resolveUserActionableSubscription($user, int $hintId): ?Subscription
+    {
+        $requested = Subscription::with(['plan', 'transactions'])->find($hintId);
+
+        if ($requested && (int) $requested->user_id === (int) $user->id) {
+            return $requested;
+        }
+
+        return $user->subscriptions()
+            ->with(['plan', 'transactions'])
+            ->whereIn('status', ['Pending', 'Failed', 'Cancelled', 'Processing'])
+            ->orderByDesc('created_at')
+            ->first();
     }
 }

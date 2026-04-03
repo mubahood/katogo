@@ -221,15 +221,17 @@ class PaymentStatusChecker
      */
     protected function isAlreadyProcessed(Subscription $subscription)
     {
-        // Payment is considered processed if:
-        // 1. Status is Active and payment_status is Completed (successful)
-        // 2. Status is Failed and payment_status is Failed (failed)
-        // 3. Status is Cancelled (cancelled)
+        // Only treat truly completed subscriptions as final.
+        // Failed/Cancelled records may still be recovered if Pesapal confirms completion later.
+        if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+            return true;
+        }
 
-        $processedStatuses = ['Active', 'Failed', 'Cancelled', 'Expired'];
+        if ($subscription->status === 'Expired' && $subscription->payment_status === 'Completed') {
+            return true;
+        }
 
-        return in_array($subscription->status, $processedStatuses, true) 
-            && in_array($subscription->payment_status, ['Completed', 'Failed'], true);
+        return false;
     }
 
     /**
@@ -254,8 +256,8 @@ class PaymentStatusChecker
         $maxAgeThreshold = now()->subHours($maxAgeHours);
 
         // Find pending subscriptions
-        $pendingSubscriptions = Subscription::whereIn('status', ['Pending'])
-            ->whereIn('payment_status', ['Pending', 'Processing'])
+        $pendingSubscriptions = Subscription::whereIn('status', ['Pending', 'Failed', 'Cancelled'])
+            ->whereIn('payment_status', ['Pending', 'Processing', 'Failed'])
             ->whereNotNull('pesapal_tracking_id')
             ->where('created_at', '<', $threshold)
             ->where('created_at', '>', $maxAgeThreshold)

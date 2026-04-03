@@ -443,7 +443,8 @@ class User extends Administrator implements JWTSubject
             'has_active_subscription' => $isActive, // FIXED: Added this key with correct logic
             'status' => $subscription->status,
             'is_active' => $isActive,
-            'days_remaining' => $subscription->daysRemaining(true), // Include grace period
+            // Keep displayed remaining time aligned with purchased duration, not grace period.
+            'days_remaining' => $subscription->daysRemaining(false),
             'hours_remaining' => $subscription->hoursRemaining(),
             'end_date' => $subscription->end_date_time,
             'formatted_end_date' => $subscription->getFormattedEndDate(),
@@ -461,8 +462,8 @@ class User extends Administrator implements JWTSubject
     public function pendingSubscription()
     {
         return $this->subscriptions()
-            ->where('status', 'Pending')
-            ->where('payment_status', 'Pending')
+            ->whereIn('status', ['Pending', 'Processing'])
+            ->whereIn('payment_status', ['Pending', 'Processing'])
             ->orderBy('created_at', 'desc')
             ->first();
     }

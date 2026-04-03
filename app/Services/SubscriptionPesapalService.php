@@ -810,7 +810,7 @@ class SubscriptionPesapalService
                             'plan_duration_days' => $days,
                         ]);
                     }
-                    $subscription->end_date_time = \Carbon\Carbon::parse($subscription->start_date_time)->addDays($days);
+                    $subscription->end_date_time = \Carbon\Carbon::parse($subscription->start_date_time)->addHours($days * 24);
                     $subscription->grace_period_end = \Carbon\Carbon::parse($subscription->end_date_time)->addDays(3);
                     Log::info('📅 Pesapal: Calculated end_date_time and grace_period_end', [
                         'days'             => $days,
@@ -847,6 +847,9 @@ class SubscriptionPesapalService
                 );
 
                 $subscription->save();
+
+                // Flush pending cache so user immediately sees the activated subscription
+                Cache::forget("sub_pending_{$subscription->user_id}");
 
                 Log::info('💾 Pesapal: Subscription SAVED successfully', [
                     'subscription_id' => $subscription->id,
@@ -970,6 +973,9 @@ class SubscriptionPesapalService
                     ['status_check' => $statusData]
                 );
                 $subscription->save();
+
+                // Flush pending cache on failure too
+                Cache::forget("sub_pending_{$subscription->user_id}");
 
                 Log::info('💾 Pesapal: Subscription marked as FAILED', [
                     'subscription_id' => $subscription->id,

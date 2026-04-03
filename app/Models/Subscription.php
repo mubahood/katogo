@@ -122,7 +122,7 @@ class Subscription extends Model
                 // Ensure end_date_time is always set when Active
                 if (!$subscription->end_date_time) {
                     $days = max(1, (int) $subscription->days);
-                    $subscription->end_date_time = Carbon::parse($subscription->start_date_time)->addDays($days);
+                    $subscription->end_date_time = Carbon::parse($subscription->start_date_time)->addHours($days * 24);
                 }
                 // Ensure grace_period_end is always set when Active
                 if (!$subscription->grace_period_end && $subscription->end_date_time) {
@@ -388,7 +388,7 @@ class Subscription extends Model
             $this->days = $days;
         }
         if (!$this->end_date_time || $this->end_date_time->isPast()) {
-            $this->end_date_time = Carbon::parse($this->start_date_time)->addDays($days);
+            $this->end_date_time = Carbon::parse($this->start_date_time)->addHours($days * 24);
         }
 
         // Always keep grace_period_end in sync

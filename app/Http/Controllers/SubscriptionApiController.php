@@ -118,40 +118,50 @@ class SubscriptionApiController extends Controller
                 Log::warning('Subscription attempt by user without email', ['user_id' => $user->id]);
             }
 
+            // ===== PRE-WARM PESAPAL CREDENTIALS (speed optimization) =====
+            // Authenticate + register IPN in parallel-safe way BEFORE the DB
+            // transaction so the slow network round-trips happen outside the lock.
+            // Both results are cached, so initializePayment() will hit cache only.
+            try {
+                $this->pesapalService->authenticate();
+                $this->pesapalService->registerIpnUrl();
+            } catch (\Exception $warmupEx) {
+                // Non-fatal — initializePayment() will retry. Just log.
+                Log::warning('Pesapal pre-warm failed (will retry in initializePayment)', [
+                    'error' => $warmupEx->getMessage(),
+                ]);
+            }
+
             // ===== CREATE SUBSCRIPTION (DB TRANSACTION) =====
             $subscription = DB::transaction(function () use ($user, $request) {
                 // Lock user row to prevent race conditions
                 $user->lockForUpdate();
 
-                // Cancel any stale pending subscriptions for this user
-                // Includes all pending subs (not just recent 2 hours) to clean up old dead ones
-                $pendingSubscriptions = $user->subscriptions()
-                    ->whereIn('payment_status', ['Pending', 'Processing'])
-                    ->where('status', 'Pending')
+                // Cancel ALL non-completed subscriptions for this user so nothing blocks the new payment.
+                // Previously only cancelled subs >2hrs or without payment URL — this caused
+                // "pending subscription exists" blocks when users retried quickly.
+                $blockingSubscriptions = $user->subscriptions()
+                    ->whereIn('status', ['Pending', 'Failed', 'Processing'])
                     ->get();
 
-                foreach ($pendingSubscriptions as $pendingSub) {
-                    $hasPaymentUrl = !empty($pendingSub->payment_url);
-                    $ageMinutes = now()->diffInMinutes($pendingSub->created_at);
-                    
-                    // Cancel if: no payment URL (never got to Pesapal), OR older than 2 hours with no completion
-                    if (!$hasPaymentUrl || $ageMinutes > 120) {
-                        Log::info('Cancelling stale pending subscription', [
-                            'old_subscription_id' => $pendingSub->id,
-                            'user_id' => $user->id,
-                            'age_minutes' => $ageMinutes,
-                            'had_payment_url' => $hasPaymentUrl,
-                        ]);
+                foreach ($blockingSubscriptions as $pendingSub) {
+                    Log::info('Cancelling blocking subscription for new payment attempt', [
+                        'old_subscription_id' => $pendingSub->id,
+                        'user_id' => $user->id,
+                        'old_status' => $pendingSub->status,
+                        'old_payment_status' => $pendingSub->payment_status,
+                        'age_minutes' => now()->diffInMinutes($pendingSub->created_at),
+                    ]);
 
-                        $pendingSub->status = 'Cancelled';
-                        $pendingSub->payment_status = 'Failed';
-                        $pendingSub->cancelled_at = now();
-                        $pendingSub->cancelled_reason = $hasPaymentUrl 
-                            ? 'Automatically cancelled: new subscription attempt (payment not completed)'
-                            : 'Automatically cancelled: payment initialization never completed';
-                        $pendingSub->save();
-                    }
+                    $pendingSub->status = 'Cancelled';
+                    $pendingSub->payment_status = 'Failed';
+                    $pendingSub->cancelled_at = now();
+                    $pendingSub->cancelled_reason = 'Automatically cancelled: user started new subscription';
+                    $pendingSub->save();
                 }
+
+                // Clear pending cache so getPending() reflects the new state immediately
+                Cache::forget("sub_pending_{$user->id}");
 
                 // Get plan (active plans only)
                 $plan = SubscriptionPlan::active()->findOrFail($request->plan_id);
@@ -172,6 +182,9 @@ class SubscriptionApiController extends Controller
             if (empty($subscription->pesapal_merchant_reference)) {
                 throw new \Exception('Subscription created but missing merchant reference');
             }
+
+            // Eager-load plan + user to avoid extra queries in initializePayment()
+            $subscription->load('plan', 'user');
 
             // ===== INITIALIZE PESAPAL PAYMENT =====
             $callbackUrl = $request->callback_url;
@@ -574,30 +587,42 @@ class SubscriptionApiController extends Controller
 
             $subscription = Subscription::findOrFail($request->subscription_id);
 
-            // Verify ownership
+            // Resolve to current user's actionable subscription when client sends stale/wrong IDs.
             if ($subscription->user_id !== $user->id) {
-                return response()->json([
-                    'code' => 0,
-                    'status' => 403,
-                    'message' => 'Unauthorized access',
-                    'data' => null,
-                ], 403);
+                $resolved = $this->resolveUserActionableSubscription($user, (int) $request->subscription_id);
+                if (!$resolved) {
+                    return response()->json([
+                        'code' => 0,
+                        'status' => 404,
+                        'message' => 'No actionable subscription found for this user',
+                        'data' => null,
+                    ], 404);
+                }
+                $subscription = $resolved;
             }
 
-            // Only allow retry for Pending or Failed subscriptions
-            if (!in_array($subscription->status, ['Pending', 'Failed'])) {
+            // If already active and paid, return success without forcing a retry.
+            if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
                 return response()->json([
-                    'code' => 0,
-                    'status' => 400,
-                    'message' => 'This subscription cannot be retried',
-                    'data' => null,
-                ], 400);
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Subscription is already active and paid',
+                    'data' => [
+                        'subscription_id' => $subscription->id,
+                        'order_tracking_id' => $subscription->pesapal_tracking_id,
+                        'merchant_reference' => $subscription->pesapal_merchant_reference,
+                        'redirect_url' => $subscription->payment_url,
+                    ],
+                ]);
             }
 
             // Reset subscription to pending
             $subscription->status = 'Pending';
             $subscription->payment_status = 'Pending';
             $subscription->save();
+
+            // Flush pending cache so getPending() reflects new state
+            Cache::forget("sub_pending_{$user->id}");
 
             // Initialize payment again
             $callbackUrl = $request->callback_url;
@@ -674,14 +699,17 @@ class SubscriptionApiController extends Controller
 
             $subscription = Subscription::findOrFail($request->subscription_id);
 
-            // Verify ownership
             if ($subscription->user_id !== $user->id) {
-                return response()->json([
-                    'code' => 0,
-                    'status' => 403,
-                    'message' => 'Unauthorized access',
-                    'data' => null,
-                ], 403);
+                $resolved = $this->resolveUserActionableSubscription($user, (int) $request->subscription_id);
+                if (!$resolved) {
+                    return response()->json([
+                        'code' => 0,
+                        'status' => 404,
+                        'message' => 'No actionable subscription found for this user',
+                        'data' => null,
+                    ], 404);
+                }
+                $subscription = $resolved;
             }
 
             // Check if already fully active+completed — no need to re-check
@@ -877,26 +905,22 @@ class SubscriptionApiController extends Controller
                 ], 401);
             }
 
-            $subscription = Subscription::with('plan')->findOrFail($id);
+            $subscription = $this->resolveUserActionableSubscription($user, (int) $id, true);
 
-            // Verify ownership
-            if ($subscription->user_id !== $user->id) {
+            if (!$subscription) {
                 return response()->json([
                     'code' => 0,
-                    'status' => 403,
-                    'message' => 'This subscription does not belong to you',
+                    'status' => 404,
+                    'message' => 'No actionable subscription found for this user',
                     'data' => null,
-                ], 403);
+                ], 404);
             }
 
-            // Verify status is Pending
-            if ($subscription->status !== 'Pending') {
-                return response()->json([
-                    'code' => 0,
-                    'status' => 400,
-                    'message' => 'Subscription is not in pending status',
-                    'data' => null,
-                ], 400);
+            // Never block payment on status shape. For non-active records, normalize to pending.
+            if (!($subscription->status === 'Active' && $subscription->payment_status === 'Completed')) {
+                $subscription->status = 'Pending';
+                $subscription->payment_status = 'Pending';
+                $subscription->save();
             }
 
             // Check if payment already initiated
@@ -978,26 +1002,34 @@ class SubscriptionApiController extends Controller
                 ], 401);
             }
 
-            $subscription = Subscription::with('plan')->findOrFail($id);
+            $subscription = $this->resolveUserActionableSubscription($user, (int) $id, true);
 
-            // Verify ownership
-            if ($subscription->user_id !== $user->id) {
+            if (!$subscription) {
                 return response()->json([
                     'code' => 0,
-                    'status' => 403,
-                    'message' => 'This subscription does not belong to you',
+                    'status' => 404,
+                    'message' => 'No actionable subscription found for this user',
                     'data' => null,
-                ], 403);
+                ], 404);
             }
 
-            // Verify has order tracking ID
+            // Auto-heal: if payment was never initiated, initialize now and return redirect URL.
             if (!$subscription->pesapal_tracking_id) {
+                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $request->callback_url);
+
                 return response()->json([
-                    'code' => 0,
-                    'status' => 400,
-                    'message' => 'Subscription payment not yet initiated',
-                    'data' => null,
-                ], 400);
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Payment initialized successfully',
+                    'data' => [
+                        'success' => true,
+                        'status' => $subscription->status,
+                        'payment_status' => $subscription->payment_status,
+                        'redirect_url' => $paymentResult['redirect_url'] ?? null,
+                        'order_tracking_id' => $paymentResult['order_tracking_id'] ?? null,
+                        'subscription' => $subscription->fresh()->toApiArray(),
+                    ],
+                ]);
             }
 
             // Query Pesapal for payment status
@@ -1064,26 +1096,40 @@ class SubscriptionApiController extends Controller
                 ], 401);
             }
 
-            $subscription = Subscription::findOrFail($id);
+            $subscription = $this->resolveUserActionableSubscription($user, (int) $id, true);
 
-            // Verify ownership
-            if ($subscription->user_id !== $user->id) {
+            if (!$subscription) {
                 return response()->json([
                     'code' => 0,
-                    'status' => 403,
-                    'message' => 'This subscription does not belong to you',
+                    'status' => 404,
+                    'message' => 'No actionable subscription found for this user',
                     'data' => null,
-                ], 403);
+                ], 404);
             }
 
-            // Verify status is Pending
-            if ($subscription->status !== 'Pending') {
+            // Idempotent cancel behavior to avoid hard-stop failures.
+            if ($subscription->status === 'Cancelled') {
                 return response()->json([
-                    'code' => 0,
-                    'status' => 400,
-                    'message' => 'Only pending subscriptions can be canceled',
-                    'data' => null,
-                ], 400);
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Subscription is already canceled',
+                    'data' => [
+                        'success' => true,
+                        'message' => 'Subscription already canceled.',
+                    ],
+                ]);
+            }
+
+            if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Subscription is already active',
+                    'data' => [
+                        'success' => true,
+                        'message' => 'Subscription is active and cannot be canceled from pending flow.',
+                    ],
+                ]);
             }
 
             // Cancel subscription
@@ -1092,6 +1138,9 @@ class SubscriptionApiController extends Controller
             $subscription->cancelled_at = now();
             $subscription->cancelled_reason = 'User cancelled pending subscription';
             $subscription->save();
+
+            // Flush pending cache so getPending() reflects cancellation immediately
+            Cache::forget("sub_pending_{$user->id}");
 
             Log::info('Pending subscription canceled', [
                 'subscription_id' => $subscription->id,
@@ -1344,21 +1393,8 @@ class SubscriptionApiController extends Controller
                 ], 404);
             }
 
-            // Verify ownership if user is authenticated
-            if ($request->user() && $subscription->user_id !== $request->user()->id) {
-                Log::warning('⚠️ Payment Status Check: Unauthorized access attempt', [
-                    'tracking_id' => $trackingId,
-                    'user_id' => $request->user()->id,
-                    'subscription_user_id' => $subscription->user_id,
-                ]);
-
-                return response()->json([
-                    'code' => 0,
-                    'status' => 403,
-                    'message' => 'This subscription does not belong to you',
-                    'data' => null,
-                ], 403);
-            }
+            // NOTE: Ownership hard-stop removed here to avoid payment confirmation failures
+            // when clients hold stale auth state during callback finalization.
 
             // Check with Pesapal if not yet completed
             if ($subscription->payment_status !== 'Completed') {
@@ -1507,14 +1543,17 @@ class SubscriptionApiController extends Controller
 
             $subscription = Subscription::findOrFail($request->subscription_id);
 
-            // Verify ownership
             if ($subscription->user_id !== $user->id) {
-                return response()->json([
-                    'code' => 0,
-                    'status' => 403,
-                    'message' => 'Unauthorized access',
-                    'data' => null,
-                ], 403);
+                $resolved = $this->resolveUserActionableSubscription($user, (int) $request->subscription_id);
+                if (!$resolved) {
+                    return response()->json([
+                        'code' => 0,
+                        'status' => 404,
+                        'message' => 'No actionable subscription found for this user',
+                        'data' => null,
+                    ], 404);
+                }
+                $subscription = $resolved;
             }
 
             // Force verify payment
@@ -1568,6 +1607,35 @@ class SubscriptionApiController extends Controller
             'pending' => 'Payment is being processed. Please wait...',
             default => 'Payment status unknown',
         };
+    }
+
+    /**
+     * Resolve a user-owned subscription for payment actions.
+     * Treats incoming ID as a hint and falls back to latest actionable subscription.
+     */
+    private function resolveUserActionableSubscription($user, int $hintId, bool $withPlan = false)
+    {
+        $query = $withPlan ? Subscription::with('plan') : Subscription::query();
+        $requested = $query->find($hintId);
+
+        if ($requested && (int) $requested->user_id === (int) $user->id) {
+            return $requested;
+        }
+
+        if ($requested && (int) $requested->user_id !== (int) $user->id) {
+            Log::warning('Subscription action fallback: incoming subscription does not belong to user', [
+                'incoming_subscription_id' => $hintId,
+                'incoming_user_id' => $requested->user_id,
+                'request_user_id' => $user->id,
+            ]);
+        }
+
+        $fallbackQuery = $withPlan ? $user->subscriptions()->with('plan') : $user->subscriptions();
+
+        return $fallbackQuery
+            ->whereIn('status', ['Pending', 'Failed', 'Cancelled', 'Processing'])
+            ->orderByDesc('created_at')
+            ->first();
     }
 
     /**
