@@ -1,9 +1,10 @@
 # KATOGO 360° OPTIMIZATION PLAN
 
-> **Generated:** 2 April 2026 | **Last Updated:** 4 April 2026 (Batch 6)
+> **Generated:** 2 April 2026 | **Last Updated:** 3 April 2026 (Batch 7 planning)
 > **Server:** Shared hosting (u-lits.com) — 2 GB RAM, 50 CPU units, MySQL
 > **CPU at start:** 100% (50/50 units) | **CPU now:** ~35% (estimated after Phase 1-6 DB cleanup)
 > **Goal:** Reduce CPU to <40%, sub-200ms API responses, handle traffic spikes
+> **Deploy note:** Changes are tested locally (MAMP) — deploy manually when ready.
 
 ---
 
@@ -507,17 +508,17 @@ These high-impact items were completed but were not in the original plan:
 
 ## TOTAL TASK COUNT
 
-> Last counted: 3 April 2026 (after batch 2)
+> Last counted: 3 April 2026 (after batch 6 — verified by grep)
 
 | Status | Count |
 |--------|-------|
-| Not Started `[ ]` | **105** |
+| Not Started `[ ]` | **113** |
 | In Progress `[~]` | 0 |
-| Completed `[x]` | **118** |
+| Completed `[x]` | **120** |
 | Blocked `[!]` | 0 |
-| **TOTAL** | **223** |
+| **TOTAL** | **233** |
 
-> **Progress: 53% complete** (118/223 tasks done). *Batch 6 Apr 4: +14 tasks — DB cleanup crons for crawler pages/models/websites/game sessions/ludo/checkers/trending_notifications/content_reports/txn payloads (P6-05..P6-14, P7-06/07), trending search cache (P5-10), 4→1 platform GROUP BY (P4-15).*
+> **Progress: 52% complete** (120/233 tasks done). *Batch 6 Apr 3: +14 tasks — DB cleanup crons for crawler pages/models/websites/game sessions/ludo/checkers/trending_notifications/content_reports/txn payloads (P6-05..P6-14, P7-06/07), trending search cache (P5-10), 4→1 platform GROUP BY (P4-15).*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
@@ -528,32 +529,45 @@ These high-impact items were completed but were not in the original plan:
 | Phase 3 (DB Indexes) | 14 | 44 | 32% |
 | Phase 4 (N+1 Fixes) | 14 | 18 | 78% |
 | Phase 5 (API Caching) | 13 | 16 | 81% |
-| Phase 6 (DB Cleanup) | 14 | 28 | 50% |
-| Phase 7 (Scheduled Jobs) | 6 | 14 | 43% |
+| Phase 6 (DB Cleanup) | 13 | 28 | 46% |
+| Phase 7 (Scheduled Jobs) | 5 | 14 | 36% |
 | Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
-| Phase 9–10 | 0 | 22 | 0% |
+| Phase 9 (Packages) | 0 | 10 | 0% |
+| Phase 10 (Architecture) | 0 | 15 | 0% |
 | Phase 11 (Admin Panel) | 4 | 10 | 40% |
-| Phase 11 (Admin) | 1 | 10 | 10% |
-| Phase 12–13 | 0 | 6 | 0% |
+| Phase 12 (MySQL Tuning) | 0 | 7 | 0% |
+| Phase 13 (Monitoring) | 0 | 6 | 0% |
 
 ---
 
-## WHAT'S NEXT — TOP 10 HIGHEST-IMPACT REMAINING TASKS
+## WHAT'S NEXT — BATCH 7 PLAN (113 tasks remaining)
 
-> **Focus:** 105 tasks remaining. These 10 deliver the most performance per hour of work.
+> **Workflow:** All changes implemented and tested locally (MAMP/PHP). Deploy manually when ready.
+> **Focus:** Column type migrations unlock 3GB savings + indexing. Quick security + N+1 fixes alongside.
 
-| # | Task | Phase | Est. Impact | Effort |
-|---|------|-------|-------------|--------|
-| 1 | **P3-20 to P3-29**: Change `movie_models` TEXT columns → VARCHAR/INT (enables indexes, saves 3GB) | 3 | -20% query time, -3GB DB | 2 hrs |
-| 2 | **P3-30 to P3-44**: Add remaining DB indexes (movie_downloads, series_movies) | 3 | -query time | 1.5 hrs |
-| 3 | **P4-11, P4-12**: Fix User model boot hooks (5+ uniqueness queries per save) | 4 | -N queries | 45 min |
-| 4 | **P11-05 to P11-07**: Admin grid select() + eager loading for all grids | 11 | -admin SELECT * | 1 hr |
-| 5 | **P7-03, P7-04**: Move sync HTTP calls (notifications, video-fix) to queued jobs | 7 | -response time | 1 hr |
-| 6 | **P5-11**: Add FULLTEXT index on `movie_models(title)` + use MATCH AGAINST over LIKE | 5 | -search CPU | 45 min |
-| 7 | **P7-08 to P7-12**: Batch-update counts weekly, archive old movie_views >6 months | 7 | maintenance | 1 hr |
-| 8 | **P6-17 to P6-20**: Archive old movie_views, downloads, chat_messages >6 months | 6 | -DB size | 2 hrs |
-| 9 | **P3-06, P3-17, P3-18**: Add missing indexes (subscriptions, game_invitations) | 3 | -query time | 30 min |
-| 10 | **P2-18, P2-19**: Cap set_time_limit/memory_limit on processing routes | 2 | security/stability | 30 min |
+### Batch 7A — Quick Wins (< 30 min each, do first)
+| # | Task | What | Effort |
+|---|------|------|--------|
+| 1 | **P3-06** | Add index `subscriptions(status, created_at)` | 10 min |
+| 2 | **P3-17, P3-18** | Add indexes `game_invitations.status` + `expires_at` | 10 min |
+| 3 | **P2-18, P2-19** | Cap `set_time_limit(300)` + `memory_limit=256M` on processing routes | 20 min |
+| 4 | **P2-25, P2-26** | Restrict CORS `allowed_methods` + `allowed_headers` | 15 min |
+
+### Batch 7B — High Impact (biggest remaining wins)
+| # | Task | What | Est. Impact | Effort |
+|---|------|------|-------------|--------|
+| 5 | **P3-20 to P3-29** | `movie_models` TEXT→VARCHAR/INT (9 columns) — enables indexes, frees ~3GB | -20% query time, -3GB | 2 hrs |
+| 6 | **P5-11** | FULLTEXT index on `movie_models(title)` + `MATCH AGAINST` in search | -search CPU 60% | 45 min |
+| 7 | **P4-11, P4-12** | User model boot hooks — replace 5+ uniqueness queries with DB constraints | -5 queries/user save | 45 min |
+| 8 | **P11-05 to P11-07** | Admin grids: add `->select()` + `->with()` eager loading | -admin SELECT * | 1 hr |
+
+### Batch 7C — Architecture (do after 7A+7B)
+| # | Task | What | Effort |
+|---|------|------|--------|
+| 9 | **P7-03, P7-04** | Move `send_notification()` + VideoPlaybackFailure fix to queued jobs | 1 hr |
+| 10 | **P3-30 to P3-44** | `movie_downloads` + `series_movies` TEXT→VARCHAR remaining columns | 1.5 hrs |
+| 11 | **P6-17 to P6-20** | Archive `movie_views`, `movie_downloads`, `chat_messages` >6 months | 2 hrs |
+| 12 | **P7-08 to P7-12** | Batch-update counts weekly + archive cron jobs | 1 hr |
 
 ---
 
