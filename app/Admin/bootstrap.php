@@ -2,16 +2,8 @@
 
 use App\Models\MovieModel;
 use App\Models\Utils;
-use Illuminate\Support\Facades\Artisan;
 
 Encore\Admin\Form::forget(['map', 'editor']);
-
-// Artisan::call('migrate');
-//do run laravel migration command
-Artisan::call('migrate', ['--force' => true]);
-//returning the output
-return Artisan::output();
-die();
 
 // UGFlix Debug Video Player — mimics mobile app playback logic for admin testing
 // Cache-bust: append version timestamp to force browser to reload updated JS
@@ -100,3 +92,4 @@ die("done"); */
 die("done"); */
 //$items = Utils::getBucketItems('mubahood-movies');
 //dd($items);
+
