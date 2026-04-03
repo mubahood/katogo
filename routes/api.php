@@ -95,7 +95,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('products-delete', [ApiController::class, 'products_delete']);
 
     Route::get('me', [ApiController::class, 'me']);
-    Route::get('manifest', [ApiController::class, 'manifest']);
+    Route::get('manifest', [ApiController::class, 'manifest'])->middleware('lscache:45,manifest_v1');
 
 
 
@@ -157,7 +157,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     // ════════════════════════════════════════════
     Route::prefix('v2')->group(function () {
         // V2 Manifest — optimised, lean, cached
-        Route::get('manifest',            [V2ManifestController::class, 'index']);
+        Route::get('manifest',            [V2ManifestController::class, 'index'])->middleware('lscache:45,manifest_v2');
 
         Route::get('movies',              [V2MovieController::class, 'index']);
         Route::get('movies/search',       [V2MovieController::class, 'search']);
@@ -187,7 +187,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
         // Blog / News
         Route::get('blog',                     [V2BlogController::class, 'index']);
-        Route::get('blog/marquee',             [V2BlogController::class, 'marquee']);
+        Route::get('blog/marquee',             [V2BlogController::class, 'marquee'])->middleware('lscache:120,blog_marquee');
         Route::get('blog/{id}',                [V2BlogController::class, 'show']);
         Route::post('blog/{id}/like',          [V2BlogController::class, 'toggleLike']);
         Route::post('blog/{id}/comment',       [V2BlogController::class, 'addComment']);
@@ -195,7 +195,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::post('blog/comment/{id}/report',[V2BlogController::class, 'reportComment']);
 
         // Streaming (TV & Radio)
-        Route::get('streaming/home',             [V2StreamingController::class, 'home']);
+        Route::get('streaming/home',             [V2StreamingController::class, 'home'])->middleware('lscache:120,streaming_home');
         Route::get('streaming/stations',         [V2StreamingController::class, 'index']);
         Route::get('streaming/stations/{id}',    [V2StreamingController::class, 'show']);
         Route::get('streaming/categories',       [V2StreamingController::class, 'categories']);
