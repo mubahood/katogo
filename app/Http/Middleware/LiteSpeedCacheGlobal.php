@@ -32,12 +32,13 @@ class LiteSpeedCacheGlobal
         $response->headers->set('Cache-Control', "public, max-age={$maxAge}");
         $response->headers->remove('Vary');
 
-        // Use PHP native header() for LiteSpeed-specific headers
-        // LiteSpeed intercepts these during header output
-        header("X-LiteSpeed-Cache-Control: public, max-age={$maxAge}");
+        // Set LiteSpeed-specific headers on the response object
+        $response->headers->set('X-LiteSpeed-Cache-Control', "public, max-age={$maxAge}");
         if ($tag) {
-            header("X-LiteSpeed-Tag: {$tag}");
+            $response->headers->set('X-LiteSpeed-Tag', $tag);
         }
+        // Debug: confirm middleware ran
+        $response->headers->set('X-LSCache-Debug', 'middleware-applied');
 
         return $response;
     }
