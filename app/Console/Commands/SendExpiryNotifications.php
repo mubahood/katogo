@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Mail\SubscriptionExpiryMail;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Console\Command;
@@ -146,57 +147,8 @@ class SendExpiryNotifications extends Command
      */
     protected function sendExpiryEmail($user, $subscription, $daysRemaining)
     {
-        // TODO: Implement actual email sending
-        // You can use Laravel's Mail facade or a notification class
-        
-        // Example using Mail facade:
-        /*
-        Mail::to($user->email)->send(new SubscriptionExpiryMail(
-            $user,
-            $subscription,
-            $daysRemaining
-        ));
-        */
-
-        // Example using Notifications:
-        /*
-        $user->notify(new SubscriptionExpiryNotification(
-            $subscription,
-            $daysRemaining
-        ));
-        */
-
-        // For now, we'll just log it
-        // Implement your email template based on your mail service
-        
-        $subject = "Your subscription expires in {$daysRemaining} day" . ($daysRemaining > 1 ? 's' : '');
-        
-        $message = "
-            Dear {$user->name},
-            
-            Your {$subscription->plan->name} subscription will expire in {$daysRemaining} day" . ($daysRemaining > 1 ? 's' : '') . ".
-            
-            To continue enjoying unlimited access to our content, please renew your subscription.
-            
-            Subscription Details:
-            - Plan: {$subscription->plan->name}
-            - Expires: {$subscription->getFormattedEndDate()}
-            - Days Remaining: {$daysRemaining}
-            
-            Renew now to avoid interruption of service.
-            
-            If you have any questions, contact our support at +1 (647) 968-6445 (WhatsApp).
-            
-            Best regards,
-            The Katogo Team
-        ";
-
-      
-
-        // Uncomment when you have email configured:
-        // Mail::raw($message, function ($mail) use ($user, $subject) {
-        //     $mail->to($user->email)
-        //          ->subject($subject);
-        // });
+        // Queue the email so the command does not block on SMTP delivery
+        Mail::to($user->email)
+            ->queue(new SubscriptionExpiryMail($user, $subscription, $daysRemaining));
     }
 }

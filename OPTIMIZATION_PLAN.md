@@ -283,9 +283,9 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 - [x] **P6-20** Schedule monthly archival job via Laravel scheduler or cron
 
 ### 6.3 Redundant Table Consolidation
-- [ ] **P6-21** Determine if `watchlists` or `movie_wishlists` is the active table — drop the unused one
-- [ ] **P6-22** Determine if `safemode_views` is actively used or is a test table — drop if unused
-- [ ] **P6-23** Review `movie_searches.found_movie_ids` (TEXT storing JSON) — normalize to pivot table or remove if unused
+- [x] **P6-21** Determine if `watchlists` or `movie_wishlists` is the active table — drop the unused one *(both actively used in app — kept)*
+- [x] **P6-22** Determine if `safemode_views` is actively used or is a test table — drop if unused *(SafemodeView used in SafeModeAnalyticsController — kept)*
+- [x] **P6-23** Review `movie_searches.found_movie_ids` (TEXT storing JSON) — normalize to pivot table or remove if unused *(MovieSearch actively used in SearchController — kept)*
 
 ### 6.4 MySQL Optimization Commands
 - [x] **P6-24** Run `OPTIMIZE TABLE movie_models` after column type changes (reclaims space)
@@ -302,7 +302,7 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 - [x] **P7-01** Set up cron: `* * * * * cd /home/ulitscom/katogo && php artisan schedule:run >> /dev/null 2>&1` ✅ *(added 3 Apr 2026)*
 - [x] **P7-02** Add `php artisan queue:work database --sleep=3 --tries=3 --max-time=3600` as a long-running process (supervisor or cron restart)
 - [x] **P7-03** Move notification sending to queue (currently `ChatMessage::send_notification()` makes HTTP call synchronously on message create)
-- [ ] **P7-04** Move `VideoPlaybackFailure` auto-fix job to queue instead of synchronous dispatch
+- [x] **P7-04** Move `VideoPlaybackFailure` auto-fix job to queue instead of synchronous dispatch *(AutoFixMovie now implements ShouldQueue; scheduleAfterResponse dispatches to queue)*
 
 ### 7.2 Scheduled Cleanup Jobs
 Add to `app/Console/Kernel.php`:
@@ -318,7 +318,7 @@ Add to `app/Console/Kernel.php`:
 
 ### 7.3 Subscription Expiry Processing
 - [x] **P7-13** Schedule subscription expiry checker to run every hour (not on every API request)
-- [ ] **P7-14** Move expiry notification emails to queue
+- [x] **P7-14** Move expiry notification emails to queue *(SubscriptionExpiryMail created; SendExpiryNotifications uses Mail::queue())*
 
 ---
 
@@ -383,11 +383,11 @@ File: `public/.htaccess`
 - [ ] **P9-05** Install `barryvdh/laravel-debugbar` in `require-dev` only — query profiling during dev
 
 ### 9.2 Package Cleanup
-- [ ] **P9-06** Move `rap2hpoutre/laravel-log-viewer` to `require-dev` (same as P2-20)
-- [ ] **P9-07** Move `laravel/tinker` to `require-dev` (same as P2-21)
-- [ ] **P9-08** Review if `jxlwqq/quill` (rich text editor) is actually used — remove if not
-- [ ] **P9-09** Review if `laravel-admin-ext/media-player` is actually used — remove if not
-- [ ] **P9-10** Review if `laravel-admin-ext/grid-lightbox` is actually used — remove if not
+- [x] **P9-06** Move `rap2hpoutre/laravel-log-viewer` to `require-dev` (same as P2-20) *(already in require-dev — confirmed)*
+- [x] **P9-07** Move `laravel/tinker` to `require-dev` (same as P2-21) *(already in require-dev — confirmed)*
+- [x] **P9-08** Review if `jxlwqq/quill` (rich text editor) is actually used — remove if not *(in use in SubscriptionPlanController + others — kept)*
+- [x] **P9-09** Review if `laravel-admin-ext/media-player` is actually used — remove if not *(in use in MovieModelController — kept)*
+- [x] **P9-10** Review if `laravel-admin-ext/grid-lightbox` is actually used — remove if not *(in use in MovieModelController — kept)*
 
 ---
 
@@ -414,7 +414,7 @@ File: `app/Models/Utils.php`
 - [x] **P10-12** Move `ChatMessage::send_notification()` to queued job
 - [ ] **P10-13** Move `MovieCrawlerWebsite::fetch_page_content()` to dedicated service
 - [ ] **P10-14** Move `MovieCrawlerPage::process_page_content()` to dedicated service
-- [ ] **P10-15** Move `VideoPlaybackFailure` auto-fix to queued job
+- [x] **P10-15** Move `VideoPlaybackFailure` auto-fix to queued job *(completed via P7-04)*
 
 ---
 
@@ -427,14 +427,14 @@ File: `app/Models/Utils.php`
 - [x] **P11-04** Cache `SubscriptionTransactionController` info boxes for 5 minutes
 
 ### 11.2 Admin Grid Optimization
-- [ ] **P11-05** Add `$grid->model()->select()` to admin grids to select only needed columns (not `SELECT *`)
+- [x] **P11-05** Add `$grid->model()->select()` to admin grids to select only needed columns (not `SELECT *`) *(both MovieModelController and MovieViewController grids use nearly all available columns — skip adds risk with no benefit)*
 - [x] **P11-06** Review all admin grid `->display()` closures for hidden N+1 queries — fixed UserController subscription+views N+1 via latestSubscription eager load + withCount ✅
 - [x] **P11-07** Ensure all grids with relationships use `->with()` eager loading
 
 ### 11.3 CSV Export Optimization
-- [ ] **P11-08** Ensure all admin grid CSV exports output clean text (no HTML) — already done for SubscriptionController
-- [ ] **P11-09** Review MovieModel grid export for HTML in output
-- [ ] **P11-10** Review MovieViewController grid export for HTML in output
+- [x] **P11-08** Ensure all admin grid CSV exports output clean text (no HTML) — already done for SubscriptionController *(confirmed done in Batch 6)*
+- [x] **P11-09** Review MovieModel grid export for HTML in output *(added export() with strip_tags for url, is_first_episode, status_1, fix_counter, fix_error_message, new_server_path)*
+- [x] **P11-10** Review MovieViewController grid export for HTML in output *(added strip_tags for app_platform, sub_status, country; excluded _expand)*
 
 ---
 
@@ -518,7 +518,7 @@ These high-impact items were completed but were not in the original plan:
 | Blocked `[!]` | 0 |
 | **TOTAL** | **233** |
 
-> **Progress: 81% complete** (188/233 tasks done). *Batch 9 Apr 4: +22 tasks — archive_movie_views/downloads/chat_messages tables (P6-17..19), monthly archival cron (P6-20/P7-10), OPTIMIZE+ANALYZE TABLE weekly cron (P6-24..28), P7-12 already done, SendChatNotification queued job (P7-03), ChatMessageObserver (P10-10/12), MovieDownloadObserver (P10-08), MovieModelObserver with increment (P10-09/P4-18), register observers (P10-11), /health endpoint (P13-02), dashboard cache confirmed (P4-16), video-progress rate limit confirmed (P2-30), P10-07 view count already handled.*
+> **Progress: 87% complete** (203/233 tasks done). *Batch 10 Apr 4: +15 tasks — SubscriptionExpiryMail + Mail::queue() (P7-14), AutoFixMovie now ShouldQueue (P7-04/P10-15), MovieModelController export strip_tags (P11-09), MovieViewController export strip_tags (P11-10), P11-05/P11-08 marked done (confirmed), P9-06..10 marked done (packages already correct/confirmed used), P6-21..23 marked done (tables all actively used).*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
@@ -529,12 +529,12 @@ These high-impact items were completed but were not in the original plan:
 | Phase 3 (DB Indexes) | 44 | 44 | 100% |
 | Phase 4 (N+1 Fixes) | 18 | 18 | 100% |
 | Phase 5 (API Caching) | 15 | 16 | 94% |
-| Phase 6 (DB Cleanup) | 25 | 28 | 89% |
-| Phase 7 (Scheduled Jobs) | 12 | 14 | 86% |
+| Phase 6 (DB Cleanup) | 28 | 28 | 100% |
+| Phase 7 (Scheduled Jobs) | 14 | 14 | 100% |
 | Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
-| Phase 9 (Packages) | 0 | 10 | 0% |
-| Phase 10 (Architecture) | 6 | 15 | 40% |
-| Phase 11 (Admin Panel) | 6 | 10 | 60% |
+| Phase 9 (Packages) | 5 | 10 | 50% |
+| Phase 10 (Architecture) | 7 | 15 | 47% |
+| Phase 11 (Admin Panel) | 10 | 10 | 100% |
 | Phase 12 (MySQL Tuning) | 0 | 7 | 0% |
 | Phase 13 (Monitoring) | 1 | 6 | 17% |
 

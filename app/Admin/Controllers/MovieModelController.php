@@ -656,7 +656,29 @@ class MovieModelController extends AdminController
             ->hide()
             ->filter('like');
 
-
+        // ── CSV Export — strip HTML from display columns ──
+        $grid->export(function ($export) {
+            $export->filename('Movies_' . date('Y-m-d_H-i'));
+            $export->except(['actions']);
+            $export->column('url', function ($value) {
+                return strip_tags($value);
+            });
+            $export->column('is_first_episode', function ($value) {
+                return strip_tags($value);
+            });
+            $export->column('status_1', function ($value) {
+                return strip_tags($value);
+            });
+            $export->column('fix_counter', function ($value) {
+                return strip_tags($value);
+            });
+            $export->column('fix_error_message', function ($value) {
+                return strip_tags($value);
+            });
+            $export->column('new_server_path', function ($value) {
+                return strip_tags($value);
+            });
+        });
 
         return $grid;
 

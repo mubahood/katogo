@@ -5,24 +5,40 @@ namespace App\Jobs;
 use App\Models\MovieModel;
 use App\Models\VideoPlaybackFailure;
 use App\Services\MovieFixerService;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
  * AutoFixMovie — Attempts to auto-fix a movie when a playback failure is reported.
  *
- * This is NOT a queued Job (project uses sync queue). Instead it's invoked via
- * app()->terminating() so the HTTP response is sent to the client first,
- * then the fix runs in the same PHP process after output is flushed.
+ * Implements ShouldQueue so the fix is handled by the queue worker instead of
+ * running in the HTTP process. The static scheduleAfterResponse() helper
+ * dispatches the job to the queue immediately (no longer uses app()->terminating()).
  *
  * Safety measures:
  *  - Cooldown: skips if the same movie was already attempted within the last 5 minutes
- *  - Re-entry guard: static flag prevents recursive triggers
+ *  - Re-entry guard: static flag prevents recursive triggers in the same worker process
  *  - Try/catch: never breaks failure creation regardless of fix outcome
  *  - Only fires for movies sourced from munowatch (has page_source_url or munowatch_id)
  */
-class AutoFixMovie
+class AutoFixMovie implements ShouldQueue
 {
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /**
+     * Maximum number of attempts before giving up.
+     */
+    public int $tries = 2;
+
+    /**
+     * Seconds to wait before retrying after a failure.
+     */
+    public int $backoff = 60;
     /**
      * Prevents re-entry when the fixer updates failure records
      * (which could trigger another model event if not guarded).
@@ -40,44 +56,47 @@ class AutoFixMovie
     protected const COOLDOWN_SECONDS = 300; // 5 minutes
 
     /**
-     * Schedule an auto-fix to run after the HTTP response is sent.
+     * Create a new queued auto-fix job instance.
+     */
+    public function __construct(
+        public readonly int $movieId,
+        public readonly int $failureId,
+    ) {}
+
+    /**
+     * Execute the queued job.
+     */
+    public function handle(): void
+    {
+        static::execute($this->movieId, $this->failureId);
+    }
+
+    /**
+     * Dispatch the auto-fix to the queue (backward-compatible helper).
      *
-     * Call this from the model's created event or from the API controller.
-     * It registers an app()->terminating() callback that runs after the
-     * response is delivered, so the client is not blocked.
+     * Applies the cooldown guard before dispatching so concurrent API requests
+     * for the same movie only enqueue one fix job.
      */
     public static function scheduleAfterResponse(int $movieId, int $failureId): void
     {
-        // Guard: don't schedule if we're already inside a fix operation
-        if (static::$inProgress) {
+        if (static::$inProgress || $movieId <= 0) {
             return;
         }
 
-        // Guard: skip if no movie ID
-        if ($movieId <= 0) {
-            return;
-        }
-
-        // Guard: cooldown — skip if this movie was already attempted recently
         $cacheKey = static::COOLDOWN_PREFIX . $movieId;
         if (Cache::has($cacheKey)) {
             Log::debug("[AutoFixMovie] Skipping movie #{$movieId} — cooldown active (attempted recently).");
             return;
         }
 
-        // Set cooldown immediately so other concurrent requests skip
         Cache::put($cacheKey, true, static::COOLDOWN_SECONDS);
+        Log::info("[AutoFixMovie] Dispatching queued auto-fix for movie #{$movieId} (triggered by failure #{$failureId}).");
 
-        Log::info("[AutoFixMovie] Scheduled auto-fix for movie #{$movieId} (triggered by failure #{$failureId}).");
-
-        // Register to run AFTER the HTTP response is sent
-        app()->terminating(function () use ($movieId, $failureId) {
-            static::execute($movieId, $failureId);
-        });
+        static::dispatch($movieId, $failureId);
     }
 
     /**
-     * Execute the auto-fix immediately (called from terminating callback).
+     * Execute the auto-fix immediately (called from the queued handle() method).
      */
     public static function execute(int $movieId, int $failureId): void
     {

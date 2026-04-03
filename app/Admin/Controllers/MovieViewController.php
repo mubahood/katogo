@@ -526,6 +526,16 @@ class MovieViewController extends AdminController
 
         $grid->export(function ($export) {
             $export->filename('MovieViews_' . date('Y-m-d_H-i'));
+            $export->except(['actions', '_expand']);
+            $export->column('app_platform', function ($value) {
+                return strip_tags($value);
+            });
+            $export->column('sub_status', function ($value) {
+                return strip_tags($value);
+            });
+            $export->column('country', function ($value) {
+                return strip_tags($value);
+            });
         });
 
         return $grid;
