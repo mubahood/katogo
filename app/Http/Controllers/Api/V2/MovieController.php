@@ -705,21 +705,23 @@ class MovieController extends Controller
             }
         }
 
-        // Episode count & seasons for series
-        // Series visibility controlled by series_movies.is_active, not episode status
+        // Episode count & seasons for series — cached by category_id for 10 min
         $episodesInfo = null;
         if ($movie->type === 'Series' && !empty($movie->category_id)) {
-            $episodesInfo = [
-                'total_episodes' => MovieModel::where('category_id', $movie->category_id)
-                    ->where('type', 'Series')->count(),
-                'seasons' => MovieModel::where('category_id', $movie->category_id)
-                    ->where('type', 'Series')
-                    ->whereNotNull('season_number')->where('season_number', '!=', '')
-                    ->where('season_number', '!=', '0')
-                    ->distinct()->pluck('season_number')
-                    ->sort(fn($a, $b) => intval($a) - intval($b))
-                    ->values()->toArray(),
-            ];
+            $cat = $movie->category_id;
+            $episodesInfo = Cache::remember("series_{$cat}_episodes_meta", 600, function () use ($cat) {
+                return [
+                    'total_episodes' => MovieModel::where('category_id', $cat)
+                        ->where('type', 'Series')->count(),
+                    'seasons' => MovieModel::where('category_id', $cat)
+                        ->where('type', 'Series')
+                        ->whereNotNull('season_number')->where('season_number', '!=', '')
+                        ->where('season_number', '!=', '0')
+                        ->distinct()->pluck('season_number')
+                        ->sort(fn($a, $b) => intval($a) - intval($b))
+                        ->values()->toArray(),
+                ];
+            });
         }
 
         $elapsed = round((microtime(true) - $startTime) * 1000);
@@ -769,6 +771,9 @@ class MovieController extends Controller
         }
 
         $perPage = $this->resolvePerPage($request, 20);
+
+        // Cache related results by movie ID — results are user-independent, valid 30 min
+        $items = Cache::remember("movie_{$id}_related_{$perPage}", 1800, function () use ($movie, $perPage, $id) {
         $scored  = [];
 
         // ── Build exclusion list (for series, exclude same-series episodes) ──
@@ -869,6 +874,9 @@ class MovieController extends Controller
             }
             $items = $this->cleanUrls($items);
         }
+
+        return $items;
+        }); // end Cache::remember movie_related
 
         $elapsed = round((microtime(true) - $startTime) * 1000);
         Log::info("[V2:related] movie_id={$id} type={$movie->type} results=" . count($items) . " ms={$elapsed}");

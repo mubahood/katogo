@@ -74,38 +74,32 @@ class SearchController extends Controller
         $perPage = min(50, max(1, (int) $request->get('per_page', 20)));
         $page = max(1, (int) $request->get('page', 1));
 
-        // ── Step 1: Find matching series from series_movies table ──
-        $matchingSeriesIds = SeriesMovie::where(function ($q) use ($searchTerm) {
+        // ── Steps 1+2 consolidated: single UNION query across series_movies + first episodes ──
+        // (replaces 3 separate LIKE queries with 1 round-trip)
+        $allSeriesIds = DB::table('series_movies')
+            ->select('id')
+            ->where('is_active', 'Yes')
+            ->where(function ($q) use ($searchTerm) {
                 $q->where('title', 'LIKE', '%' . $searchTerm . '%')
                   ->orWhere('genre', 'LIKE', '%' . $searchTerm . '%')
                   ->orWhere('vj', 'LIKE', '%' . $searchTerm . '%')
                   ->orWhere('language', 'LIKE', '%' . $searchTerm . '%');
             })
-            ->where('is_active', 'Yes')
+            ->union(
+                DB::table('series_movies')
+                    ->select('series_movies.id')
+                    ->join('movie_models', 'movie_models.category_id', '=', 'series_movies.id')
+                    ->where('series_movies.is_active', 'Yes')
+                    ->where('movie_models.type', 'Series')
+                    ->where('movie_models.is_first_episode', 'yes')
+                    ->where(function ($q) use ($searchTerm) {
+                        $q->where('movie_models.title', 'LIKE', '%' . $searchTerm . '%')
+                          ->orWhere('movie_models.series_title', 'LIKE', '%' . $searchTerm . '%')
+                          ->orWhere('movie_models.vj', 'LIKE', '%' . $searchTerm . '%');
+                    })
+            )
             ->pluck('id')
             ->toArray();
-
-        // ── Step 2: Also search in movie_models titles (first episodes) ──
-        $titleMatchSeriesIds = MovieModel::where('type', 'Series')
-            ->where('is_first_episode', 'yes')
-            ->where(function ($q) use ($searchTerm) {
-                $q->where('title', 'LIKE', '%' . $searchTerm . '%')
-                  ->orWhere('series_title', 'LIKE', '%' . $searchTerm . '%')
-                  ->orWhere('vj', 'LIKE', '%' . $searchTerm . '%');
-            })
-            ->pluck('category_id')
-            ->filter()
-            ->unique()
-            ->toArray();
-
-        // Verify these series are active
-        if (!empty($titleMatchSeriesIds)) {
-            $titleMatchSeriesIds = SeriesMovie::whereIn('id', $titleMatchSeriesIds)
-                ->where('is_active', 'Yes')
-                ->pluck('id')->toArray();
-        }
-
-        $allSeriesIds = array_unique(array_merge($matchingSeriesIds, $titleMatchSeriesIds));
 
         if (empty($allSeriesIds)) {
             // Log the search

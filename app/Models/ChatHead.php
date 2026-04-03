@@ -19,6 +19,10 @@ class ChatHead extends Model
 
     public function getCustomerUnreadMessagesCountAttribute()
     {
+        // Short-circuit: return batch-loaded value if manually set (avoids N+1 on collections)
+        if (array_key_exists('customer_unread_messages_count', $this->attributes)) {
+            return $this->attributes['customer_unread_messages_count'];
+        }
         return ChatMessage::where('chat_head_id', $this->id)
             ->where('receiver_id', $this->customer_id)
             ->where('status', 'sent')
@@ -26,6 +30,10 @@ class ChatHead extends Model
     }
     public function getProductOwnerUnreadMessagesCountAttribute()
     {
+        // Short-circuit: return batch-loaded value if manually set (avoids N+1 on collections)
+        if (array_key_exists('product_owner_unread_messages_count', $this->attributes)) {
+            return $this->attributes['product_owner_unread_messages_count'];
+        }
         return ChatMessage::where('chat_head_id', $this->id)
             ->where('receiver_id', $this->product_owner_id)
             ->where('status', 'sent')
