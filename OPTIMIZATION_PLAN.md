@@ -1,8 +1,8 @@
 # KATOGO 360° OPTIMIZATION PLAN
 
-> **Generated:** 2 April 2026 | **Last Updated:** 3 April 2026
+> **Generated:** 2 April 2026 | **Last Updated:** 4 April 2026
 > **Server:** Shared hosting (u-lits.com) — 2 GB RAM, 50 CPU units, MySQL
-> **CPU at start:** 100% (50/50 units) | **CPU now:** ~45% (estimated after Phase 1-5 fixes)
+> **CPU at start:** 100% (50/50 units) | **CPU now:** ~40% (estimated after Phase 1-5 fixes)
 > **Goal:** Reduce CPU to <40%, sub-200ms API responses, handle traffic spikes
 
 ---
@@ -200,8 +200,8 @@ File: `app/Models/User.php`
 ### 4.6 Fix Admin Dashboard N+1 Queries
 File: `app/Admin/Controllers/MovieViewController.php`
 
-- [ ] **P4-13** Fix top 5 movies loop (lines 268-290): use `whereIn()` batch load instead of `MovieModel::find()` in loop
-- [ ] **P4-14** Fix top 5 users loop: use `whereIn()` batch load instead of `User::find()` in loop
+- [x] **P4-13** Fix top 5 movies loop (lines 268-290): use `whereIn()` batch load instead of `MovieModel::find()` in loop
+- [x] **P4-14** Fix top 5 users loop: use `whereIn()` batch load instead of `User::find()` in loop
 
 ### 4.7 Fix HomeController Dashboard Queries
 File: `app/Admin/Controllers/HomeController.php`
@@ -299,7 +299,7 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 
 ### 7.1 Database Queue Worker
 - [x] **P7-01** Set up cron: `* * * * * cd /home/ulitscom/katogo && php artisan schedule:run >> /dev/null 2>&1` ✅ *(added 3 Apr 2026)*
-- [ ] **P7-02** Add `php artisan queue:work database --sleep=3 --tries=3 --max-time=3600` as a long-running process (supervisor or cron restart)
+- [x] **P7-02** Add `php artisan queue:work database --sleep=3 --tries=3 --max-time=3600` as a long-running process (supervisor or cron restart)
 - [ ] **P7-03** Move notification sending to queue (currently `ChatMessage::send_notification()` makes HTTP call synchronously on message create)
 - [ ] **P7-04** Move `VideoPlaybackFailure` auto-fix job to queue instead of synchronous dispatch
 
@@ -360,7 +360,7 @@ File: `public/.htaccess`
 ```
 
 ### 8.3 Security Headers
-- [ ] **P8-03** Add security headers:
+- [x] **P8-03** Add security headers:
 ```apache
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
@@ -421,9 +421,9 @@ File: `app/Models/Utils.php`
 
 ### 11.1 Dashboard Caching
 - [x] **P11-01** Cache `HomeController::buildDashboard()` stats for 10 minutes — *cached 5min via Cache::remember wrapping full function*
-- [ ] **P11-02** Cache `MovieViewController` dashboard stats (8 heavy COUNT queries) for 5 minutes
-- [ ] **P11-03** Cache `SubscriptionController::buildStatsCards()` for 5 minutes
-- [ ] **P11-04** Cache `SubscriptionTransactionController` info boxes for 5 minutes
+- [x] **P11-02** Cache `MovieViewController` dashboard stats (8 heavy COUNT queries) for 5 minutes
+- [x] **P11-03** Cache `SubscriptionController::buildStatsCards()` for 5 minutes
+- [x] **P11-04** Cache `SubscriptionTransactionController` info boxes for 5 minutes
 
 ### 11.2 Admin Grid Optimization
 - [ ] **P11-05** Add `$grid->model()->select()` to admin grids to select only needed columns (not `SELECT *`)
@@ -511,13 +511,13 @@ These high-impact items were completed but were not in the original plan:
 
 | Status | Count |
 |--------|-------|
-| Not Started `[ ]` | **145** |
+| Not Started `[ ]` | **119** |
 | In Progress `[~]` | 0 |
-| Completed `[x]` | **78** |
+| Completed `[x]` | **104** |
 | Blocked `[!]` | 0 |
 | **TOTAL** | **223** |
 
-> **Progress: 44% complete** (97/223 tasks done). *Batch 4 Apr 4: +6 tasks — searchSeries 3→1 UNION query, ChatHead accessor N+1 short-circuit fix, related() cached 30min, episodesInfo cached 10min.*
+> **Progress: 47% complete** (104/223 tasks done). *Batch 5 Apr 4: +7 tasks — MovieView N+1→batch-load+5min cache (P4-13/14, P11-02), SubscriptionController stats 5min cache (P11-03), TxnController 11→1 query+cache (P11-04), queue:work cron (P7-02), security headers noted done (P8-03).*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
@@ -526,12 +526,13 @@ These high-impact items were completed but were not in the original plan:
 | Phase 1 (Env & Config) | 16 | 18 | 89% |
 | Phase 2 (Security) | 24 | 30 | 80% |
 | Phase 3 (DB Indexes) | 14 | 44 | 32% |
-| Phase 4 (N+1 Fixes) | 11 | 18 | 61% |
+| Phase 4 (N+1 Fixes) | 13 | 18 | 72% |
 | Phase 5 (API Caching) | 12 | 16 | 75% |
 | Phase 6 (DB Cleanup) | 4 | 28 | 14% |
-| Phase 7 (Scheduled Jobs) | 3 | 14 | 21% |
-| Phase 8 (htaccess/LSCache) | 7 | 8 | 88% |
+| Phase 7 (Scheduled Jobs) | 4 | 14 | 29% |
+| Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
 | Phase 9–10 | 0 | 22 | 0% |
+| Phase 11 (Admin Panel) | 4 | 10 | 40% |
 | Phase 11 (Admin) | 1 | 10 | 10% |
 | Phase 12–13 | 0 | 6 | 0% |
 
@@ -539,20 +540,20 @@ These high-impact items were completed but were not in the original plan:
 
 ## WHAT'S NEXT — TOP 10 HIGHEST-IMPACT REMAINING TASKS
 
-> **Focus:** 126 tasks remaining. These 10 deliver the most performance per hour of work.
+> **Focus:** 119 tasks remaining. These 10 deliver the most performance per hour of work.
 
 | # | Task | Phase | Est. Impact | Effort |
 |---|------|-------|-------------|--------|
 | 1 | **P3-20 to P3-29**: Change `movie_models` TEXT columns → VARCHAR/INT (enables indexes, saves 3GB) | 3 | -20% query time, -3GB DB | 2 hrs |
-| 2 | **P7-02**: `php artisan queue:work` as persistent cron process | 7 | Async jobs, -sync load | 30 min |
-| 3 | **P11-02 to P11-04**: Cache remaining admin stat queries (per-platform counts, chart data) | 11 | -admin load | 1 hr |
-| 4 | **P6-05 to P6-10**: DB cleanup — orphaned rows, processed crawl data, soft-delete purge | 6 | -DB size | 1 hr |
-| 5 | **P3-30 to P3-44**: Add remaining DB indexes (series_movies, blog_posts, users tables) | 3 | -query time | 1.5 hrs |
-| 6 | **P4-11 to P4-14**: Fix remaining N+1 in wishlists, notifications, likes collections | 4 | -N queries | 45 min |
-| 7 | **P8-03**: Add security headers in `.htaccess` (X-Frame-Options, CSP, HSTS) | 8 | security | 15 min |
-| 8 | **P6-11 to P6-15**: Purge expired/redundant records (notifications, logs, sessions) | 6 | -DB size | 30 min |
-| 9 | **P11-05 to P11-10**: Cache remaining admin page sections | 11 | -admin load | 1 hr |
-| 10 | **P7-03 to P7-05**: Add missing scheduled cleanup jobs | 7 | maintenance | 45 min |
+| 2 | **P6-05 to P6-10**: DB cleanup — orphaned rows, processed crawl data, soft-delete purge | 6 | -DB size | 1 hr |
+| 3 | **P3-30 to P3-44**: Add remaining DB indexes (series_movies, blog_posts, users tables) | 3 | -query time | 1.5 hrs |
+| 4 | **P4-11, P4-12**: Fix User model boot hooks (5+ uniqueness queries per save) | 4 | -N queries | 45 min |
+| 5 | **P4-15, P4-16**: HomeController dashboard — single GROUP BY + cache 5 min | 4 | -admin load | 30 min |
+| 6 | **P11-05 to P11-07**: Admin grid select() + eager loading | 11 | -admin load | 1 hr |
+| 7 | **P7-03, P7-04**: Move sync HTTP calls (notifications, video fix) to queued jobs | 7 | -response time | 1 hr |
+| 8 | **P6-11 to P6-14**: Purge expired game sessions, ludo, checkers, trending_notifications | 6 | -DB size | 30 min |
+| 9 | **P5-10, P5-11**: Cache trending search results + FULLTEXT index for LIKE queries | 5 | -search load | 45 min |
+| 10 | **P7-06 to P7-12**: Add missing scheduled cleanup jobs (game sessions, archival) | 7 | maintenance | 45 min |
 
 ---
 
