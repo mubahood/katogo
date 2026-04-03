@@ -307,50 +307,51 @@ class SearchController extends Controller
             default => Carbon::now()->subWeek(),
         };
 
-        // Trending: aggregate by normalized term, filter noise
-        $trending = DB::table('movie_searches')
-            ->select(
-                'search_term_normalized as term',
-                DB::raw('MAX(search_term) as display_term'),
-                DB::raw('SUM(search_count) as total_searches'),
-                DB::raw('COUNT(DISTINCT user_id) as unique_users'),
-                DB::raw('MAX(has_results) as has_results')
-            )
-            ->where('last_searched_at', '>=', $since)
-            ->where('has_results', true)
-            ->whereRaw('LENGTH(search_term_normalized) >= 3')
-            ->groupBy('search_term_normalized')
-            ->orderByDesc('total_searches')
-            ->limit($limit * 2) // fetch extra to filter
-            ->get();
-
-        // Filter out noise (2-char fragments, common words)
+        // Cache per period — trending data changes slowly (P5-10)
         $noise = ['the', 'and', 'for', 'that', 'with', 'you', 'are', 'not', 'this', 'sex', 'xxx'];
-        $items = [];
-        foreach ($trending as $row) {
-            if (in_array($row->term, $noise)) continue;
-            if (strlen($row->term) < 3) continue;
-            $items[] = [
-                'term'           => $row->display_term,
-                'search_count'   => (int) $row->total_searches,
-                'unique_users'   => (int) $row->unique_users,
-            ];
-            if (count($items) >= $limit) break;
-        }
+        $data = \Illuminate\Support\Facades\Cache::remember('search_trending_' . $period, 300, function () use ($since, $noise, $limit) {
+            // Trending: aggregate by normalized term, filter noise
+            $trending = DB::table('movie_searches')
+                ->select(
+                    'search_term_normalized as term',
+                    DB::raw('MAX(search_term) as display_term'),
+                    DB::raw('SUM(search_count) as total_searches'),
+                    DB::raw('COUNT(DISTINCT user_id) as unique_users'),
+                    DB::raw('MAX(has_results) as has_results')
+                )
+                ->where('last_searched_at', '>=', $since)
+                ->where('has_results', true)
+                ->whereRaw('LENGTH(search_term_normalized) >= 3')
+                ->groupBy('search_term_normalized')
+                ->orderByDesc('total_searches')
+                ->limit($limit * 2) // fetch extra to filter
+                ->get();
 
-        // Also get popular series (always useful for discovery)
-        $popularSeries = SeriesMovie::where('is_active', 'Yes')
-            ->whereNotNull('title')
-            ->orderByDesc('total_episodes')
-            ->limit(10)
-            ->select('id', 'title', 'thumbnail', 'total_episodes', 'genre', 'vj')
-            ->get()
-            ->toArray();
+            $items = [];
+            foreach ($trending as $row) {
+                if (in_array($row->term, $noise)) continue;
+                if (strlen($row->term) < 3) continue;
+                $items[] = [
+                    'term'           => $row->display_term,
+                    'search_count'   => (int) $row->total_searches,
+                    'unique_users'   => (int) $row->unique_users,
+                ];
+                if (count($items) >= $limit) break;
+            }
 
-        return $this->success([
-            'trending'       => $items,
-            'popular_series' => $popularSeries,
-        ], "Trending searches retrieved.");
+            // Also get popular series (always useful for discovery)
+            $popularSeries = SeriesMovie::where('is_active', 'Yes')
+                ->whereNotNull('title')
+                ->orderByDesc('total_episodes')
+                ->limit(10)
+                ->select('id', 'title', 'thumbnail', 'total_episodes', 'genre', 'vj')
+                ->get()
+                ->toArray();
+
+            return ['trending' => $items, 'popular_series' => $popularSeries];
+        });
+
+        return $this->success($data, "Trending searches retrieved.");
     }
 
     // ═══════════════════════════════════════════════════════════

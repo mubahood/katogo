@@ -172,11 +172,17 @@ class HomeController extends Controller
             $revTotal[] = isset($revenueMap[$dk]) ? array_sum($revenueMap[$dk]) : 0;
         }
 
-        // Platform view totals (for comparison table)
-        $munoViews    = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'muno_app')->count();
-        $lugaflixViews = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'lugaflix')->count();
-        $ugflixViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'ugflix')->count();
-        $webViews     = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'web')->count();
+        // Platform view totals — single GROUP BY query instead of 4 separate joins (P4-15)
+        $platformViewCounts = DB::table('movie_views')
+            ->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')
+            ->whereIn('admin_users.app_type', ['muno_app', 'lugaflix', 'ugflix', 'web'])
+            ->selectRaw('admin_users.app_type as plat, COUNT(*) as cnt')
+            ->groupBy('admin_users.app_type')
+            ->pluck('cnt', 'plat');
+        $munoViews    = (int) ($platformViewCounts['muno_app'] ?? 0);
+        $lugaflixViews = (int) ($platformViewCounts['lugaflix'] ?? 0);
+        $ugflixViews  = (int) ($platformViewCounts['ugflix'] ?? 0);
+        $webViews     = (int) ($platformViewCounts['web'] ?? 0);
 
         // Last 30 days subscriptions — daily aggregates (completed payments only, excludes withdrawals)
         $dailySubsRaw = DB::table('subscription_transactions')
