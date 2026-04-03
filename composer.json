@@ -19,6 +19,8 @@
         "laravel-admin-ext/media-player": "^1.1",
         "laravel/framework": "^10.10",
         "laravel/sanctum": "^3.3",
+        "spatie/laravel-query-builder": "^5.8",
+        "spatie/laravel-responsecache": "^7.5",
         "tymon/jwt-auth": "^2.2"
     },
     "require-dev": {

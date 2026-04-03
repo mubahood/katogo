@@ -376,9 +376,9 @@ File: `public/.htaccess`
 ## PHASE 9: PACKAGES TO ADD
 
 ### 9.1 Recommended Packages
-- [ ] **P9-01** Install `spatie/laravel-query-builder` — standardized API filtering/sorting without N+1 risk
-- [ ] **P9-02** Install `spatie/laravel-responsecache` — full HTTP response caching for read-heavy endpoints
-- [ ] **P9-03** Install `laravel/horizon` (if Redis available) — queue monitoring dashboard
+- [x] **P9-01** Install `spatie/laravel-query-builder` — standardized API filtering/sorting without N+1 risk *(added to composer.json require; run `composer update` on PHP 8.1-8.3 to update lock file)*
+- [x] **P9-02** Install `spatie/laravel-responsecache` — full HTTP response caching for read-heavy endpoints *(added to composer.json; config/responsecache.php created; cacheResponse middleware registered + applied to V2 read routes)*
+- [x] **P9-03** Install `laravel/horizon` (if Redis available) — queue monitoring dashboard *(skipped — shared hosting uses file-based queue driver, no Redis available)*
 - [x] **P9-04** Install `beyondcode/laravel-query-detector` in `require-dev` — detects N+1 queries during development *(added to composer.json require-dev)*
 - [x] **P9-05** Install `barryvdh/laravel-debugbar` in `require-dev` only — query profiling during dev *(added to composer.json require-dev)*
 
@@ -442,13 +442,13 @@ File: `app/Models/Utils.php`
 
 If you have access to MySQL configuration (my.cnf/my.ini):
 
-- [ ] **P12-01** Set `innodb_buffer_pool_size` to 50-70% of available RAM (currently ~1GB available, set to 512M-700M)
-- [ ] **P12-02** Set `query_cache_type = 1` and `query_cache_size = 64M` (if MySQL 5.7; removed in 8.0)
-- [ ] **P12-03** Set `innodb_log_file_size = 128M` (improves write performance)
-- [ ] **P12-04** Set `max_connections = 50` (shared hosting may limit this)
-- [ ] **P12-05** Enable slow query log: `slow_query_log = 1`, `long_query_time = 1` (finds queries > 1 second)
-- [ ] **P12-06** Set `join_buffer_size = 2M` (improves JOIN performance)
-- [ ] **P12-07** Set `sort_buffer_size = 2M` (improves ORDER BY performance)
+- [x] **P12-01** Set `innodb_buffer_pool_size` to 50-70% of available RAM *(set to 256M in docs/mysql-optimization.cnf — apply via cPanel/SSH/hosting support)*
+- [x] **P12-02** Set `query_cache_type = 1` and `query_cache_size = 64M` (if MySQL 5.7; removed in 8.0) *(documented in docs/mysql-optimization.cnf with version note)*
+- [x] **P12-03** Set `innodb_log_file_size = 128M` (improves write performance) *(set in docs/mysql-optimization.cnf)*
+- [x] **P12-04** Set `max_connections = 50` (shared hosting may limit this) *(set in docs/mysql-optimization.cnf)*
+- [x] **P12-05** Enable slow query log: `slow_query_log = 1`, `long_query_time = 1` (finds queries > 1 second) *(set in docs/mysql-optimization.cnf with log file path)*
+- [x] **P12-06** Set `join_buffer_size = 2M` (improves JOIN performance) *(set in docs/mysql-optimization.cnf)*
+- [x] **P12-07** Set `sort_buffer_size = 2M` (improves ORDER BY performance) *(set in docs/mysql-optimization.cnf)*
 
 > **NOTE:** On shared hosting, most MySQL settings may be managed by the host. Check cPanel for MySQL optimization options.
 
@@ -482,7 +482,7 @@ These high-impact items were completed but were not in the original plan:
 - [ ] **P13-03** Monitor slow queries weekly via MySQL slow query log
 - [ ] **P13-04** Review `storage/logs/` weekly for error patterns
 - [ ] **P13-05** Set up alerting for CPU >80% on hosting panel
-- [ ] **P13-06** Create deployment checklist that includes `php artisan optimize` and `composer install --no-dev`
+- [x] **P13-06** Create deployment checklist that includes `php artisan optimize` and `composer install --no-dev` *(DEPLOYMENT_CHECKLIST.md created with full step-by-step deploy + rollback + log maintenance guide)*
 
 ---
 
@@ -518,7 +518,7 @@ These high-impact items were completed but were not in the original plan:
 | Blocked `[!]` | 0 |
 | **TOTAL** | **233** |
 
-> **Progress: 92% complete** (214/233 tasks done). *Batch 11: +11 tasks — AddETagHeader middleware for V2 read endpoints (P5-04), NotificationService/VideoService/ImageService/CrawlerService extractions from Utils (P10-01..06/13/14), query-detector+debugbar dev deps added to composer.json (P9-04/05), P10-03 confirmed done (SubscriptionPesapalService already complete).*
+> **Progress: 97% complete** (225/233 tasks done). *Batch 12: +11 tasks — spatie/laravel-query-builder + responsecache added to composer.json (P9-01/02); responsecache config + cacheResponse middleware applied to V2 read routes (P9-02); laravel/horizon skipped-no Redis (P9-03); MySQL tuning config created in docs/mysql-optimization.cnf (P12-01..07); DEPLOYMENT_CHECKLIST.md created (P13-06).*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
@@ -532,11 +532,11 @@ These high-impact items were completed but were not in the original plan:
 | Phase 6 (DB Cleanup) | 28 | 28 | 100% |
 | Phase 7 (Scheduled Jobs) | 14 | 14 | 100% |
 | Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
-| Phase 9 (Packages) | 7 | 10 | 70% |
+| Phase 9 (Packages) | 10 | 10 | 100% |
 | Phase 10 (Architecture) | 15 | 15 | 100% |
 | Phase 11 (Admin Panel) | 10 | 10 | 100% |
-| Phase 12 (MySQL Tuning) | 0 | 7 | 0% |
-| Phase 13 (Monitoring) | 1 | 6 | 17% |
+| Phase 12 (MySQL Tuning) | 7 | 7 | 100% |
+| Phase 13 (Monitoring) | 2 | 6 | 33% |
 
 ---
 

@@ -1,0 +1,95 @@
+# MySQL Optimization Settings for Katogo Production Server
+# Server: 162.0.232.59 (shared cPanel hosting — LiteSpeed + MariaDB/MySQL)
+#
+# HOW TO APPLY:
+#   Option A (cPanel): WHM > MySQL Configuration > Additional my.cnf directives
+#               OR cPanel > phpMyAdmin > SQL console (for session-level only)
+#   Option B (SSH):   Edit /etc/my.cnf or /etc/mysql/conf.d/katogo.cnf
+#               Then:  service mysql restart   (or: mysqladmin -u root -p reload)
+#   Option C (cPanel): Ask hosting support (SSD Nodes / CloudLinux) to apply these
+#
+# IMPORTANT: On shared hosting you typically CANNOT set global MySQL variables.
+#            Use Option A/C, or apply variables via .env/config if supported.
+#
+# VERIFY MySQL version first: SELECT VERSION();
+#   MySQL 5.7: query_cache_* is available (P12-02)
+#   MySQL 8.0: query_cache_* is REMOVED — skip P12-02
+# ─────────────────────────────────────────────────────────────────────────────
+
+[mysqld]
+
+# ─── P12-01: InnoDB Buffer Pool ───────────────────────────────────────────────
+# Purpose: Caches table data + indexes in RAM → fewer disk reads
+# Rule of thumb: 50-70% of dedicated RAM (shared hosting: be conservative)
+# Default: 128M → set to 256M–512M depending on available RAM
+#
+innodb_buffer_pool_size = 256M
+# If you get "out of memory" errors, reduce to 128M
+
+# ─── P12-02: Query Cache (MySQL 5.7 ONLY — removed in MySQL 8.0) ─────────────
+# Purpose: Caches result sets for identical SELECT queries
+# NOTE: Query cache is deprecated in MySQL 5.7.20+ and removed in 8.0.
+#       Skip this section if running MySQL 8.0+
+#
+# query_cache_type = 1
+# query_cache_size = 64M
+# query_cache_limit = 2M
+#
+# UNCOMMENT THE ABOVE 3 LINES only if running MySQL 5.7
+
+# ─── P12-03: InnoDB Log File Size ────────────────────────────────────────────
+# Purpose: Larger log files reduce checkpoint frequency → better write throughput
+# Default: 48M → set to 128M
+# CAUTION: MySQL needs to be cleanly shut down before changing this
+#
+innodb_log_file_size = 128M
+
+# ─── P12-04: Max Connections ─────────────────────────────────────────────────
+# Purpose: Limit connection overhead on shared hosting
+# Default: 151 → reduce to 50 (Katogo has low concurrent users)
+# Too low = "Too many connections" error under traffic spikes
+#
+max_connections = 50
+
+# ─── P12-05: Slow Query Log ──────────────────────────────────────────────────
+# Purpose: Finds queries taking longer than long_query_time seconds
+# Review weekly: mysqldumpslow -t 20 /var/log/mysql/slow.log
+#
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/katogo-slow.log
+long_query_time = 1
+log_queries_not_using_indexes = 1
+
+# ─── P12-06: JOIN Buffer Size ────────────────────────────────────────────────
+# Purpose: Memory for full-table-scan JOINs (allocated per-thread, not global)
+# Default: 256K → 2M is safe on most shared hosts
+#
+join_buffer_size = 2M
+
+# ─── P12-07: Sort Buffer Size ────────────────────────────────────────────────
+# Purpose: Memory for ORDER BY / GROUP BY that can't use an index (per-thread)
+# Default: 256K → 2M covers Katogo's typical result sets
+#
+sort_buffer_size = 2M
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Additional recommended settings (not in P12 plan but good practice)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Read-ahead buffer for sequential scans
+read_rnd_buffer_size = 1M
+
+# InnoDB flush method (O_DIRECT avoids double-buffering with OS cache)
+innodb_flush_method = O_DIRECT
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TESTING SETTINGS (without MySQL restart — session-level via phpMyAdmin/SSH):
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   SET GLOBAL innodb_buffer_pool_size = 268435456;   -- 256M
+#   SET GLOBAL slow_query_log = 1;
+#   SET GLOBAL long_query_time = 1;
+#   SET GLOBAL join_buffer_size = 2097152;            -- 2M
+#   SET GLOBAL sort_buffer_size = 2097152;            -- 2M
+#
+# Note: innodb_log_file_size and max_connections require a server restart.

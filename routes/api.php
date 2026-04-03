@@ -161,7 +161,8 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         // V2 Manifest — optimised, lean, cached
         Route::get('manifest',            [V2ManifestController::class, 'index'])->middleware('lscache:45,manifest_v2');
 
-        Route::middleware('etag')->group(function () {
+        // NOTE: cacheResponse requires `spatie/laravel-responsecache` installed (composer update)
+        Route::middleware(['etag', 'cacheResponse'])->group(function () {
             Route::get('movies',              [V2MovieController::class, 'index']);
             Route::get('movies/search',       [V2MovieController::class, 'search']);
             Route::get('movies/{id}',         [V2MovieController::class, 'show']);
