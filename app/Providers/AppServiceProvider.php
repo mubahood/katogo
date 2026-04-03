@@ -20,7 +20,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Explicitly bind the Spatie ResponseCache Serializer interface to its default
+        // concrete implementation. This is a safety net for environments where the
+        // config cache may be stale (bootstrap/cache/config.php not yet cleared).
+        $this->app->bind(
+            \Spatie\ResponseCache\Serializers\Serializer::class,
+            \Spatie\ResponseCache\Serializers\DefaultSerializer::class
+        );
     }
 
     /**
