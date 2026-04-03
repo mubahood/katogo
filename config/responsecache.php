@@ -48,6 +48,11 @@ return [
     'cache_time_header_name' => env('RESPONSE_CACHE_HEADER_NAME', 'X-Spatie-Cache-Time'),
 
     /*
+     * The serializer used to serialize/deserialize cached responses.
+     */
+    'serializer' => \Spatie\ResponseCache\Serializers\DefaultSerializer::class,
+
+    /*
      * Replacers can replace parts of the response before it is cached.
      * Leave empty unless you need to strip dynamic tokens/CSRF from cached responses.
      */
