@@ -32,7 +32,7 @@ return [
      * The UriHasher ignores the authenticated user — suitable for public movie/series APIs.
      * Switch to RequestHasher if any cached endpoint returns user-specific content.
      */
-    'hasher' => Spatie\ResponseCache\Hasher\UriHasher::class,
+    'hasher' => Spatie\ResponseCache\Hasher\DefaultHasher::class,
 
     /*
      * The cache store used by the ResponseCache.
