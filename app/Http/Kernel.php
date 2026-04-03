@@ -15,6 +15,7 @@ class Kernel extends HttpKernel
      */
     protected $middleware = [
         // \App\Http\Middleware\TrustHosts::class,
+        \App\Http\Middleware\LiteSpeedCacheGlobal::class,
         \App\Http\Middleware\TrustProxies::class,
         \Illuminate\Http\Middleware\HandleCors::class,
         \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
@@ -59,7 +60,7 @@ class Kernel extends HttpKernel
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
         'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,
-        'lscache' => \App\Http\Middleware\LiteSpeedCache::class,
+        'lscache' => \App\Http\Middleware\LiteSpeedCacheRoute::class,
         'can' => \Illuminate\Auth\Middleware\Authorize::class,
         'cors' => \App\Http\Middleware\CorsMiddleware::class,
         'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,

@@ -8,27 +8,34 @@ use Illuminate\Http\Request;
 /**
  * LiteSpeed Cache middleware.
  * 
- * Applied to routes that should be cached by LiteSpeed.
- * Must run AFTER HandleCors to override Vary: Origin.
+ * Runs as global middleware (outer position, before HandleCors) so it can
+ * override headers AFTER HandleCors processes the response.
  * 
- * Usage in routes: ->middleware('lscache:120,tag_name')
+ * Only modifies responses for routes that have the 'lscache' route middleware
+ * which sets the _lscache flag on the request.
  */
-class LiteSpeedCache
+class LiteSpeedCacheGlobal
 {
-    public function handle(Request $request, Closure $next, $maxAge = 120, $tag = null)
+    public function handle(Request $request, Closure $next)
     {
         $response = $next($request);
 
-        // Set LSCache headers on the response
+        // Only modify responses flagged for LSCache
+        $maxAge = $request->attributes->get('_lscache_max_age');
+        if ($maxAge === null) {
+            return $response;
+        }
+
+        $tag = $request->attributes->get('_lscache_tag');
+
+        // Set LSCache headers AFTER all other middleware (including HandleCors)
         $response->headers->set('X-LiteSpeed-Cache-Control', "public, max-age={$maxAge}");
         $response->headers->set('Cache-Control', "public, max-age={$maxAge}");
+        $response->headers->remove('Vary');
 
         if ($tag) {
             $response->headers->set('X-LiteSpeed-Tag', $tag);
         }
-
-        // Remove Vary header that prevents LSCache from storing
-        $response->headers->remove('Vary');
 
         return $response;
     }
