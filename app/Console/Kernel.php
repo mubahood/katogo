@@ -228,6 +228,90 @@ class Kernel extends ConsoleKernel
                     mm.likes_count     = COALESCE(l.cnt, 0)
             ");
         })->weeklyOn(0, '05:30')->name('sync-movie-counts')->withoutOverlapping();
+
+        // ──────────────────────────────────────────────────────────────────
+        // MONTHLY DATA ARCHIVAL (P6-20 / P7-10)
+        // Move movie_views, movie_downloads, chat_messages older than 6 months
+        // into archive_* tables, then delete the originals.
+        // Runs on the 3rd of each month at 02:00 AM.
+        // ──────────────────────────────────────────────────────────────────
+
+        $schedule->call(function () {
+            $cutoff = now()->subMonths(6)->toDateTimeString();
+
+            // ── archive_movie_views ──────────────────────────────────────
+            \DB::statement("
+                INSERT INTO archive_movie_views
+                    (created_at, updated_at, archived_at,
+                     movie_model_id, user_id, ip_address, device, platform,
+                     browser, country, city, status, progress, max_progress)
+                SELECT created_at, updated_at, NOW(),
+                       movie_model_id, user_id, ip_address, device, platform,
+                       browser, country, city, status, progress, max_progress
+                FROM movie_views
+                WHERE created_at < ?
+            ", [$cutoff]);
+
+            \DB::table('movie_views')->where('created_at', '<', $cutoff)->delete();
+
+            // ── archive_movie_downloads ──────────────────────────────────
+            \DB::statement("
+                INSERT INTO archive_movie_downloads
+                    (created_at, updated_at, archived_at,
+                     local_id, user_id, movie_model_id, status, error_message,
+                     local_video_link, download_started_at, download_completed_at,
+                     download_duration, title, url, image_url, genre, vj,
+                     is_premium, episode_number)
+                SELECT created_at, updated_at, NOW(),
+                       local_id, user_id, movie_model_id, status, error_message,
+                       local_video_link, download_started_at, download_completed_at,
+                       download_duration, title, url, image_url, genre, vj,
+                       is_premium, episode_number
+                FROM movie_downloads
+                WHERE created_at < ?
+            ", [$cutoff]);
+
+            \DB::table('movie_downloads')->where('created_at', '<', $cutoff)->delete();
+
+            // ── archive_chat_messages ────────────────────────────────────
+            \DB::statement("
+                INSERT INTO archive_chat_messages
+                    (created_at, updated_at, archived_at,
+                     chat_head_id, sender_id, receiver_id, sender_name,
+                     receiver_name, body, type, audio_url, audio_duration, status)
+                SELECT created_at, updated_at, NOW(),
+                       chat_head_id, sender_id, receiver_id, sender_name,
+                       receiver_name, body, type, audio_url, audio_duration, status
+                FROM chat_messages
+                WHERE created_at < ?
+            ", [$cutoff]);
+
+            \DB::table('chat_messages')->where('created_at', '<', $cutoff)->delete();
+
+        })->monthlyOn(3, '02:00')->name('archive-old-records')->withoutOverlapping();
+
+        // ──────────────────────────────────────────────────────────────────
+        // OPTIMIZE + ANALYZE TABLES (P6-24..P6-28)
+        // Reclaims fragmented space after deletes/archival; refreshes optimizer stats.
+        // Runs Mondays at 06:00 AM.
+        // ──────────────────────────────────────────────────────────────────
+
+        $schedule->call(function () {
+            $tables = [
+                'movie_models', 'movie_views', 'movie_downloads',
+                'movie_crawler_pages', 'subscriptions', 'admin_users',
+                'series_movies', 'movie_likes',
+            ];
+            foreach ($tables as $tbl) {
+                try {
+                    \DB::statement("OPTIMIZE TABLE `{$tbl}`");
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning("[optimize-tables] {$tbl}: " . $e->getMessage());
+                }
+            }
+            // ANALYZE refreshes index statistics so the query planner makes better choices
+            \DB::statement('ANALYZE TABLE `' . implode('`, `', $tables) . '`');
+        })->weeklyOn(1, '06:00')->name('optimize-analyze-tables')->withoutOverlapping();
     }
 
     /**

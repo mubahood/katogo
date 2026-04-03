@@ -5495,3 +5495,31 @@ Route::get('/run-game-menu-seeder', function () {
         ], 500);
     }
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// Health check endpoint — returns DB connection status + response time.
+// Used by UptimeRobot or any monitoring tool (P13-02).
+// Returns 200 OK when healthy, 503 when DB is unreachable.
+// ──────────────────────────────────────────────────────────────────────────
+Route::get('/health', function () {
+    $start = microtime(true);
+
+    try {
+        DB::statement('SELECT 1');
+        $dbOk = true;
+    } catch (\Throwable $e) {
+        $dbOk = false;
+    }
+
+    $responseMs = round((microtime(true) - $start) * 1000, 1);
+
+    $data = [
+        'status'       => $dbOk ? 'ok' : 'error',
+        'db'           => $dbOk ? 'connected' : 'unreachable',
+        'response_ms'  => $responseMs,
+        'timestamp'    => now()->toISOString(),
+        'environment'  => app()->environment(),
+    ];
+
+    return response()->json($data, $dbOk ? 200 : 503);
+});

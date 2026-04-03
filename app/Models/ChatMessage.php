@@ -14,15 +14,8 @@ class ChatMessage extends Model
     protected static function boot()
     {
         parent::boot();
-
-        //created
-        static::creating(function ($model) {
-            try {
-                $model->send_notification();
-            } catch (\Throwable $th) {
-                //throw $th;
-            }
-        });
+        // Push notification dispatch moved to ChatMessageObserver (P10-10 / P7-03)
+        // — dispatches SendChatNotification queued job instead of blocking the HTTP response.
     }
 
 

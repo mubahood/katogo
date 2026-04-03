@@ -6,6 +6,12 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
+use App\Models\ChatMessage;
+use App\Models\MovieDownload;
+use App\Models\MovieModel;
+use App\Observers\ChatMessageObserver;
+use App\Observers\MovieDownloadObserver;
+use App\Observers\MovieModelObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -24,6 +30,13 @@ class AppServiceProvider extends ServiceProvider
     {
         // Enforce Nairobi timezone (EAT / GMT+3) globally
         date_default_timezone_set('Africa/Nairobi');
+
+        // ──────────────────────────────────────────────────────────────
+        // MODEL OBSERVERS (P10-11)
+        // ──────────────────────────────────────────────────────────────
+        ChatMessage::observe(ChatMessageObserver::class);    // async push notifications (P10-10)
+        MovieDownload::observe(MovieDownloadObserver::class); // increment downloads_count (P10-08)
+        MovieModel::observe(MovieModelObserver::class);       // increment/decrement total_episodes (P10-09)
 
         // ──────────────────────────────────────────────────────────────
         // CLEANUP: Ensure all Movie-type records have null category_id

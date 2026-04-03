@@ -77,11 +77,12 @@ class MovieModel extends Model
         parent::boot();
 
         static::created(function ($model) {
-            if ($model->type == 'Series' && $model->category_id) {
-                DB::statement("UPDATE series_movies SET total_episodes = (SELECT COUNT(*) FROM movie_models WHERE category_id = ?) WHERE id = ?", [$model->category_id, $model->category_id]);
-            }
+            // Episode count increment moved to MovieModelObserver::created() (P4-18 / P10-09)
+            // — uses INCREMENT instead of COUNT(*) subquery.
         });
         static::updated(function ($model) {
+            // Full recount via subquery is still correct for updated events
+            // since category_id may have changed (e.g. episode moved to a different series)
             if ($model->type == 'Series' && $model->category_id) {
                 DB::statement("UPDATE series_movies SET total_episodes = (SELECT COUNT(*) FROM movie_models WHERE category_id = ?) WHERE id = ?", [$model->category_id, $model->category_id]);
             }

@@ -89,7 +89,7 @@ File: `app/Providers/RouteServiceProvider.php` or `routes/api.php`
 - [x] **P2-27** Explicit rate limit for API: `Limit::perMinute(120)` on api ✅
 - [x] **P2-28** Strict rate limit for auth endpoints: `throttle:auth` at `Limit::perMinute(10)` per IP on login/register/google/password-reset ✅
 - [x] **P2-29** Rate limit for search: `RateLimiter::for('search', Limit::perMinute(30))` defined ✅
-- [ ] **P2-30** Add rate limit for video progress tracking: `Limit::perMinute(120)` (already has `throttle:video-progress`)
+- [x] **P2-30** Add rate limit for video progress tracking: `Limit::perMinute(120)` (already has `throttle:video-progress`)
 
 ---
 
@@ -208,13 +208,13 @@ File: `app/Admin/Controllers/MovieViewController.php`
 File: `app/Admin/Controllers/HomeController.php`
 
 - [x] **P4-15** Replace 4 separate platform JOIN queries (lines 175-178) with single GROUP BY query
-- [ ] **P4-16** Cache admin dashboard stats for 5-10 minutes using `Cache::remember()`
+- [x] **P4-16** Cache admin dashboard stats for 5-10 minutes using `Cache::remember()`
 
 ### 4.8 Fix SeriesMovie / MovieModel Boot Hooks
 Files: `app/Models/SeriesMovie.php`, `app/Models/MovieModel.php`
 
 - [x] **P4-17** Replaced SeriesMovie::find() + COUNT + raw SQL in MovieModel boot hooks with single subquery UPDATE ✅
-- [ ] **P4-18** Or use `DB::raw('total_episodes = total_episodes + 1')` increment instead of COUNT requery
+- [x] **P4-18** Or use `DB::raw('total_episodes = total_episodes + 1')` increment instead of COUNT requery
 
 ---
 
@@ -277,10 +277,10 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 - [x] **P6-16** `failed_jobs` — Review and purge handled failures — *table already clean (0 old rows)*
 
 ### 6.2 Data Archival Strategy (Large Tables)
-- [ ] **P6-17** Create `archive_movie_views` table — move records older than 6 months
-- [ ] **P6-18** Create `archive_movie_downloads` table — move records older than 6 months
-- [ ] **P6-19** Create `archive_chat_messages` table — move records older than 6 months
-- [ ] **P6-20** Schedule monthly archival job via Laravel scheduler or cron
+- [x] **P6-17** Create `archive_movie_views` table — move records older than 6 months
+- [x] **P6-18** Create `archive_movie_downloads` table — move records older than 6 months
+- [x] **P6-19** Create `archive_chat_messages` table — move records older than 6 months
+- [x] **P6-20** Schedule monthly archival job via Laravel scheduler or cron
 
 ### 6.3 Redundant Table Consolidation
 - [ ] **P6-21** Determine if `watchlists` or `movie_wishlists` is the active table — drop the unused one
@@ -288,11 +288,11 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 - [ ] **P6-23** Review `movie_searches.found_movie_ids` (TEXT storing JSON) — normalize to pivot table or remove if unused
 
 ### 6.4 MySQL Optimization Commands
-- [ ] **P6-24** Run `OPTIMIZE TABLE movie_models` after column type changes (reclaims space)
-- [ ] **P6-25** Run `OPTIMIZE TABLE movie_views` after archival
-- [ ] **P6-26** Run `OPTIMIZE TABLE movie_downloads` after archival
-- [ ] **P6-27** Run `OPTIMIZE TABLE movie_crawler_pages` after page_content cleanup
-- [ ] **P6-28** Run `ANALYZE TABLE` on all major tables to update query optimizer statistics
+- [x] **P6-24** Run `OPTIMIZE TABLE movie_models` after column type changes (reclaims space)
+- [x] **P6-25** Run `OPTIMIZE TABLE movie_views` after archival
+- [x] **P6-26** Run `OPTIMIZE TABLE movie_downloads` after archival
+- [x] **P6-27** Run `OPTIMIZE TABLE movie_crawler_pages` after page_content cleanup
+- [x] **P6-28** Run `ANALYZE TABLE` on all major tables to update query optimizer statistics
 
 ---
 
@@ -301,7 +301,7 @@ File: `app/Http/Controllers/Api/V2/MovieController.php`
 ### 7.1 Database Queue Worker
 - [x] **P7-01** Set up cron: `* * * * * cd /home/ulitscom/katogo && php artisan schedule:run >> /dev/null 2>&1` ✅ *(added 3 Apr 2026)*
 - [x] **P7-02** Add `php artisan queue:work database --sleep=3 --tries=3 --max-time=3600` as a long-running process (supervisor or cron restart)
-- [ ] **P7-03** Move notification sending to queue (currently `ChatMessage::send_notification()` makes HTTP call synchronously on message create)
+- [x] **P7-03** Move notification sending to queue (currently `ChatMessage::send_notification()` makes HTTP call synchronously on message create)
 - [ ] **P7-04** Move `VideoPlaybackFailure` auto-fix job to queue instead of synchronous dispatch
 
 ### 7.2 Scheduled Cleanup Jobs
@@ -312,9 +312,9 @@ Add to `app/Console/Kernel.php`:
 - [x] **P7-07** Daily: expire old password reset tokens
 - [x] **P7-08** Weekly: batch-update denormalized counts on `movie_models` (views_count, likes_count, downloads_count)
 - [x] **P7-09** Weekly: purge resolved video playback failures older than 3 months
-- [ ] **P7-10** Monthly: archive old movie_views, movie_downloads, chat_messages (older than 6 months)
+- [x] **P7-10** Monthly: archive old movie_views, movie_downloads, chat_messages (older than 6 months)
 - [x] **P7-11** Monthly: force-delete soft-deleted records older than 1 year
-- [ ] **P7-12** Monthly: clear crawler page_content data for processed pages
+- [x] **P7-12** Monthly: clear crawler page_content data for processed pages
 
 ### 7.3 Subscription Expiry Processing
 - [x] **P7-13** Schedule subscription expiry checker to run every hour (not on every API request)
@@ -404,14 +404,14 @@ File: `app/Models/Utils.php`
 - [ ] **P10-06** Keep only true utility methods (formatting, validation) in Utils.php
 
 ### 10.2 Move Model Logic to Observers
-- [ ] **P10-07** Create `MovieViewObserver` — handle view count updates
-- [ ] **P10-08** Create `MovieDownloadObserver` — handle download count updates
-- [ ] **P10-09** Create `MovieModelObserver` — handle series episode count updates
-- [ ] **P10-10** Create `ChatMessageObserver` — handle notification dispatch via queue
-- [ ] **P10-11** Register all observers in `AppServiceProvider`
+- [x] **P10-07** Create `MovieViewObserver` — handle view count updates
+- [x] **P10-08** Create `MovieDownloadObserver` — handle download count updates
+- [x] **P10-09** Create `MovieModelObserver` — handle series episode count updates
+- [x] **P10-10** Create `ChatMessageObserver` — handle notification dispatch via queue
+- [x] **P10-11** Register all observers in `AppServiceProvider`
 
 ### 10.3 Move HTTP Calls Out of Models
-- [ ] **P10-12** Move `ChatMessage::send_notification()` to queued job
+- [x] **P10-12** Move `ChatMessage::send_notification()` to queued job
 - [ ] **P10-13** Move `MovieCrawlerWebsite::fetch_page_content()` to dedicated service
 - [ ] **P10-14** Move `MovieCrawlerPage::process_page_content()` to dedicated service
 - [ ] **P10-15** Move `VideoPlaybackFailure` auto-fix to queued job
@@ -478,7 +478,7 @@ These high-impact items were completed but were not in the original plan:
 ## PHASE 13: MONITORING & ONGOING MAINTENANCE
 
 - [ ] **P13-01** Set up UptimeRobot or similar for endpoint monitoring (free tier)
-- [ ] **P13-02** Create a `/health` endpoint that returns DB connection status + response time
+- [x] **P13-02** Create a `/health` endpoint that returns DB connection status + response time
 - [ ] **P13-03** Monitor slow queries weekly via MySQL slow query log
 - [ ] **P13-04** Review `storage/logs/` weekly for error patterns
 - [ ] **P13-05** Set up alerting for CPU >80% on hosting panel
@@ -508,35 +508,35 @@ These high-impact items were completed but were not in the original plan:
 
 ## TOTAL TASK COUNT
 
-> Last counted: 4 April 2026 (after batch 8 — verified by grep)
+> Last counted: 4 April 2026 (after batch 9 — verified by grep)
 
 | Status | Count |
 |--------|-------|
-| Not Started `[ ]` | **67** |
+| Not Started `[ ]` | **45** |
 | In Progress `[~]` | 0 |
-| Completed `[x]` | **166** |
+| Completed `[x]` | **188** |
 | Blocked `[!]` | 0 |
 | **TOTAL** | **233** |
 
-> **Progress: 71% complete** (166/233 tasks done). *Batch 8 Apr 4: +24 tasks — movie_downloads TEXT→narrower types (P3-30..42), series_movies TEXT→VARCHAR (P3-43/44), vpf cleanup crons (P6-01/02), user_blocks purge (P6-09), weekly count sync (P7-08/09), soft-delete purge (P7-11), expiry check hourly (P7-13), MovieViewController subscription N+1 fix (P11-07), activeSubscription 2-min cache (P5-02).*
+> **Progress: 81% complete** (188/233 tasks done). *Batch 9 Apr 4: +22 tasks — archive_movie_views/downloads/chat_messages tables (P6-17..19), monthly archival cron (P6-20/P7-10), OPTIMIZE+ANALYZE TABLE weekly cron (P6-24..28), P7-12 already done, SendChatNotification queued job (P7-03), ChatMessageObserver (P10-10/12), MovieDownloadObserver (P10-08), MovieModelObserver with increment (P10-09/P4-18), register observers (P10-11), /health endpoint (P13-02), dashboard cache confirmed (P4-16), video-progress rate limit confirmed (P2-30), P10-07 view count already handled.*
 
 ### Completed by Phase
 | Phase | Done | Total | % |
 |-------|------|-------|---|
 | Phase 0 (out-of-plan wins) | 9 | 9 | 100% |
 | Phase 1 (Env & Config) | 16 | 18 | 89% |
-| Phase 2 (Security) | 26 | 30 | 87% |
+| Phase 2 (Security) | 27 | 30 | 90% |
 | Phase 3 (DB Indexes) | 44 | 44 | 100% |
-| Phase 4 (N+1 Fixes) | 16 | 18 | 89% |
+| Phase 4 (N+1 Fixes) | 18 | 18 | 100% |
 | Phase 5 (API Caching) | 15 | 16 | 94% |
-| Phase 6 (DB Cleanup) | 13 | 28 | 46% |
-| Phase 7 (Scheduled Jobs) | 9 | 14 | 64% |
+| Phase 6 (DB Cleanup) | 25 | 28 | 89% |
+| Phase 7 (Scheduled Jobs) | 12 | 14 | 86% |
 | Phase 8 (htaccess/LSCache) | 8 | 8 | 100% |
 | Phase 9 (Packages) | 0 | 10 | 0% |
-| Phase 10 (Architecture) | 0 | 15 | 0% |
+| Phase 10 (Architecture) | 6 | 15 | 40% |
 | Phase 11 (Admin Panel) | 6 | 10 | 60% |
 | Phase 12 (MySQL Tuning) | 0 | 7 | 0% |
-| Phase 13 (Monitoring) | 0 | 6 | 0% |
+| Phase 13 (Monitoring) | 1 | 6 | 17% |
 
 ---
 
