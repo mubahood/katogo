@@ -288,6 +288,7 @@ class MovieController extends Controller
      */
     private function buildSeriesSections(): array
     {
+        return Cache::remember('series_sections', 600, function () {
         $selectCols = array_map(fn($f) => "movie_models.{$f}", self::LIST_FIELDS);
         $selectCols[] = 'series_movies.total_episodes as episode_count';
         $selectCols[] = 'series_movies.total_views as series_views';
@@ -345,6 +346,7 @@ class MovieController extends Controller
                 'items'    => $mini,
             ],
         ];
+        }); // end Cache::remember series_sections
     }
 
     /**
@@ -365,6 +367,7 @@ class MovieController extends Controller
      */
     private function getSeriesFilterOptions(): array
     {
+        return Cache::remember('series_filter_options', 3600, function () {
         $base = MovieModel::query()
             ->join('series_movies', 'movie_models.category_id', '=', 'series_movies.id')
             ->where('movie_models.type', 'Series')
@@ -411,6 +414,7 @@ class MovieController extends Controller
             'languages' => $languages,
             'years'     => $years,
         ];
+        }); // end Cache::remember series_filter_options
     }
 
     // ═══════════════════════════════════════════════════════════

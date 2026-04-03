@@ -386,20 +386,18 @@ class MovieModel extends Model
 
     public function update_views()
     {
-        $views = DB::table('movie_views')->where([
-            'movie_model_id' => $this->id,
-        ])->count();
-        $views_time_count = DB::table('movie_views')->where([
-            'movie_model_id' => $this->id,
-        ])->sum('progress');
+        $result = DB::table('movie_views')
+            ->where('movie_model_id', $this->id)
+            ->selectRaw('COUNT(*) as views, SUM(progress) as progress_sum')
+            ->first();
 
-        // Ensure numeric values
-        $views = is_numeric($views) ? intval($views) : 0;
-        $views_time_count = is_numeric($views_time_count) ? floatval($views_time_count) : 0;
+        $views            = is_numeric($result->views)        ? intval($result->views)        : 0;
+        $views_time_count = is_numeric($result->progress_sum) ? floatval($result->progress_sum) : 0;
 
         try {
-            $sql = "UPDATE movie_models SET views_count = $views, views_time_count = $views_time_count WHERE id = {$this->id}";
-            DB::update($sql);
+            DB::table('movie_models')
+                ->where('id', $this->id)
+                ->update(['views_count' => $views, 'views_time_count' => $views_time_count]);
         } catch (\Throwable $th) {
             //throw $th;
         }

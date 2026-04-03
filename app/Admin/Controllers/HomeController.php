@@ -11,6 +11,7 @@ use App\Models\SeriesMovie;
 use App\Models\Subscription;
 use App\Models\SubscriptionTransaction;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Encore\Admin\Layout\Content;
 
@@ -26,6 +27,7 @@ class HomeController extends Controller
 
     protected function buildDashboard()
     {
+        return Cache::remember('admin_dashboard_html', 300, function () {
         // ═══════════ DATA (efficient batch queries) ═══════════
         $totalMovies   = MovieModel::count();
         $activeMovies  = MovieModel::where('status', 'Active')->count();
@@ -668,6 +670,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
         $html .= '</div>'; // db-wrap
 
-        return $html;
+            return $html;
+        });
     }
 }
