@@ -498,13 +498,26 @@ class SearchController extends Controller
                     ->get()
                     ->unique('category_id');
 
+                // Batch-fetch episode counts for ALL matched series in one GROUP BY query
+                // instead of one COUNT(*) query per series (N+1 fix).
+                $allCatIds = $firstEpisodes->pluck('category_id')->filter()->unique()->toArray();
+                $batchEpCounts = [];
+                if (!empty($allCatIds)) {
+                    $batchEpCounts = DB::table('movie_models')
+                        ->whereIn('category_id', $allCatIds)
+                        ->where('type', 'Series')
+                        ->groupBy('category_id')
+                        ->select('category_id', DB::raw('COUNT(*) as cnt'))
+                        ->pluck('cnt', 'category_id')
+                        ->toArray();
+                }
+
                 foreach ($firstEpisodes as $ep) {
                     $scores[$ep->id] = ($scores[$ep->id] ?? 0) + 950;
                     $itemTypes[$ep->id] = 'series';
                     if (isset($seriesMap[$ep->category_id])) {
                         $s = $seriesMap[$ep->category_id];
-                        $epCount = MovieModel::where('category_id', $ep->category_id)
-                            ->where('type', 'Series')->count();
+                        $epCount = (int) ($batchEpCounts[$ep->category_id] ?? 0);
                         $seriesInfo[$ep->id] = [
                             'series_name'   => $s->title,
                             'episode_count' => $epCount,
@@ -658,13 +671,23 @@ class SearchController extends Controller
             }
 
             // For each kept series episode, swap it with the actual first episode if needed
-            foreach ($seenCategories as $catId => $keptId) {
-                $firstEp = MovieModel::where('category_id', $catId)
+            // Batch-fetch first episodes for all kept category IDs in one query (N+1 fix).
+            $keptCategoryIds = array_keys($seenCategories);
+            $firstEpsByCategory = [];
+            if (!empty($keptCategoryIds)) {
+                $firstEpsByCategory = DB::table('movie_models')
+                    ->whereIn('category_id', $keptCategoryIds)
                     ->where('type', 'Series')
-                    ->select('id')
+                    ->select('id', 'category_id')
                     ->orderByRaw('CAST(NULLIF(episode_number, "") AS UNSIGNED) ASC')
                     ->orderBy('id', 'asc')
-                    ->first();
+                    ->get()
+                    ->unique('category_id')
+                    ->keyBy('category_id');
+            }
+
+            foreach ($seenCategories as $catId => $keptId) {
+                $firstEp = $firstEpsByCategory->get($catId) ?? null;
 
                 if ($firstEp && $firstEp->id !== $keptId) {
                     // Swap: transfer score to first episode
@@ -949,10 +972,22 @@ class SearchController extends Controller
                 ->get()
                 ->unique('category_id');
 
+            // Batch-fetch episode counts for all series in one query (N+1 fix)
+            $seriesCategoryIds = $firstEps->pluck('category_id')->filter()->unique()->toArray();
+            $batchEpCounts = [];
+            if (!empty($seriesCategoryIds)) {
+                $batchEpCounts = DB::table('movie_models')
+                    ->whereIn('category_id', $seriesCategoryIds)
+                    ->where('type', 'Series')
+                    ->groupBy('category_id')
+                    ->select('category_id', DB::raw('COUNT(*) as cnt'))
+                    ->pluck('cnt', 'category_id')
+                    ->toArray();
+            }
+
             foreach ($firstEps as $ep) {
                 $data = $ep->toArray();
-                $epCount = MovieModel::where('category_id', $ep->category_id)
-                    ->where('type', 'Series')->count();
+                $epCount = (int) ($batchEpCounts[$ep->category_id] ?? 0);
                 $data['episode_count'] = $epCount;
                 $data['series_type']   = $epCount <= 3 ? 'MINI' : ($epCount <= 8 ? 'SERIES' : 'PRO');
                 $data['_item_type']    = 'series';

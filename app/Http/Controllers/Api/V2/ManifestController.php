@@ -98,7 +98,7 @@ class ManifestController extends Controller
         // A movie can be deactivated (auto-fix failure, admin action) during the 5-min TTL.
         // One cheap EXISTS query per request; the full re-pick only fires on the rare deactivation.
         if ($featured && isset($featured['id'])) {
-            $stillActive = MovieModel::where('id', $featured['id'])
+            $stillActive = DB::table('movie_models')->where('id', $featured['id'])
                 ->where('status', 'Active')
                 ->exists();
 
@@ -210,17 +210,17 @@ class ManifestController extends Controller
 
         try {
             // Count ALL eligible movies so every movie cycles before repeating
-            $totalCandidates = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])->count();
+            $totalCandidates = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')->count();
 
             if ($totalCandidates > 0) {
                 // Rotate through the full catalogue — with N movies, it takes
                 // N × 6 hours before any movie repeats as featured.
                 $index = $rotationSlot % $totalCandidates;
-                $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+                $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
                     ->orderByRaw('(COALESCE(downloads_count, 0) + COALESCE(views_time_count, 0)) DESC')
                     ->offset($index)
                     ->limit(1)
-                    ->first(self::SLIM_FIELDS);
+                    ->select(self::SLIM_FIELDS)->first();
 
                 if ($movie) {
                     return $this->slimMovie($movie);
@@ -231,9 +231,9 @@ class ManifestController extends Controller
         }
 
         // Fallback: latest active movie
-        $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+        $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
             ->orderBy('created_at', 'desc')
-            ->first(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->first();
 
         return $movie ? $this->slimMovie($movie) : null;
     }
@@ -247,18 +247,18 @@ class ManifestController extends Controller
         $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
 
         try {
-            $totalCandidates = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+            $totalCandidates = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
                 ->where('id', '!=', $excludeId)
                 ->count();
 
             if ($totalCandidates > 0) {
                 $index = $rotationSlot % $totalCandidates;
-                $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+                $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
                     ->where('id', '!=', $excludeId)
                     ->orderByRaw('(COALESCE(downloads_count, 0) + COALESCE(views_time_count, 0)) DESC')
                     ->offset($index)
                     ->limit(1)
-                    ->first(self::SLIM_FIELDS);
+                    ->select(self::SLIM_FIELDS)->first();
 
                 if ($movie) {
                     return $this->slimMovie($movie);
@@ -269,10 +269,10 @@ class ManifestController extends Controller
         }
 
         // Fallback: most recently added active movie (excluding inactive one)
-        $movie = MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])
+        $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
             ->where('id', '!=', $excludeId)
             ->orderBy('created_at', 'desc')
-            ->first(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->first();
 
         return $movie ? $this->slimMovie($movie) : null;
     }
@@ -294,9 +294,11 @@ class ManifestController extends Controller
 
         // Batch load all movie objects at once
         $movieIds = $views->pluck('movie_model_id')->unique()->toArray();
-        $movies = MovieModel::whereIn('id', $movieIds)
+        $movies = DB::table('movie_models')
+            ->select(array_merge(self::SLIM_FIELDS, ['id']))
+            ->whereIn('id', $movieIds)
             ->where('status', 'Active')
-            ->get(array_merge(self::SLIM_FIELDS, ['id']));
+            ->get();
         $moviesMap = $movies->keyBy('id');
 
         $items = [];
@@ -361,16 +363,16 @@ class ManifestController extends Controller
         };
 
         // Base scopes
-        $activeMovies = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes']);
+        $activeMovies = fn () => DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes');
         // Series scope: only first episodes so each series appears once
-        $activeSeries = fn () => MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes', 'is_first_episode' => 'Yes']);
+        $activeSeries = fn () => DB::table('movie_models')->where('status', 'Active')->where('type', 'Series')->where('is_muno', 'Yes')->where('is_first_episode', 'Yes');
 
         // Total counts (cached 10 min — used for page calculation)
         $totalMovies = Cache::remember('v2_total_movies', 600, fn () =>
-            MovieModel::where(['status' => 'Active', 'type' => 'Movie', 'is_muno' => 'Yes'])->count()
+            DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')->count()
         );
         $totalSeries = Cache::remember('v2_total_series', 600, fn () =>
-            MovieModel::where(['status' => 'Active', 'type' => 'Series', 'is_muno' => 'Yes', 'is_first_episode' => 'Yes'])->count()
+            DB::table('movie_models')->where('status', 'Active')->where('type', 'Series')->where('is_muno', 'Yes')->where('is_first_episode', 'Yes')->count()
         );
 
         $limit = 20;
@@ -381,7 +383,7 @@ class ManifestController extends Controller
         $latest = $activeMovies()
             ->orderBy('created_at', 'desc')
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         $addSection('latest', 'Latest Movies', 'clock', $latest, ['sort' => 'latest']);
 
         // ═══════════════════════════════════════════════════
@@ -394,14 +396,14 @@ class ManifestController extends Controller
             ->orderBy('downloads_count', 'desc')
             ->offset($trendingOffset)
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         // If offset overshoots (near end of catalogue), wrap to top
         if ($trending->count() < 3) {
             $trending = $activeMovies()
                 ->whereNotIn('id', $prevSectionIds)
                 ->orderBy('downloads_count', 'desc')
                 ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->select(self::SLIM_FIELDS)->get();
         }
         $addSection('trending', 'Trending Now', 'trending-up', $trending, ['sort' => 'popular']);
 
@@ -416,13 +418,13 @@ class ManifestController extends Controller
             ->orderBy('views_time_count', 'desc')
             ->offset($popularPage * $limit)
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         if ($popular->count() < 3) {
             $popular = $activeMovies()
                 ->whereNotIn('id', $prevSectionIds)
                 ->orderBy('views_time_count', 'desc')
                 ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->select(self::SLIM_FIELDS)->get();
         }
         $addSection('popular', 'Popular Movies', 'star', $popular, ['sort' => 'popular']);
 
@@ -435,7 +437,7 @@ class ManifestController extends Controller
             ->where('created_at', '>=', $weekAgo)
             ->orderBy('created_at', 'desc')
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         if ($newThisWeek->count() >= 3) {
             $addSection('new_this_week', 'New This Week', 'calendar', $newThisWeek, ['sort' => 'latest']);
         }
@@ -450,7 +452,7 @@ class ManifestController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->offset($seriesOffset)
                 ->limit($limit * 2)
-                ->get(self::SLIM_FIELDS)
+                ->select(self::SLIM_FIELDS)->get()
                 ->unique('category_id')
                 ->take($limit)
                 ->values();
@@ -458,7 +460,7 @@ class ManifestController extends Controller
                 $series = $activeSeries()
                     ->orderBy('created_at', 'desc')
                     ->limit($limit * 2)
-                    ->get(self::SLIM_FIELDS)
+                    ->select(self::SLIM_FIELDS)->get()
                     ->unique('category_id')
                     ->take($limit)
                     ->values();
@@ -478,14 +480,14 @@ class ManifestController extends Controller
             ->orderBy('downloads_count', 'desc')
             ->offset($dlPage * $limit)
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         if ($mostDownloaded->count() < 3) {
             $mostDownloaded = $activeMovies()
                 ->whereNotIn('id', $prevSectionIds)
                 ->orderBy('downloads_count', 'desc')
                 ->offset(0)
                 ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->select(self::SLIM_FIELDS)->get();
         }
         if ($mostDownloaded->count() >= 3) {
             $addSection('most_downloaded', 'Most Downloaded', 'download-cloud', $mostDownloaded, ['sort' => 'popular']);
@@ -531,7 +533,7 @@ class ManifestController extends Controller
                     ->orderByRaw("RAND({$genreSeed})")
                     ->offset($genreOffset)
                     ->limit($limit)
-                    ->get(self::SLIM_FIELDS);
+                    ->select(self::SLIM_FIELDS)->get();
 
                 // Wrap if near end
                 if ($genreMovies->count() < 3) {
@@ -540,7 +542,7 @@ class ManifestController extends Controller
                         ->whereNotIn('id', $prevSectionIds)
                         ->orderByRaw("RAND({$genreSeed})")
                         ->limit($limit)
-                        ->get(self::SLIM_FIELDS);
+                        ->select(self::SLIM_FIELDS)->get();
                 }
 
                 if ($genreMovies->count() >= 3) {
@@ -594,14 +596,14 @@ class ManifestController extends Controller
                     ->orderByRaw("RAND({$vjSeed})")
                     ->offset($vjOffset)
                     ->limit($limit)
-                    ->get(self::SLIM_FIELDS);
+                    ->select(self::SLIM_FIELDS)->get();
 
                 if ($vjMovies->count() < 3) {
                     $vjMovies = $activeMovies()
                         ->where('vj', 'LIKE', "%{$vjName}%")
                         ->orderByRaw("RAND({$vjSeed})")
                         ->limit($limit)
-                        ->get(self::SLIM_FIELDS);
+                        ->select(self::SLIM_FIELDS)->get();
                 }
 
                 if ($vjMovies->count() >= 3) {
@@ -629,14 +631,14 @@ class ManifestController extends Controller
             ->orderBy('rating', 'desc')
             ->offset($ratedOffset)
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         if ($topRated->count() < 3) {
             $topRated = $activeMovies()
                 ->whereNotIn('id', $prevSectionIds)
                 ->where('rating', '>', 0)
                 ->orderBy('rating', 'desc')
                 ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->select(self::SLIM_FIELDS)->get();
         }
         if ($topRated->count() >= 3) {
             $addSection('top_rated', 'Top Rated', 'thumbs-up', $topRated, ['sort' => 'popular']);
@@ -656,13 +658,13 @@ class ManifestController extends Controller
             ->orderByRaw('RAND(42)')
             ->offset($forYouPage * $limit)
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         if ($forYou->count() < 3) {
             $forYou = $activeMovies()
                 ->whereNotIn('id', $prevSectionIds)
                 ->orderByRaw('RAND(42)')
                 ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->select(self::SLIM_FIELDS)->get();
         }
         if ($forYou->count() >= 3) {
             $addSection('for_you', 'Recommended For You', 'heart', $forYou, ['sort' => 'popular']);
@@ -679,13 +681,13 @@ class ManifestController extends Controller
             ->orderByRaw('RAND(7777)')
             ->offset($gemsOffset)
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         if ($hiddenGems->count() < 3) {
             $hiddenGems = $activeMovies()
                 ->where('views_time_count', '<', 100)
                 ->orderByRaw('RAND(7777)')
                 ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->select(self::SLIM_FIELDS)->get();
         }
         if ($hiddenGems->count() >= 3) {
             $addSection('hidden_gems', 'Hidden Gems', 'award', $hiddenGems, ['sort' => 'latest']);
@@ -702,13 +704,13 @@ class ManifestController extends Controller
             ->orderBy('created_at', 'asc')
             ->offset($classicsPage * $limit)
             ->limit($limit)
-            ->get(self::SLIM_FIELDS);
+            ->select(self::SLIM_FIELDS)->get();
         if ($classics->count() < 3) {
             $classics = $activeMovies()
                 ->whereNotIn('id', $prevSectionIds)
                 ->orderBy('created_at', 'asc')
                 ->limit($limit)
-                ->get(self::SLIM_FIELDS);
+                ->select(self::SLIM_FIELDS)->get();
         }
         if ($classics->count() >= 3) {
             $addSection('classics', 'Classics', 'archive', $classics, ['sort' => 'year']);
