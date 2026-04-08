@@ -848,8 +848,10 @@ class SubscriptionPesapalService
 
                 $subscription->save();
 
-                // Flush pending cache so user immediately sees the activated subscription
+                // Flush caches so user immediately sees the activated subscription
                 Cache::forget("sub_pending_{$subscription->user_id}");
+                Cache::forget("active_sub_{$subscription->user_id}");
+                Cache::forget("v2_pay_check_{$subscription->user_id}");
 
                 Log::info('💾 Pesapal: Subscription SAVED successfully', [
                     'subscription_id' => $subscription->id,
@@ -974,8 +976,10 @@ class SubscriptionPesapalService
                 );
                 $subscription->save();
 
-                // Flush pending cache on failure too
+                // Flush caches on failure too
                 Cache::forget("sub_pending_{$subscription->user_id}");
+                Cache::forget("active_sub_{$subscription->user_id}");
+                Cache::forget("v2_pay_check_{$subscription->user_id}");
 
                 Log::info('💾 Pesapal: Subscription marked as FAILED', [
                     'subscription_id' => $subscription->id,

@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class Subscription extends Model
@@ -395,6 +396,10 @@ class Subscription extends Model
         $this->grace_period_end = Carbon::parse($this->end_date_time)->addDays(3);
 
         $this->save();
+
+        // Clear the activeSubscription cache so the manifest immediately reflects the new status
+        Cache::forget("active_sub_{$this->user_id}");
+        Cache::forget("v2_pay_check_{$this->user_id}");
 
         Log::info('Subscription activated', [
             'subscription_id' => $this->id,

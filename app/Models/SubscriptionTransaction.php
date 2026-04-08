@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\SubscriptionPesapalService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class SubscriptionTransaction extends Model
@@ -303,6 +304,9 @@ class SubscriptionTransaction extends Model
                 if ($pay->subscription->status != 'Active') {
                     $pay->subscription->activate();
                 }
+                // Belt-and-suspenders: ensure cache is cleared even if activate() was skipped
+                Cache::forget("active_sub_{$pay->subscription->user_id}");
+                Cache::forget("v2_pay_check_{$pay->subscription->user_id}");
             }
         }
 
