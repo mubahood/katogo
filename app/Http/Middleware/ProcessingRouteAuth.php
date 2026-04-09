@@ -13,8 +13,29 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class ProcessingRouteAuth
 {
+    /**
+     * Routes that must remain publicly accessible without processing key auth.
+     */
+    private array $publicRoutePatterns = [
+        'munowatch-series-crawler',
+        'munowatch-movies-crawler',
+        'crawler',
+        'process-muno-movies-pages',
+        'process-series-new',
+        'process-episodes-new',
+        'process-muno-series',
+        'process-muno-movies',
+        'crawl-dating-pages',
+        'extract-dating-users',
+        'process-dating-profile/*',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
+        if ($this->isPublicRoute($request)) {
+            return $next($request);
+        }
+
         $validKey = config('app.processing_route_key');
 
         if (empty($validKey)) {
@@ -28,5 +49,16 @@ class ProcessingRouteAuth
         }
 
         return $next($request);
+    }
+
+    private function isPublicRoute(Request $request): bool
+    {
+        foreach ($this->publicRoutePatterns as $pattern) {
+            if ($request->is($pattern)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
