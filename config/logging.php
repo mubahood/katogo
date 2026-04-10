@@ -58,6 +58,12 @@ return [
             'ignore_exceptions' => false,
         ],
 
+        'migration' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/migration.log'),
+            'level' => 'debug',
+        ],
+
         'single' => [
             'driver' => 'single',
             'path' => storage_path('logs/laravel.log'),

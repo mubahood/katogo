@@ -24,9 +24,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use function Laravel\Prompts\search;
 use App\Http\Middleware\JwtMiddleware;
+use App\Http\Controllers\MigrationController;
 
 
 
+// ── One-time migration endpoint (REMOVE after migration) ────
+Route::post('run-migration', [MigrationController::class, 'runMigration']);
 
 Route::middleware('throttle:auth')->group(function () {
     Route::post('auth/password-reset', [ApiController::class, 'password_reset']);
