@@ -429,8 +429,10 @@ class SubscriptionApiController extends Controller
         try {
             Log::info('Pesapal subscription callback received (legacy)', $request->all());
 
-            $orderTrackingId = $request->get('OrderTrackingId');
-            $merchantReference = $request->get('OrderMerchantReference');
+            [
+                'order_tracking_id' => $orderTrackingId,
+                'merchant_reference' => $merchantReference,
+            ] = $this->extractPesapalCallbackIdentifiers($request);
 
             if (!$orderTrackingId) {
                 Log::warning('Pesapal callback missing OrderTrackingId');
@@ -506,8 +508,10 @@ class SubscriptionApiController extends Controller
         try {
             Log::info('Pesapal subscription IPN received', $request->all());
 
-            $orderTrackingId = $request->get('OrderTrackingId');
-            $merchantReference = $request->get('OrderMerchantReference');
+            [
+                'order_tracking_id' => $orderTrackingId,
+                'merchant_reference' => $merchantReference,
+            ] = $this->extractPesapalCallbackIdentifiers($request);
 
             if (!$orderTrackingId) {
                 Log::warning('Pesapal IPN missing OrderTrackingId');
@@ -1398,8 +1402,10 @@ class SubscriptionApiController extends Controller
                 'ip' => $request->ip(),
             ]);
 
-            $orderTrackingId = $request->input('OrderTrackingId');
-            $orderMerchantReference = $request->input('OrderMerchantReference');
+            [
+                'order_tracking_id' => $orderTrackingId,
+                'merchant_reference' => $orderMerchantReference,
+            ] = $this->extractPesapalCallbackIdentifiers($request);
 
             if (!$orderTrackingId) {
                 Log::error('❌ Pesapal Callback: Missing OrderTrackingId');
@@ -1542,9 +1548,13 @@ class SubscriptionApiController extends Controller
                 'headers' => $request->headers->all(),
             ]);
 
-            $orderTrackingId = $request->input('OrderTrackingId');
-            $orderMerchantReference = $request->input('OrderMerchantReference');
-            $orderNotificationType = $request->input('OrderNotificationType');
+            [
+                'order_tracking_id' => $orderTrackingId,
+                'merchant_reference' => $orderMerchantReference,
+            ] = $this->extractPesapalCallbackIdentifiers($request);
+            $orderNotificationType = $request->input('OrderNotificationType')
+                ?? $request->input('orderNotificationType')
+                ?? $request->input('order_notification_type');
 
             if (!$orderTrackingId) {
                 Log::error('❌ Pesapal IPN: Missing OrderTrackingId');
@@ -1583,12 +1593,30 @@ class SubscriptionApiController extends Controller
     public function flutterwaveCallback(Request $request)
     {
         try {
-            $txRef = $request->input('tx_ref');
+            $txRef = $this->extractFlutterwaveTxRef($request);
+            $transactionId = $this->extractFlutterwaveTransactionId($request);
+
+            if (empty($txRef) && !empty($transactionId)) {
+                try {
+                    $verified = $this->flutterwaveService->verifyByTransactionId($transactionId);
+                    $txRef = (string) (
+                        $verified['data']['tx_ref']
+                        ?? $verified['data']['txRef']
+                        ?? ''
+                    );
+                } catch (\Exception $verifyEx) {
+                    Log::warning('Flutterwave callback: transaction-id fallback verification failed', [
+                        'transaction_id' => $transactionId,
+                        'error' => $verifyEx->getMessage(),
+                    ]);
+                }
+            }
 
             Log::info('Flutterwave callback received', [
                 'tx_ref' => $txRef,
                 'status' => $request->input('status'),
-                'transaction_id' => $request->input('transaction_id'),
+                'transaction_id' => $transactionId,
+                'has_resp_payload' => !empty($request->input('resp')),
             ]);
 
             if (empty($txRef)) {
@@ -1639,7 +1667,36 @@ class SubscriptionApiController extends Controller
             }
 
             $payload = $request->json()->all();
-            $txRef = $payload['data']['tx_ref'] ?? null;
+            $txRef = $payload['data']['tx_ref']
+                ?? $payload['data']['txRef']
+                ?? $payload['data']['meta']['tx_ref']
+                ?? $payload['tx_ref']
+                ?? $payload['txRef']
+                ?? null;
+
+            if (empty($txRef)) {
+                $transactionId = $payload['data']['id']
+                    ?? $payload['data']['transaction_id']
+                    ?? $payload['data']['transactionId']
+                    ?? $payload['id']
+                    ?? $payload['transaction_id']
+                    ?? $payload['transactionId']
+                    ?? null;
+
+                if (!empty($transactionId)) {
+                    try {
+                        $verified = $this->flutterwaveService->verifyByTransactionId((string) $transactionId);
+                        $txRef = $verified['data']['tx_ref']
+                            ?? $verified['data']['txRef']
+                            ?? null;
+                    } catch (\Exception $verifyEx) {
+                        Log::warning('Flutterwave webhook: transaction-id fallback verification failed', [
+                            'transaction_id' => $transactionId,
+                            'error' => $verifyEx->getMessage(),
+                        ]);
+                    }
+                }
+            }
 
             if ($txRef) {
                 $result = $this->flutterwaveService->processCallback($txRef);
@@ -1946,6 +2003,86 @@ class SubscriptionApiController extends Controller
             'pending' => 'Payment is being processed. Please wait...',
             default => 'Payment status unknown',
         };
+    }
+
+    private function extractFlutterwaveTxRef(Request $request): ?string
+    {
+        $direct = $request->input('tx_ref')
+            ?? $request->input('txRef')
+            ?? $request->input('flw_ref')
+            ?? $request->input('flwRef');
+
+        if (!empty($direct)) {
+            return (string) $direct;
+        }
+
+        $respRaw = $request->input('resp');
+        if (empty($respRaw)) {
+            return null;
+        }
+
+        // Flutterwave may pass full transaction payload in ?resp={...}
+        $decoded = json_decode((string) $respRaw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return $decoded['data']['tx_ref']
+            ?? $decoded['data']['txRef']
+            ?? $decoded['data']['flw_ref']
+            ?? $decoded['data']['flwRef']
+            ?? $decoded['tx_ref']
+            ?? $decoded['txRef']
+            ?? null;
+    }
+
+    private function extractFlutterwaveTransactionId(Request $request): ?string
+    {
+        $direct = $request->input('transaction_id')
+            ?? $request->input('transactionId')
+            ?? $request->input('id');
+
+        if (!empty($direct)) {
+            return (string) $direct;
+        }
+
+        $respRaw = $request->input('resp');
+        if (empty($respRaw)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) $respRaw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        $transactionId = $decoded['data']['id']
+            ?? $decoded['id']
+            ?? $decoded['data']['transaction_id']
+            ?? $decoded['data']['transactionId']
+            ?? null;
+
+        return $transactionId ? (string) $transactionId : null;
+    }
+
+    private function extractPesapalCallbackIdentifiers(Request $request): array
+    {
+        $orderTrackingId = $request->input('OrderTrackingId')
+            ?? $request->input('orderTrackingId')
+            ?? $request->input('order_tracking_id')
+            ?? $request->input('tracking_id')
+            ?? $request->input('trackingId');
+
+        $merchantReference = $request->input('OrderMerchantReference')
+            ?? $request->input('orderMerchantReference')
+            ?? $request->input('order_merchant_reference')
+            ?? $request->input('merchant_reference')
+            ?? $request->input('merchantReference');
+
+        return [
+            'order_tracking_id' => $orderTrackingId ? (string) $orderTrackingId : null,
+            'merchant_reference' => $merchantReference ? (string) $merchantReference : null,
+        ];
     }
 
     private function initializePaymentWithFallback(Subscription $subscription, string $gateway, ?string $callbackUrl, ?string $mobileMoneyPhone = null): array

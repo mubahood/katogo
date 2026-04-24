@@ -273,6 +273,19 @@ class SubscriptionFlutterwaveService
         return $data;
     }
 
+    public function verifyByTransactionId(string $transactionId): array
+    {
+        $response = $this->http()->get($this->baseUrl . '/v3/transactions/' . urlencode($transactionId) . '/verify');
+
+        $data = $response->json();
+        if (!$response->successful() || !is_array($data)) {
+            $msg = is_array($data) ? ($data['message'] ?? 'Unknown Flutterwave verification error') : ('HTTP ' . $response->status());
+            throw new \RuntimeException('Flutterwave transaction verification failed: ' . $msg);
+        }
+
+        return $data;
+    }
+
     public function processCallback(string $txRef): array
     {
         $verified = $this->verifyByReference($txRef);

@@ -76,10 +76,18 @@ class ManifestController extends Controller
             $u->platform = $platform;
         }
 
-        // ── 2. Throttled payment check: once per 5 min per user ──
+        // ── 2. Throttled payment check ─────────────────────
+        // Faster cadence when there are unfinished payments to make
+        // subscription activation reflect in manifest almost immediately.
         $paymentCacheKey = "v2_pay_check_{$u->id}";
+        $hasRecentUnfinishedPayment = SubscriptionTransaction::where('user_id', $u->id)
+            ->whereNotIn('status', ['Completed', 'Failed', 'Cancelled'])
+            ->where('created_at', '>=', Carbon::now()->subHours(72))
+            ->exists();
+
+        $paymentCheckTtlSeconds = $hasRecentUnfinishedPayment ? 15 : 120;
         if (!Cache::has($paymentCacheKey)) {
-            Cache::put($paymentCacheKey, true, 300);
+            Cache::put($paymentCacheKey, true, $paymentCheckTtlSeconds);
             $this->checkPendingPayments($u->id);
         }
 
@@ -194,7 +202,7 @@ class ManifestController extends Controller
             'code' => 1,
             'message' => 'Manifest loaded.',
             'data' => $responseData,
-        ])->header('Cache-Control', 'private, max-age=60, stale-while-revalidate=30');
+        ])->header('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0');
     }
 
     // ═══════════════════════════════════════════════════════

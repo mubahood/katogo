@@ -105,7 +105,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('products-delete', [ApiController::class, 'products_delete']);
 
     Route::get('me', [ApiController::class, 'me']);
-    Route::get('manifest', [ApiController::class, 'manifest'])->middleware('lscache:45,manifest_v1');
+    Route::get('manifest', [ApiController::class, 'manifest']);
 
 
 
@@ -166,8 +166,8 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     //  V2 API — Clean, paginated, optimised
     // ════════════════════════════════════════════
     Route::prefix('v2')->group(function () {
-        // V2 Manifest — optimised, lean, cached
-        Route::get('manifest',            [V2ManifestController::class, 'index'])->middleware('lscache:45,manifest_v2');
+        // V2 Manifest — optimised, lean
+        Route::get('manifest',            [V2ManifestController::class, 'index']);
 
         // NOTE: cacheResponse requires `spatie/laravel-responsecache` installed (composer update)
         Route::middleware(['etag', 'cacheResponse'])->group(function () {
