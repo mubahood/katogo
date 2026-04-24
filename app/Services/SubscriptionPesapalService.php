@@ -507,7 +507,7 @@ class SubscriptionPesapalService
      * @return array ['success' => true, 'order_tracking_id' => ..., 'redirect_url' => ..., ...]
      * @throws \Exception on payment initialization failure
      */
-    public function initializePayment($subscription, $notificationId = null, $callbackUrl = null)
+    public function initializePayment($subscription, $notificationId = null, $callbackUrl = null, ?string $preferredPhoneOverride = null)
     {
         // ===== PRE-FLIGHT VALIDATION =====
         $errors = [];
@@ -588,7 +588,10 @@ class SubscriptionPesapalService
             }
 
             // ===== BUILD PAYLOAD =====
-            $preferredPhone = $this->resolvePreferredPhone($subscription, $user);
+            $preferredPhone = $this->normalizePhone($preferredPhoneOverride);
+            if ($preferredPhone === '') {
+                $preferredPhone = $this->resolvePreferredPhone($subscription, $user);
+            }
             $payload = [
                 'id' => $subscription->pesapal_merchant_reference,
                 'currency' => strtoupper(trim($subscription->currency)),

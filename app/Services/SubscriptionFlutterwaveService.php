@@ -12,6 +12,7 @@ class SubscriptionFlutterwaveService
     private string $baseUrl;
     private ?string $secretKey;
     private string $currency;
+    private string $country;
     private string $paymentOptions;
     private int $timeout;
     private string $appBaseUrl;
@@ -21,7 +22,8 @@ class SubscriptionFlutterwaveService
         $this->baseUrl = rtrim((string) config('flutterwave.base_url', 'https://api.flutterwave.com'), '/');
         $this->secretKey = config('flutterwave.secret_key');
         $this->currency = (string) config('flutterwave.currency', 'UGX');
-        $this->paymentOptions = (string) config('flutterwave.payment_options', 'mobilemoneyuganda,card,banktransfer,ussd');
+        $this->country = (string) config('flutterwave.country', 'UG');
+        $this->paymentOptions = (string) config('flutterwave.payment_options', 'mobilemoneyuganda');
         $this->timeout = (int) config('flutterwave.timeout', 20);
         $this->appBaseUrl = rtrim((string) config('app.production_url', config('app.url', 'https://katogo.schooldynamics.ug')), '/');
     }
@@ -41,6 +43,17 @@ class SubscriptionFlutterwaveService
     private function defaultCallbackUrl(): string
     {
         return $this->appBaseUrl . '/api/subscriptions/flutterwave/callback';
+    }
+
+    private function detectUgandanNetwork(string $normalizedPhone): string
+    {
+        $prefix = substr($normalizedPhone, 3, 2);
+
+        return match ($prefix) {
+            '70', '74', '75' => 'AIRTEL',
+            '76', '77', '78', '39' => 'MTN',
+            default => 'MTN',
+        };
     }
 
     private function toArray($value): array
@@ -153,7 +166,7 @@ class SubscriptionFlutterwaveService
         return '';
     }
 
-    public function initializePayment(Subscription $subscription, ?string $callbackUrl = null): array
+    public function initializePayment(Subscription $subscription, ?string $callbackUrl = null, ?string $preferredPhoneOverride = null): array
     {
         $subscription->loadMissing('user', 'plan');
 
@@ -167,33 +180,36 @@ class SubscriptionFlutterwaveService
             throw new \RuntimeException('Subscription merchant reference is missing.');
         }
 
-        $preferredPhone = $this->resolvePreferredPhone($subscription, $user);
+        $preferredPhone = $this->normalizePhone($preferredPhoneOverride);
+        if ($preferredPhone === '') {
+            $preferredPhone = $this->resolvePreferredPhone($subscription, $user);
+        }
+        if ($preferredPhone === '') {
+            throw new \RuntimeException('Mobile Money payment requires a valid Ugandan phone number. Please update your phone number and try again.');
+        }
 
         $payload = [
             'tx_ref' => $txRef,
+            'voucher' => $txRef,
             'amount' => number_format((float) $subscription->amount_paid, 2, '.', ''),
             'currency' => $subscription->currency ?: $this->currency,
+            'network' => $this->detectUgandanNetwork($preferredPhone),
+            'email' => (string) ($user->email ?: ('user' . $user->id . '@example.com')),
+            'phone_number' => $preferredPhone,
+            'fullname' => trim((string) ($user->name ?: (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))) ?: 'Subscriber',
+            'client_ip' => request()?->ip(),
+            'device_fingerprint' => substr(hash('sha256', (string) ($user->id . '|' . $txRef . '|' . ($subscription->user_agent ?? 'mobile'))), 0, 32),
             'redirect_url' => $callbackUrl ?: $this->defaultCallbackUrl(),
-            'payment_options' => $this->paymentOptions,
-            'customer' => [
-                'email' => (string) ($user->email ?: ('user' . $user->id . '@example.com')),
-                'phonenumber' => $preferredPhone,
-                'name' => trim((string) ($user->name ?: (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))) ?: 'Subscriber',
-            ],
-            'customizations' => [
-                'title' => 'UGFlix Subscription',
-                'description' => 'Subscription payment for plan #' . $subscription->plan_id,
-                'logo' => '',
-            ],
             'meta' => [
                 'subscription_id' => $subscription->id,
                 'user_id' => $subscription->user_id,
                 'plan_id' => $subscription->plan_id,
                 'preferred_phone' => $preferredPhone,
+                'source' => $preferredPhoneOverride ? 'client_override' : 'profile_or_history',
             ],
         ];
 
-        $response = $this->http()->post($this->baseUrl . '/v3/payments', $payload);
+        $response = $this->http()->post($this->baseUrl . '/v3/charges?type=mobile_money_uganda', $payload);
 
         $body = $response->json();
         if (!$response->successful() || !is_array($body)) {
@@ -201,15 +217,32 @@ class SubscriptionFlutterwaveService
             throw new \RuntimeException('Flutterwave initialize failed: ' . $msg);
         }
 
-        $link = $body['data']['link'] ?? null;
-        if (empty($link)) {
-            throw new \RuntimeException('Flutterwave did not return a payment link.');
+        $data = is_array($body['data'] ?? null) ? $body['data'] : [];
+        $authorization = is_array($body['meta']['authorization'] ?? null)
+            ? $body['meta']['authorization']
+            : (is_array($data['meta']['authorization'] ?? null) ? $data['meta']['authorization'] : []);
+        $nextAction = is_array($data['next_action'] ?? null) ? $data['next_action'] : [];
+
+        $link = $data['link']
+            ?? $authorization['redirect']
+            ?? $nextAction['redirect_url']['url']
+            ?? null;
+
+        $paymentMessage = $authorization['note']
+            ?? $nextAction['payment_instruction']['note']
+            ?? null;
+
+        if (empty($link) && empty($paymentMessage)) {
+            throw new \RuntimeException('Flutterwave did not return a payment action.');
         }
 
         $subscription->payment_url = $link;
-        $subscription->payment_status = 'Pending';
+        $subscription->payment_status = strtolower((string) ($data['status'] ?? 'pending')) === 'successful'
+            ? 'Completed'
+            : 'Processing';
         $subscription->payment_method = 'flutterwave';
         $subscription->flutterwave_reference = $txRef;
+        $subscription->flutterwave_transaction_id = (string) ($data['id'] ?? $subscription->flutterwave_transaction_id ?? '');
         $subscription->flutterwave_response = $body;
         $subscription->save();
 
@@ -218,6 +251,9 @@ class SubscriptionFlutterwaveService
             'order_tracking_id' => $txRef,
             'merchant_reference' => $txRef,
             'redirect_url' => $link,
+            'payment_message' => $paymentMessage,
+            'next_action_type' => $nextAction['type'] ?? null,
+            'payment_status' => $subscription->payment_status,
             'gateway' => 'flutterwave',
         ];
     }

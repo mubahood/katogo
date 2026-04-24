@@ -191,6 +191,8 @@ class SubscriptionApiController extends Controller
                 'plan_id' => 'required|integer|exists:subscription_plans,id',
                 'callback_url' => 'url|nullable',
                 'payment_gateway' => 'nullable|string|in:pesapal,flutterwave',
+                'payment_channel' => 'nullable|string|in:card,mobile_money',
+                'mobile_money_phone' => 'nullable|string|max:30',
             ]);
 
             if ($validator->fails()) {
@@ -226,6 +228,19 @@ class SubscriptionApiController extends Controller
             $gateway = $this->resolveGateway(
                 $request->input('payment_gateway') ?: ($user->preferred_payment_gateway ?? null)
             );
+
+            $paymentChannel = strtolower(trim((string) $request->input('payment_channel', '')));
+            $mobileMoneyPhone = $request->input('mobile_money_phone');
+
+            // Channel preference only sets sensible defaults when gateway is not explicitly provided.
+            $explicitGatewayRequested = !empty(trim((string) $request->input('payment_gateway')));
+            if (!$explicitGatewayRequested) {
+                if ($paymentChannel === 'mobile_money') {
+                    $gateway = 'flutterwave';
+                } elseif ($paymentChannel === 'card') {
+                    $gateway = 'pesapal';
+                }
+            }
 
             if ($gateway === 'pesapal') {
                 // ===== PRE-WARM PESAPAL CREDENTIALS (speed optimization) =====
@@ -307,24 +322,27 @@ class SubscriptionApiController extends Controller
                 'plan_id' => $request->plan_id,
                 'amount' => $subscription->amount_paid,
                 'gateway' => $gateway,
+                'payment_channel' => $paymentChannel ?: null,
+                'has_mobile_money_phone' => !empty(trim((string) $mobileMoneyPhone)),
                 'callback_url' => $callbackUrl ?? 'default',
             ]);
 
-            if ($gateway === 'flutterwave') {
-                $paymentResult = $this->flutterwaveService->initializePayment($subscription, $callbackUrl);
-            } else {
-                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
-            }
+            [
+                'gateway' => $gateway,
+                'payment_result' => $paymentResult,
+            ] = $this->initializePaymentWithFallback($subscription, $gateway, $callbackUrl, $mobileMoneyPhone);
 
-            if (!$paymentResult['success'] || empty($paymentResult['redirect_url'])) {
+            $hasPaymentAction = !empty($paymentResult['redirect_url']) || !empty($paymentResult['payment_message']);
+
+            if (!$paymentResult['success'] || !$hasPaymentAction) {
                 // Clean up — mark subscription as failed
                 $subscription->status = 'Failed';
                 $subscription->payment_status = 'Failed';
                 $subscription->failed_at = now();
-                $subscription->cancelled_reason = 'Payment initialization failed: no redirect URL';
+                $subscription->cancelled_reason = 'Payment initialization failed: no payment action';
                 $subscription->save();
 
-                throw new \Exception('Payment gateway did not return a payment link. Please try again.');
+                throw new \Exception('Payment gateway did not return a payment action. Please try again.');
             }
 
             Log::info('Subscription created and payment initialized', [
@@ -332,7 +350,10 @@ class SubscriptionApiController extends Controller
                 'user_id' => $user->id,
                 'plan_id' => $request->plan_id,
                 'tracking_id' => $paymentResult['order_tracking_id'],
-                'redirect_url_domain' => parse_url($paymentResult['redirect_url'], PHP_URL_HOST),
+                'redirect_url_domain' => !empty($paymentResult['redirect_url'])
+                    ? parse_url($paymentResult['redirect_url'], PHP_URL_HOST)
+                    : null,
+                'next_action_type' => $paymentResult['next_action_type'] ?? null,
             ]);
 
             return response()->json([
@@ -344,6 +365,9 @@ class SubscriptionApiController extends Controller
                     'order_tracking_id' => $paymentResult['order_tracking_id'],
                     'merchant_reference' => $paymentResult['merchant_reference'],
                     'redirect_url' => $paymentResult['redirect_url'],
+                    'payment_message' => $paymentResult['payment_message'] ?? null,
+                    'next_action_type' => $paymentResult['next_action_type'] ?? null,
+                    'payment_status' => $paymentResult['payment_status'] ?? $subscription->payment_status,
                     'amount' => $subscription->amount_paid,
                     'currency' => $subscription->currency,
                     'payment_gateway' => $gateway,
@@ -755,11 +779,10 @@ class SubscriptionApiController extends Controller
 
             // Initialize payment again
             $callbackUrl = $request->callback_url;
-            if ($gateway === 'flutterwave') {
-                $paymentResult = $this->flutterwaveService->initializePayment($subscription, $callbackUrl);
-            } else {
-                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
-            }
+            [
+                'gateway' => $gateway,
+                'payment_result' => $paymentResult,
+            ] = $this->initializePaymentWithFallback($subscription, $gateway, $callbackUrl);
 
             if ($paymentResult['success']) {
                 return response()->json([
@@ -771,6 +794,9 @@ class SubscriptionApiController extends Controller
                         'order_tracking_id' => $paymentResult['order_tracking_id'],
                         'merchant_reference' => $paymentResult['merchant_reference'],
                         'redirect_url' => $paymentResult['redirect_url'],
+                        'payment_message' => $paymentResult['payment_message'] ?? null,
+                        'next_action_type' => $paymentResult['next_action_type'] ?? null,
+                        'payment_status' => $paymentResult['payment_status'] ?? $subscription->payment_status,
                         'payment_gateway' => $gateway,
                     ],
                 ]);
@@ -1094,11 +1120,10 @@ class SubscriptionApiController extends Controller
             $subscription->save();
 
             $callbackUrl = $request->input('callback_url');
-            if ($gateway === 'flutterwave') {
-                $paymentResult = $this->flutterwaveService->initializePayment($subscription, $callbackUrl);
-            } else {
-                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
-            }
+            [
+                'gateway' => $gateway,
+                'payment_result' => $paymentResult,
+            ] = $this->initializePaymentWithFallback($subscription, $gateway, $callbackUrl);
 
             if ($paymentResult['success']) {
                 return response()->json([
@@ -1110,6 +1135,9 @@ class SubscriptionApiController extends Controller
                         'order_tracking_id' => $paymentResult['order_tracking_id'],
                         'merchant_reference' => $paymentResult['merchant_reference'],
                         'redirect_url' => $paymentResult['redirect_url'],
+                        'payment_message' => $paymentResult['payment_message'] ?? null,
+                        'next_action_type' => $paymentResult['next_action_type'] ?? null,
+                        'payment_status' => $paymentResult['payment_status'] ?? $subscription->payment_status,
                         'amount' => $subscription->amount_paid,
                         'currency' => $subscription->currency,
                         'payment_gateway' => $gateway,
@@ -1173,13 +1201,16 @@ class SubscriptionApiController extends Controller
 
             $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
 
-            // Auto-heal: if payment was never initiated, initialize now and return redirect URL.
-            if (!$subscription->payment_url) {
-                if ($gateway === 'flutterwave') {
-                    $paymentResult = $this->flutterwaveService->initializePayment($subscription, $request->callback_url);
-                } else {
-                    $paymentResult = $this->pesapalService->initializePayment($subscription, null, $request->callback_url);
-                }
+            $paymentWasInitiated = $gateway === 'flutterwave'
+                ? (!empty($subscription->flutterwave_reference) || !empty($subscription->flutterwave_response))
+                : (!empty($subscription->payment_url) || !empty($subscription->pesapal_tracking_id));
+
+            // Auto-heal only when payment has genuinely never been initialized.
+            if (!$paymentWasInitiated) {
+                [
+                    'gateway' => $gateway,
+                    'payment_result' => $paymentResult,
+                ] = $this->initializePaymentWithFallback($subscription, $gateway, $request->callback_url);
 
                 return response()->json([
                     'code' => 1,
@@ -1191,6 +1222,8 @@ class SubscriptionApiController extends Controller
                         'payment_status' => $subscription->payment_status,
                         'payment_gateway' => $gateway,
                         'redirect_url' => $paymentResult['redirect_url'] ?? null,
+                        'payment_message' => $paymentResult['payment_message'] ?? null,
+                        'next_action_type' => $paymentResult['next_action_type'] ?? null,
                         'order_tracking_id' => $paymentResult['order_tracking_id'] ?? null,
                         'subscription' => $subscription->fresh()->toApiArray(),
                     ],
@@ -1913,6 +1946,72 @@ class SubscriptionApiController extends Controller
             'pending' => 'Payment is being processed. Please wait...',
             default => 'Payment status unknown',
         };
+    }
+
+    private function initializePaymentWithFallback(Subscription $subscription, string $gateway, ?string $callbackUrl, ?string $mobileMoneyPhone = null): array
+    {
+        $resolvedGateway = $this->resolveGateway($gateway);
+        $preferredPhone = trim((string) $mobileMoneyPhone) ?: null;
+
+        try {
+            $paymentResult = $resolvedGateway === 'flutterwave'
+                ? $this->flutterwaveService->initializePayment($subscription, $callbackUrl, $preferredPhone)
+                : $this->pesapalService->initializePayment($subscription, null, $callbackUrl, $preferredPhone);
+
+            $hasPaymentAction = !empty($paymentResult['redirect_url']) || !empty($paymentResult['payment_message']);
+            if (empty($paymentResult['success']) || !$hasPaymentAction) {
+                throw new \RuntimeException('Payment gateway did not return a usable payment action.');
+            }
+
+            if (($subscription->payment_gateway ?? null) !== $resolvedGateway || ($subscription->payment_method ?? null) !== $resolvedGateway) {
+                $subscription->payment_gateway = $resolvedGateway;
+                $subscription->payment_method = $resolvedGateway;
+                $subscription->save();
+            }
+
+            return [
+                'gateway' => $resolvedGateway,
+                'payment_result' => $paymentResult,
+            ];
+        } catch (\Exception $primaryException) {
+            if ($resolvedGateway !== 'flutterwave') {
+                throw $primaryException;
+            }
+
+            Log::warning('Flutterwave initialization failed, falling back to Pesapal', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+                'primary_gateway' => $resolvedGateway,
+                'fallback_gateway' => 'pesapal',
+                'error' => $primaryException->getMessage(),
+            ]);
+
+            $subscription->payment_gateway = 'pesapal';
+            $subscription->payment_method = 'pesapal';
+            $subscription->payment_status = 'Pending';
+            $subscription->save();
+
+            try {
+                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl, $preferredPhone);
+
+                $hasPaymentAction = !empty($paymentResult['redirect_url']) || !empty($paymentResult['payment_message']);
+                if (empty($paymentResult['success']) || !$hasPaymentAction) {
+                    throw new \RuntimeException('Pesapal fallback did not return a usable payment action.');
+                }
+
+                return [
+                    'gateway' => 'pesapal',
+                    'payment_result' => $paymentResult,
+                ];
+            } catch (\Exception $fallbackException) {
+                throw new \RuntimeException(
+                    'Flutterwave initialization failed and Pesapal fallback also failed. Flutterwave error: '
+                    . $primaryException->getMessage()
+                    . ' | Pesapal error: '
+                    . $fallbackException->getMessage()
+                );
+            }
+        }
     }
 
     private function resolveGateway(?string $gateway): string
