@@ -46,6 +46,115 @@ class SubscriptionPesapalService
     /** @var int cURL connection timeout in seconds */
     private const CURL_CONNECT_TIMEOUT = 5;
 
+    private function toArray($value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && $value !== '') {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
+    private function normalizePhone(?string $phone): string
+    {
+        $raw = trim((string) $phone);
+        if ($raw === '') {
+            return '';
+        }
+
+        $digits = preg_replace('/\D+/', '', $raw) ?? '';
+        if ($digits === '') {
+            return '';
+        }
+
+        if (str_starts_with($digits, '256') && strlen($digits) >= 12) {
+            return substr($digits, 0, 12);
+        }
+
+        if (str_starts_with($digits, '0') && strlen($digits) === 10) {
+            return '256' . substr($digits, 1);
+        }
+
+        if (strlen($digits) === 9) {
+            return '256' . $digits;
+        }
+
+        return $digits;
+    }
+
+    private function extractPhoneFromSubscription(Subscription $item): string
+    {
+        $fw = $this->toArray($item->flutterwave_response ?? null);
+        $ps = $this->toArray($item->pesapal_response ?? null);
+
+        $candidates = [
+            $ps['billing_address']['phone_number'] ?? null,
+            $ps['phone_number'] ?? null,
+            $fw['data']['customer']['phonenumber'] ?? null,
+            $fw['data']['customer']['phone_number'] ?? null,
+            $fw['meta']['preferred_phone'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizePhone((string) ($candidate ?? ''));
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return '';
+    }
+
+    private function resolvePreferredPhone($subscription, $user): string
+    {
+        $latest = Subscription::where('user_id', $subscription->user_id)
+            ->where(function ($q) {
+                $q->whereNotNull('flutterwave_response')
+                    ->orWhereNotNull('pesapal_response');
+            })
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get();
+
+        foreach ($latest as $prev) {
+            $fromHistory = $this->extractPhoneFromSubscription($prev);
+            if ($fromHistory !== '') {
+                Log::info('Pesapal: using phone from payment history', [
+                    'user_id' => $subscription->user_id,
+                    'subscription_id' => $subscription->id,
+                    'source_subscription_id' => $prev->id,
+                ]);
+                return $fromHistory;
+            }
+        }
+
+        $profileCandidates = [
+            $user->phone_number ?? null,
+            $user->phone_number_1 ?? null,
+            $user->phone ?? null,
+            $user->telephone ?? null,
+            $user->mobile ?? null,
+        ];
+
+        foreach ($profileCandidates as $candidate) {
+            $normalized = $this->normalizePhone((string) ($candidate ?? ''));
+            if ($normalized !== '') {
+                Log::info('Pesapal: using phone from user profile', [
+                    'user_id' => $subscription->user_id,
+                    'subscription_id' => $subscription->id,
+                ]);
+                return $normalized;
+            }
+        }
+
+        return '';
+    }
+
     public function __construct()
     {
         // ===== CREDENTIAL LOADING (use config() for cache compatibility) =====
@@ -479,6 +588,7 @@ class SubscriptionPesapalService
             }
 
             // ===== BUILD PAYLOAD =====
+            $preferredPhone = $this->resolvePreferredPhone($subscription, $user);
             $payload = [
                 'id' => $subscription->pesapal_merchant_reference,
                 'currency' => strtoupper(trim($subscription->currency)),
@@ -488,7 +598,7 @@ class SubscriptionPesapalService
                 'notification_id' => $notificationId,
                 'billing_address' => [
                     'email_address' => $user->email ?? '',
-                    'phone_number' => $user->phone_number ?? $user->phone_number_1 ?? '',
+                    'phone_number' => $preferredPhone,
                     'country_code' => 'UG',
                     'first_name' => $user->first_name ?? $user->name ?? 'User',
                     'last_name' => $user->last_name ?? '',

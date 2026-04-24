@@ -125,6 +125,7 @@ class User extends Administrator implements JWTSubject
         'password',
         'google_id',
         'avatar',
+        'preferred_payment_gateway',
     ];
 
     /**

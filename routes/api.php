@@ -54,12 +54,15 @@ Route::get('random-movie', [DynamicCrudController::class, 'random_movie']);
 
 // Public Subscription Routes (no authentication required)
 Route::get('subscription-plans', [SubscriptionApiController::class, 'listPlans']);
+Route::get('subscriptions/payment-gateways', [SubscriptionApiController::class, 'paymentGateways']);
 
 // Pesapal Callback & IPN (no authentication required)
 // NOTE: Using pesapalCallback/pesapalIpn which include robust error handling
 Route::get('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'pesapalCallback']);
 Route::post('subscriptions/pesapal/callback', [SubscriptionApiController::class, 'pesapalCallback']); // Support both GET and POST
 Route::post('subscriptions/pesapal/ipn', [SubscriptionApiController::class, 'pesapalIpn']);
+Route::get('subscriptions/flutterwave/callback', [SubscriptionApiController::class, 'flutterwaveCallback']);
+Route::post('subscriptions/flutterwave/webhook', [SubscriptionApiController::class, 'flutterwaveWebhook']);
 
 // Pesapal API Diagnostics (no auth — for admin testing)
 Route::get('subscriptions/pesapal/test', [SubscriptionApiController::class, 'pesapalTest']);
@@ -70,6 +73,8 @@ Route::get('subscriptions/payment-status/{trackingId}', [SubscriptionApiControll
 // Authenticated Subscription Routes
 Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('subscriptions/create', [SubscriptionApiController::class, 'create']);
+    Route::get('subscriptions/default-gateway', [SubscriptionApiController::class, 'getDefaultGateway']);
+    Route::post('subscriptions/default-gateway', [SubscriptionApiController::class, 'setDefaultGateway']);
     Route::get('subscriptions/my-subscription', [SubscriptionApiController::class, 'mySubscription']);
     Route::get('subscriptions/history', [SubscriptionApiController::class, 'history']);
     Route::post('subscriptions/retry-payment', [SubscriptionApiController::class, 'retryPayment']);

@@ -2469,6 +2469,33 @@ class DynamicCrudController extends Controller
                 ->distinct('movie_model_id')
                 ->count();
 
+            // Subscription and gateway stats (Flutterwave vs Pesapal)
+            $subscriptionsQuery = \App\Models\Subscription::where('user_id', $user->id);
+
+            $totalSubscriptions = (clone $subscriptionsQuery)->count();
+            $activeSubscriptions = (clone $subscriptionsQuery)
+                ->where('status', 'Active')
+                ->count();
+            $completedPayments = (clone $subscriptionsQuery)
+                ->where('payment_status', 'Completed')
+                ->count();
+
+            $flutterwaveSubscriptions = (clone $subscriptionsQuery)
+                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['flutterwave'])
+                ->count();
+            $pesapalSubscriptions = (clone $subscriptionsQuery)
+                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['pesapal'])
+                ->count();
+
+            $flutterwaveCompletedPayments = (clone $subscriptionsQuery)
+                ->where('payment_status', 'Completed')
+                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['flutterwave'])
+                ->count();
+            $pesapalCompletedPayments = (clone $subscriptionsQuery)
+                ->where('payment_status', 'Completed')
+                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['pesapal'])
+                ->count();
+
             // Get recent activity
             $recentWatched = MovieView::with(['movie'])
                 ->where('user_id', $user->id)
@@ -2509,6 +2536,17 @@ class DynamicCrudController extends Controller
                     'watchlist_count' => $watchlistCount,
                     'likes_count' => $likesCount,
                     'watch_history_count' => $watchHistoryCount,
+                ],
+                'payment_subscription' => [
+                    'total_subscriptions' => $totalSubscriptions,
+                    'active_subscriptions' => $activeSubscriptions,
+                    'completed_payments' => $completedPayments,
+                    'gateway_breakdown' => [
+                        'flutterwave_subscriptions' => $flutterwaveSubscriptions,
+                        'pesapal_subscriptions' => $pesapalSubscriptions,
+                        'flutterwave_completed_payments' => $flutterwaveCompletedPayments,
+                        'pesapal_completed_payments' => $pesapalCompletedPayments,
+                    ],
                 ],
                 'recent_activity' => [
                     'recent_watched' => $recentWatched,

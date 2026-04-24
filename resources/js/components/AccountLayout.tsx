@@ -19,6 +19,17 @@ interface DashboardData {
     likes_count: number;
     watch_history_count: number;
   };
+  payment_subscription?: {
+    total_subscriptions: number;
+    active_subscriptions: number;
+    completed_payments: number;
+    gateway_breakdown: {
+      flutterwave_subscriptions: number;
+      pesapal_subscriptions: number;
+      flutterwave_completed_payments: number;
+      pesapal_completed_payments: number;
+    };
+  };
   recent_activity: {
     recent_watched: Array<any>;
     recent_likes: Array<any>;

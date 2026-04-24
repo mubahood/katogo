@@ -7,6 +7,17 @@ interface DashboardTabProps {
       likes_count: number;
       watch_history_count: number;
     };
+    payment_subscription?: {
+      total_subscriptions: number;
+      active_subscriptions: number;
+      completed_payments: number;
+      gateway_breakdown: {
+        flutterwave_subscriptions: number;
+        pesapal_subscriptions: number;
+        flutterwave_completed_payments: number;
+        pesapal_completed_payments: number;
+      };
+    };
     recent_activity: {
       recent_watched: Array<{
         movie_id: number;
@@ -52,6 +63,22 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ data, onRefresh }) => {
       month: 'long'
     });
   };
+
+  const gatewayBreakdown = data.payment_subscription?.gateway_breakdown ?? {
+    flutterwave_subscriptions: 0,
+    pesapal_subscriptions: 0,
+    flutterwave_completed_payments: 0,
+    pesapal_completed_payments: 0,
+  };
+
+  const totalGatewaySubscriptions =
+    gatewayBreakdown.flutterwave_subscriptions +
+    gatewayBreakdown.pesapal_subscriptions;
+  const flutterwaveShare =
+    totalGatewaySubscriptions > 0
+      ? Math.round((gatewayBreakdown.flutterwave_subscriptions / totalGatewaySubscriptions) * 100)
+      : 0;
+  const pesapalShare = totalGatewaySubscriptions > 0 ? 100 - flutterwaveShare : 0;
 
   return (
     <div className="dashboard-tab">
@@ -100,6 +127,49 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ data, onRefresh }) => {
           <div className="stat-content">
             <h3 className="stat-number">Member</h3>
             <p className="stat-label">Since {formatMemberSince(data.user.member_since)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Payments & Subscriptions */}
+      <div className="payment-section">
+        <h3 className="section-title">
+          <span className="section-icon">💳</span>
+          Payments & Subscriptions
+        </h3>
+
+        <div className="payment-summary-grid">
+          <div className="payment-summary-card">
+            <p className="payment-summary-label">Total Subscriptions</p>
+            <h4 className="payment-summary-value">{data.payment_subscription?.total_subscriptions ?? 0}</h4>
+          </div>
+          <div className="payment-summary-card">
+            <p className="payment-summary-label">Active</p>
+            <h4 className="payment-summary-value">{data.payment_subscription?.active_subscriptions ?? 0}</h4>
+          </div>
+          <div className="payment-summary-card">
+            <p className="payment-summary-label">Completed Payments</p>
+            <h4 className="payment-summary-value">{data.payment_subscription?.completed_payments ?? 0}</h4>
+          </div>
+        </div>
+
+        <div className="gateway-grid">
+          <div className="gateway-card flutterwave">
+            <div className="gateway-header">
+              <h4>Flutterwave</h4>
+              <span>{flutterwaveShare}%</span>
+            </div>
+            <p className="gateway-meta">Subscriptions: {gatewayBreakdown.flutterwave_subscriptions}</p>
+            <p className="gateway-meta">Completed: {gatewayBreakdown.flutterwave_completed_payments}</p>
+          </div>
+
+          <div className="gateway-card pesapal">
+            <div className="gateway-header">
+              <h4>Pesapal</h4>
+              <span>{pesapalShare}%</span>
+            </div>
+            <p className="gateway-meta">Subscriptions: {gatewayBreakdown.pesapal_subscriptions}</p>
+            <p className="gateway-meta">Completed: {gatewayBreakdown.pesapal_completed_payments}</p>
           </div>
         </div>
       </div>
@@ -286,6 +356,83 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ data, onRefresh }) => {
 
         .activity-section {
           margin-top: 2rem;
+        }
+
+        .payment-section {
+          margin-bottom: 2rem;
+        }
+
+        .payment-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 1rem;
+          margin-bottom: 1rem;
+        }
+
+        .payment-summary-card {
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          border-radius: 10px;
+          padding: 1rem;
+        }
+
+        .payment-summary-label {
+          margin: 0;
+          font-size: 0.85rem;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .payment-summary-value {
+          margin: 0.35rem 0 0;
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #ffffff;
+        }
+
+        .gateway-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 1rem;
+        }
+
+        .gateway-card {
+          border-radius: 12px;
+          padding: 1rem;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          background: rgba(255, 255, 255, 0.07);
+        }
+
+        .gateway-card.flutterwave {
+          border-color: rgba(252, 193, 73, 0.45);
+        }
+
+        .gateway-card.pesapal {
+          border-color: rgba(81, 145, 255, 0.45);
+        }
+
+        .gateway-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 0.4rem;
+        }
+
+        .gateway-header h4 {
+          margin: 0;
+          color: #ffffff;
+          font-size: 1rem;
+        }
+
+        .gateway-header span {
+          font-size: 0.9rem;
+          color: rgba(255, 255, 255, 0.82);
+          font-weight: 700;
+        }
+
+        .gateway-meta {
+          margin: 0.15rem 0;
+          color: rgba(255, 255, 255, 0.75);
+          font-size: 0.9rem;
         }
 
         .section-title {

@@ -6,6 +6,7 @@ use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\Utils;
 use App\Services\SubscriptionPesapalService;
+use App\Services\SubscriptionFlutterwaveService;
 use App\Services\PaymentStatusChecker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -21,13 +22,16 @@ use Illuminate\Support\Facades\Cache;
 class SubscriptionApiController extends Controller
 {
     protected $pesapalService;
+    protected $flutterwaveService;
     protected $statusChecker;
 
     public function __construct(
         SubscriptionPesapalService $pesapalService,
+        SubscriptionFlutterwaveService $flutterwaveService,
         PaymentStatusChecker $statusChecker
     ) {
         $this->pesapalService = $pesapalService;
+        $this->flutterwaveService = $flutterwaveService;
         $this->statusChecker = $statusChecker;
     }
 
@@ -73,6 +77,106 @@ class SubscriptionApiController extends Controller
     }
 
     /**
+     * Public gateway options for client selectors.
+     * GET /api/subscriptions/payment-gateways
+     */
+    public function paymentGateways()
+    {
+        return response()->json([
+            'code' => 1,
+            'status' => 200,
+            'message' => 'Payment gateways retrieved successfully',
+            'data' => [
+                'payment_gateways' => [
+                    [
+                        'id' => 'pesapal',
+                        'name' => 'Pesapal',
+                        'description' => 'Pay with mobile money, cards, and bank options',
+                        'enabled' => !empty(config('pesapal.consumer_key')),
+                        'icon' => 'bi-credit-card',
+                    ],
+                    [
+                        'id' => 'flutterwave',
+                        'name' => 'Flutterwave',
+                        'description' => 'Pay with mobile money, cards, and bank options',
+                        'enabled' => !empty(config('flutterwave.secret_key')),
+                        'icon' => 'bi-wallet2',
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * GET /api/subscriptions/default-gateway
+     */
+    public function getDefaultGateway(Request $request)
+    {
+        $user = $request->user() ?: Utils::get_user($request);
+        if (!$user) {
+            return response()->json([
+                'code' => 0,
+                'status' => 401,
+                'message' => 'Authentication required',
+                'data' => null,
+            ], 401);
+        }
+
+        $gateway = $this->resolveGateway($user->preferred_payment_gateway ?? null);
+
+        return response()->json([
+            'code' => 1,
+            'status' => 200,
+            'message' => 'Default gateway retrieved successfully',
+            'data' => [
+                'default_payment_gateway' => $gateway,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/subscriptions/default-gateway
+     */
+    public function setDefaultGateway(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'payment_gateway' => 'required|string|in:pesapal,flutterwave',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'code' => 0,
+                'status' => 400,
+                'message' => 'Validation failed: ' . $validator->errors()->first(),
+                'data' => ['errors' => $validator->errors()],
+            ], 400);
+        }
+
+        $user = $request->user() ?: Utils::get_user($request);
+        if (!$user) {
+            return response()->json([
+                'code' => 0,
+                'status' => 401,
+                'message' => 'Authentication required',
+                'data' => null,
+            ], 401);
+        }
+
+        $gateway = $this->resolveGateway($request->input('payment_gateway'));
+        $user->preferred_payment_gateway = $gateway;
+        $user->save();
+
+        return response()->json([
+            'code' => 1,
+            'status' => 200,
+            'message' => 'Default payment gateway updated successfully',
+            'data' => [
+                'default_payment_gateway' => $gateway,
+            ],
+        ]);
+    }
+
+    /**
      * Create a new subscription
      * POST /api/subscriptions/create
      * 
@@ -86,6 +190,7 @@ class SubscriptionApiController extends Controller
             $validator = Validator::make($request->all(), [
                 'plan_id' => 'required|integer|exists:subscription_plans,id',
                 'callback_url' => 'url|nullable',
+                'payment_gateway' => 'nullable|string|in:pesapal,flutterwave',
             ]);
 
             if ($validator->fails()) {
@@ -118,22 +223,24 @@ class SubscriptionApiController extends Controller
                 Log::warning('Subscription attempt by user without email', ['user_id' => $user->id]);
             }
 
-            // ===== PRE-WARM PESAPAL CREDENTIALS (speed optimization) =====
-            // Authenticate + register IPN in parallel-safe way BEFORE the DB
-            // transaction so the slow network round-trips happen outside the lock.
-            // Both results are cached, so initializePayment() will hit cache only.
-            try {
-                $this->pesapalService->authenticate();
-                $this->pesapalService->registerIpnUrl();
-            } catch (\Exception $warmupEx) {
-                // Non-fatal — initializePayment() will retry. Just log.
-                Log::warning('Pesapal pre-warm failed (will retry in initializePayment)', [
-                    'error' => $warmupEx->getMessage(),
-                ]);
+            $gateway = $this->resolveGateway(
+                $request->input('payment_gateway') ?: ($user->preferred_payment_gateway ?? null)
+            );
+
+            if ($gateway === 'pesapal') {
+                // ===== PRE-WARM PESAPAL CREDENTIALS (speed optimization) =====
+                try {
+                    $this->pesapalService->authenticate();
+                    $this->pesapalService->registerIpnUrl();
+                } catch (\Exception $warmupEx) {
+                    Log::warning('Pesapal pre-warm failed (will retry in initializePayment)', [
+                        'error' => $warmupEx->getMessage(),
+                    ]);
+                }
             }
 
             // ===== CREATE SUBSCRIPTION (DB TRANSACTION) =====
-            $subscription = DB::transaction(function () use ($user, $request) {
+            $subscription = DB::transaction(function () use ($user, $request, $gateway) {
                 // Lock user row to prevent race conditions
                 $user->lockForUpdate();
 
@@ -171,7 +278,12 @@ class SubscriptionApiController extends Controller
                 }
 
                 // Create subscription record
-                return $user->createSubscription($plan);
+                $created = $user->createSubscription($plan);
+                $created->payment_method = $gateway;
+                $created->payment_gateway = $gateway;
+                $created->save();
+
+                return $created;
             });
 
             // ===== VERIFY SUBSCRIPTION WAS CREATED =====
@@ -186,18 +298,23 @@ class SubscriptionApiController extends Controller
             // Eager-load plan + user to avoid extra queries in initializePayment()
             $subscription->load('plan', 'user');
 
-            // ===== INITIALIZE PESAPAL PAYMENT =====
+            // ===== INITIALIZE PAYMENT =====
             $callbackUrl = $request->callback_url;
 
-            Log::info('Initiating Pesapal payment', [
+            Log::info('Initiating subscription payment', [
                 'subscription_id' => $subscription->id,
                 'user_id' => $user->id,
                 'plan_id' => $request->plan_id,
                 'amount' => $subscription->amount_paid,
+                'gateway' => $gateway,
                 'callback_url' => $callbackUrl ?? 'default',
             ]);
 
-            $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
+            if ($gateway === 'flutterwave') {
+                $paymentResult = $this->flutterwaveService->initializePayment($subscription, $callbackUrl);
+            } else {
+                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
+            }
 
             if (!$paymentResult['success'] || empty($paymentResult['redirect_url'])) {
                 // Clean up — mark subscription as failed
@@ -229,6 +346,7 @@ class SubscriptionApiController extends Controller
                     'redirect_url' => $paymentResult['redirect_url'],
                     'amount' => $subscription->amount_paid,
                     'currency' => $subscription->currency,
+                    'payment_gateway' => $gateway,
                 ],
             ]);
 
@@ -250,7 +368,7 @@ class SubscriptionApiController extends Controller
 
             // CRITICAL: Clean up the subscription if it was created but payment init failed
             if (isset($subscription) && $subscription && $subscription->id) {
-                if (empty($subscription->pesapal_tracking_id)) {
+                if (empty($subscription->pesapal_tracking_id) && empty($subscription->payment_url)) {
                     $subscription->status = 'Failed';
                     $subscription->payment_status = 'Failed';
                     $subscription->failed_at = now();
@@ -292,7 +410,7 @@ class SubscriptionApiController extends Controller
 
             if (!$orderTrackingId) {
                 Log::warning('Pesapal callback missing OrderTrackingId');
-                return $this->callbackPage('error', 'Invalid Callback', 'The callback was missing required parameters. Please return to the app.');
+                return $this->callbackPage('error', 'Invalid Callback', 'The callback was missing required parameters. Please return to the app.', null, null, null, $merchantReference);
             }
 
             // Get transaction status from Pesapal
@@ -300,13 +418,20 @@ class SubscriptionApiController extends Controller
                 $statusResult = $this->pesapalService->getTransactionStatus($orderTrackingId);
 
                 if (!$statusResult['success']) {
-                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment. Please return to the app — your subscription will activate automatically.');
+                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment. Please return to the app — your subscription will activate automatically.', null, null, null, $merchantReference);
                 }
 
                 // Update subscription status
                 $result = $this->pesapalService->updateSubscriptionStatus($orderTrackingId, $statusResult['data']);
                 $subscription = $result['subscription'];
                 $status = $result['status'];
+
+                if ($status === 'success') {
+                    $this->finalizeSuccessfulSubscriptionState($subscription, 'pesapal_callback_legacy');
+                    $subscription->refresh();
+                } else {
+                    $this->invalidateUserPaymentCaches($subscription);
+                }
 
                 // Return JSON if API request
                 if ($request->expectsJson() || $request->wantsJson()) {
@@ -325,13 +450,13 @@ class SubscriptionApiController extends Controller
 
                 $planName = $subscription->plan->name ?? 'Premium';
                 return match ($status) {
-                    'success' => $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access!"),
-                    'failed' => $this->callbackPage('failed', 'Payment Failed', 'Your payment could not be processed. Please return to the app and try again.'),
-                    default => $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. Please return to the app — your subscription will activate automatically.'),
+                    'success' => $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access!", null, null, $subscription->app_type, $subscription->pesapal_merchant_reference),
+                    'failed' => $this->callbackPage('failed', 'Payment Failed', 'Your payment could not be processed. Please return to the app and try again.', null, null, $subscription->app_type, $subscription->pesapal_merchant_reference),
+                    default => $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. Please return to the app — your subscription will activate automatically.', null, null, $subscription->app_type, $subscription->pesapal_merchant_reference),
                 };
             } catch (\Exception $statusEx) {
                 Log::warning('Callback status check failed, showing pending', ['error' => $statusEx->getMessage()]);
-                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment. Please return to the app — your subscription will activate automatically.');
+                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment. Please return to the app — your subscription will activate automatically.', null, null, null, $merchantReference);
             }
         } catch (\Exception $e) {
             Log::error('Pesapal subscription callback processing failed', [
@@ -339,7 +464,7 @@ class SubscriptionApiController extends Controller
                 'request' => $request->all()
             ]);
 
-            return $this->callbackPage('error', 'Something Went Wrong', 'We encountered an error processing your payment callback. Please return to the app and check your subscription status.');
+            return $this->callbackPage('error', 'Something Went Wrong', 'We encountered an error processing your payment callback. Please return to the app and check your subscription status.', null, null, null, $merchantReference);
         }
     }
 
@@ -559,6 +684,7 @@ class SubscriptionApiController extends Controller
             $validator = Validator::make($request->all(), [
                 'subscription_id' => 'required|exists:subscriptions,id',
                 'callback_url' => 'url|nullable',
+                'payment_gateway' => 'nullable|string|in:pesapal,flutterwave',
             ]);
 
             if ($validator->fails()) {
@@ -619,6 +745,9 @@ class SubscriptionApiController extends Controller
             // Reset subscription to pending
             $subscription->status = 'Pending';
             $subscription->payment_status = 'Pending';
+            $gateway = $this->resolveGateway($request->input('payment_gateway') ?: ($subscription->payment_gateway ?: $subscription->payment_method));
+            $subscription->payment_method = $gateway;
+            $subscription->payment_gateway = $gateway;
             $subscription->save();
 
             // Flush pending cache so getPending() reflects new state
@@ -626,7 +755,11 @@ class SubscriptionApiController extends Controller
 
             // Initialize payment again
             $callbackUrl = $request->callback_url;
-            $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
+            if ($gateway === 'flutterwave') {
+                $paymentResult = $this->flutterwaveService->initializePayment($subscription, $callbackUrl);
+            } else {
+                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
+            }
 
             if ($paymentResult['success']) {
                 return response()->json([
@@ -638,6 +771,7 @@ class SubscriptionApiController extends Controller
                         'order_tracking_id' => $paymentResult['order_tracking_id'],
                         'merchant_reference' => $paymentResult['merchant_reference'],
                         'redirect_url' => $paymentResult['redirect_url'],
+                        'payment_gateway' => $gateway,
                     ],
                 ]);
             }
@@ -733,34 +867,44 @@ class SubscriptionApiController extends Controller
                 ]);
             }
 
-            // ENHANCED: Use robust status checker with retry mechanism
-            if ($subscription->pesapal_tracking_id) {
-                $checkResult = $this->statusChecker->checkPaymentStatus($subscription, [
-                    'max_retries' => 3,
-                    'retry_delay' => 2,
-                    'exponential_backoff' => true,
-                ]);
+            $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
 
-                if ($checkResult['success']) {
+            if ($gateway === 'flutterwave') {
+                $txRef = $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference;
+                if ($txRef) {
+                    $this->flutterwaveService->processCallback($txRef);
                     $subscription->refresh();
-
-                    Log::info('Payment status check completed successfully', [
-                        'subscription_id' => $subscription->id,
-                        'status' => $subscription->status,
-                        'attempts' => $checkResult['attempts'] ?? 1,
-                    ]);
-                } else {
-                    Log::error('Payment status check failed', [
-                        'subscription_id' => $subscription->id,
-                        'error' => $checkResult['error'] ?? 'Unknown error',
+                }
+            } else {
+                // ENHANCED: Use robust status checker with retry mechanism
+                if ($subscription->pesapal_tracking_id) {
+                    $checkResult = $this->statusChecker->checkPaymentStatus($subscription, [
+                        'max_retries' => 3,
+                        'retry_delay' => 2,
+                        'exponential_backoff' => true,
                     ]);
 
-                    return response()->json([
-                        'code' => 0,
-                        'status' => 500,
-                        'message' => 'Failed to verify payment status: ' . ($checkResult['error'] ?? 'Please try again'),
-                        'data' => null,
-                    ], 500);
+                    if ($checkResult['success']) {
+                        $subscription->refresh();
+
+                        Log::info('Payment status check completed successfully', [
+                            'subscription_id' => $subscription->id,
+                            'status' => $subscription->status,
+                            'attempts' => $checkResult['attempts'] ?? 1,
+                        ]);
+                    } else {
+                        Log::error('Payment status check failed', [
+                            'subscription_id' => $subscription->id,
+                            'error' => $checkResult['error'] ?? 'Unknown error',
+                        ]);
+
+                        return response()->json([
+                            'code' => 0,
+                            'status' => 500,
+                            'message' => 'Failed to verify payment status: ' . ($checkResult['error'] ?? 'Please try again'),
+                            'data' => null,
+                        ], 500);
+                    }
                 }
             }
 
@@ -842,7 +986,10 @@ class SubscriptionApiController extends Controller
                                 'currency' => $pendingSubscription->currency,
                                 'status' => $pendingSubscription->status,
                                 'payment_status' => $pendingSubscription->payment_status,
-                                'order_tracking_id' => $pendingSubscription->pesapal_tracking_id,
+                                'payment_gateway' => $this->resolveGateway($pendingSubscription->payment_gateway ?: $pendingSubscription->payment_method),
+                                'order_tracking_id' => $this->resolveGateway($pendingSubscription->payment_gateway ?: $pendingSubscription->payment_method) === 'flutterwave'
+                                    ? ($pendingSubscription->flutterwave_reference ?: $pendingSubscription->pesapal_merchant_reference)
+                                    : $pendingSubscription->pesapal_tracking_id,
                                 'merchant_reference' => $pendingSubscription->pesapal_merchant_reference,
                                 'payment_url' => $pendingSubscription->payment_url ?? null,
                                 'created_at' => $pendingSubscription->created_at->toIso8601String(),
@@ -936,12 +1083,22 @@ class SubscriptionApiController extends Controller
                         'redirect_url' => $subscription->payment_url,
                         'amount' => $subscription->amount_paid,
                         'currency' => $subscription->currency,
+                        'payment_gateway' => $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method),
                     ],
                 ]);
             }
 
-            // Initialize payment with Pesapal
-            $paymentResult = $this->pesapalService->initializePayment($subscription);
+            $gateway = $this->resolveGateway($request->input('payment_gateway') ?: ($subscription->payment_gateway ?: $subscription->payment_method));
+            $subscription->payment_method = $gateway;
+            $subscription->payment_gateway = $gateway;
+            $subscription->save();
+
+            $callbackUrl = $request->input('callback_url');
+            if ($gateway === 'flutterwave') {
+                $paymentResult = $this->flutterwaveService->initializePayment($subscription, $callbackUrl);
+            } else {
+                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $callbackUrl);
+            }
 
             if ($paymentResult['success']) {
                 return response()->json([
@@ -955,6 +1112,7 @@ class SubscriptionApiController extends Controller
                         'redirect_url' => $paymentResult['redirect_url'],
                         'amount' => $subscription->amount_paid,
                         'currency' => $subscription->currency,
+                        'payment_gateway' => $gateway,
                     ],
                 ]);
             }
@@ -1013,9 +1171,15 @@ class SubscriptionApiController extends Controller
                 ], 404);
             }
 
+            $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
+
             // Auto-heal: if payment was never initiated, initialize now and return redirect URL.
-            if (!$subscription->pesapal_tracking_id) {
-                $paymentResult = $this->pesapalService->initializePayment($subscription, null, $request->callback_url);
+            if (!$subscription->payment_url) {
+                if ($gateway === 'flutterwave') {
+                    $paymentResult = $this->flutterwaveService->initializePayment($subscription, $request->callback_url);
+                } else {
+                    $paymentResult = $this->pesapalService->initializePayment($subscription, null, $request->callback_url);
+                }
 
                 return response()->json([
                     'code' => 1,
@@ -1025,6 +1189,7 @@ class SubscriptionApiController extends Controller
                         'success' => true,
                         'status' => $subscription->status,
                         'payment_status' => $subscription->payment_status,
+                        'payment_gateway' => $gateway,
                         'redirect_url' => $paymentResult['redirect_url'] ?? null,
                         'order_tracking_id' => $paymentResult['order_tracking_id'] ?? null,
                         'subscription' => $subscription->fresh()->toApiArray(),
@@ -1032,16 +1197,25 @@ class SubscriptionApiController extends Controller
                 ]);
             }
 
-            // Query Pesapal for payment status
-            $statusResult = $this->pesapalService->getTransactionStatus($subscription->pesapal_tracking_id);
+            if ($gateway === 'flutterwave') {
+                $txRef = $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference;
+                if (!$txRef) {
+                    throw new \Exception('Missing Flutterwave transaction reference.');
+                }
+                $this->flutterwaveService->processCallback($txRef);
+                $subscription->refresh();
+            } else {
+                // Query Pesapal for payment status
+                $statusResult = $this->pesapalService->getTransactionStatus($subscription->pesapal_tracking_id);
 
-            if (!$statusResult['success']) {
-                throw new \Exception('Failed to verify payment status with Pesapal');
+                if (!$statusResult['success']) {
+                    throw new \Exception('Failed to verify payment status with Pesapal');
+                }
+
+                // Update subscription based on Pesapal response
+                $result = $this->pesapalService->updateSubscriptionStatus($subscription->pesapal_tracking_id, $statusResult['data']);
+                $subscription->refresh();
             }
-
-            // Update subscription based on Pesapal response
-            $result = $this->pesapalService->updateSubscriptionStatus($subscription->pesapal_tracking_id, $statusResult['data']);
-            $subscription->refresh();
 
             return response()->json([
                 'code' => 1,
@@ -1196,7 +1370,7 @@ class SubscriptionApiController extends Controller
 
             if (!$orderTrackingId) {
                 Log::error('❌ Pesapal Callback: Missing OrderTrackingId');
-                return $this->callbackPage('error', 'Invalid Callback', 'The payment callback was missing required tracking information. Please return to the app and try again.');
+                return $this->callbackPage('error', 'Invalid Callback', 'The payment callback was missing required tracking information. Please return to the app and try again.', null, null, null, $orderMerchantReference);
             }
 
             // Find subscription — try tracking ID first, then merchant reference
@@ -1211,7 +1385,7 @@ class SubscriptionApiController extends Controller
                     'tracking_id' => $orderTrackingId,
                     'merchant_ref' => $orderMerchantReference,
                 ]);
-                return $this->callbackPage('error', 'Subscription Not Found', 'We could not find a matching subscription for this payment. If you were charged, please contact our support team.');
+                return $this->callbackPage('error', 'Subscription Not Found', 'We could not find a matching subscription for this payment. If you were charged, please contact our support team.', null, null, null, $orderMerchantReference ?: $orderTrackingId);
             }
 
             Log::info('📦 Pesapal Callback: Found subscription', [
@@ -1227,8 +1401,10 @@ class SubscriptionApiController extends Controller
             // If subscription is already active (IPN arrived first), show success immediately
             if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
                 Log::info('✅ Pesapal Callback: Subscription already active (IPN processed first)');
+                $this->finalizeSuccessfulSubscriptionState($subscription, 'pesapal_callback_already_active');
+                $subscription->refresh();
                 $planName = $subscription->plan->name ?? 'Premium';
-                return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType);
+                return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType, $subscription->pesapal_merchant_reference ?: $orderMerchantReference);
             }
 
             // Try to get transaction status from Pesapal
@@ -1246,10 +1422,16 @@ class SubscriptionApiController extends Controller
                         'result_status' => $status,
                     ]);
 
+                    if ($status === 'success') {
+                        $subscription->refresh();
+                        $this->finalizeSuccessfulSubscriptionState($subscription, 'pesapal_callback');
+                        $subscription->refresh();
+                    }
+
                     $planName = $subscription->plan->name ?? 'Premium';
 
                     if ($status === 'success') {
-                        return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType);
+                        return $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType, $subscription->pesapal_merchant_reference ?: $orderMerchantReference);
                     } elseif ($status === 'failed') {
                         // Build detailed API response message for user
                         $apiResponse = $result['api_response'] ?? [];
@@ -1274,18 +1456,19 @@ class SubscriptionApiController extends Controller
                             'Your payment could not be processed. Please try again or use a different payment method.',
                             $apiDetail,
                             $retryUrl,
-                            $subAppType
+                            $subAppType,
+                            $subscription->pesapal_merchant_reference ?: $orderMerchantReference
                         );
                     } else {
                         // Payment still processing
-                        return $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. This usually takes a few moments. Please return to the app — your subscription will activate automatically once confirmed.', null, null, $subAppType);
+                        return $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. This usually takes a few moments. Please return to the app — your subscription will activate automatically once confirmed.', null, null, $subAppType, $subscription->pesapal_merchant_reference ?: $orderMerchantReference);
                     }
                 } else {
                     // Status check failed but that's OK — payment may still be processing
                     Log::warning('⚠️ Pesapal Callback: Status check failed, showing pending page', [
                         'error' => $statusResult['error'] ?? 'unknown',
                     ]);
-                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.', null, null, $subAppType);
+                    return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.', null, null, $subAppType, $subscription->pesapal_merchant_reference ?: $orderMerchantReference);
                 }
 
             } catch (\Exception $statusException) {
@@ -1294,7 +1477,7 @@ class SubscriptionApiController extends Controller
                     'error' => $statusException->getMessage(),
                     'subscription_id' => $subscription->id,
                 ]);
-                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.', null, null, $subAppType);
+                return $this->callbackPage('pending', 'Verifying Payment', 'We are confirming your payment with the payment provider. Please return to the app — your subscription will activate automatically once your payment is confirmed.', null, null, $subAppType, $subscription->pesapal_merchant_reference ?: $orderMerchantReference);
             }
 
         } catch (\Exception $e) {
@@ -1303,7 +1486,7 @@ class SubscriptionApiController extends Controller
                 'trace' => substr($e->getTraceAsString(), 0, 500),
             ]);
 
-            return $this->callbackPage('error', 'Something Went Wrong', 'We encountered an unexpected error while processing your payment callback. Please return to the app and check your subscription status. If you were charged, your subscription will be activated automatically.');
+            return $this->callbackPage('error', 'Something Went Wrong', 'We encountered an unexpected error while processing your payment callback. Please return to the app and check your subscription status. If you were charged, your subscription will be activated automatically.', null, null, null, $orderMerchantReference ?? $orderTrackingId ?? null);
         }
     }
 
@@ -1361,6 +1544,89 @@ class SubscriptionApiController extends Controller
     }
 
     /**
+     * Flutterwave callback endpoint
+     * GET /api/subscriptions/flutterwave/callback
+     */
+    public function flutterwaveCallback(Request $request)
+    {
+        try {
+            $txRef = $request->input('tx_ref');
+
+            Log::info('Flutterwave callback received', [
+                'tx_ref' => $txRef,
+                'status' => $request->input('status'),
+                'transaction_id' => $request->input('transaction_id'),
+            ]);
+
+            if (empty($txRef)) {
+                return $this->callbackPage('error', 'Invalid Callback', 'Missing Flutterwave reference. Please return to the app and check your subscription.');
+            }
+
+            $result = $this->flutterwaveService->processCallback($txRef);
+            $subscription = $result['subscription'];
+            $status = $result['status'];
+            $planName = $subscription->plan->name ?? 'Premium';
+            $subAppType = $subscription->app_type ?? null;
+
+            if ($status === 'success') {
+                $this->finalizeSuccessfulSubscriptionState($subscription, 'flutterwave_callback');
+                $subscription->refresh();
+            }
+
+            return match ($status) {
+                'success' => $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType, $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference ?: $txRef),
+                'failed' => $this->callbackPage('failed', 'Payment Failed', 'Your Flutterwave payment could not be processed. Please return to the app and try again.', null, $subscription->payment_url, $subAppType, $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference ?: $txRef),
+                default => $this->callbackPage('pending', 'Payment Processing', 'Your payment is being verified. Please return to the app — your subscription will activate automatically.', null, null, $subAppType, $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference ?: $txRef),
+            };
+        } catch (\Exception $e) {
+            Log::error('Flutterwave callback processing failed', [
+                'error' => $e->getMessage(),
+                'request' => $request->all(),
+            ]);
+
+            return $this->callbackPage('error', 'Something Went Wrong', 'We encountered an error processing your Flutterwave callback. Please return to the app and check your subscription status.');
+        }
+    }
+
+    /**
+     * Flutterwave webhook endpoint
+     * POST /api/subscriptions/flutterwave/webhook
+     */
+    public function flutterwaveWebhook(Request $request)
+    {
+        try {
+            $rawBody = $request->getContent();
+            $signature = $request->header('verif-hash') ?: $request->header('flutterwave-signature');
+
+            if (!$this->flutterwaveService->isValidWebhook($rawBody, $signature)) {
+                Log::warning('Invalid Flutterwave webhook signature', [
+                    'ip' => $request->ip(),
+                ]);
+                return response()->json(['status' => 'invalid_signature'], 401);
+            }
+
+            $payload = $request->json()->all();
+            $txRef = $payload['data']['tx_ref'] ?? null;
+
+            if ($txRef) {
+                $result = $this->flutterwaveService->processCallback($txRef);
+                if (($result['status'] ?? null) === 'success' && !empty($result['subscription'])) {
+                    $this->invalidateUserPaymentCaches($result['subscription']);
+                }
+            }
+
+            return response()->json(['status' => 'ok'], 200);
+        } catch (\Exception $e) {
+            Log::error('Flutterwave webhook processing failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            // Return success-like code to avoid aggressive retries while preserving logs.
+            return response()->json(['status' => 'logged'], 200);
+        }
+    }
+
+    /**
      * Check payment status and return subscription with manifest
      * GET /api/subscriptions/payment-status/{trackingId}
      * 
@@ -1377,6 +1643,8 @@ class SubscriptionApiController extends Controller
             ]);
 
             $subscription = Subscription::where('pesapal_tracking_id', $trackingId)
+                ->orWhere('flutterwave_reference', $trackingId)
+                ->orWhere('pesapal_merchant_reference', $trackingId)
                 ->with(['plan', 'transactions'])
                 ->first();
 
@@ -1396,19 +1664,40 @@ class SubscriptionApiController extends Controller
             // NOTE: Ownership hard-stop removed here to avoid payment confirmation failures
             // when clients hold stale auth state during callback finalization.
 
-            // Check with Pesapal if not yet completed
+            // Check with gateway if not yet completed
             if ($subscription->payment_status !== 'Completed') {
-                 
-                $statusResult = $this->pesapalService->getTransactionStatus($trackingId);
+                $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
 
-                if ($statusResult['success']) {
-                    $result = $this->pesapalService->updateSubscriptionStatus($trackingId, $statusResult['data']);
-                    $subscription->refresh();
- 
+                if ($gateway === 'flutterwave') {
+                    $txRef = $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference;
+                    if ($txRef) {
+                        try {
+                            $this->flutterwaveService->processCallback($txRef);
+                            $subscription->refresh();
+                        } catch (\Exception $flwEx) {
+                            // Flutterwave returns "No transaction found" for unpaid links — payment still pending
+                            Log::info('ℹ️ Flutterwave: no transaction yet (payment pending)', [
+                                'tx_ref' => $txRef,
+                                'reason' => $flwEx->getMessage(),
+                            ]);
+                            // Fall through and return current local status (Pending)
+                        }
+                    }
+                } else {
+                    $statusResult = $this->pesapalService->getTransactionStatus($trackingId);
+
+                    if ($statusResult['success']) {
+                        $this->pesapalService->updateSubscriptionStatus($trackingId, $statusResult['data']);
+                        $subscription->refresh();
+                    }
                 }
             }
 
             // Build comprehensive response with manifest
+            if ($subscription->payment_status === 'Completed') {
+                $this->invalidateUserPaymentCaches($subscription);
+            }
+
             $manifest = $this->buildSubscriptionManifest($subscription);
 
   
@@ -1477,8 +1766,11 @@ class SubscriptionApiController extends Controller
                 'amount_paid' => $subscription->amount_paid,
                 'currency' => $subscription->currency,
                 'payment_method' => $subscription->payment_method,
+                'payment_gateway' => $subscription->payment_gateway ?: $subscription->payment_method,
                 'pesapal_tracking_id' => $subscription->pesapal_tracking_id,
                 'pesapal_merchant_reference' => $subscription->pesapal_merchant_reference,
+                'flutterwave_reference' => $subscription->flutterwave_reference,
+                'flutterwave_transaction_id' => $subscription->flutterwave_transaction_id,
             ],
             'transactions' => $subscription->transactions->map(function ($tx) {
                 return [
@@ -1557,7 +1849,21 @@ class SubscriptionApiController extends Controller
             }
 
             // Force verify payment
-            $verifyResult = $this->statusChecker->forceVerifyPayment($subscription);
+            $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
+            if ($gateway === 'flutterwave') {
+                $txRef = $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference;
+                if (!$txRef) {
+                    throw new \RuntimeException('Missing Flutterwave reference for verification.');
+                }
+                $flw = $this->flutterwaveService->processCallback($txRef);
+                $verifyResult = [
+                    'success' => true,
+                    'gateway' => 'flutterwave',
+                    'status' => $flw['status'] ?? 'pending',
+                ];
+            } else {
+                $verifyResult = $this->statusChecker->forceVerifyPayment($subscription);
+            }
 
             if ($verifyResult['success']) {
                 $subscription->refresh();
@@ -1609,6 +1915,14 @@ class SubscriptionApiController extends Controller
         };
     }
 
+    private function resolveGateway(?string $gateway): string
+    {
+        $normalized = strtolower(trim((string) $gateway));
+        return in_array($normalized, ['pesapal', 'flutterwave'], true)
+            ? $normalized
+            : 'pesapal';
+    }
+
     /**
      * Resolve a user-owned subscription for payment actions.
      * Treats incoming ID as a hint and falls back to latest actionable subscription.
@@ -1638,6 +1952,142 @@ class SubscriptionApiController extends Controller
             ->first();
     }
 
+    private function finalizeSuccessfulSubscriptionState(Subscription $subscription, string $source): void
+    {
+        $subscription->refresh();
+
+        $originalStatus = $subscription->status;
+        $originalPaymentStatus = $subscription->payment_status;
+
+        $subscription->status = 'Active';
+        $subscription->payment_status = 'Completed';
+
+        if (!$subscription->payment_confirmed_at) {
+            $subscription->payment_confirmed_at = now();
+        }
+
+        if (!$subscription->start_date_time) {
+            $subscription->start_date_time = now();
+        }
+
+        if (!$subscription->end_date_time) {
+            $days = max(1, (int) $subscription->days);
+            $subscription->end_date_time = \Carbon\Carbon::parse($subscription->start_date_time)->addHours($days * 24);
+        }
+
+        if (!$subscription->grace_period_end && $subscription->end_date_time) {
+            $subscription->grace_period_end = \Carbon\Carbon::parse($subscription->end_date_time)->addDays(3);
+        }
+
+        $subscription->failed_at = null;
+        $subscription->payment_failure_reason = null;
+
+        if ($subscription->isDirty()) {
+            $subscription->save();
+
+            Log::info('Subscription callback success normalized', [
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+                'source' => $source,
+                'from_status' => $originalStatus,
+                'from_payment_status' => $originalPaymentStatus,
+                'to_status' => $subscription->status,
+                'to_payment_status' => $subscription->payment_status,
+            ]);
+        }
+
+        $this->invalidateUserPaymentCaches($subscription);
+    }
+
+    private function resolveAppMeta(?string $appType = null, ?string $merchantReference = null): array
+    {
+        $normalizedAppType = strtolower(trim((string) $appType));
+        $reference = strtoupper(trim((string) $merchantReference));
+
+        $keywordType = null;
+        if ($reference !== '') {
+            if (str_starts_with($reference, 'MUN-')) {
+                $keywordType = 'muno_app';
+            } elseif (str_starts_with($reference, 'LUG-')) {
+                $keywordType = 'lugaflix';
+            } elseif (str_starts_with($reference, 'WEB-')) {
+                $keywordType = 'web';
+            } elseif (str_starts_with($reference, 'SUB-')) {
+                $keywordType = 'ugflix';
+            }
+        }
+
+        if ($keywordType && $normalizedAppType !== '' && $keywordType !== $normalizedAppType) {
+            Log::warning('Subscription callback app_type mismatch: enforcing merchant keyword mapping', [
+                'incoming_app_type' => $normalizedAppType,
+                'merchant_reference' => $merchantReference,
+                'resolved_app_type' => $keywordType,
+            ]);
+        }
+
+        $resolvedType = $keywordType ?: match ($normalizedAppType) {
+            'lugaflix' => 'lugaflix',
+            'muno', 'muno_app' => 'muno_app',
+            'web', 'website' => 'web',
+            default => 'ugflix',
+        };
+
+        return match ($resolvedType) {
+            'lugaflix' => [
+                'name' => 'LugaFlix',
+                'package' => 'lugaflix.movies',
+                'scheme' => 'lugaflix',
+                'color' => '#3498db',
+                'is_web' => false,
+                'open_url' => null,
+            ],
+            'muno_app' => [
+                'name' => 'Muno App',
+                'package' => 'muno.app',
+                'scheme' => 'munoapp',
+                'color' => '#e74c3c',
+                'is_web' => false,
+                'open_url' => null,
+            ],
+            'web' => [
+                'name' => 'Web App',
+                'package' => '',
+                'scheme' => '',
+                'color' => '#f39c12',
+                'is_web' => true,
+                'open_url' => rtrim(config('app.url', 'https://katogo.schooldynamics.ug'), '/'),
+            ],
+            default => [
+                'name' => 'UG Flix',
+                'package' => 'ugflix.com',
+                'scheme' => 'ugflix',
+                'color' => '#47C757',
+                'is_web' => false,
+                'open_url' => null,
+            ],
+        };
+    }
+
+    private function invalidateUserPaymentCaches(Subscription $subscription): void
+    {
+        Cache::forget("sub_pending_{$subscription->user_id}");
+        Cache::forget("active_sub_{$subscription->user_id}");
+        Cache::forget("v2_pay_check_{$subscription->user_id}");
+
+        $cacheDir = storage_path('api_cache');
+        if (!is_dir($cacheDir)) {
+            return;
+        }
+
+        foreach (['ugflix', 'lugaflix', 'muno_app', 'web'] as $type) {
+            $pbcKey = 'u_' . md5('/api/v2/manifest' . $subscription->user_id . $type);
+            $cachePath = "{$cacheDir}/{$pbcKey}";
+            if (is_file($cachePath)) {
+                @unlink($cachePath);
+            }
+        }
+    }
+
     /**
      * Helper: Return branded callback page for all statuses
      * Matches the app's dark theme with green/orange branding
@@ -1647,7 +2097,7 @@ class SubscriptionApiController extends Controller
      * @param string $message Body message
      * @return \Illuminate\Http\Response
      */
-    private function callbackPage(string $status, string $title, string $message, ?string $apiDetail = null, ?string $retryUrl = null, ?string $appType = null)
+    private function callbackPage(string $status, string $title, string $message, ?string $apiDetail = null, ?string $retryUrl = null, ?string $appType = null, ?string $merchantReference = null)
     {
         $escapedTitle = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
         $escapedMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
@@ -1697,23 +2147,52 @@ class SubscriptionApiController extends Controller
         $badgeColor = $config['badgeColor'];
 
         // ── Open App button ──────────────────────────────────────────────────
-        // Package IDs and display names per app_type
-        $appMeta = match (strtolower($appType ?? '')) {
-            'lugaflix'  => ['name' => 'LugaFlix', 'package' => 'lugaflix.movies',  'scheme' => 'lugaflix',  'color' => '#3498db'],
-            'muno_app'  => ['name' => 'Muno App',  'package' => 'muno.app',         'scheme' => 'munoapp',   'color' => '#e74c3c'],
-            default     => ['name' => 'UG Flix',   'package' => 'ugflix.com',       'scheme' => 'ugflix',    'color' => '#47C757'],
-        };
+        // Resolve from app_type and merchant reference keyword (MUN/LUG/WEB/SUB)
+        $appMeta = $this->resolveAppMeta($appType, $merchantReference);
 
         $appName    = $appMeta['name'];
+        $escapedAppName = htmlspecialchars($appName, ENT_QUOTES, 'UTF-8');
         $appPackage = $appMeta['package'];
         $appScheme  = $appMeta['scheme'];
         $appColor   = $appMeta['color'];
+        $isWebApp   = (bool) ($appMeta['is_web'] ?? false);
+        $webOpenUrl = $appMeta['open_url'] ?? null;
         $playStoreUrl = htmlspecialchars('https://play.google.com/store/apps/details?id=' . $appPackage, ENT_QUOTES, 'UTF-8');
+
+        // Dynamic logo text split: keep "Flix" highlighted when present.
+        $brandMain = $appName;
+        $brandAccent = '';
+        $flixPos = stripos($appName, 'flix');
+        if ($flixPos !== false) {
+            $brandMain = trim(substr($appName, 0, $flixPos));
+            $brandAccent = substr($appName, $flixPos);
+            if ($brandMain === '') {
+                $brandMain = $appName;
+                $brandAccent = '';
+            }
+        }
+
+        $escapedBrandMain = htmlspecialchars($brandMain, ENT_QUOTES, 'UTF-8');
+        $escapedBrandAccent = htmlspecialchars($brandAccent, ENT_QUOTES, 'UTF-8');
+        $logoHtml = $escapedBrandAccent !== ''
+            ? '<span class="logo-main">' . $escapedBrandMain . '</span><span class="logo-accent">' . $escapedBrandAccent . '</span>'
+            : '<span class="logo-main">' . $escapedBrandMain . '</span>';
 
         // Button shown on success + pending (user needs to return to the app)
         $openAppHtml = '';
         if (in_array($status, ['success', 'pending'])) {
-            $openAppHtml = <<<OPENAPP
+            if ($isWebApp && $webOpenUrl) {
+                $escapedWebOpenUrl = htmlspecialchars($webOpenUrl, ENT_QUOTES, 'UTF-8');
+                $openAppHtml = <<<OPENWEB
+
+            <div class="open-app-wrap">
+                <a class="open-app-btn" href="{$escapedWebOpenUrl}" style="background:{$appColor};text-decoration:none;display:inline-flex;justify-content:center;align-items:center">
+                    Open {$appName}
+                </a>
+            </div>
+OPENWEB;
+            } else {
+                $openAppHtml = <<<OPENAPP
 
             <div class="open-app-wrap">
                 <button class="open-app-btn" onclick="openApp()" style="background:{$appColor}">
@@ -1747,6 +2226,7 @@ class SubscriptionApiController extends Controller
             }
             </script>
 OPENAPP;
+                }
         }
         // ────────────────────────────────────────────────────────────────────
 
@@ -1816,7 +2296,7 @@ CLOSEBTN;
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>{$escapedTitle} — UGFlix</title>
+    <title>{$escapedTitle} — {$appName}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1848,8 +2328,8 @@ CLOSEBTN;
             font-weight: 800;
             letter-spacing: -0.5px;
         }
-        .logo-ug { color: #FFFFFF; }
-        .logo-flix { color: #47C757; }
+        .logo-main { color: #FFFFFF; }
+        .logo-accent { color: {$appColor}; }
         .logo-tagline {
             font-size: 11px;
             color: #6B7280;
@@ -2079,7 +2559,7 @@ CLOSEBTN;
     <div class="container">
         <div class="logo-section">
             <div class="logo-text">
-                <span class="logo-ug">UG</span><span class="logo-flix">Flix</span>
+                {$logoHtml}
             </div>
             <div class="logo-tagline">Premium Entertainment</div>
         </div>
@@ -2108,7 +2588,7 @@ CLOSEBTN;
         </div>
 
         <div class="footer">
-            &copy; 2026 UGFlix &middot; Powered by Pesapal
+            &copy; 2026 {$escapedAppName} &middot; Secure Checkout
         </div>
     </div>
 </body>

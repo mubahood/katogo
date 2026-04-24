@@ -1,4 +1,4 @@
-now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (ugflix - /Users/mac/Desktop/github/luganda-translated-movies-mobo)
+now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (ugflix - /Users/mac/Desktop/github/luganda-translated-movies-mobo) - only mobile version, not tv.
 
 now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (Muno App - /Users/mac/Desktop/github/muno-app-free-luganda-movies)
 

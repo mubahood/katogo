@@ -28,10 +28,8 @@ class FlutterWaveLog extends Model
         // Specify the headers you want to include in the request
         $headers = [
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer FLWSECK-4131a12ce00186825da8070013bef461-18bda11a003vt-X',
-            // Add any other headers as needed
+            'Authorization' => 'Bearer ' . env('FLW_SECRET_KEY', ''),
         ];
-
 
         // Make the HTTP POST request with the specified parameters
         $response = $client->get($url, [
@@ -130,8 +128,7 @@ class FlutterWaveLog extends Model
         // Specify the headers you want to include in the request
         $headers = [
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer FLWSECK-4131a12ce00186825da8070013bef461-18bda11a003vt-X',
-            // Add any other headers as needed
+            'Authorization' => 'Bearer ' . env('FLW_SECRET_KEY', ''),
         ];
 
         // Specify the raw body content

@@ -22,12 +22,16 @@ class Subscription extends Model
         'status',
         'auto_renew',
         'payment_method',
+        'payment_gateway',
         'payment_status',
         'pesapal_transaction_id',
         'pesapal_tracking_id',
         'pesapal_merchant_reference',
         'pesapal_signature',
         'pesapal_response',
+        'flutterwave_reference',
+        'flutterwave_transaction_id',
+        'flutterwave_response',
         'payment_url',
         'payment_confirmed_at',
         'failed_at',
@@ -58,6 +62,7 @@ class Subscription extends Model
         'expiry_notification_sent' => 'boolean',
         'amount_paid' => 'decimal:2',
         'pesapal_response' => 'array',
+        'flutterwave_response' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -541,11 +546,17 @@ class Subscription extends Model
             'amount_paid' => $this->amount_paid,
             'currency' => $this->currency,
             'payment_method' => $this->payment_method,
+            'payment_gateway' => $this->payment_gateway ?? $this->payment_method,
             'auto_renew' => $this->auto_renew,
             'is_extension' => $this->is_extension,
             'cancelled_at' => $this->cancelled_at?->toISOString(),
             'cancelled_reason' => $this->cancelled_reason,
             'created_at' => $this->created_at?->toISOString(),
+            'order_tracking_id' => $this->payment_gateway === 'flutterwave'
+                ? $this->flutterwave_reference
+                : $this->pesapal_tracking_id,
+            'merchant_reference' => $this->pesapal_merchant_reference,
+            'payment_url' => $this->payment_url,
         ];
     }
 }
