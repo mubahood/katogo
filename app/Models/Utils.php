@@ -786,7 +786,8 @@ class Utils
                 function ($m) use ($data) {
                     $m->to($data['email'], $data['name'])
                         ->subject($data['subject']);
-                    $m->from(env('MAIL_FROM_ADDRESS'), $data['subject']);
+                    $fromAddress = env('MAIL_FROM_ADDRESS') ?: config('mail.from.address') ?: 'info@mru.ac.ug';
+                    $m->from($fromAddress, 'UgFlix');
                 }
             );
         } catch (\Throwable $th) {
