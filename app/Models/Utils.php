@@ -776,22 +776,58 @@ class Utils
     //mail sender
     public static function mail_sender($data)
     {
+        $toEmail = trim((string)($data['email'] ?? ''));
+        if ($toEmail === '' || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+            throw new \InvalidArgumentException('Recipient email is missing or invalid.');
+        }
+
+        $toName = trim((string)($data['name'] ?? ''));
+        if ($toName === '') {
+            $toName = 'User';
+        }
+
+        $subject = trim((string)($data['subject'] ?? ''));
+        if ($subject === '') {
+            $subject = 'Notification - ' . (env('APP_NAME') ?: 'Katogo');
+        }
+
+        $body = (string)($data['body'] ?? '');
+
+        $fromAddressCandidates = [
+            env('MAIL_FROM_ADDRESS'),
+            config('mail.from.address'),
+            env('MAIL_USERNAME'),
+            'info@mru.ac.ug',
+        ];
+
+        $fromAddress = null;
+        foreach ($fromAddressCandidates as $candidate) {
+            $candidate = trim((string)$candidate);
+            if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+                $fromAddress = $candidate;
+                break;
+            }
+        }
+
+        if ($fromAddress === null) {
+            throw new \RuntimeException('Email sender address is not configured. Set MAIL_FROM_ADDRESS to a valid email.');
+        }
+
+        $fromName = trim((string)(env('MAIL_FROM_NAME') ?: config('mail.from.name') ?: env('APP_NAME') ?: 'UgFlix'));
+
         try {
             Mail::send(
                 'mails/mail-1',
                 [
-                    'body' => $data['body'],
-                    'title' => $data['subject']
+                    'body' => $body,
+                    'title' => $subject,
                 ],
-                function ($m) use ($data) {
-                    $m->to($data['email'], $data['name'])
-                        ->subject($data['subject']);
-                    $fromAddress = env('MAIL_FROM_ADDRESS') ?: config('mail.from.address') ?: 'info@mru.ac.ug';
-                    $m->from($fromAddress, 'UgFlix');
+                function ($m) use ($toEmail, $toName, $subject, $fromAddress, $fromName) {
+                    $m->to($toEmail, $toName)->subject($subject);
+                    $m->from($fromAddress, $fromName);
                 }
             );
         } catch (\Throwable $th) {
-            $msg = 'failed';
             throw $th;
         }
     }

@@ -1944,42 +1944,50 @@ class ApiController extends BaseController
 
     public function request_password_reset_code(Request $r)
     {
-
-
+        $email = trim((string)$r->email);
 
         //check if email is provided
-        if ($r->email == null) {
+        if ($email === '') {
             Utils::error("Email is required.");
         }
         //check if email is valid
-        if (!filter_var($r->email, FILTER_VALIDATE_EMAIL)) {
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             Utils::error("Email is invalid.");
         }
 
         //check if email is already registered
-        $u = User::where('email', $r->email)->first();
+        $u = User::where('email', $email)->first();
         if ($u == null) {
-            Utils::error("Account not found with $r->email.");
+            Utils::error("Account not found with $email.");
         }
+
+        if (empty($u->email) || !filter_var($u->email, FILTER_VALIDATE_EMAIL)) {
+            Utils::error("Account email is missing or invalid. Please contact support.");
+        }
+
         $code = rand(100000, 999999);
         $u->secret_code = $code;
         $u->save();
 
+        $recipientName = trim((string)($u->name ?? ''));
+        if ($recipientName === '') {
+            $recipientName = 'there';
+        }
+
         $mail_body = <<<EOD
-            <p>Dear {$u->name},</p>
+            <p>Dear {$recipientName},</p>
             <p>Your password reset code is <b><code>$code</code></b></p>
             <p>Thank you.</p>
             EOD;
         $data['email'] = $u->email;
-        $date = date('Y-m-d');
         $data['subject'] = "Password Reset Code - " . env('APP_NAME');
         $data['body'] = $mail_body;
         $data['data'] = $data['body'];
-        $data['name'] = $u->name;
+        $data['name'] = $recipientName;
         try {
             Utils::mail_sender($data);
         } catch (\Throwable $th) {
-            return Utils::error($th->getMessage());
+            return Utils::error("Unable to send reset code email. " . $th->getMessage());
         }
         $u = User::find($u->id);
         Utils::success([

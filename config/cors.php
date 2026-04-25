@@ -25,29 +25,18 @@ return [
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
         'http://localhost:8888',
+        'https://lugaflix.mruodel.com',
+        'https://movies.mruodel.com',
         'https://katogo.ugnews24.info',
         'https://about.u-lits.com',
     ],
 
-    'allowed_origins_patterns' => [],
-
-    'allowed_headers' => [
-        'Authorization',
-        'Tok',
-        'logged_in_user_id',
-        'platform_type',
-        'Content-Type',
-        'X-Requested-With',
-        'Accept',
-        'Origin',
-        'User-Agent',
-        'DNT',
-        'Cache-Control',
-        'X-Mx-ReqToken',
-        'Keep-Alive',
-        'X-Requested-With',
-        'If-Modified-Since'
+    'allowed_origins_patterns' => [
+        '/^https:\/\/(.+\.)?mruodel\.com$/',
+        '/^https:\/\/(.+\.)?ugnews24\.info$/',
     ],
+
+    'allowed_headers' => ['*'],
 
     'exposed_headers' => ['Authorization', 'Tok'],
 
