@@ -25,6 +25,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use OpenApi\Annotations as OA;
 use Illuminate\Support\Facades\Schema;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Traits\ApiResponser;
@@ -1536,9 +1537,35 @@ class ApiController extends BaseController
         }
     }
 
-
-
-
+    /**
+     * @OA\Post(
+     *   path="/api/auth/login",
+     *   operationId="authLogin",
+     *   tags={"Auth"},
+     *   summary="Authenticate user with email and password",
+     *   description="Returns authenticated user information and JWT token.",
+     *   @OA\RequestBody(
+     *     required=true,
+     *     @OA\JsonContent(
+     *       required={"email","password"},
+     *       @OA\Property(property="email", type="string", format="email", example="user@example.com"),
+     *       @OA\Property(property="password", type="string", format="password", example="secret123")
+     *     )
+     *   ),
+     *   @OA\Response(
+     *     response=200,
+     *     description="Login successful",
+     *     @OA\JsonContent(
+     *       @OA\Property(property="code", type="integer", example=1),
+     *       @OA\Property(property="status", type="integer", example=200),
+     *       @OA\Property(property="message", type="string", example="Login successful."),
+     *       @OA\Property(property="data", type="object")
+     *     )
+     *   ),
+     *   @OA\Response(response=422, description="Validation error"),
+     *   @OA\Response(response=401, description="Invalid credentials")
+     * )
+     */
     public function login(Request $r)
     {
         //check if email is provided
@@ -1629,6 +1656,31 @@ class ApiController extends BaseController
     }
 
     /**
+     * @OA\Post(
+     *   path="/api/auth/google",
+     *   operationId="authGoogle",
+     *   tags={"Auth"},
+     *   summary="Authenticate user with Google ID token",
+     *   @OA\RequestBody(
+     *     required=true,
+     *     @OA\JsonContent(
+     *       required={"id_token"},
+     *       @OA\Property(property="id_token", type="string", example="eyJhbGciOiJSUzI1NiIsImtpZCI6I...")
+     *     )
+     *   ),
+     *   @OA\Response(
+     *     response=200,
+     *     description="Google login successful",
+     *     @OA\JsonContent(
+     *       @OA\Property(property="code", type="integer", example=1),
+     *       @OA\Property(property="status", type="integer", example=200),
+     *       @OA\Property(property="message", type="string", example="Google login successful."),
+     *       @OA\Property(property="data", type="object")
+     *     )
+     *   ),
+     *   @OA\Response(response=400, description="Invalid Google token")
+     * )
+     *
      * Google OAuth Authentication
      * Verifies Google ID token and returns JWT token
      */
@@ -1789,8 +1841,36 @@ class ApiController extends BaseController
             return false;
         }
     }
-
-
+    /**
+     * @OA\Post(
+     *   path="/api/auth/register",
+     *   operationId="authRegister",
+     *   tags={"Auth"},
+     *   summary="Register a new user account",
+     *   @OA\RequestBody(
+     *     required=true,
+     *     @OA\JsonContent(
+     *       required={"name","email","password"},
+     *       @OA\Property(property="name", type="string", example="John Doe"),
+     *       @OA\Property(property="email", type="string", format="email", example="john@example.com"),
+     *       @OA\Property(property="password", type="string", format="password", example="secret123"),
+     *       @OA\Property(property="app_type", type="string", example="lugaflix"),
+     *       @OA\Property(property="platform", type="string", example="android")
+     *     )
+     *   ),
+     *   @OA\Response(
+     *     response=200,
+     *     description="Registration successful",
+     *     @OA\JsonContent(
+     *       @OA\Property(property="code", type="integer", example=1),
+     *       @OA\Property(property="status", type="integer", example=200),
+     *       @OA\Property(property="message", type="string", example="Registration successful."),
+     *       @OA\Property(property="data", type="object")
+     *     )
+     *   ),
+     *   @OA\Response(response=422, description="Validation error")
+     * )
+     */
     public function register(Request $r)
     {
 
@@ -1898,8 +1978,34 @@ class ApiController extends BaseController
         ], "Registration successful.");
     }
 
-
-
+    /**
+     * @OA\Post(
+     *   path="/api/auth/password-reset",
+     *   operationId="authPasswordReset",
+     *   tags={"Auth"},
+     *   summary="Reset account password using reset code",
+     *   @OA\RequestBody(
+     *     required=true,
+     *     @OA\JsonContent(
+     *       required={"email","code","password"},
+     *       @OA\Property(property="email", type="string", format="email", example="john@example.com"),
+     *       @OA\Property(property="code", type="string", example="123456"),
+     *       @OA\Property(property="password", type="string", format="password", example="newsecret123")
+     *     )
+     *   ),
+     *   @OA\Response(
+     *     response=200,
+     *     description="Password reset successful",
+     *     @OA\JsonContent(
+     *       @OA\Property(property="code", type="integer", example=1),
+     *       @OA\Property(property="status", type="integer", example=200),
+     *       @OA\Property(property="message", type="string", example="Password reset successful."),
+     *       @OA\Property(property="data", type="object")
+     *     )
+     *   ),
+     *   @OA\Response(response=422, description="Validation error")
+     * )
+     */
     public function password_reset(Request $r)
     {
 
@@ -1940,8 +2046,32 @@ class ApiController extends BaseController
             'company' => Company::find(1),
         ], "Password reset successful.");
     }
-
-
+    /**
+     * @OA\Post(
+     *   path="/api/auth/request-password-reset-code",
+     *   operationId="authRequestPasswordResetCode",
+     *   tags={"Auth"},
+     *   summary="Request password reset code",
+     *   @OA\RequestBody(
+     *     required=true,
+     *     @OA\JsonContent(
+     *       required={"email"},
+     *       @OA\Property(property="email", type="string", format="email", example="john@example.com")
+     *     )
+     *   ),
+     *   @OA\Response(
+     *     response=200,
+     *     description="Code sent successfully",
+     *     @OA\JsonContent(
+     *       @OA\Property(property="code", type="integer", example=1),
+     *       @OA\Property(property="status", type="integer", example=200),
+     *       @OA\Property(property="message", type="string", example="Code sent successfully."),
+     *       @OA\Property(property="data", type="object")
+     *     )
+     *   ),
+     *   @OA\Response(response=422, description="Validation error")
+     * )
+     */
     public function request_password_reset_code(Request $r)
     {
         $email = trim((string)$r->email);

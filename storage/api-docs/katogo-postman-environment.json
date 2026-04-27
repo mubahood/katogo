@@ -1,0 +1,39 @@
+{
+  "id": "katogo-local-env",
+  "name": "Katogo — Local (MAMP)",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8888/katogo",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "bearer_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "Paste your JWT token here after logging in via POST /api/auth/login"
+    },
+    {
+      "key": "plan_id",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "movie_id",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "subscription_id",
+      "value": "1",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/environment.json"
+}

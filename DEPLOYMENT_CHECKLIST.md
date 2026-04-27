@@ -7,7 +7,8 @@
 - [ ] All tests pass locally (or no breaking changes)  
 - [ ] `.env.production` values match expected — check `APP_ENV=production`, `APP_DEBUG=false`
 - [ ] New migrations without data loss checked (`php artisan migrate --pretend`)
-- [ ] `composer.json` changes → run `composer update` on PHP 8.1–8.3 machine → commit updated `composer.lock`
+- [ ] `composer.json` changes -> run `composer update` on PHP 8.1-8.3 machine -> commit updated `composer.lock`
+- [ ] OpenAPI docs regenerated (`php artisan l5-swagger:generate`) and validated
 
 ---
 
@@ -30,14 +31,17 @@ composer install --no-dev --optimize-autoloader --no-interaction
 # 5. Run any pending migrations
 php artisan migrate --force
 
-# 6. Clear and regenerate caches
+# 6. Regenerate OpenAPI docs
+php artisan l5-swagger:generate
+
+# 7. Clear and regenerate caches
 php artisan optimize
 # This runs: config:cache + route:cache + view:cache + event:cache
 
-# 7. Restart queue workers (so they pick up new code)
+# 8. Restart queue workers (so they pick up new code)
 php artisan queue:restart
 
-# 8. Verify health endpoint responds
+# 9. Verify health endpoint responds
 curl -s https://katogo.ulits.com/api/health | head -c 200
 ```
 
