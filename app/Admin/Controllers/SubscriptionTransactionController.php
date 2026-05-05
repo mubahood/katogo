@@ -416,10 +416,15 @@ class SubscriptionTransactionController extends AdminController
     protected function grid()
     {
         $grid = new Grid(new SubscriptionTransaction());
+        $grid->model()->with([
+            'user:id,name,email,phone_number,app_type,platform',
+            'subscription:id,plan_id,status,payment_status,start_date_time,end_date_time,grace_period_end',
+            'subscription.plan:id,name,price,currency,duration_days',
+        ]);
         $grid->model()->orderBy('id', 'desc');
 
         // Quick filters
-        $grid->quickSearch('pesapal_tracking_id', 'merchant_reference', 'confirmation_code');
+        $grid->quickSearch('pesapal_tracking_id', 'merchant_reference', 'confirmation_code', 'payment_account', 'error_message', 'ip_address');
 
         $grid->column('id', __('ID'))->sortable();
 
@@ -430,20 +435,62 @@ class SubscriptionTransactionController extends AdminController
 
         $grid->column('user_id', __('User'))
             ->display(function ($user_id) {
-                $user = User::find($user_id);
+                $user = $this->user;
                 if ($user) {
-                    return "<a href='/users/{$user->id}'><strong>{$user->name}</strong></a><br><small class='text-muted'>{$user->email}</small>";
+                    $phone = trim((string) ($user->phone_number ?? ''));
+                    $appType = trim((string) ($user->app_type ?? ''));
+                    $platform = trim((string) ($user->platform ?? ''));
+                    $meta = [];
+                    if ($phone !== '') {
+                        $meta[] = "<span class='text-muted'>{$phone}</span>";
+                    }
+                    if ($appType !== '') {
+                        $meta[] = "<span class='label label-default'>{$appType}</span>";
+                    }
+                    if ($platform !== '') {
+                        $meta[] = "<span class='label label-info'>{$platform}</span>";
+                    }
+
+                    return "<a href='/users/{$user->id}'><strong>{$user->name}</strong></a><br><small class='text-muted'>{$user->email}</small>"
+                        . (!empty($meta) ? "<br>" . implode(' ', $meta) : '');
                 }
                 return "<span class='text-danger'>User #{$user_id} not found</span>";
             });
 
         $grid->column('subscription_id', __('Subscription'))
             ->display(function ($subscription_id) {
-                if ($subscription_id) {
-                    return "<a href='/subscriptions/{$subscription_id}'>#{$subscription_id}</a>";
+                if (!$subscription_id) {
+                    return '-';
                 }
-                return '-';
+
+                $subscription = $this->subscription;
+                $html = "<a href='/subscriptions/{$subscription_id}'>#{$subscription_id}</a>";
+
+                if ($subscription) {
+                    $subStatus = $subscription->status ?? 'N/A';
+                    $payStatus = $subscription->payment_status ?? 'N/A';
+                    $start = $subscription->start_date_time ? Carbon::parse($subscription->start_date_time)->format('d M Y') : '-';
+                    $end = $subscription->end_date_time ? Carbon::parse($subscription->end_date_time)->format('d M Y') : '-';
+                    $html .= "<br><small class='text-muted'>{$start} -> {$end}</small>";
+                    $html .= "<br><small><span class='label label-primary'>{$subStatus}</span> <span class='label label-default'>{$payStatus}</span></small>";
+                }
+
+                return $html;
             })->sortable();
+
+        $grid->column('subscription.plan.name', __('Plan'))
+            ->display(function ($value) {
+                $plan = optional($this->subscription)->plan;
+                if (!$plan) {
+                    return '-';
+                }
+
+                $price = number_format((float) ($plan->price ?? 0));
+                $currency = $plan->currency ?? 'UGX';
+                $days = (int) ($plan->duration_days ?? 0);
+
+                return "<strong>{$plan->name}</strong><br><small class='text-muted'>{$currency} {$price}" . ($days > 0 ? " / {$days} days" : '') . "</small>";
+            })->hide();
 
         $grid->column('transaction_type', __('Type'))
             ->display(function ($type) {
@@ -525,34 +572,64 @@ class SubscriptionTransactionController extends AdminController
                 if (strpos($lower, 'mastercard') !== false) return '💳 MC';
                 if (strpos($lower, 'card') !== false) return '💳 Card';
                 return ucfirst($method);
-            })->sortable();
+            })->sortable()->label();
 
         $grid->column('pesapal_tracking_id', __('Tracking ID'))
             ->copyable()
             ->display(function ($id) {
-                return $id ? "<code>{$id}</code>" : '-';
+                $html = $id ? "<code>{$id}</code>" : '-';
+                if ($this->merchant_reference) {
+                    $html .= "<br><small class='text-muted'>Ref: <code>{$this->merchant_reference}</code></small>";
+                }
+                return $html;
             });
 
         $grid->column('confirmation_code', __('Conf. Code'))
             ->copyable()
             ->display(function ($code) {
-                return $code ? "<code class='text-success'>{$code}</code>" : '-';
+                $html = $code ? "<code class='text-success'>{$code}</code>" : '-';
+                if ($this->payment_account) {
+                    $account = htmlspecialchars((string) $this->payment_account, ENT_QUOTES, 'UTF-8');
+                    $html .= "<br><small class='text-muted' title='{$account}'>Acct: " . mb_substr($account, 0, 36) . (mb_strlen($account) > 36 ? '...' : '') . "</small>";
+                }
+                return $html;
             });
+
+        $grid->column('number_of_times_checked', __('Checks'))
+            ->display(function ($checks) {
+                $checks = (int) ($checks ?? 0);
+                return "<span class='label label-default'>{$checks}</span>";
+            })
+            ->sortable()
+            ->hide();
+
+        $grid->column('ip_address', __('Source'))
+            ->display(function ($ip) {
+                $agent = trim((string) ($this->user_agent ?? ''));
+                $uaShort = $agent === '' ? '' : mb_substr($agent, 0, 44) . (mb_strlen($agent) > 44 ? '...' : '');
+                $out = $ip ?: '-';
+                if ($uaShort !== '') {
+                    $out .= "<br><small class='text-muted' title='" . htmlspecialchars($agent, ENT_QUOTES, 'UTF-8') . "'>{$uaShort}</small>";
+                }
+                return $out;
+            })
+            ->hide();
 
         $grid->column('error_message', __('Error'))
             ->display(function ($error) {
                 if (!$error) return '-';
-                $short = mb_substr($error, 0, 40);
-                return "<span class='text-danger' title='" . htmlspecialchars($error) . "'>{$short}...</span>";
-            })->hide();
+                $short = mb_substr($error, 0, 80);
+                return "<span class='text-danger' title='" . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . "'>{$short}" . (mb_strlen($error) > 80 ? '...' : '') . "</span>";
+            });
 
         // Filters
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
 
-            $filter->column(1 / 3, function ($filter) {
+            $filter->column(1 / 4, function ($filter) {
                 $filter->equal('status', 'Status')->select([
                     'Pending' => 'Pending',
+                    'Processing' => 'Processing',
                     'Completed' => 'Completed',
                     'Failed' => 'Failed',
                     'Refunded' => 'Refunded',
@@ -562,6 +639,7 @@ class SubscriptionTransactionController extends AdminController
                     'Initial' => 'Initial',
                     'Renewal' => 'Renewal',
                     'Upgrade' => 'Upgrade',
+                    'Downgrade' => 'Downgrade',
                     'Refund' => 'Refund',
                     'Withdrawal' => 'Withdrawal',
                 ]);
@@ -572,18 +650,92 @@ class SubscriptionTransactionController extends AdminController
                     'ugflix' => 'UgFlix',
                     'web' => 'Web (Katogo)',
                 ]);
+
+                $filter->equal('currency', 'Currency')->select([
+                    'UGX' => 'UGX',
+                    'KES' => 'KES',
+                    'USD' => 'USD',
+                ]);
             });
 
-            $filter->column(1 / 3, function ($filter) {
+            $filter->column(1 / 4, function ($filter) {
                 $filter->equal('user_id', 'User ID');
                 $filter->equal('subscription_id', 'Subscription ID');
                 $filter->like('pesapal_tracking_id', 'Tracking ID');
+                $filter->like('merchant_reference', 'Merchant Reference');
+
+                $filter->where(function ($query) {
+                    $value = trim((string) $this->input);
+                    if ($value !== '') {
+                        $query->whereHas('user', function ($q) use ($value) {
+                            $q->where('phone_number', 'like', "%{$value}%");
+                        });
+                    }
+                }, 'Phone Number');
             });
 
-            $filter->column(1 / 3, function ($filter) {
+            $filter->column(1 / 4, function ($filter) {
                 $filter->like('confirmation_code', 'Confirmation Code');
                 $filter->like('payment_method', 'Payment Method');
-                $filter->between('created_at', 'Date Range')->datetime();
+                $filter->like('payment_account', 'Payment Account');
+                $filter->like('ip_address', 'IP Address');
+
+                $filter->where(function ($query) {
+                    $value = trim((string) $this->input);
+                    if ($value !== '') {
+                        $query->whereHas('user', function ($q) use ($value) {
+                            $q->where('name', 'like', "%{$value}%")
+                                ->orWhere('email', 'like', "%{$value}%");
+                        });
+                    }
+                }, 'User Name / Email');
+            });
+
+            $filter->column(1 / 4, function ($filter) {
+                $filter->between('created_at', 'Created Date')->datetime();
+                $filter->between('refunded_at', 'Refunded Date')->datetime();
+
+                $filter->where(function ($query) {
+                    if ($this->input === '1') {
+                        $query->whereNotNull('error_message')->where('error_message', '!=', '');
+                    }
+                    if ($this->input === '0') {
+                        $query->where(function ($q) {
+                            $q->whereNull('error_message')->orWhere('error_message', '');
+                        });
+                    }
+                }, 'Has Error')->select([
+                    '1' => 'Yes',
+                    '0' => 'No',
+                ]);
+
+                $filter->where(function ($query) {
+                    if ($this->input === '1') {
+                        $query->where(function ($q) {
+                            $q->whereNotNull('request_payload')->orWhereNotNull('response_payload');
+                        });
+                    }
+                    if ($this->input === '0') {
+                        $query->whereNull('request_payload')->whereNull('response_payload');
+                    }
+                }, 'Has Payload')->select([
+                    '1' => 'Yes',
+                    '0' => 'No',
+                ]);
+
+                $filter->where(function ($query) {
+                    if ($this->input === '1') {
+                        $query->whereNotNull('confirmation_code')->where('confirmation_code', '!=', '');
+                    }
+                    if ($this->input === '0') {
+                        $query->where(function ($q) {
+                            $q->whereNull('confirmation_code')->orWhere('confirmation_code', '');
+                        });
+                    }
+                }, 'Has Confirmation')->select([
+                    '1' => 'Yes',
+                    '0' => 'No',
+                ]);
             });
 
             $filter->between('amount', 'Amount Range');
