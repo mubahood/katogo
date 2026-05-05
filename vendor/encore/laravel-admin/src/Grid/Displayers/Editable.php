@@ -25,7 +25,7 @@ class Editable extends AbstractDisplayer
      * @var array
      */
     protected $options = [
-        'emptytext'  => '<i class="fa fa-pencil"></i>',
+        'emptytext'  => '—',
     ];
 
     /**
@@ -198,7 +198,10 @@ STR;
 
         Admin::script("$('.$class').editable($options);");
 
-        $this->value = htmlentities($this->value ?? '');
+        // Capture raw value BEFORE htmlentities so source key matching works.
+        $rawValue = $this->value ?? '';
+
+        $this->value = htmlentities($rawValue);
 
         $attributes = [
             'href'       => '#',
@@ -217,7 +220,21 @@ STR;
             return "$name='$attribute'";
         })->implode(' ');
 
-        $html = $this->type === 'select' ? '' : $this->value;
+        if ($this->type === 'select') {
+            // Resolve the human-readable label from source so the cell always
+            // shows text regardless of whether x-editable has initialised yet.
+            $displayText = $rawValue;
+            $source      = $this->options['source'] ?? [];
+            foreach ($source as $opt) {
+                if (isset($opt['value']) && (string) $opt['value'] === (string) $rawValue) {
+                    $displayText = $opt['text'];
+                    break;
+                }
+            }
+            $html = htmlspecialchars($displayText, ENT_QUOTES, 'UTF-8');
+        } else {
+            $html = $this->value;
+        }
 
         return "<a $attributes>{$html}</a>";
     }

@@ -62,6 +62,21 @@ ORDER BY id DESC LIMIT 1;
 -- payment_confirmed_at: NOT NULL
 ```
 
+### Auto-Ticket Verification:
+```sql
+-- Latest payment success ticket
+SELECT id, user_id, ticket_type, status, resolution_state, subject, last_reply_at
+FROM customer_tickets
+WHERE ticket_type = 'payment_thanks'
+ORDER BY id DESC LIMIT 1;
+
+-- Latest auto-generated payment success record
+SELECT ctr.id, ctr.customer_ticket_id, ctr.sender_type, ctr.action_description, ctr.created_at
+FROM customer_ticket_records ctr
+WHERE ctr.action_description LIKE 'AUTO_PAYMENT_TICKET|subscription=%|trigger=payment_success'
+ORDER BY ctr.id DESC LIMIT 1;
+```
+
 ---
 
 ## Test 2: Failed Payment ❌
@@ -88,6 +103,19 @@ ORDER BY id DESC LIMIT 1;
 -- status: Failed
 -- payment_status: Failed
 -- failed_at: NOT NULL
+```
+
+### Auto-Ticket Verification:
+```sql
+SELECT id, user_id, ticket_type, status, resolution_state, subject
+FROM customer_tickets
+WHERE ticket_type = 'payment_fail'
+ORDER BY id DESC LIMIT 1;
+
+SELECT ctr.id, ctr.customer_ticket_id, ctr.action_description, ctr.created_at
+FROM customer_ticket_records ctr
+WHERE ctr.action_description LIKE 'AUTO_PAYMENT_TICKET|subscription=%|trigger=payment_failed'
+ORDER BY ctr.id DESC LIMIT 1;
 ```
 
 ---
@@ -117,6 +145,39 @@ ORDER BY id DESC LIMIT 1;
 🔍 Payment Status Check: Starting
 🔄 Payment Status Check: Querying Pesapal
 ```
+
+### Auto-Ticket Verification (Pending > 15 Minutes):
+1. Keep the payment pending for at least 15 minutes.
+2. Trigger either endpoint:
+   - `GET /api/subscriptions/payment-status/{trackingId}`
+   - `GET /api/subscriptions/pending`
+3. Verify billing issue auto-ticket was created:
+
+```sql
+SELECT id, user_id, ticket_type, status, resolution_state, subject
+FROM customer_tickets
+WHERE ticket_type = 'billing_issue'
+  AND subject LIKE 'Payment pending over 15 minutes for subscription #%'
+ORDER BY id DESC LIMIT 1;
+
+SELECT ctr.id, ctr.customer_ticket_id, ctr.action_description, ctr.created_at
+FROM customer_ticket_records ctr
+WHERE ctr.action_description LIKE 'AUTO_PAYMENT_TICKET|subscription=%|trigger=payment_pending_15m'
+ORDER BY ctr.id DESC LIMIT 1;
+```
+
+### Idempotency Verification:
+Run the same status endpoint 2-3 times. Confirm only one record exists per trigger signature.
+
+```sql
+SELECT action_description, COUNT(*) AS total
+FROM customer_ticket_records
+WHERE action_description LIKE 'AUTO_PAYMENT_TICKET|subscription=%'
+GROUP BY action_description
+HAVING COUNT(*) > 1;
+```
+
+Expected: zero rows.
 
 ---
 
@@ -252,6 +313,10 @@ grep "Pesapal IPN" /Applications/MAMP/htdocs/katogo/storage/logs/laravel.log | t
 - [ ] Test IPN callback
 - [ ] Test auto-check for pending
 - [ ] Test manual check button
+- [ ] Verify auto payment success ticket (`payment_thanks`)
+- [ ] Verify auto payment failed ticket (`payment_fail`)
+- [ ] Verify auto pending >15 minutes ticket (`billing_issue`)
+- [ ] Verify idempotent signatures (no duplicates)
 - [ ] Verify redirect after success
 - [ ] Verify error messages
 - [ ] Verify support links work

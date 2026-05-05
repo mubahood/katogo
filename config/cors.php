@@ -27,7 +27,6 @@ return [
         'http://localhost:8888',
         'https://lugaflix.mruodel.com',
         'https://movies.mruodel.com',
-        'https://katogo.ugnews24.info',
         'https://about.u-lits.com',
     ],
 

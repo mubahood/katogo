@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Models\CustomerTicket;
+use App\Models\CustomerTicketRecord;
 use App\Models\Utils;
 use App\Services\SubscriptionPesapalService;
 use App\Services\SubscriptionFlutterwaveService;
@@ -426,6 +428,8 @@ class SubscriptionApiController extends Controller
      */
     public function callback(Request $request)
     {
+        $merchantReference = null;
+
         try {
             Log::info('Pesapal subscription callback received (legacy)', $request->all());
 
@@ -802,6 +806,13 @@ class SubscriptionApiController extends Controller
                         'next_action_type' => $paymentResult['next_action_type'] ?? null,
                         'payment_status' => $paymentResult['payment_status'] ?? $subscription->payment_status,
                         'payment_gateway' => $gateway,
+                        'gateway_response_message' => $paymentResult['payment_message'] ?? null,
+                        'result_explanation' => !empty($paymentResult['redirect_url'])
+                            ? 'Payment page prepared successfully. Open it and complete the payment to activate your subscription.'
+                            : 'Payment retry request was sent successfully. Follow the mobile money prompt or gateway instructions to finish payment.',
+                        'next_step_explanation' => !empty($paymentResult['redirect_url'])
+                            ? 'Tap continue to open the payment page, then return here and check the payment status.'
+                            : 'Check your phone for the mobile money prompt, authorize it, then return here and check the payment status.',
                     ],
                 ]);
             }
@@ -996,6 +1007,8 @@ class SubscriptionApiController extends Controller
                     ->first();
 
                 if ($pendingSubscription) {
+                    $this->syncPaymentSupportTicketByStatus($pendingSubscription);
+
                     return [
                         'code' => 1,
                         'status' => 200,
@@ -1204,6 +1217,9 @@ class SubscriptionApiController extends Controller
             }
 
             $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
+            $result = [
+                'status' => 'pending',
+            ];
 
             $paymentWasInitiated = $gateway === 'flutterwave'
                 ? (!empty($subscription->flutterwave_reference) || !empty($subscription->flutterwave_response))
@@ -1239,7 +1255,7 @@ class SubscriptionApiController extends Controller
                 if (!$txRef) {
                     throw new \Exception('Missing Flutterwave transaction reference.');
                 }
-                $this->flutterwaveService->processCallback($txRef);
+                $result = $this->flutterwaveService->processCallback($txRef);
                 $subscription->refresh();
             } else {
                 // Query Pesapal for payment status
@@ -1258,12 +1274,7 @@ class SubscriptionApiController extends Controller
                 'code' => 1,
                 'status' => 200,
                 'message' => $this->getStatusMessage($result['status']),
-                'data' => [
-                    'success' => true,
-                    'status' => $subscription->status,
-                    'payment_status' => $subscription->payment_status,
-                    'subscription' => $subscription->toApiArray(),
-                ],
+                'data' => $this->buildPaymentCheckResponseData($subscription, $gateway, $result),
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to check pending payment', [
@@ -1276,7 +1287,21 @@ class SubscriptionApiController extends Controller
                 'code' => 0,
                 'status' => 500,
                 'message' => 'Failed to check payment status',
-                'data' => null,
+                'data' => isset($subscription) && $subscription
+                    ? [
+                        'payment_gateway' => isset($gateway) ? $gateway : $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method),
+                        'gateway_response_message' => $this->extractGatewayResponseMessage(
+                            $subscription,
+                            isset($gateway) ? $gateway : $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method)
+                        ),
+                        'payment_failure_reason' => $subscription->payment_failure_reason,
+                        'next_step_explanation' => 'If payment was already authorized on the gateway, use Run Payment Fix or try again shortly. If not, retry the payment and complete the authorization prompt.',
+                        'technical_error' => $e->getMessage(),
+                        'subscription' => $subscription->toApiArray(),
+                    ]
+                    : [
+                        'technical_error' => $e->getMessage(),
+                    ],
             ], 500);
         }
     }
@@ -1487,6 +1512,7 @@ class SubscriptionApiController extends Controller
 
                         // Reload subscription to get payment_url for retry
                         $subscription->refresh();
+                        $this->syncPaymentSupportTicketByStatus($subscription);
                         $retryUrl = $subscription->payment_url;
 
                         return $this->callbackPage(
@@ -1566,6 +1592,13 @@ class SubscriptionApiController extends Controller
 
             // Process IPN
             $result = $this->pesapalService->processIpnCallback($orderTrackingId, $orderMerchantReference);
+
+            $subscription = Subscription::where('pesapal_tracking_id', $orderTrackingId)
+                ->orWhere('pesapal_merchant_reference', $orderMerchantReference)
+                ->first();
+            if ($subscription) {
+                $this->syncPaymentSupportTicketByStatus($subscription);
+            }
  
             // Return 200 OK immediately
             return response()->json([
@@ -1633,6 +1666,8 @@ class SubscriptionApiController extends Controller
                 $this->finalizeSuccessfulSubscriptionState($subscription, 'flutterwave_callback');
                 $subscription->refresh();
             }
+
+            $this->syncPaymentSupportTicketByStatus($subscription);
 
             return match ($status) {
                 'success' => $this->callbackPage('success', 'Payment Successful!', "Your {$planName} subscription is now active. Enjoy unlimited access to all content!", null, null, $subAppType, $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference ?: $txRef),
@@ -1703,6 +1738,9 @@ class SubscriptionApiController extends Controller
                 if (($result['status'] ?? null) === 'success' && !empty($result['subscription'])) {
                     $this->invalidateUserPaymentCaches($result['subscription']);
                 }
+                if (!empty($result['subscription']) && $result['subscription'] instanceof Subscription) {
+                    $this->syncPaymentSupportTicketByStatus($result['subscription']);
+                }
             }
 
             return response()->json(['status' => 'ok'], 200);
@@ -1757,6 +1795,9 @@ class SubscriptionApiController extends Controller
             // Check with gateway if not yet completed
             if ($subscription->payment_status !== 'Completed') {
                 $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
+
+
+            $this->syncPaymentSupportTicketByStatus($subscription);
 
                 if ($gateway === 'flutterwave') {
                     $txRef = $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference;
@@ -2005,6 +2046,67 @@ class SubscriptionApiController extends Controller
         };
     }
 
+    private function buildPaymentCheckResponseData(Subscription $subscription, string $gateway, array $result): array
+    {
+        $subscription->refresh();
+
+        return [
+            'success' => true,
+            'status' => $subscription->status,
+            'payment_status' => $subscription->payment_status,
+            'payment_gateway' => $gateway,
+            'gateway_status' => $result['status'] ?? null,
+            'gateway_response_message' => $this->extractGatewayResponseMessage($subscription, $gateway),
+            'next_step_explanation' => $this->buildNextStepExplanation($subscription),
+            'order_tracking_id' => $subscription->payment_gateway === 'flutterwave'
+                ? ($subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference)
+                : $subscription->pesapal_tracking_id,
+            'subscription' => $subscription->toApiArray(),
+        ];
+    }
+
+    private function extractGatewayResponseMessage(Subscription $subscription, string $gateway): ?string
+    {
+        $payload = $gateway === 'flutterwave'
+            ? (is_array($subscription->flutterwave_response) ? $subscription->flutterwave_response : [])
+            : (is_array($subscription->pesapal_response) ? $subscription->pesapal_response : []);
+
+        $candidates = $gateway === 'flutterwave'
+            ? [
+                $payload['data']['processor_response'] ?? null,
+                $payload['data']['status'] ?? null,
+                $payload['message'] ?? null,
+            ]
+            : [
+                $payload['payment_status_description'] ?? null,
+                $payload['status_description'] ?? null,
+                $payload['status'] ?? null,
+                $payload['message'] ?? null,
+            ];
+
+        foreach ($candidates as $candidate) {
+            $message = trim((string) ($candidate ?? ''));
+            if ($message !== '') {
+                return $message;
+            }
+        }
+
+        return $subscription->payment_failure_reason ?: null;
+    }
+
+    private function buildNextStepExplanation(Subscription $subscription): string
+    {
+        if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+            return 'Payment is confirmed. Your subscription is active and ready to use.';
+        }
+
+        if ($subscription->status === 'Failed' || $subscription->payment_status === 'Failed') {
+            return 'The gateway reported a failed payment. Retry the payment if you have not completed it, or contact support if money was deducted.';
+        }
+
+        return 'The payment is still pending or processing. Complete the gateway prompt if it is waiting on your phone, then check status again.';
+    }
+
     private function extractFlutterwaveTxRef(Request $request): ?string
     {
         $direct = $request->input('tx_ref')
@@ -2233,6 +2335,147 @@ class SubscriptionApiController extends Controller
         }
 
         $this->invalidateUserPaymentCaches($subscription);
+        $this->syncPaymentSupportTicketByStatus($subscription);
+    }
+
+    private function syncPaymentSupportTicketByStatus(Subscription $subscription): void
+    {
+        try {
+            $subscription->loadMissing(['user', 'plan']);
+
+            $trigger = null;
+            if ($subscription->payment_status === 'Completed' && $subscription->status === 'Active') {
+                $trigger = 'payment_success';
+            } elseif ($subscription->payment_status === 'Failed' || $subscription->status === 'Failed') {
+                $trigger = 'payment_failed';
+            } elseif (
+                in_array($subscription->payment_status, ['Pending', 'Processing'], true)
+                && $subscription->created_at
+                && $subscription->created_at->lte(now()->subMinutes(15))
+            ) {
+                $trigger = 'payment_pending_15m';
+            }
+
+            if (!$trigger) {
+                return;
+            }
+
+            $signature = "AUTO_PAYMENT_TICKET|subscription={$subscription->id}|trigger={$trigger}";
+            $alreadyExists = CustomerTicketRecord::query()
+                ->where('action_description', $signature)
+                ->exists();
+
+            if ($alreadyExists) {
+                return;
+            }
+
+            $user = $subscription->user;
+            if (!$user) {
+                return;
+            }
+
+            $ticketType = match ($trigger) {
+                'payment_success' => 'payment_thanks',
+                'payment_failed' => 'payment_fail',
+                default => 'billing_issue',
+            };
+
+            $ticketStatus = match ($trigger) {
+                'payment_success' => 'resolved',
+                'payment_failed' => 'open',
+                default => 'pending',
+            };
+
+            $resolutionState = $trigger === 'payment_success' ? 'resolved' : 'unresolved';
+
+            $subject = match ($trigger) {
+                'payment_success' => "Payment confirmed for subscription #{$subscription->id}",
+                'payment_failed' => "Payment failed for subscription #{$subscription->id}",
+                default => "Payment pending over 15 minutes for subscription #{$subscription->id}",
+            };
+
+            $platformType = strtolower((string) ($subscription->app_type ?: $user->app_type ?: 'lugaflix'));
+            if ($platformType === 'muno') {
+                $platformType = 'muno_app';
+            }
+            if (!in_array($platformType, ['lugaflix', 'ugflix', 'muno_app'], true)) {
+                $platformType = 'lugaflix';
+            }
+
+            $ticket = CustomerTicket::query()
+                ->where('user_id', $user->id)
+                ->where('ticket_type', $ticketType)
+                ->where('subject', $subject)
+                ->whereNotIn('status', ['closed'])
+                ->latest('id')
+                ->first();
+
+            if (!$ticket) {
+                $ticket = CustomerTicket::create([
+                    'user_id' => $user->id,
+                    'status' => $ticketStatus,
+                    'ticket_type' => $ticketType,
+                    'resolution_state' => $resolutionState,
+                    'subject' => $subject,
+                    'account_origin' => $user->account_origin ?? 'manual',
+                    'app_type' => $subscription->app_type ?: ($user->app_type ?? 'lugaflix'),
+                    'platform_type' => $platformType,
+                    'platform' => $user->platform ?? 'android',
+                    'has_unread_support' => true,
+                    'has_unread_user' => false,
+                    'reply_count' => 0,
+                ]);
+            }
+
+            $message = implode("\n", [
+                'Auto-generated payment support ticket.',
+                'Trigger: ' . str_replace('_', ' ', $trigger),
+                'Subscription ID: ' . $subscription->id,
+                'Plan: ' . ($subscription->plan->name ?? 'N/A'),
+                'Amount: ' . ($subscription->currency ?? 'UGX') . ' ' . number_format((float) ($subscription->amount_paid ?? 0), 0),
+                'Payment status: ' . ($subscription->payment_status ?? 'Unknown'),
+                'Subscription status: ' . ($subscription->status ?? 'Unknown'),
+                'Gateway: ' . ($subscription->payment_gateway ?: $subscription->payment_method ?: 'unknown'),
+                'Tracking ID: ' . ($subscription->pesapal_tracking_id ?: $subscription->flutterwave_reference ?: 'N/A'),
+                'Reference: ' . ($subscription->pesapal_merchant_reference ?: 'N/A'),
+                'Created at: ' . ($subscription->created_at?->toDateTimeString() ?: now()->toDateTimeString()),
+            ]);
+
+            CustomerTicketRecord::create([
+                'customer_ticket_id' => $ticket->id,
+                'sender_type' => 'system',
+                'sender_id' => null,
+                'message' => $message,
+                'action_type' => 'status_change',
+                'action_description' => $signature,
+                'is_internal_note' => false,
+                'show_to_customer' => true,
+                'is_read_by_user' => false,
+                'is_read_by_support' => false,
+                'customer_seen' => false,
+                'customer_seen_at' => null,
+            ]);
+
+            $ticket->last_reply_at = now();
+            $ticket->reply_count = ((int) $ticket->reply_count) + 1;
+            $ticket->has_unread_support = true;
+            $ticket->has_unread_user = false;
+
+            if ($trigger === 'payment_failed') {
+                $ticket->agent_has_contacted_customer = false;
+            }
+
+            if ($trigger === 'payment_success') {
+                $ticket->agent_has_contacted_customer = true;
+            }
+
+            $ticket->save();
+        } catch (\Throwable $e) {
+            Log::warning('Auto payment support-ticket generation skipped due to error', [
+                'subscription_id' => $subscription->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function resolveAppMeta(?string $appType = null, ?string $merchantReference = null): array

@@ -37,6 +37,8 @@ Route::middleware('throttle:auth')->group(function () {
     Route::post('auth/request-password-reset-code', [ApiController::class, 'request_password_reset_code']);
     Route::post('auth/login', [ApiController::class, 'login']);
     Route::post('auth/google', [ApiController::class, 'googleAuth']);
+    // Auto-register: silent device-based account creation (throttled via auth group)
+    Route::post('auth/auto-register', [ApiController::class, 'auto_register']);
 });
 
 // Content filtering endpoint (used by app's automated systems)
@@ -105,6 +107,7 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('products-delete', [ApiController::class, 'products_delete']);
 
     Route::get('me', [ApiController::class, 'me']);
+    Route::post('me', [ApiController::class, 'me_update']);
     Route::get('manifest', [ApiController::class, 'manifest']);
 
 
@@ -125,6 +128,9 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
     // Account Layout & User Management Routes
     Route::get('account/dashboard', [DynamicCrudController::class, 'get_account_dashboard']);
+
+    // Profile completion (for auto-created accounts upgrading to registered)
+    Route::post('auth/complete-profile', [ApiController::class, 'complete_profile']);
 
 
     Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);
@@ -151,6 +157,25 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
     // Admin-only moderation routes
     Route::get('moderation/dashboard', [ModerationController::class, 'getModerationDashboard']);
+
+    // ════════════════════════════════════════════
+    //  SUPPORT TICKET SYSTEM
+    // ════════════════════════════════════════════
+    // Normal users: create their ticket, view their ticket, reply.
+    // Support team / admin: list all tickets, change status, assign agents.
+    Route::post('support/tickets',                 [\App\Http\Controllers\Api\SupportTicketController::class, 'createTicket']);
+    Route::get('support/tickets',                  [\App\Http\Controllers\Api\SupportTicketController::class, 'listTickets']);
+    Route::get('support/tickets/{id}',             [\App\Http\Controllers\Api\SupportTicketController::class, 'getTicket']);
+    Route::post('support/tickets/{id}/records',    [\App\Http\Controllers\Api\SupportTicketController::class, 'addReply']);
+    Route::patch('support/tickets/{id}/status',    [\App\Http\Controllers\Api\SupportTicketController::class, 'updateStatus']);
+    Route::post('support/tickets/{id}/assign',     [\App\Http\Controllers\Api\SupportTicketController::class, 'assignTicket']);
+    Route::get('support/team',                     [\App\Http\Controllers\Api\SupportTicketController::class, 'listSupportTeam']);
+
+    // Movie requests integrated with support tickets.
+    Route::post('support/movie-requests',              [\App\Http\Controllers\Api\MovieRequestController::class, 'create']);
+    Route::get('support/movie-requests',               [\App\Http\Controllers\Api\MovieRequestController::class, 'index']);
+    Route::get('support/movie-requests/{id}',          [\App\Http\Controllers\Api\MovieRequestController::class, 'show']);
+    Route::patch('support/movie-requests/{id}/status', [\App\Http\Controllers\Api\MovieRequestController::class, 'updateStatus']);
 
     Route::get('movies/{id}', [DynamicCrudController::class, 'movie']); // Alternative route for mobile app compatibility - must be before 'movies'
     Route::get('movies', [DynamicCrudController::class, 'movies']);

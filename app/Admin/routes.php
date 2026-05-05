@@ -15,6 +15,21 @@ Route::group([
 
     // App Download Landing Page Analytics
     $router->get('app-download-analytics', 'AppDownloadAnalyticsController@index');
+    $router->get('auto-created-accounts', 'AutoCreatedAccountController@index');
+
+    // ── Support Team & Ticket Management ──────────────────────────────
+    $router->get('support-team',         'SupportTeamController@index');
+    $router->post('support-team/toggle', 'SupportTeamController@toggleRole');
+    $router->get('support-tickets/create', 'SupportTeamController@create');
+    $router->get('support-tickets',      'SupportTeamController@tickets');
+    $router->get('support-tickets/ajax-movie-search', 'SupportTeamController@ajaxMovieSearch');
+    $router->post('support-tickets', 'SupportTeamController@store');
+    $router->get('support-tickets/{id}/edit', 'SupportTeamController@edit');
+    $router->put('support-tickets/{id}', 'SupportTeamController@update');
+    $router->get('support-tickets/{id}', 'SupportTeamController@ticketDetail')->where(['id' => '[0-9]+']);
+    $router->post('support-tickets/{id}/reply', 'SupportTeamController@replyTicket');
+    $router->post('support-tickets/{id}/ajax-respond', 'SupportTeamController@ajaxRespondTicket');
+    $router->post('support-ticket-records/{id}/visibility', 'SupportTeamController@updateRecordVisibility');
 
 
     $router->resource('munowatch-categories', MunowatchCategoryController::class);
@@ -97,6 +112,7 @@ Route::group([
     $router->resource('movie-views', MovieViewController::class);
     $router->resource('movie-likes', MovieLikeController::class);
     $router->resource('movie-searches', MovieSearchController::class);
+    $router->resource('movie-requests', MovieRequestController::class);
 
     $router->resource('my-counters', MyCounterController::class);
     $router->resource('movie-downloads', MovieDownloadController::class);

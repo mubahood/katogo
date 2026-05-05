@@ -37,6 +37,15 @@ class AppServiceProvider extends ServiceProvider
         // Enforce Nairobi timezone (EAT / GMT+3) globally
         date_default_timezone_set('Africa/Nairobi');
 
+        // Debugbar JS can conflict with Laravel-Admin assets on admin pages.
+        // Disable it for admin route prefix to avoid UI/runtime errors.
+        if (!$this->app->runningInConsole()) {
+            $adminPrefix = trim((string) config('admin.route.prefix', 'admin'), '/');
+            if ($adminPrefix !== '' && request()->is($adminPrefix . '*') && $this->app->bound('debugbar')) {
+                app('debugbar')->disable();
+            }
+        }
+
         // ──────────────────────────────────────────────────────────────
         // MODEL OBSERVERS (P10-11)
         // ──────────────────────────────────────────────────────────────
@@ -50,7 +59,7 @@ class AppServiceProvider extends ServiceProvider
         // should have a value. Movies must NEVER have this set.
         // Runs once per day (cached) to avoid overhead on every request.
         // ──────────────────────────────────────────────────────────────
-        Cache::remember('movie_category_id_cleanup_v1', 86400, function () {
+        $runMovieCleanup = function (): bool {
             try {
                 $affected = DB::update("
                     UPDATE movie_models 
@@ -68,10 +77,20 @@ class AppServiceProvider extends ServiceProvider
                 if ($affected > 0) {
                     Log::info("[AppServiceProvider] Cleaned {$affected} Movie records that had stale series fields (category_id, episode_number, etc.)");
                 }
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 Log::warning("[AppServiceProvider] Movie cleanup failed: " . $e->getMessage());
             }
+
             return true;
-        });
+        };
+
+        try {
+            // Avoid boot-time dependence on the database cache driver.
+            $cacheStore = config('cache.default') === 'database' ? 'file' : (string) config('cache.default', 'file');
+            Cache::store($cacheStore)->remember('movie_category_id_cleanup_v1', 86400, $runMovieCleanup);
+        } catch (\Throwable $e) {
+            Log::warning('[AppServiceProvider] Cleanup cache gate unavailable, running best-effort cleanup: ' . $e->getMessage());
+            $runMovieCleanup();
+        }
     }
 }

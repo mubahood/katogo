@@ -156,7 +156,7 @@ class ManifestController extends Controller
         $config = [
             'app_version'     => 25,
             'update_notes'    => "New V2 home with faster loading, personalised sections & improved design.\n- Continue Watching with progress\n- Trending & Popular sections\n- VJ Spotlight\n- Hidden Gems discovery",
-            'whatsapp_number' => '+256783204665',
+            'whatsapp_number' => '+256706638494',
             'ios_link'        => 'https://play.google.com/store/apps/details?id=ugflix.com',
             'android_link'    => 'https://play.google.com/store/apps/details?id=ugflix.com',
         ];

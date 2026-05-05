@@ -10,6 +10,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\HasApiTokens;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
@@ -90,6 +91,19 @@ class User extends Administrator implements JWTSubject
             return $model;
         });
 
+        static::updated(function ($user) {
+            try {
+                if (self::shouldCreateWelcomeTicket($user)) {
+                    self::createWelcomeTicketForFirstPhoneSet($user);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('AUTO_WELCOME_TICKET_CREATION_FAILED', [
+                    'user_id' => $user->id ?? null,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        });
+
         // Handle manual cascade deletes for moderation-related data
         static::deleting(function ($user) {
             // Delete content reports where user is reporter or reported user
@@ -148,6 +162,124 @@ class User extends Administrator implements JWTSubject
         'password' => 'hashed',
         'last_online_at' => 'datetime',
     ];
+
+    private static function shouldCreateWelcomeTicket(self $user): bool
+    {
+        if (!Schema::hasTable('customer_tickets') || !Schema::hasTable('customer_ticket_records')) {
+            return false;
+        }
+
+        if (!$user->wasChanged('phone_number')) {
+            return false;
+        }
+
+        $newPhone = trim((string) $user->phone_number);
+        if (!self::isValidUgandaPhone($newPhone)) {
+            return false;
+        }
+
+        $oldPhone = trim((string) $user->getOriginal('phone_number'));
+        if (self::isValidUgandaPhone($oldPhone)) {
+            return false;
+        }
+
+        $origin = strtolower(trim((string) ($user->account_origin ?? '')));
+        if ($origin !== 'auto_device') {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static function createWelcomeTicketForFirstPhoneSet(self $user): void
+    {
+        $existing = CustomerTicket::where('user_id', $user->id)
+            ->where('ticket_type', 'account_opening')
+            ->where('subject', 'Welcome message')
+            ->first();
+
+        if ($existing) {
+            return;
+        }
+
+        $appType = trim((string) ($user->app_type ?? 'lugaflix'));
+        $platformType = self::normalizePlatformType($appType);
+
+        $ticket = CustomerTicket::create([
+            'user_id' => $user->id,
+            'status' => 'open',
+            'ticket_type' => 'account_opening',
+            'resolution_state' => 'unresolved',
+            'subject' => 'Welcome message',
+            'account_origin' => $user->account_origin ?? 'auto_device',
+            'app_type' => $appType,
+            'platform_type' => $platformType,
+            'platform' => $user->platform ?? 'android',
+            'has_unread_support' => true,
+            'agent_has_contacted_customer' => false,
+            'customer_has_responded' => false,
+        ]);
+
+        CustomerTicketRecord::create([
+            'customer_ticket_id' => $ticket->id,
+            'sender_type' => 'system',
+            'sender_id' => null,
+            'message' => 'Auto-created account set a first valid phone number. Send WhatsApp welcome message.',
+            'action_type' => 'needs_support_action',
+            'action_description' => 'Support team should welcome this user via WhatsApp and offer onboarding help.',
+            'is_internal_note' => false,
+            'show_to_customer' => false,
+            'is_read_by_user' => true,
+            'customer_seen' => true,
+            'customer_seen_at' => now(),
+            'is_read_by_support' => false,
+        ]);
+
+        if (Schema::hasTable('support_audit_logs')) {
+            SupportAuditLog::create([
+                'actor_id' => null,
+                'actor_role' => 'system',
+                'event_type' => 'welcome_ticket_auto_created',
+                'entity_type' => 'customer_ticket',
+                'entity_id' => $ticket->id,
+                'description' => 'Welcome-message ticket auto-created after first valid phone was set on auto-created account.',
+                'meta' => [
+                    'user_id' => $user->id,
+                    'phone_number' => $user->phone_number,
+                    'app_type' => $appType,
+                    'platform_type' => $platformType,
+                ],
+                'ip_address' => null,
+            ]);
+        }
+    }
+
+    private static function isValidUgandaPhone(?string $value): bool
+    {
+        $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+        if (strpos($digits, '0') === 0 && strlen($digits) === 10) {
+            $digits = '256' . substr($digits, 1);
+        }
+        if (preg_match('/^2567\d{8}$/', $digits) !== 1) {
+            return false;
+        }
+        return true;
+    }
+
+    private static function normalizePlatformType(string $appType): string
+    {
+        $normalized = strtolower(trim($appType));
+        if ($normalized === 'luga') {
+            return 'lugaflix';
+        }
+        if ($normalized === 'muno') {
+            return 'muno_app';
+        }
+        if (!in_array($normalized, ['lugaflix', 'ugflix', 'muno_app'], true)) {
+            return 'lugaflix';
+        }
+        return $normalized;
+    }
 
 
     // getter for avatar
