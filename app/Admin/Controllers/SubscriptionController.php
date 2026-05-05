@@ -902,7 +902,7 @@ $(document).on('pjax:end',_scInit);
         <div id="subFixProgress" style="margin-bottom:12px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
             <i class="fa fa-spinner fa-spin fa-lg" id="subFixSpinner" style="color:#2c6fad"></i>
-            <span id="subFixStatusText" style="font-weight:600;font-size:14px">Preparing…</span>
+            <span id="subFixStatusText" style="font-weight:600;font-size:14px">Preparing...</span>
           </div>
           <div style="background:#f4f6f8;border:1px solid #e0e5ea;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;max-height:220px;overflow-y:auto" id="subFixLog"></div>
         </div>
@@ -922,7 +922,7 @@ HTML);
     var detailsTpl = '{$ajaxDetailsUrlTemplate}';
     var token = '{$csrf}';
 
-    // ── Details popup ──────────────────────────────────────────────────
+    // Details popup
     $(document).off('click.subdet', '.js-sub-details').on('click.subdet', '.js-sub-details', function () {
         var id = $(this).data('id');
         if (!id) return;
@@ -1012,7 +1012,7 @@ HTML);
         });
     });
 
-    // ── Quick Fix ──────────────────────────────────────────────────────
+    // Quick Fix
     $(document).off('click.subfix', '.js-sub-quick-fix').on('click.subfix', '.js-sub-quick-fix', function () {
         var btn = $(this);
         var id = btn.data('id');
@@ -1026,10 +1026,10 @@ HTML);
 
         // Prepare modal
         $('#subFixModalHeader').css('background', headerColor);
-        $('#subFixModalTitle').html('<i class="fa ' + icon + '"></i> ' + label + ' — #' + id);
+        $('#subFixModalTitle').html('<i class="fa ' + icon + '"></i> ' + label + ' - #' + id);
         $('#subFixSpinner').show().css('color', headerColor);
-        $('#subFixStatusText').text('Sending request…').css('color', '#333');
-        $('#subFixLog').html('<span style="color:#888">▶ Initiating ' + action + ' for subscription #' + id + '…</span>');
+        $('#subFixStatusText').text('Sending request...').css('color', '#333');
+        $('#subFixLog').html('<span style="color:#888">> Initiating ' + action + ' for subscription #' + id + '...</span>');
         $('#subFixResult').hide().html('');
         $('#subFixCloseBtn').prop('disabled', true);
         $('#subFixModal').modal('show');
@@ -1041,7 +1041,7 @@ HTML);
             el.scrollTop = el.scrollHeight;
         }
 
-        log('Connected. Running: ' + action + '…');
+        log('Connected. Running: ' + action + '...');
 
         $.ajax({
             url: actionTpl.replace('__ID__', encodeURIComponent(String(id))),
@@ -1053,11 +1053,11 @@ HTML);
                 $('#subFixSpinner').hide();
 
                 if (ok) {
-                    log('✓ ' + (res.message || 'Completed successfully.'), '#1a7a3c');
+                    log('[OK] ' + (res.message || 'Completed successfully.'), '#1a7a3c');
                     // Show any extra steps from response
                     if (res.steps && Array.isArray(res.steps)) {
                         for (var i = 0; i < res.steps.length; i++) {
-                            log('  · ' + res.steps[i], '#2c6fad');
+                            log('  - ' + res.steps[i], '#2c6fad');
                         }
                     }
                     $('#subFixStatusText').text('Completed').css('color', '#1a7a3c');
@@ -1072,7 +1072,7 @@ HTML);
                         location.reload();
                     }, 1800);
                 } else {
-                    log('✗ ' + (res && res.message ? res.message : 'Action failed.'), '#c0392b');
+                    log('[X] ' + (res && res.message ? res.message : 'Action failed.'), '#c0392b');
                     $('#subFixStatusText').text('Failed').css('color', '#c0392b');
                     $('#subFixResult').show().html(
                         '<div class="alert alert-danger" style="margin:0;padding:8px 12px;font-size:13px">'
@@ -1090,7 +1090,7 @@ HTML);
                     msg = 'HTTP ' + xhr.status + ' error.';
                 }
                 $('#subFixSpinner').hide();
-                log('✗ ' + msg, '#c0392b');
+                log('[X] ' + msg, '#c0392b');
                 $('#subFixStatusText').text('Error').css('color', '#c0392b');
                 $('#subFixResult').show().html(
                     '<div class="alert alert-danger" style="margin:0;padding:8px 12px;font-size:13px">'
