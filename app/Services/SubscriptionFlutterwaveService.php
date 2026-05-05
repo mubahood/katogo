@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Subscription;
+use App\Models\SubscriptionTransaction;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -166,6 +167,53 @@ class SubscriptionFlutterwaveService
         return '';
     }
 
+    /**
+     * Ensure each flutterwave payment has a persistent transaction audit row.
+     * This is idempotent and safe to call across init/callback/webhook flows.
+     */
+    private function upsertTransactionRecord(Subscription $subscription, array $gatewayPayload, string $status, ?string $errorMessage = null): SubscriptionTransaction
+    {
+        $txRef = (string) ($subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference ?: '');
+        $flwRef = (string) ($gatewayPayload['flw_ref'] ?? $gatewayPayload['flwRef'] ?? $subscription->flutterwave_transaction_id ?? '');
+        $paymentType = (string) ($gatewayPayload['payment_type'] ?? $gatewayPayload['paymentType'] ?? 'flutterwave');
+        $phone = (string) ($gatewayPayload['customer']['phone_number'] ?? $gatewayPayload['customer.phone'] ?? '');
+
+        $query = SubscriptionTransaction::where('subscription_id', $subscription->id);
+        if ($txRef !== '') {
+            $query->where(function ($q) use ($txRef) {
+                $q->where('merchant_reference', $txRef)
+                    ->orWhere('pesapal_tracking_id', $txRef);
+            });
+        }
+
+        $transaction = $query->orderByDesc('id')->first();
+
+        if (!$transaction) {
+            $transaction = new SubscriptionTransaction();
+            $transaction->subscription_id = $subscription->id;
+            $transaction->user_id = $subscription->user_id;
+            $transaction->transaction_type = $subscription->is_extension ? 'Renewal' : 'Initial';
+            $transaction->platform = $subscription->app_type;
+            $transaction->amount = $subscription->amount_paid;
+            $transaction->currency = $subscription->currency;
+            $transaction->merchant_reference = $txRef !== '' ? $txRef : null;
+            $transaction->pesapal_tracking_id = $txRef !== '' ? $txRef : null;
+        }
+
+        $transaction->status = $status;
+        $transaction->payment_method = $paymentType !== '' ? $paymentType : 'flutterwave';
+        $transaction->confirmation_code = $flwRef !== '' ? $flwRef : ($transaction->confirmation_code ?: null);
+        $transaction->payment_account = $phone !== '' ? $phone : ($transaction->payment_account ?: null);
+        $transaction->error_message = $errorMessage;
+        $transaction->response_payload = array_merge(
+            $transaction->response_payload ?? [],
+            ['flutterwave' => $gatewayPayload]
+        );
+        $transaction->save();
+
+        return $transaction;
+    }
+
     public function initializePayment(Subscription $subscription, ?string $callbackUrl = null, ?string $preferredPhoneOverride = null): array
     {
         $subscription->loadMissing('user', 'plan');
@@ -246,6 +294,9 @@ class SubscriptionFlutterwaveService
         $subscription->flutterwave_response = $body;
         $subscription->save();
 
+        // Guardrail: do not proceed without a persisted transaction ledger row.
+        $this->upsertTransactionRecord($subscription, $data, 'Pending');
+
         return [
             'success' => true,
             'order_tracking_id' => $txRef,
@@ -288,7 +339,30 @@ class SubscriptionFlutterwaveService
 
     public function processCallback(string $txRef): array
     {
-        $verified = $this->verifyByReference($txRef);
+        return $this->processCallbackWithFallback($txRef, null);
+    }
+
+    public function processCallbackWithFallback(string $txRef, ?string $transactionId = null): array
+    {
+        try {
+            $verified = $this->verifyByReference($txRef);
+        } catch (\Exception $primaryException) {
+            if (empty($transactionId)) {
+                throw $primaryException;
+            }
+
+            $verified = $this->verifyByTransactionId($transactionId);
+            $verifiedTxRef = (string) ($verified['data']['tx_ref'] ?? $verified['data']['txRef'] ?? '');
+            if ($verifiedTxRef !== '' && $verifiedTxRef !== $txRef) {
+                throw new \RuntimeException('Flutterwave verification mismatch: tx_ref does not match callback reference.');
+            }
+
+            Log::warning('Flutterwave verify_by_reference failed; verify_by_transaction_id fallback succeeded', [
+                'tx_ref' => $txRef,
+                'transaction_id' => $transactionId,
+                'error' => $primaryException->getMessage(),
+            ]);
+        }
 
         $subscription = Subscription::where('pesapal_merchant_reference', $txRef)
             ->orWhere('flutterwave_reference', $txRef)
@@ -300,6 +374,7 @@ class SubscriptionFlutterwaveService
 
         $flwStatus = strtolower((string) ($verified['data']['status'] ?? ''));
         $gatewayRef = (string) ($verified['data']['flw_ref'] ?? '');
+        $gatewayData = is_array($verified['data'] ?? null) ? $verified['data'] : [];
 
         $subscription->payment_method = 'flutterwave';
         $subscription->flutterwave_reference = $txRef;
@@ -326,6 +401,8 @@ class SubscriptionFlutterwaveService
             $subscription->cancelled_reason = null;
             $subscription->save();
 
+            $transaction = $this->upsertTransactionRecord($subscription, $gatewayData, 'Completed');
+
             // Flush hot caches so clients immediately observe activated subscription
             Cache::forget("sub_pending_{$subscription->user_id}");
             Cache::forget("active_sub_{$subscription->user_id}");
@@ -341,6 +418,7 @@ class SubscriptionFlutterwaveService
             return [
                 'status' => 'success',
                 'subscription' => $subscription,
+                'transaction' => $transaction,
                 'verified' => $verified,
             ];
         }
@@ -352,6 +430,13 @@ class SubscriptionFlutterwaveService
             $subscription->payment_failure_reason = (string) ($verified['data']['processor_response'] ?? $verified['message'] ?? 'Payment failed');
             $subscription->save();
 
+            $transaction = $this->upsertTransactionRecord(
+                $subscription,
+                $gatewayData,
+                'Failed',
+                $subscription->payment_failure_reason
+            );
+
             Cache::forget("sub_pending_{$subscription->user_id}");
             Cache::forget("active_sub_{$subscription->user_id}");
             Cache::forget("v2_pay_check_{$subscription->user_id}");
@@ -359,6 +444,7 @@ class SubscriptionFlutterwaveService
             return [
                 'status' => 'failed',
                 'subscription' => $subscription,
+                'transaction' => $transaction,
                 'verified' => $verified,
             ];
         }
@@ -367,6 +453,8 @@ class SubscriptionFlutterwaveService
         $subscription->payment_status = 'Processing';
         $subscription->save();
 
+        $transaction = $this->upsertTransactionRecord($subscription, $gatewayData, 'Pending');
+
         Cache::forget("sub_pending_{$subscription->user_id}");
         Cache::forget("active_sub_{$subscription->user_id}");
         Cache::forget("v2_pay_check_{$subscription->user_id}");
@@ -374,6 +462,7 @@ class SubscriptionFlutterwaveService
         return [
             'status' => 'pending',
             'subscription' => $subscription,
+            'transaction' => $transaction,
             'verified' => $verified,
         ];
     }

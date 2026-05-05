@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Models\SubscriptionTransaction;
 use App\Models\CustomerTicket;
 use App\Models\CustomerTicketRecord;
 use App\Models\Utils;
@@ -1656,7 +1657,7 @@ class SubscriptionApiController extends Controller
                 return $this->callbackPage('error', 'Invalid Callback', 'Missing Flutterwave reference. Please return to the app and check your subscription.');
             }
 
-            $result = $this->flutterwaveService->processCallback($txRef);
+            $result = $this->flutterwaveService->processCallbackWithFallback($txRef, $transactionId);
             $subscription = $result['subscription'];
             $status = $result['status'];
             $planName = $subscription->plan->name ?? 'Premium';
@@ -1702,6 +1703,14 @@ class SubscriptionApiController extends Controller
             }
 
             $payload = $request->json()->all();
+            $transactionId = $payload['data']['id']
+                ?? $payload['data']['transaction_id']
+                ?? $payload['data']['transactionId']
+                ?? $payload['id']
+                ?? $payload['transaction_id']
+                ?? $payload['transactionId']
+                ?? null;
+
             $txRef = $payload['data']['tx_ref']
                 ?? $payload['data']['txRef']
                 ?? $payload['data']['meta']['tx_ref']
@@ -1710,14 +1719,6 @@ class SubscriptionApiController extends Controller
                 ?? null;
 
             if (empty($txRef)) {
-                $transactionId = $payload['data']['id']
-                    ?? $payload['data']['transaction_id']
-                    ?? $payload['data']['transactionId']
-                    ?? $payload['id']
-                    ?? $payload['transaction_id']
-                    ?? $payload['transactionId']
-                    ?? null;
-
                 if (!empty($transactionId)) {
                     try {
                         $verified = $this->flutterwaveService->verifyByTransactionId((string) $transactionId);
@@ -1734,7 +1735,7 @@ class SubscriptionApiController extends Controller
             }
 
             if ($txRef) {
-                $result = $this->flutterwaveService->processCallback($txRef);
+                $result = $this->flutterwaveService->processCallbackWithFallback($txRef, $transactionId ? (string) $transactionId : null);
                 if (($result['status'] ?? null) === 'success' && !empty($result['subscription'])) {
                     $this->invalidateUserPaymentCaches($result['subscription']);
                 }
@@ -2208,6 +2209,8 @@ class SubscriptionApiController extends Controller
                 $subscription->save();
             }
 
+            $this->assertPaymentTransactionRecordExists($subscription, $paymentResult, $resolvedGateway);
+
             return [
                 'gateway' => $resolvedGateway,
                 'payment_result' => $paymentResult,
@@ -2259,6 +2262,37 @@ class SubscriptionApiController extends Controller
         return in_array($normalized, ['pesapal', 'flutterwave'], true)
             ? $normalized
             : 'pesapal';
+    }
+
+    /**
+     * Guardrail: never return payment action to mobile client if transaction audit row is missing.
+     */
+    private function assertPaymentTransactionRecordExists(Subscription $subscription, array $paymentResult, string $gateway): void
+    {
+        $merchantReference = (string) ($paymentResult['merchant_reference'] ?? $subscription->pesapal_merchant_reference ?? '');
+        $trackingId = (string) (
+            $paymentResult['order_tracking_id']
+            ?? $subscription->pesapal_tracking_id
+            ?? $subscription->flutterwave_reference
+            ?? ''
+        );
+
+        $query = SubscriptionTransaction::where('subscription_id', $subscription->id);
+
+        if ($merchantReference !== '' || $trackingId !== '') {
+            $query->where(function ($q) use ($merchantReference, $trackingId) {
+                if ($merchantReference !== '') {
+                    $q->orWhere('merchant_reference', $merchantReference);
+                }
+                if ($trackingId !== '') {
+                    $q->orWhere('pesapal_tracking_id', $trackingId);
+                }
+            });
+        }
+
+        if (!$query->exists()) {
+            throw new \RuntimeException('Payment initialization aborted: transaction audit record missing for ' . $gateway . '.');
+        }
     }
 
     /**
