@@ -5,6 +5,7 @@ namespace App\Admin\Controllers;
 use App\Models\CustomerTicket;
 use App\Models\CustomerTicketRecord;
 use App\Models\MovieModel;
+use App\Models\Subscription;
 use App\Models\SupportAuditLog;
 use App\Models\User;
 use Encore\Admin\Admin;
@@ -599,6 +600,11 @@ HTML;
             return e($phone);
         });
 
+        $grid->column('subscription_status_snapshot', 'Sub Status')->display(function () {
+            /** @var object{user_id:int} $this */
+            return app(self::class)->renderUserSubscriptionSnippet((int) ($this->user_id ?? 0));
+        });
+
         $grid->column('platform_type', 'Platform')->display(fn($v) => $v ? strtoupper((string) $v) : '—')->sortable();
 
         $grid->column('ticket_type', 'Type')
@@ -928,6 +934,13 @@ HTML;
         border: 1px solid #d7dce1;
         padding: 8px;
     }
+    .tdm-sub-list {
+        margin: 6px 0 0;
+        padding-left: 18px;
+        font-size: 12px;
+        color: #2f3e4e;
+    }
+    .tdm-sub-list li { margin-bottom: 3px; }
     .tdm-item {
         border: 1px solid #e1e7ed;
         background: #fcfdff;
@@ -963,6 +976,7 @@ HTML;
                 <div id="tdmError" class="alert alert-danger" style="display:none;margin-bottom:8px"></div>
                 <div id="tdmContent" style="display:none">
                     <div class="tdm-grid" id="tdmSummary"></div>
+                    <div class="tdm-thread" id="tdmSubscription" style="display:none;margin-bottom:8px"></div>
                     <div class="tdm-thread" id="tdmThread"></div>
                 </div>
             </div>
@@ -1164,6 +1178,7 @@ HTML;
 
     function renderTicketDetails(data) {
         var ticket = data && data.ticket ? data.ticket : {};
+        var subscription = ticket.subscription || {};
         var summary = [
             ['Ticket', '#' + (ticket.id || '—')],
             ['Status', typeLabel(ticket.status || '—')],
@@ -1191,6 +1206,50 @@ HTML;
         }
         $('#tdmSummary').html(summaryHtml);
 
+        if (subscription && subscription.total > 0) {
+            var stateClass = (subscription.current_status || '').toLowerCase();
+            var statusColor = '#5a6c7d';
+            if (stateClass === 'active') statusColor = '#00a65a';
+            else if (stateClass === 'expired' || stateClass === 'failed') statusColor = '#dd4b39';
+            else if (stateClass === 'pending') statusColor = '#f39c12';
+
+            var subHtml = '';
+            subHtml += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">';
+            subHtml += '<div style="font-size:12px;font-weight:700;color:#33485e"><i class="fa fa-credit-card"></i> User Subscription Snapshot</div>';
+            subHtml += '<div style="font-size:12px"><span class="label" style="background:' + statusColor + '">' + escapeHtml(typeLabel(subscription.current_status || 'unknown')) + '</span></div>';
+            subHtml += '</div>';
+
+            subHtml += '<div class="tdm-grid" style="margin-top:7px;margin-bottom:0">';
+            subHtml += '<div class="tdm-box"><span class="tdm-k">Current Payment</span><span class="tdm-v">' + escapeHtml(typeLabel(subscription.current_payment_status || 'unknown')) + '</span></div>';
+            subHtml += '<div class="tdm-box"><span class="tdm-k">Current Plan</span><span class="tdm-v">' + escapeHtml(subscription.current_plan || '—') + '</span></div>';
+            subHtml += '<div class="tdm-box"><span class="tdm-k">Current End Date</span><span class="tdm-v">' + escapeHtml(formatDate(subscription.current_end_date || '')) + '</span></div>';
+            subHtml += '<div class="tdm-box"><span class="tdm-k">Total Subs</span><span class="tdm-v">' + escapeHtml(String(subscription.total || 0)) + '</span></div>';
+            subHtml += '<div class="tdm-box"><span class="tdm-k">Active</span><span class="tdm-v">' + escapeHtml(String(subscription.active_count || 0)) + '</span></div>';
+            subHtml += '<div class="tdm-box"><span class="tdm-k">Expired / Failed</span><span class="tdm-v">' + escapeHtml(String(subscription.expired_count || 0)) + ' / ' + escapeHtml(String(subscription.failed_count || 0)) + '</span></div>';
+            subHtml += '</div>';
+
+            var recent = Array.isArray(subscription.recent) ? subscription.recent : [];
+            if (recent.length) {
+                subHtml += '<ul class="tdm-sub-list">';
+                for (var s = 0; s < recent.length; s++) {
+                    var sub = recent[s] || {};
+                    var subLine = '#'+ String(sub.id || '-') + ' • ' + typeLabel(sub.status || 'unknown') + ' / ' + typeLabel(sub.payment_status || 'unknown');
+                    if (sub.plan_name) {
+                        subLine += ' • ' + String(sub.plan_name);
+                    }
+                    if (sub.end_date_time) {
+                        subLine += ' • ends ' + formatDate(sub.end_date_time);
+                    }
+                    subHtml += '<li>' + escapeHtml(subLine) + '</li>';
+                }
+                subHtml += '</ul>';
+            }
+
+            $('#tdmSubscription').html(subHtml).show();
+        } else {
+            $('#tdmSubscription').hide().html('');
+        }
+
         var records = Array.isArray(data.records) ? data.records : [];
         if (records.length === 0) {
             $('#tdmThread').html('<div class="text-muted" style="font-size:12px">No ticket records yet.</div>');
@@ -1204,12 +1263,36 @@ HTML;
             if (r.is_internal_note) flags.push('Internal');
             if (r.show_to_customer) flags.push('Visible to customer');
             if (r.customer_seen) flags.push('Seen by customer');
+            if (r.is_read_by_support) flags.push('Read by support');
             if (r.action_type && r.action_type !== 'none') flags.push('Action: ' + typeLabel(r.action_type));
+
+            var senderMeta = [];
+            if (r.sender_email) senderMeta.push(r.sender_email);
+            if (r.sender_type) senderMeta.push(typeLabel(r.sender_type));
+            var senderMetaHtml = senderMeta.length
+                ? '<div class="tdm-meta">' + escapeHtml(senderMeta.join(' | ')) + '</div>'
+                : '';
+
+            var movieSuggestions = '';
+            if (Array.isArray(r.movie_suggestions) && r.movie_suggestions.length) {
+                var movieLines = [];
+                for (var m = 0; m < r.movie_suggestions.length; m++) {
+                    var movie = r.movie_suggestions[m] || {};
+                    var line = String(movie.title || '').trim();
+                    if (movie.year) line += ' (' + String(movie.year) + ')';
+                    if (line) movieLines.push(line);
+                }
+                if (movieLines.length) {
+                    movieSuggestions = '<div class="tdm-meta"><strong>Suggested Movies:</strong> ' + escapeHtml(movieLines.join(', ')) + '</div>';
+                }
+            }
 
             items += '<div class="tdm-item">'
                 + '<div class="tdm-top"><span class="tdm-name">' + escapeHtml(r.sender_name || r.sender_type || 'System') + '</span><span class="tdm-time">' + escapeHtml(formatDate(r.created_at)) + '</span></div>'
-                + '<div class="tdm-msg">' + escapeHtml(r.message || '') + '</div>'
+                + senderMetaHtml
+                + '<div class="tdm-msg">' + escapeHtml(r.message_body || r.message || '') + '</div>'
                 + (r.action_description ? '<div class="tdm-meta"><strong>Action Notes:</strong> ' + escapeHtml(r.action_description) + '</div>' : '')
+                + movieSuggestions
                 + (flags.length ? '<div class="tdm-meta">' + escapeHtml(flags.join(' | ')) + '</div>' : '')
                 + '</div>';
         }
@@ -2154,11 +2237,138 @@ JSCODE;
                     'user_email' => (string) ($ticket->user->email ?? ''),
                     'user_phone' => (string) ($ticket->user->phone_number ?? ''),
                     'user_account_state' => (string) ($ticket->user->account_state ?? ''),
+                    'subscription' => $this->buildUserSubscriptionDetails((int) ($ticket->user_id ?? 0)),
                     'movie_request_payload' => is_array($ticket->movie_request_payload) ? $ticket->movie_request_payload : [],
                 ],
                 'records' => $records,
             ],
         ]);
+    }
+
+    private function renderUserSubscriptionSnippet(int $userId): string
+    {
+        if ($userId <= 0) {
+            return '<span class="label label-default">No user</span>';
+        }
+
+        $summary = $this->buildUserSubscriptionDetails($userId);
+        if (($summary['total'] ?? 0) <= 0) {
+            return '<span class="label label-default">No subscription</span>';
+        }
+
+        $status = (string) ($summary['current_status'] ?? 'Unknown');
+        $payment = (string) ($summary['current_payment_status'] ?? 'Unknown');
+        $plan = (string) ($summary['current_plan'] ?? '-');
+        $endDate = (string) ($summary['current_end_date'] ?? '');
+
+        $statusClass = match (strtolower($status)) {
+            'active' => 'success',
+            'pending' => 'warning',
+            'failed', 'expired' => 'danger',
+            default => 'default',
+        };
+
+        $paymentClass = match (strtolower($payment)) {
+            'completed' => 'success',
+            'pending', 'processing' => 'warning',
+            'failed' => 'danger',
+            default => 'default',
+        };
+
+        $meta = [];
+        $meta[] = 'A:' . (int) ($summary['active_count'] ?? 0);
+        $meta[] = 'E:' . (int) ($summary['expired_count'] ?? 0);
+        $meta[] = 'F:' . (int) ($summary['failed_count'] ?? 0);
+
+        $endText = $endDate !== '' ? date('d M Y', strtotime($endDate)) : '-';
+        $planSafe = e($plan !== '' ? $plan : '-');
+
+        return '<div style="line-height:1.25">'
+            . '<div><span class="label label-' . $statusClass . '">' . e($status) . '</span> '
+            . '<span class="label label-' . $paymentClass . '">' . e($payment) . '</span></div>'
+            . '<div style="font-size:11px;color:#596b7a;margin-top:2px"><strong>' . $planSafe . '</strong> • End: ' . e($endText) . '</div>'
+            . '<div style="font-size:11px;color:#788b9a;margin-top:1px">' . e(implode(' | ', $meta)) . '</div>'
+            . '</div>';
+    }
+
+    private function buildUserSubscriptionDetails(int $userId): array
+    {
+        static $cache = [];
+
+        if ($userId <= 0) {
+            return [
+                'total' => 0,
+                'active_count' => 0,
+                'expired_count' => 0,
+                'failed_count' => 0,
+                'current_status' => '',
+                'current_payment_status' => '',
+                'current_plan' => '',
+                'current_end_date' => null,
+                'recent' => [],
+            ];
+        }
+
+        if (isset($cache[$userId])) {
+            return $cache[$userId];
+        }
+
+        $statusCounts = Subscription::query()
+            ->where('user_id', $userId)
+            ->selectRaw('status, COUNT(*) as cnt')
+            ->groupBy('status')
+            ->pluck('cnt', 'status')
+            ->toArray();
+
+        $recent = Subscription::query()
+            ->with('plan:id,name')
+            ->where('user_id', $userId)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->limit(5)
+            ->get();
+
+        if ($recent->isEmpty()) {
+            $cache[$userId] = [
+                'total' => 0,
+                'active_count' => 0,
+                'expired_count' => 0,
+                'failed_count' => 0,
+                'current_status' => '',
+                'current_payment_status' => '',
+                'current_plan' => '',
+                'current_end_date' => null,
+                'recent' => [],
+            ];
+            return $cache[$userId];
+        }
+
+        $current = $recent->firstWhere('status', 'Active') ?: $recent->first();
+
+        $cache[$userId] = [
+            'total' => array_sum(array_map('intval', $statusCounts)),
+            'active_count' => (int) ($statusCounts['Active'] ?? 0),
+            'expired_count' => (int) ($statusCounts['Expired'] ?? 0),
+            'failed_count' => (int) ($statusCounts['Failed'] ?? 0),
+            'current_status' => (string) ($current->status ?? ''),
+            'current_payment_status' => (string) ($current->payment_status ?? ''),
+            'current_plan' => (string) ($current->plan->name ?? ''),
+            'current_end_date' => optional($current->end_date_time)->toDateTimeString(),
+            'recent' => $recent->map(function (Subscription $sub) {
+                return [
+                    'id' => (int) $sub->id,
+                    'status' => (string) ($sub->status ?? ''),
+                    'payment_status' => (string) ($sub->payment_status ?? ''),
+                    'plan_name' => (string) ($sub->plan->name ?? ''),
+                    'app_type' => (string) ($sub->app_type ?? ''),
+                    'platform' => (string) ($sub->platform ?? ''),
+                    'end_date_time' => optional($sub->end_date_time)->toDateTimeString(),
+                    'updated_at' => optional($sub->updated_at)->toDateTimeString(),
+                ];
+            })->values()->all(),
+        ];
+
+        return $cache[$userId];
     }
 
     public function ajaxRespondTicket(Request $request, int $id)
