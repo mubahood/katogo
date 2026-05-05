@@ -21,9 +21,16 @@ Route::group([
     $router->get('support-team',         'SupportTeamController@index');
     $router->post('support-team/toggle', 'SupportTeamController@toggleRole');
     $router->get('support-tickets/create', 'SupportTeamController@create');
+    $router->get('support-tickets/all/create', 'SupportTeamController@create');
     $router->get('support-tickets',      'SupportTeamController@tickets');
+    $router->get('support-tickets/pending', 'SupportTeamController@tickets')->defaults('segment', 'pending');
+    $router->get('support-tickets/contacted', 'SupportTeamController@tickets')->defaults('segment', 'contacted');
+    $router->get('support-tickets/contacted-customer-replied', 'SupportTeamController@tickets')->defaults('segment', 'contacted-customer-replied');
+    $router->get('support-tickets/all', 'SupportTeamController@tickets')->defaults('segment', 'all');
     $router->get('support-tickets/ajax-movie-search', 'SupportTeamController@ajaxMovieSearch');
+    $router->get('support-tickets/{id}/ajax-details', 'SupportTeamController@ajaxTicketDetails')->where(['id' => '[0-9]+']);
     $router->post('support-tickets', 'SupportTeamController@store');
+    $router->post('support-tickets/all', 'SupportTeamController@store');
     $router->get('support-tickets/{id}/edit', 'SupportTeamController@edit');
     $router->put('support-tickets/{id}', 'SupportTeamController@update');
     $router->get('support-tickets/{id}', 'SupportTeamController@ticketDetail')->where(['id' => '[0-9]+']);
@@ -36,6 +43,8 @@ Route::group([
 
 
     $router->resource('subscription-transactions', SubscriptionTransactionController::class);
+    $router->get('subscriptions/analytics', 'SubscriptionController@analytics');
+    $router->get('subscriptions/{id}/ajax-details', 'SubscriptionController@ajaxDetails')->where(['id' => '[0-9]+']);
     $router->resource('subscriptions', SubscriptionController::class);
     $router->resource('subscription-plans', SubscriptionPlanController::class);
     $router->resource('scraper-models', ScraperModelController::class);

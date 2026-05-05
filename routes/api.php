@@ -131,6 +131,13 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 
     // Profile completion (for auto-created accounts upgrading to registered)
     Route::post('auth/complete-profile', [ApiController::class, 'complete_profile']);
+    Route::get('auth/profile-wizard/state', [ApiController::class, 'profile_wizard_state']);
+    Route::post('auth/profile-wizard/personal-info', [ApiController::class, 'profile_wizard_personal_info']);
+    Route::post('auth/profile-wizard/contact', [ApiController::class, 'profile_wizard_contact']);
+    Route::post('auth/profile-wizard/password', [ApiController::class, 'profile_wizard_password']);
+    Route::post('auth/profile-wizard/preferences', [ApiController::class, 'profile_wizard_preferences']);
+    Route::post('auth/profile-wizard/photo', [ApiController::class, 'profile_wizard_photo']);
+    Route::post('auth/profile-wizard/finish', [ApiController::class, 'finish_profile_wizard']);
 
 
     Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);

@@ -147,35 +147,67 @@ class SupportTeamController extends AdminController
     {
         return [
             'auto_account_issue' => [
-                "Welcome to Katogo! We noticed you just set your phone number. If you have any questions or need assistance, feel free to reply to this message. We're here to help you get started with our app!",
-                "Hello! Thank you for joining Katogo. We can help you complete setup quickly. Reply here if you need support.",
+                "Hello{hello_name}, this is {agent_name} from {app_name}. We noticed an account setup issue and we are here to help you sort it out quickly.",
+                "Hi{hello_name}, thanks for starting with {app_name}. If your account setup got stuck, reply here and we will guide you step by step.",
+                "Hello{hello_name}, welcome to {app_name}. I can see an auto-account issue on your side; share what you are seeing and I will help fix it now.",
+                "Hi{hello_name}, you are not alone, we can resolve this account issue together. Reply with the error text or screenshot and {agent_name} will assist.",
+                "Hello{hello_name}, {agent_name} from {app_name} here. We are checking your account activation flow and can help you complete it in a few minutes.",
             ],
             'account_opening' => [
-                "Welcome to Katogo! If you need help setting up your account, please reply here and our support team will assist you.",
-                "Hi! We're ready to help you get started on Katogo. Reply with any issue and we will guide you.",
+                "Hello{hello_name}, welcome to {app_name}. I am {agent_name} and I will help you complete your account opening smoothly.",
+                "Hi{hello_name}, great to have you on {app_name}. If anything is unclear while setting up, just reply and we will sort it out.",
+                "Hello{hello_name}, your account opening request is on our desk. Share any blocker and we will guide you right away.",
+                "Hi{hello_name}, we are excited to have you. I can help you finish setup, verify details, and start watching without delays.",
+                "Hello{hello_name}, this is {agent_name} from {app_name}. Need help with login, profile, or subscription during setup? Reply here anytime.",
             ],
             'payment_fail' => [
-                "Hello! We noticed there was an issue with your recent payment. If you need any assistance or have questions about your payment, please reply to this message. We're here to help resolve any issues you may have!",
-                "Hi! Your recent payment looks incomplete. Share any error you saw and we will help you finish quickly.",
+                "Hello{hello_name}, we noticed your recent payment did not complete. Please share the error message so {agent_name} can help immediately.",
+                "Hi{hello_name}, your payment seems pending or failed. Send the number used plus screenshot if possible and we will resolve it quickly.",
+                "Hello{hello_name}, thanks for trying to subscribe on {app_name}. We can help you complete payment safely, just reply with what happened.",
+                "Hi{hello_name}, no worries, failed payments happen. I will walk you through a quick fix and get your access restored.",
+                "Hello{hello_name}, this is {agent_name}. We are already checking your payment attempt and can help confirm the correct next step.",
             ],
             'payment_thanks' => [
-                "Thank you for your payment! Your support means a lot. If you have any questions, reply to this message and we will help.",
-                "Payment received successfully. Welcome! Reach out anytime if you need assistance.",
+                "Hello{hello_name}, thank you for your payment on {app_name}. We appreciate your support and we are here if you need anything.",
+                "Hi{hello_name}, payment received successfully. Enjoy your content, and message us anytime if you need quick assistance.",
+                "Hello{hello_name}, your payment is confirmed. Thank you for trusting {app_name}; we are happy to support your viewing journey.",
+                "Hi{hello_name}, thanks again for subscribing. If you need help with playback or account settings, {agent_name} is ready to help.",
+                "Hello{hello_name}, welcome and thank you. Your support helps us keep great content coming, and our team is always one message away.",
             ],
             'subscription_issue' => [
-                "Hello! We noticed a subscription issue on your account. Reply here and we'll help restore access as quickly as possible.",
+                "Hello{hello_name}, we found a subscription issue on your {app_name} account. Reply and we will restore access as fast as possible.",
+                "Hi{hello_name}, your subscription status needs attention. Share what you see on screen and {agent_name} will fix it with you.",
+                "Hello{hello_name}, thanks for your patience. We are reviewing your subscription and can guide you to a quick resolution.",
+                "Hi{hello_name}, if your premium access is not active, reply here now. We will verify your plan and update you immediately.",
+                "Hello{hello_name}, this is {agent_name} from {app_name}. We are on your subscription case and will help you get back to full access.",
             ],
             'technical_issue' => [
-                "Hi! We're following up on a technical issue from your account. Please reply with details or screenshots and we will assist.",
+                "Hello{hello_name}, we are following up on your technical issue in {app_name}. Please share details and we will troubleshoot together.",
+                "Hi{hello_name}, thanks for reporting this. Send the error text or screenshot so {agent_name} can diagnose quickly.",
+                "Hello{hello_name}, we can help fix playback, login, or app crashes fast. Tell us what device and what happened before the issue.",
+                "Hi{hello_name}, our support team is ready. Reply with steps to reproduce and we will provide the best fix for your case.",
+                "Hello{hello_name}, thank you for your patience. We are here to resolve this technical issue and keep your experience smooth.",
             ],
             'billing_issue' => [
-                "Hello! We're here to help with your billing concern. Reply with details and our support team will resolve it promptly.",
+                "Hello{hello_name}, we are here to help with your billing concern on {app_name}. Reply with details and we will sort it out promptly.",
+                "Hi{hello_name}, if you noticed a billing mismatch, share the amount, date, and number used so we can verify quickly.",
+                "Hello{hello_name}, this is {agent_name}. We can help clarify charges, renewals, or transaction history, just reply here.",
+                "Hi{hello_name}, we understand billing issues can be stressful. We will review your case carefully and update you fast.",
+                "Hello{hello_name}, thanks for reaching out. We are checking your billing record and will guide you on the next best action.",
             ],
             'content_issue' => [
-                "Hi! Thanks for reporting a content issue. Reply with the title and issue details so we can fix it quickly.",
+                "Hello{hello_name}, thanks for reporting a content issue. Please share the title and what exactly is wrong so we can fix it quickly.",
+                "Hi{hello_name}, we appreciate the report. Send the movie or episode name plus a short description, and {agent_name} will follow up.",
+                "Hello{hello_name}, if audio, subtitle, or video quality is off, reply with details and we will escalate to the content team.",
+                "Hi{hello_name}, your feedback helps us improve. Please tell us where the issue appears and we will investigate immediately.",
+                "Hello{hello_name}, thank you for flagging this content problem on {app_name}. We will review and update you once handled.",
             ],
             'general' => [
-                "Hello from Katogo Support! We received your ticket. Reply here with any extra details and we'll help shortly.",
+                "Hello{hello_name}, this is {agent_name} from {app_name}. We received your {ticket_type} request and are ready to help.",
+                "Hi{hello_name}, thanks for contacting {app_name} support. Share any extra details and we will assist as quickly as possible.",
+                "Hello{hello_name}, we are here for you. Reply with your concern and we will guide you until it is fully resolved.",
+                "Hi{hello_name}, thanks for reaching out. We have opened your support case and will keep you updated on progress.",
+                "Hello{hello_name}, support is available right here. Send your details and {agent_name} will take care of your request.",
             ],
         ];
     }
@@ -428,18 +460,91 @@ HTML;
 
     // ── 2. Support Tickets Grid ───────────────────────────────────────
 
-    public function tickets(Content $content)
+    public function tickets(Content $content, ?string $segment = null)
     {
+        $segment = $this->normalizeTicketSegment($segment);
         Admin::script($this->buildTicketInteractionScript());
 
         return $content
             ->title('Support Tickets')
-            ->description('All customer support tickets')
-            ->body($this->ticketsGrid())
-            ->body($this->supportTicketInteractionAssets());
+            ->description($this->ticketSegmentDescription($segment))
+            ->body($this->supportTicketSummaryCards($segment))
+            ->body($this->ticketsGrid($segment))
+            ->body($this->supportTicketInteractionAssets($segment));
     }
 
-    private function ticketsGrid(): Grid
+    private function normalizeTicketSegment(?string $segment): string
+    {
+        $value = strtolower(trim((string) $segment));
+        $allowed = ['all', 'pending', 'contacted', 'contacted-customer-replied'];
+        return in_array($value, $allowed, true) ? $value : 'all';
+    }
+
+    private function ticketSegmentDescription(string $segment): string
+    {
+        return match ($segment) {
+            'pending' => 'Tickets awaiting first support contact',
+            'contacted' => 'Tickets where support contacted customer, awaiting customer reply',
+            'contacted-customer-replied' => 'Tickets where support contacted customer and customer replied',
+            default => 'All customer support tickets',
+        };
+    }
+
+    private function supportTicketCounts(): array
+    {
+        $base = CustomerTicket::query();
+
+        $pending = (clone $base)
+            ->where('agent_has_contacted_customer', false)
+            ->whereNotIn('status', ['resolved', 'closed'])
+            ->count();
+
+        $contacted = (clone $base)
+            ->where('agent_has_contacted_customer', true)
+            ->where('customer_has_responded', false)
+            ->whereNotIn('status', ['closed'])
+            ->count();
+
+        $contactedReplied = (clone $base)
+            ->where('agent_has_contacted_customer', true)
+            ->where('customer_has_responded', true)
+            ->count();
+
+        return [
+            'all' => (clone $base)->count(),
+            'pending' => $pending,
+            'contacted' => $contacted,
+            'contacted-customer-replied' => $contactedReplied,
+        ];
+    }
+
+    private function supportTicketSummaryCards(string $activeSegment): string
+    {
+        $counts = $this->supportTicketCounts();
+
+        $cards = [
+            ['key' => 'pending', 'label' => 'Pending', 'icon' => 'fa-hourglass-half', 'url' => admin_url('support-tickets/pending')],
+            ['key' => 'contacted', 'label' => 'Contacted', 'icon' => 'fa-phone', 'url' => admin_url('support-tickets/contacted')],
+            ['key' => 'contacted-customer-replied', 'label' => 'Contacted + Replied', 'icon' => 'fa-comments', 'url' => admin_url('support-tickets/contacted-customer-replied')],
+            ['key' => 'all', 'label' => 'All Tickets', 'icon' => 'fa-list', 'url' => admin_url('support-tickets/all')],
+        ];
+
+        $html = '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:8px">';
+        foreach ($cards as $card) {
+            $isActive = $activeSegment === $card['key'];
+            $count = (int) ($counts[$card['key']] ?? 0);
+            $html .= '<a href="' . e($card['url']) . '" style="display:block;background:' . ($isActive ? '#3c8dbc' : '#fff') . ';color:' . ($isActive ? '#fff' : '#2f3e4e') . ';border:1px solid ' . ($isActive ? '#2f7ba9' : '#d7dce1') . ';padding:8px 10px;text-decoration:none">'
+                . '<div style="font-size:11px;opacity:' . ($isActive ? '0.92' : '0.75') . ';text-transform:uppercase"><i class="fa ' . e($card['icon']) . '"></i> ' . e($card['label']) . '</div>'
+                . '<div style="font-size:20px;font-weight:800;line-height:1.2;margin-top:2px">' . $count . '</div>'
+                . '</a>';
+        }
+        $html .= '</div>';
+        $html .= '<style>@media(max-width:992px){.content .box-body>div[style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media(max-width:640px){.content .box-body>div[style*="grid-template-columns:repeat(4"]{grid-template-columns:1fr!important}}</style>';
+
+        return $html;
+    }
+
+    private function ticketsGrid(string $segment = 'all'): Grid
     {
         $grid = new Grid(new CustomerTicket());
 
@@ -453,6 +558,19 @@ HTML;
 
         $grid->model()
             ->with(['user', 'assignedAgent'])
+            ->when($segment === 'pending', function ($query) {
+                $query->where('agent_has_contacted_customer', false)
+                    ->whereNotIn('status', ['resolved', 'closed']);
+            })
+            ->when($segment === 'contacted', function ($query) {
+                $query->where('agent_has_contacted_customer', true)
+                    ->where('customer_has_responded', false)
+                    ->whereNotIn('status', ['closed']);
+            })
+            ->when($segment === 'contacted-customer-replied', function ($query) {
+                $query->where('agent_has_contacted_customer', true)
+                    ->where('customer_has_responded', true);
+            })
             ->orderByDesc('last_reply_at')
             ->orderByDesc('created_at');
 
@@ -511,7 +629,8 @@ HTML;
                 4 => '4',
                 5 => '5',
             ])
-            ->sortable();
+            ->sortable()
+            ->hide();
 
         $grid->column('subject', 'Subject')->display(fn($v) => e((string) ($v ?: '(none)')));
 
@@ -524,7 +643,7 @@ HTML;
 
         $grid->column('has_unread_support', 'Unread')->display(fn($v) =>
             $v ? '<span class="label label-danger">New</span>' : '—'
-        )->sortable();
+        )->sortable()->hide();
 
         $grid->column('last_reply_at', 'Last Reply')->display(fn($v) =>
             $v ? date('d M Y H:i', strtotime($v)) : '—'
@@ -582,12 +701,13 @@ HTML;
             $respondIcon = $hasSupportResponse ? 'fa-check' : 'fa-reply';
 
             $engageBtn = $hasValidPhone
-                ? '<button type="button" class="btn btn-xs btn-success js-wa-engage" data-ticket="' . $this->id . '" data-type="' . e($ticketType) . '" data-name="' . e($userName) . '" data-app="' . e($appName) . '" data-phone="' . e($digits) . '"><i class="fa fa-whatsapp"></i> Engage</button>'
-                : '<span class="label label-default">No valid phone</span>';
+                ? '<button type="button" class="btn btn-xs btn-success js-wa-engage stc-action-btn" data-ticket="' . $this->id . '" data-type="' . e($ticketType) . '" data-name="' . e($userName) . '" data-app="' . e($appName) . '" data-phone="' . e($digits) . '"><i class="fa fa-whatsapp"></i> Engage</button>'
+                : '<span class="label label-default stc-action-label">No phone</span>';
 
-            return '<div style="display:flex;flex-direction:column;gap:6px;min-width:120px">'
+            return '<div class="stc-action-stack">'
                 . $engageBtn
-                . '<button type="button" class="btn btn-xs ' . $respondClass . ' js-ticket-respond" data-ticket="' . $this->id . '" data-type="' . e($ticketType) . '" data-name="' . e($userName) . '" data-app="' . e($appName) . '" data-phone="' . e($digits) . '" data-movie-request="' . ($isMovieRequest ? '1' : '0') . '" data-selected-movies="' . $preselectedMoviesJson . '"><i class="fa ' . $respondIcon . '"></i> ' . e($respondLabel) . '</button>'
+                . '<button type="button" class="btn btn-xs ' . $respondClass . ' js-ticket-respond stc-action-btn" data-ticket="' . $this->id . '" data-type="' . e($ticketType) . '" data-name="' . e($userName) . '" data-app="' . e($appName) . '" data-phone="' . e($digits) . '" data-movie-request="' . ($isMovieRequest ? '1' : '0') . '" data-selected-movies="' . $preselectedMoviesJson . '"><i class="fa ' . $respondIcon . '"></i> ' . e($respondLabel) . '</button>'
+                . '<button type="button" class="btn btn-xs btn-info js-ticket-details stc-action-btn" data-ticket="' . $this->id . '"><i class="fa fa-list-alt"></i> Details</button>'
                 . '</div>';
         });
 
@@ -673,8 +793,9 @@ HTML;
         return $grid;
     }
 
-    private function supportTicketInteractionAssets(): string
+    private function supportTicketInteractionAssets(string $segment = 'all'): string
     {
+        $counts = $this->supportTicketCounts();
         // Build a single JSON payload and embed it in a data attribute.
         // Avoid <script type="application/json"> because jquery-pjax may still evaluate script tags during partial reload.
         $dataIsland = json_encode([
@@ -682,6 +803,10 @@ HTML;
             'agentName'      => (string) (auth('admin')->user()->name ?? 'Support Team'),
             'respondBaseUrl' => (string) admin_url('support-tickets'),
             'movieSearchUrl' => (string) admin_url('support-tickets/ajax-movie-search'),
+            'ticketDetailsUrlTemplate' => (string) admin_url('support-tickets/__ID__/ajax-details'),
+            'ticketUrlTemplate' => (string) admin_url('support-tickets/__ID__'),
+            'menuCounts' => $counts,
+            'activeSegment' => $segment,
             'csrfToken'      => (string) csrf_token(),
         ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
 
@@ -749,8 +874,107 @@ HTML;
     .trm-selected { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; min-height: 26px; }
     .trm-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #3c8dbc; color: #2a6d97; background: #f4f9fd; padding: 3px 6px; font-size: 11px; line-height: 1.1; }
     .trm-chip button { border: 0; background: transparent; padding: 0; color: #2a6d97; font-weight: 700; }
+
+    .stc-action-stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        max-width: 188px;
+    }
+    .stc-action-btn {
+        padding: 2px 6px !important;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+    .stc-action-label {
+        margin: 0;
+        font-size: 10px;
+    }
+    #waTemplateButtons .js-wa-template-btn {
+        margin: 0 4px 4px 0;
+        min-width: 0;
+        padding: 3px 7px;
+        font-size: 10px;
+    }
+
+    #ticketDetailsModal .modal-content { border-radius: 0; }
+    #ticketDetailsModal .modal-header {
+        background: #2f3a4b;
+        color: #fff;
+        border-bottom: 0;
+        padding: 8px 12px;
+    }
+    #ticketDetailsModal .modal-body {
+        background: #f5f7fa;
+        padding: 10px 12px;
+        max-height: 72vh;
+        overflow-y: auto;
+    }
+    .tdm-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        margin-bottom: 8px;
+    }
+    .tdm-box {
+        background: #fff;
+        border: 1px solid #d7dce1;
+        padding: 6px 8px;
+    }
+    .tdm-k { display: block; font-size: 10px; text-transform: uppercase; color: #607182; margin-bottom: 2px; }
+    .tdm-v { font-size: 12px; font-weight: 700; color: #2f3e4e; word-break: break-word; }
+    .tdm-thread {
+        background: #fff;
+        border: 1px solid #d7dce1;
+        padding: 8px;
+    }
+    .tdm-item {
+        border: 1px solid #e1e7ed;
+        background: #fcfdff;
+        padding: 8px;
+        margin-bottom: 6px;
+    }
+    .tdm-item:last-child { margin-bottom: 0; }
+    .tdm-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 5px;
+        gap: 8px;
+    }
+    .tdm-name { font-weight: 700; color: #33485e; font-size: 12px; }
+    .tdm-time { color: #74889b; font-size: 11px; white-space: nowrap; }
+    .tdm-msg { font-size: 12px; color: #2f3e4e; white-space: pre-wrap; }
+    .tdm-meta { margin-top: 5px; font-size: 11px; color: #6d8194; }
+    @media (max-width: 991px) { .tdm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 767px) { .trm-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 767px) { .tdm-grid { grid-template-columns: 1fr; } }
 </style>
+
+<div class="modal fade" id="ticketDetailsModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                <h4 class="modal-title"><i class="fa fa-list-alt"></i> Ticket Details</h4>
+            </div>
+            <div class="modal-body">
+                <div id="tdmLoading" style="display:none;color:#6d8194;font-size:12px"><i class="fa fa-spinner fa-spin"></i> Loading ticket details...</div>
+                <div id="tdmError" class="alert alert-danger" style="display:none;margin-bottom:8px"></div>
+                <div id="tdmContent" style="display:none">
+                    <div class="tdm-grid" id="tdmSummary"></div>
+                    <div class="tdm-thread" id="tdmThread"></div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding:8px 12px;background:#f5f7fa">
+                <a href="#" class="btn btn-default" id="tdmOpenFull" target="_blank"><i class="fa fa-external-link"></i> Open Full Ticket</a>
+                <button type="button" class="btn btn-success" id="tdmEngage"><i class="fa fa-whatsapp"></i> Engage WhatsApp</button>
+                <button type="button" class="btn btn-primary" id="tdmRespond"><i class="fa fa-reply"></i> Respond</button>
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="modal fade" id="waEngageModal" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog" role="document">
@@ -761,11 +985,16 @@ HTML;
             </div>
             <div class="modal-body">
                 <div class="form-group" style="margin-bottom:8px">
+                    <label style="font-size:12px">Quick Templates</label>
+                    <div id="waTemplateButtons" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+                    <div style="font-size:11px;color:#6f7f8f;margin-top:4px">Tap any template below to replace the message.</div>
+                </div>
+                <div class="form-group" style="margin-bottom:8px">
                     <label style="font-size:12px">Message</label>
                     <textarea id="waMessage" class="form-control" rows="5" placeholder="Edit before sending..."></textarea>
                 </div>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap">
                 <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
                 <button type="button" class="btn btn-success" id="waOpenBtn"><i class="fa fa-external-link"></i> Open WhatsApp</button>
             </div>
@@ -842,18 +1071,184 @@ HTML;
     var activeAgentName   = _stcData.agentName      || 'Support Team';
     var ajaxRespondBase   = _stcData.respondBaseUrl  || '';
     var movieSearchUrl    = _stcData.movieSearchUrl  || '';
+    var detailsUrlTpl     = _stcData.ticketDetailsUrlTemplate || '';
+    var ticketUrlTpl      = _stcData.ticketUrlTemplate || '';
+    var menuCounts        = _stcData.menuCounts || {};
     var csrfToken         = _stcData.csrfToken       || '';
     var activePhone       = '';
     var activeRespondId   = null;
     var activeRespondBtn  = null;
+    var activeDetailsId   = null;
     var selectedMovies    = [];
     var movieSearchTimer  = null;
 
+    function renderWaTemplateButtons(type, ctx) {
+        var holder = $('#waTemplateButtons');
+        holder.empty();
+        var list = templatesByType[type] || templatesByType['general'] || [];
+        if (!Array.isArray(list) || !list.length) {
+            return;
+        }
+
+        for (var i = 0; i < list.length; i++) {
+            (function (idx, rawTpl) {
+                var tpl = personalize(String(rawTpl || ''), ctx).trim();
+                if (!tpl) {
+                    return;
+                }
+
+                var label = 'Template ' + (idx + 1);
+                var btn = $('<button/>', {
+                    type: 'button',
+                    'class': 'btn btn-default btn-xs js-wa-template-btn',
+                    text: label,
+                    'data-template': tpl,
+                    title: tpl
+                }).css({
+                    borderRadius: '0',
+                    border: '1px solid #cfd6dd',
+                    background: '#fff',
+                    color: '#2f3e4e',
+                    padding: '3px 7px',
+                    fontSize: '10px'
+                });
+
+                holder.append(btn);
+            }(i, list[i]));
+        }
+    }
+
+    function applyMenuBadge(uri, count, color) {
+        var hrefNeedle = '/' + String(uri || '').replace(/^\//, '');
+        var anchor = $('.sidebar-menu a').filter(function () {
+            var href = String($(this).attr('href') || '');
+            return href.indexOf(hrefNeedle) !== -1;
+        }).first();
+        if (!anchor.length) return;
+        anchor.find('.support-menu-badge').remove();
+        var badge = $('<small/>', {
+            'class': 'label pull-right support-menu-badge',
+            text: String(parseInt(count || 0, 10) || 0)
+        }).css({ backgroundColor: color || '#3c8dbc', marginLeft: '6px' });
+        anchor.append(badge);
+    }
+
+    function renderSupportMenuBadges() {
+        applyMenuBadge('support-tickets/pending', menuCounts.pending || 0, '#f39c12');
+        applyMenuBadge('support-tickets/contacted', menuCounts.contacted || 0, '#00a65a');
+        applyMenuBadge('support-tickets/contacted-customer-replied', menuCounts['contacted-customer-replied'] || 0, '#3c8dbc');
+        applyMenuBadge('support-tickets/all', menuCounts.all || 0, '#6c757d');
+    }
+
+    renderSupportMenuBadges();
+
     function normalizeTitle(v) { return String(v || '').trim().replace(/\s+/g, ' '); }
+    function escapeHtml(str) {
+        return String(str || '').replace(/[&<>"']/g, function (m) {
+            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]);
+        });
+    }
+    function formatDate(v) {
+        var s = String(v || '').trim();
+        if (!s) return '—';
+        var d = new Date(s.replace(' ', 'T'));
+        if (String(d) === 'Invalid Date') return s;
+        return d.toLocaleString();
+    }
+    function detailUrl(id) { return String(detailsUrlTpl || '').replace('__ID__', encodeURIComponent(String(id || ''))); }
+    function ticketUrl(id) { return String(ticketUrlTpl || '').replace('__ID__', encodeURIComponent(String(id || ''))); }
     function typeLabel(t) {
         return String(t || 'general').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
     }
     function syncPayload() { $('#trmMovieList').val(selectedMovies.join('\n')); }
+
+    function renderTicketDetails(data) {
+        var ticket = data && data.ticket ? data.ticket : {};
+        var summary = [
+            ['Ticket', '#' + (ticket.id || '—')],
+            ['Status', typeLabel(ticket.status || '—')],
+            ['Type', typeLabel(ticket.ticket_type || '—')],
+            ['Resolution', typeLabel(ticket.resolution_state || '—')],
+            ['Subject', ticket.subject || '—'],
+            ['Replies', String(ticket.reply_count || 0)],
+            ['Rating', ticket.rating_of_satisfaction ? String(ticket.rating_of_satisfaction) + '/5' : '—'],
+            ['Unread (Support)', ticket.has_unread_support ? 'Yes' : 'No'],
+            ['Unread (User)', ticket.has_unread_user ? 'Yes' : 'No'],
+            ['Customer', ticket.user_name || '—'],
+            ['Customer Email', ticket.user_email || '—'],
+            ['Customer Phone', ticket.user_phone || '—'],
+            ['Assigned To', ticket.assigned_to_name || 'Unassigned'],
+            ['Platform', ticket.platform_type || ticket.platform || '—'],
+            ['Origin', ticket.account_origin || '—'],
+            ['Created', formatDate(ticket.created_at)],
+            ['Last Reply', formatDate(ticket.last_reply_at)],
+            ['Updated', formatDate(ticket.updated_at)]
+        ];
+
+        var summaryHtml = '';
+        for (var i = 0; i < summary.length; i++) {
+            summaryHtml += '<div class="tdm-box"><span class="tdm-k">' + escapeHtml(summary[i][0]) + '</span><span class="tdm-v">' + escapeHtml(summary[i][1]) + '</span></div>';
+        }
+        $('#tdmSummary').html(summaryHtml);
+
+        var records = Array.isArray(data.records) ? data.records : [];
+        if (records.length === 0) {
+            $('#tdmThread').html('<div class="text-muted" style="font-size:12px">No ticket records yet.</div>');
+            return;
+        }
+
+        var items = '';
+        for (var j = 0; j < records.length; j++) {
+            var r = records[j] || {};
+            var flags = [];
+            if (r.is_internal_note) flags.push('Internal');
+            if (r.show_to_customer) flags.push('Visible to customer');
+            if (r.customer_seen) flags.push('Seen by customer');
+            if (r.action_type && r.action_type !== 'none') flags.push('Action: ' + typeLabel(r.action_type));
+
+            items += '<div class="tdm-item">'
+                + '<div class="tdm-top"><span class="tdm-name">' + escapeHtml(r.sender_name || r.sender_type || 'System') + '</span><span class="tdm-time">' + escapeHtml(formatDate(r.created_at)) + '</span></div>'
+                + '<div class="tdm-msg">' + escapeHtml(r.message || '') + '</div>'
+                + (r.action_description ? '<div class="tdm-meta"><strong>Action Notes:</strong> ' + escapeHtml(r.action_description) + '</div>' : '')
+                + (flags.length ? '<div class="tdm-meta">' + escapeHtml(flags.join(' | ')) + '</div>' : '')
+                + '</div>';
+        }
+        $('#tdmThread').html(items);
+    }
+
+    function openTicketDetails(ticketId) {
+        activeDetailsId = String(ticketId || '').trim();
+        if (!activeDetailsId) {
+            toastr.error('Ticket id missing.');
+            return;
+        }
+        $('#tdmError').hide().text('');
+        $('#tdmContent').hide();
+        $('#tdmLoading').show();
+        $('#tdmOpenFull').attr('href', ticketUrl(activeDetailsId));
+        $('#ticketDetailsModal').modal('show');
+
+        $.ajax({
+            url: detailUrl(activeDetailsId),
+            type: 'GET',
+            dataType: 'json',
+            success: function (res) {
+                if (res && res.success && res.data) {
+                    renderTicketDetails(res.data);
+                    $('#tdmLoading').hide();
+                    $('#tdmContent').show();
+                    return;
+                }
+                $('#tdmLoading').hide();
+                $('#tdmError').text((res && res.message) ? res.message : 'Failed to load details.').show();
+            },
+            error: function (xhr) {
+                $('#tdmLoading').hide();
+                var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to load details.';
+                $('#tdmError').text(msg).show();
+            }
+        });
+    }
 
     function addMovieTitle(raw) {
         var title = normalizeTitle(raw);
@@ -945,8 +1340,22 @@ HTML;
             appName:        appName,
             ticketTypeLabel: typeLabel(type)
         };
+
+        renderWaTemplateButtons(type, ctx);
+
+        // Default to first template, but allow instant switch with buttons.
         $('#waMessage').val(getTemplate(type, ctx));
         $('#waEngageModal').modal('show');
+    });
+
+    $(document).off('click.stcWaTemplatePick', '.js-wa-template-btn').on('click.stcWaTemplatePick', '.js-wa-template-btn', function () {
+        var msg = String($(this).data('template') || '').trim();
+        if (!msg) {
+            return;
+        }
+        $('#waTemplateButtons .js-wa-template-btn').removeClass('btn-primary').addClass('btn-default').css({ background: '#fff', color: '#2f3e4e' });
+        $(this).removeClass('btn-default').addClass('btn-primary').css({ background: '#3c8dbc', color: '#fff' });
+        $('#waMessage').val(msg);
     });
 
     $(document).off('click.stcWaOpen', '#waOpenBtn').on('click.stcWaOpen', '#waOpenBtn', function () {
@@ -991,6 +1400,32 @@ HTML;
         $('#trmShowToCustomer').prop('checked', true);
         $('#trmCustomerSeen').prop('checked', false);
         $('#ticketRespondModal').modal('show');
+    });
+
+    $(document).off('click.stcDetailsOpen', '.js-ticket-details').on('click.stcDetailsOpen', '.js-ticket-details', function () {
+        openTicketDetails($(this).data('ticket'));
+    });
+
+    $(document).off('click.stcDetailsRespond', '#tdmRespond').on('click.stcDetailsRespond', '#tdmRespond', function () {
+        if (!activeDetailsId) { return; }
+        $('#ticketDetailsModal').modal('hide');
+        var btn = $('.js-ticket-respond[data-ticket="' + activeDetailsId + '"]').first();
+        if (btn.length) {
+            btn.trigger('click');
+        } else {
+            window.location.href = ticketUrl(activeDetailsId);
+        }
+    });
+
+    $(document).off('click.stcDetailsEngage', '#tdmEngage').on('click.stcDetailsEngage', '#tdmEngage', function () {
+        if (!activeDetailsId) { return; }
+        $('#ticketDetailsModal').modal('hide');
+        var btn = $('.js-wa-engage[data-ticket="' + activeDetailsId + '"]').first();
+        if (btn.length) {
+            btn.trigger('click');
+        } else {
+            toastr.warning('No valid phone was detected for this ticket.');
+        }
     });
 
     $(document).off('change.stcInternalToggle', '#trmInternalNote').on('change.stcInternalToggle', '#trmInternalNote', function () {
@@ -1098,6 +1533,21 @@ JSCODE;
         $resolutionOptions = $this->resolutionOptions();
         $agentOptions = $this->supportAgentOptions();
         $userSearchUrl = $this->adminUserSearchUrl();
+        $actionTypeOptions = array_combine(
+            CustomerTicketRecord::$validActionTypes,
+            array_map(fn($v) => ucwords(str_replace('_', ' ', $v)), CustomerTicketRecord::$validActionTypes)
+        );
+
+        $form->ignore([
+            'movie_request_payload_json',
+            'initial_record_message',
+            'initial_record_sender_type',
+            'initial_record_action_type',
+            'initial_record_action_description',
+            'initial_record_internal_note',
+            'initial_record_show_to_customer',
+            'initial_record_customer_seen',
+        ]);
 
         $form->tab('Ticket', function (Form $form) use ($statusOptions, $ticketTypeOptions, $resolutionOptions, $agentOptions, $userSearchUrl) {
             $form->select('user_id', 'User')
@@ -1139,10 +1589,57 @@ JSCODE;
             $form->switch('customer_has_responded', 'Customer Replied')->states(self::SWITCH_STATES)->default(0);
             $form->switch('has_unread_user', 'Unread For User')->states(self::SWITCH_STATES)->default(0);
             $form->switch('has_unread_support', 'Unread For Support')->states(self::SWITCH_STATES)->default(0);
+            $form->switch('is_movie_request', 'Is Movie Request')->states(self::SWITCH_STATES)->default(0);
             $form->number('rating_of_satisfaction', 'Rating')->min(1)->max(5)
                 ->help('Optional satisfaction rating from 1 to 5.');
             $form->number('reply_count', 'Replies')->min(0)->default(0);
             $form->datetime('last_reply_at', 'Last Reply');
+        });
+
+        $form->tab('Movie Request', function (Form $form) {
+            $payload = [];
+            try {
+                $payload = is_array($form->model()->movie_request_payload ?? null)
+                    ? $form->model()->movie_request_payload
+                    : [];
+            } catch (\Throwable $th) {
+                $payload = [];
+            }
+
+            $form->textarea('movie_request_payload_json', 'Movie Request Payload (JSON)')
+                ->default(!empty($payload) ? json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : '')
+                ->rows(10)
+                ->help('Optional: provide structured movie request payload as valid JSON. Leave blank to keep current value.');
+        });
+
+        $form->tab('Initial Record', function (Form $form) use ($actionTypeOptions) {
+            $form->textarea('initial_record_message', 'Initial Conversation Record')
+                ->rows(6)
+                ->help('Optional: if provided on create, this will create the first ticket record automatically.');
+
+            $form->select('initial_record_sender_type', 'Initial Sender Type')->options([
+                'support_team' => 'Support Team',
+                'user' => 'User',
+                'system' => 'System',
+                'auto' => 'Auto',
+            ])->default('support_team');
+
+            $form->select('initial_record_action_type', 'Initial Action Type')
+                ->options($actionTypeOptions)
+                ->default('none');
+
+            $form->text('initial_record_action_description', 'Initial Action Description')
+                ->help('Optional short context, e.g. "Ticket opened by admin for payment follow-up".');
+
+            $form->switch('initial_record_internal_note', 'Initial Internal Note')
+                ->states(self::SWITCH_STATES)
+                ->default(0);
+            $form->switch('initial_record_show_to_customer', 'Initial Show To Customer')
+                ->states(self::SWITCH_STATES)
+                ->default(1);
+            $form->switch('initial_record_customer_seen', 'Initial Mark Customer Seen')
+                ->states(self::SWITCH_STATES)
+                ->default(0);
         });
 
         $form->tab('Audit', function (Form $form) {
@@ -1175,11 +1672,80 @@ JSCODE;
             if (empty($form->reply_count)) {
                 $form->reply_count = 0;
             }
+
+            if (request()->has('movie_request_payload_json')) {
+                $rawPayload = trim((string) request()->input('movie_request_payload_json', ''));
+                if ($rawPayload === '') {
+                    $form->movie_request_payload = null;
+                } else {
+                    $decodedPayload = json_decode($rawPayload, true);
+                    if (json_last_error() !== JSON_ERROR_NONE || !is_array($decodedPayload)) {
+                        throw new \InvalidArgumentException('Movie Request Payload JSON is invalid.');
+                    }
+                    $form->movie_request_payload = $decodedPayload;
+                }
+            }
         });
 
         $form->saved(function (Form $form) {
             /** @var CustomerTicket $ticket */
             $ticket = $form->model();
+
+            if ($form->isCreating()) {
+                $initialMessage = trim((string) request()->input('initial_record_message', ''));
+                if ($initialMessage !== '') {
+                    $senderType = (string) request()->input('initial_record_sender_type', 'support_team');
+                    if (!in_array($senderType, ['support_team', 'user', 'system', 'auto'], true)) {
+                        $senderType = 'support_team';
+                    }
+
+                    $actionType = (string) request()->input('initial_record_action_type', 'none');
+                    if (!in_array($actionType, CustomerTicketRecord::$validActionTypes, true)) {
+                        $actionType = 'none';
+                    }
+
+                    $isInternal = (bool) request()->boolean('initial_record_internal_note', false);
+                    $showToCustomer = (bool) request()->boolean('initial_record_show_to_customer', !$isInternal);
+                    $customerSeen = (bool) request()->boolean('initial_record_customer_seen', false);
+
+                    $senderId = null;
+                    if ($senderType === 'support_team') {
+                        $senderId = auth('admin')->id();
+                    } elseif ($senderType === 'user') {
+                        $senderId = (int) ($ticket->user_id ?? 0);
+                    }
+
+                    CustomerTicketRecord::create([
+                        'customer_ticket_id' => (int) $ticket->id,
+                        'sender_type' => $senderType,
+                        'sender_id' => $senderId,
+                        'message' => $initialMessage,
+                        'action_type' => $actionType,
+                        'action_description' => (string) request()->input('initial_record_action_description', ''),
+                        'is_internal_note' => $isInternal,
+                        'show_to_customer' => $showToCustomer,
+                        'is_read_by_user' => $customerSeen,
+                        'customer_seen' => $customerSeen,
+                        'customer_seen_at' => $customerSeen ? now() : null,
+                        'is_read_by_support' => true,
+                    ]);
+
+                    $ticket->reply_count = ((int) $ticket->reply_count) + 1;
+                    $ticket->last_reply_at = now();
+                    if (!$isInternal && $showToCustomer && !$customerSeen && in_array($senderType, ['support_team', 'system', 'auto'], true)) {
+                        $ticket->has_unread_user = true;
+                    }
+                    if ($senderType === 'user') {
+                        $ticket->has_unread_support = true;
+                        $ticket->customer_has_responded = true;
+                    }
+                    if ($senderType === 'support_team') {
+                        $ticket->agent_has_contacted_customer = true;
+                    }
+                    $ticket->save();
+                }
+            }
+
             $this->logAudit(
                 auth('admin')->id(),
                 $form->isCreating() ? 'admin_ticket_created' : 'admin_ticket_updated',
@@ -1512,6 +2078,87 @@ JSCODE;
         })->values();
 
         return response()->json(['items' => $items]);
+    }
+
+    public function ajaxTicketDetails(Request $request, int $id)
+    {
+        $ticket = CustomerTicket::query()
+            ->with([
+                'user:id,name,email,phone_number,account_state,account_origin,last_online_at,created_at',
+                'assignedAgent:id,name,email,phone_number',
+                'records' => function ($query) {
+                    $query->with('sender:id,name,email,phone_number')
+                        ->orderByDesc('created_at')
+                        ->limit(80);
+                },
+            ])
+            ->find($id);
+
+        if (!$ticket) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ticket not found.',
+            ], 404);
+        }
+
+        $records = $ticket->records->map(function (CustomerTicketRecord $record) use ($ticket) {
+            $movieSuggestions = $this->adminBuildMovieSuggestions(
+                $this->adminExtractMovieSuggestionTitles($record, $ticket)
+            );
+
+            return [
+                'id' => (int) $record->id,
+                'sender_type' => (string) ($record->sender_type ?? ''),
+                'sender_name' => (string) ($record->sender->name ?? ucfirst((string) $record->sender_type)),
+                'sender_email' => (string) ($record->sender->email ?? ''),
+                'message' => (string) ($record->message ?? ''),
+                'message_body' => $this->adminStripSuggestedMoviesSection((string) $record->message),
+                'action_type' => (string) ($record->action_type ?? 'none'),
+                'action_description' => (string) ($record->action_description ?? ''),
+                'is_internal_note' => (bool) $record->is_internal_note,
+                'show_to_customer' => (bool) $record->show_to_customer,
+                'customer_seen' => (bool) $record->customer_seen,
+                'is_read_by_support' => (bool) $record->is_read_by_support,
+                'movie_suggestions' => $movieSuggestions,
+                'created_at' => optional($record->created_at)->toDateTimeString(),
+                'updated_at' => optional($record->updated_at)->toDateTimeString(),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'ticket' => [
+                    'id' => (int) $ticket->id,
+                    'status' => (string) ($ticket->status ?? ''),
+                    'ticket_type' => (string) ($ticket->ticket_type ?? ''),
+                    'resolution_state' => (string) ($ticket->resolution_state ?? ''),
+                    'subject' => (string) ($ticket->subject ?? ''),
+                    'app_type' => (string) ($ticket->app_type ?? ''),
+                    'platform_type' => (string) ($ticket->platform_type ?? ''),
+                    'platform' => (string) ($ticket->platform ?? ''),
+                    'account_origin' => (string) ($ticket->account_origin ?? ''),
+                    'assigned_to' => (int) ($ticket->assigned_to ?? 0),
+                    'assigned_to_name' => (string) ($ticket->assignedAgent->name ?? ''),
+                    'agent_has_contacted_customer' => (bool) $ticket->agent_has_contacted_customer,
+                    'customer_has_responded' => (bool) $ticket->customer_has_responded,
+                    'has_unread_support' => (bool) $ticket->has_unread_support,
+                    'has_unread_user' => (bool) $ticket->has_unread_user,
+                    'reply_count' => (int) ($ticket->reply_count ?? 0),
+                    'rating_of_satisfaction' => $ticket->rating_of_satisfaction,
+                    'last_reply_at' => optional($ticket->last_reply_at)->toDateTimeString(),
+                    'created_at' => optional($ticket->created_at)->toDateTimeString(),
+                    'updated_at' => optional($ticket->updated_at)->toDateTimeString(),
+                    'user_id' => (int) ($ticket->user_id ?? 0),
+                    'user_name' => (string) ($ticket->user->name ?? ''),
+                    'user_email' => (string) ($ticket->user->email ?? ''),
+                    'user_phone' => (string) ($ticket->user->phone_number ?? ''),
+                    'user_account_state' => (string) ($ticket->user->account_state ?? ''),
+                    'movie_request_payload' => is_array($ticket->movie_request_payload) ? $ticket->movie_request_payload : [],
+                ],
+                'records' => $records,
+            ],
+        ]);
     }
 
     public function ajaxRespondTicket(Request $request, int $id)

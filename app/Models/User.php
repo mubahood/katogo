@@ -56,7 +56,11 @@ class User extends Administrator implements JWTSubject
             if ($name != null && strlen($name) > 0) {
                 $model->name = $name;
             }
-            $model->username = $model->email;
+            if ($model->email != null && strlen((string) $model->email) > 0) {
+                $model->username = $model->email;
+            } elseif ($model->username == null || strlen((string) $model->username) < 1) {
+                $model->username = 'guest_' . substr(md5((string) microtime(true) . random_int(100, 999)), 0, 10);
+            }
 
             if ($model->password == null || strlen($model->password) < 3) {
                 $model->password = bcrypt('admin');
@@ -87,7 +91,9 @@ class User extends Administrator implements JWTSubject
             // Uniqueness enforced at DB level — old query-based checks had
             // inverted conditions (== null) and never fired. Removed (P4-12).
 
-            $model->username = $model->email;
+            if ($model->email != null && strlen((string) $model->email) > 0) {
+                $model->username = $model->email;
+            }
             return $model;
         });
 

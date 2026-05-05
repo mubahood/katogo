@@ -8,6 +8,7 @@ use App\Models\SubscriptionTransaction;
 use App\Models\User;
 use App\Services\PaymentStatusChecker;
 use Carbon\Carbon;
+use Encore\Admin\Facades\Admin;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
@@ -31,14 +32,22 @@ class SubscriptionController extends AdminController
     {
         return $content
             ->title($this->title())
-            ->description('Revenue analytics, subscription tracking & admin controls')
+            ->description('Subscription tracking & admin controls')
+            ->body($this->grid());
+    }
+
+    public function analytics(Content $content)
+    {
+        return $content
+            ->title('Subscription Data Analytics')
+            ->description('Data-only subscription insights and trends')
             ->row($this->buildStatsCards())
             ->row($this->buildChartsSection())
             ->row(function (Row $row) {
+                $row->column(12, '<div style="margin:8px 0 6px 0"><span class="label label-default" style="font-size:11px;padding:6px 8px">Secondary Subscription Statistics</span></div>');
                 $row->column(6, $this->appPlatformBreakdownBox());
                 $row->column(6, $this->expiringSubscriptionsBox());
-            })
-            ->body($this->grid());
+            });
     }
 
     // ─── COMPACT STAT CARDS ─────────────────────────────────────────────
@@ -108,8 +117,9 @@ class SubscriptionController extends AdminController
         $trendColor = $monthTrend > 0 ? '#28a745' : ($monthTrend < 0 ? '#dc3545' : '#6c757d');
         $churnColor = $churnRate > 30 ? '#dc3545' : ($churnRate > 15 ? '#f39c12' : '#28a745');
 
-        $prefix = config('admin.route.prefix', 'admin');
-        $base = $prefix ? "/{$prefix}/subscriptions" : "/subscriptions";
+        $urlCompleted = admin_url('subscriptions?payment_status=Completed');
+        $urlActive    = admin_url('subscriptions?status=Active');
+        $urlPending   = admin_url('subscriptions?payment_status=Pending');
 
         $html = <<<HTML
 <style>
@@ -130,7 +140,7 @@ class SubscriptionController extends AdminController
 .sub-app .app-row b{color:#222}
 </style>
 <div class="sub-stats">
-  <a href="{$base}?payment_status=Completed" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#28a745">
+  <a href="{$urlCompleted}" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#28a745">
     <div class="icon" style="background:#28a745"><i class="fa fa-money"></i></div>
     <div class="info"><div class="val">UGX {$this->fmt($totalRevenue)}</div><div class="lbl">Gross Revenue</div></div>
   </a>
@@ -142,7 +152,7 @@ class SubscriptionController extends AdminController
     <div class="icon" style="background:#17a2b8"><i class="fa fa-balance-scale"></i></div>
     <div class="info"><div class="val">UGX {$this->fmt($netBalance)}</div><div class="lbl">Net Balance</div></div>
   </div>
-  <a href="{$base}?status=Active" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#007bff">
+  <a href="{$urlActive}" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#007bff">
     <div class="icon" style="background:#007bff"><i class="fa fa-check-circle"></i></div>
     <div class="info"><div class="val">{$this->fmt($activeCount)}</div><div class="lbl">Active Subscriptions</div></div>
   </a>
@@ -153,7 +163,7 @@ class SubscriptionController extends AdminController
       <div class="lbl">This Month <i class="fa {$trendIcon}" style="color:{$trendColor};font-size:9px"></i> {$monthTrend}%</div>
     </div>
   </div>
-  <a href="{$base}?payment_status=Pending" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#dc3545">
+  <a href="{$urlPending}" style="text-decoration:none;color:inherit" class="sub-stat" style="border-color:#dc3545">
     <div class="icon" style="background:#dc3545"><i class="fa fa-clock-o"></i></div>
     <div class="info"><div class="val">{$pendingCount}</div><div class="lbl">Pending Payments</div></div>
   </a>
@@ -570,22 +580,21 @@ $(document).on('pjax:end',_scInit);
         $grid->model()->orderBy('id', 'desc');
 
         // Quick-filter links above grid
-        $prefix = config('admin.route.prefix', 'admin');
-        $base = $prefix ? "/{$prefix}/subscriptions" : "/subscriptions";
-        $grid->header(function () use ($base) {
+        $grid->header(function () {
             $filters = [
-                ['All',       $base,                              'default'],
-                ['Active',    $base . '?status=Active',                     'success'],
-                ['Pending',   $base . '?payment_status=Pending',            'warning'],
-                ['Failed',    $base . '?payment_status=Failed',             'danger'],
-                ['Expired',   $base . '?status=Expired',                    'default'],
-                ['Cancelled', $base . '?status=Cancelled',                  'default'],
-                ['Completed', $base . '?payment_status=Completed',          'success'],
+                ['All',       admin_url('subscriptions'),                                    'default'],
+                ['Active',    admin_url('subscriptions') . '?status=Active',                'success'],
+                ['Pending',   admin_url('subscriptions') . '?payment_status=Pending',       'warning'],
+                ['Failed',    admin_url('subscriptions') . '?payment_status=Failed',        'danger'],
+                ['Expired',   admin_url('subscriptions') . '?status=Expired',               'default'],
+                ['Cancelled', admin_url('subscriptions') . '?status=Cancelled',             'default'],
+                ['Completed', admin_url('subscriptions') . '?payment_status=Completed',     'success'],
             ];
-            $html = '<div style="margin-bottom:12px">';
+            $html = '<div style="margin-bottom:8px">';
             foreach ($filters as [$label, $url, $type]) {
                 $html .= "<a href='{$url}' class='btn btn-sm btn-{$type}' style='margin-right:4px;margin-bottom:4px'>{$label}</a>";
             }
+            $html .= "<a href='" . admin_url('subscriptions/analytics') . "' class='btn btn-sm btn-info' style='margin-right:4px;margin-bottom:4px'><i class='fa fa-line-chart'></i> Data Analytics</a>";
             $html .= '</div>';
             return $html;
         });
@@ -600,6 +609,7 @@ $(document).on('pjax:end',_scInit);
                   ->orWhereHas('user', function ($u) use ($q) {
                       $u->where('name', 'like', "%{$q}%")
                         ->orWhere('email', 'like', "%{$q}%")
+                    ->orWhere('phone_number', 'like', "%{$q}%")
                         ->orWhere('id', '=', is_numeric($q) ? (int)$q : 0);
                   });
                 // Also search subscription_transactions by pesapal_tracking_id
@@ -648,14 +658,16 @@ $(document).on('pjax:end',_scInit);
                     if ($q !== '') {
                         $query->whereHas('user', function ($u) use ($q) {
                             if (is_numeric($q)) {
-                                $u->where('id', (int)$q);
+                                $u->where('id', (int)$q)
+                                  ->orWhere('phone_number', 'like', "%{$q}%");
                             } else {
                                 $u->where('name', 'like', "%{$q}%")
-                                   ->orWhere('email', 'like', "%{$q}%");
+                                   ->orWhere('email', 'like', "%{$q}%")
+                                   ->orWhere('phone_number', 'like', "%{$q}%");
                             }
                         });
                     }
-                }, 'User (name/email/ID)');
+                }, 'User (name/phone/email/ID)');
                 $filter->between('created_at', 'Created')->datetime();
                 $filter->between('amount_paid', 'Amount');
             });
@@ -679,13 +691,26 @@ $(document).on('pjax:end',_scInit);
 
         $grid->column('user.name', 'Subscriber')->display(function () {
             if ($this->user) {
-                $prefix = config('admin.route.prefix', 'admin');
-                $userUrl = $prefix ? "/{$prefix}/users/{$this->user->id}" : "/users/{$this->user->id}";
+                $userUrl = admin_url('users/' . $this->user->id);
                 $name = e($this->user->name);
                 $email = e($this->user->email);
                 return "<a href='{$userUrl}'><b>{$name}</b></a><br><small class='text-muted'>{$email}</small>";
             }
             return '<span class="text-danger">User not found</span>';
+        });
+
+        $grid->column('user.phone_number', 'Phone')->display(function ($phone) {
+            $v = trim((string) $phone);
+            if ($v === '') {
+                return '<span class="text-muted">-</span>';
+            }
+            $digits = preg_replace('/\D+/', '', $v) ?? '';
+            $wa = $digits !== '' ? ('https://wa.me/' . $digits) : '';
+            $safe = e($v);
+            if ($wa !== '') {
+                return "<a href='{$wa}' target='_blank'><i class='fa fa-whatsapp text-success'></i> {$safe}</a>";
+            }
+            return $safe;
         });
 
         $grid->column('plan.name', 'Plan')->display(function () {
@@ -722,6 +747,21 @@ $(document).on('pjax:end',_scInit);
             return "<span class='label label-{$t}'>{$ps}</span>";
         })->sortable();
 
+        $grid->column('subscription_snapshot', 'Details')->display(function () {
+            $status = e((string) ($this->status ?? '-'));
+            $payment = e((string) ($this->payment_status ?? '-'));
+            $plan = e((string) ($this->plan->name ?? 'No plan'));
+            $start = $this->start_date_time ? Carbon::parse($this->start_date_time)->format('d M Y') : '-';
+            $end = $this->end_date_time ? Carbon::parse($this->end_date_time)->format('d M Y') : '-';
+            $amount = number_format((float) ($this->amount_paid ?? 0));
+            $currency = e((string) ($this->currency ?? 'UGX'));
+            return "<div style='font-size:11px;line-height:1.35'>"
+                . "<div><span class='label label-info' style='margin-right:3px'>{$status}</span><span class='label label-default'>{$payment}</span></div>"
+                . "<div style='margin-top:3px'><b>{$plan}</b> • {$currency} {$amount}</div>"
+                . "<div class='text-muted' style='margin-top:2px'>Start: {$start} | End: {$end}</div>"
+                . "</div>";
+        })->width(260);
+
         $grid->column('days_remaining', 'Time Left')->display(function () {
             if ($this->status === 'Active' && $this->end_date_time) {
                 $days = (int)Carbon::now()->diffInDays(Carbon::parse($this->end_date_time), false);
@@ -753,6 +793,18 @@ $(document).on('pjax:end',_scInit);
             $short = Str::limit($v, 16);
             return "<small title='" . e($v) . "'>{$short}</small>";
         })->hide();
+
+        $grid->column('record_actions', 'Actions')->display(function () {
+            $canRecheck = !empty($this->pesapal_tracking_id) && ($this->payment_status !== 'Completed');
+            $fixAction = $canRecheck ? 'recheck-payment' : 'activate';
+            $fixLabel = $canRecheck ? 'Trigger Recheck' : 'Trigger Activate';
+            $fixClass = $canRecheck ? 'btn-warning' : 'btn-success';
+
+            return "<div style='display:flex;flex-wrap:wrap;gap:4px'>"
+                . "<button type='button' class='btn btn-xs btn-info js-sub-details' data-id='" . (int) $this->id . "'><i class='fa fa-eye'></i> Details</button>"
+                . "<button type='button' class='btn btn-xs {$fixClass} js-sub-quick-fix' data-id='" . (int) $this->id . "' data-action='{$fixAction}'><i class='fa fa-wrench'></i> {$fixLabel}</button>"
+                . "</div>";
+        });
 
         // Export — clean, human-readable CSV (no HTML)
         $grid->export(function ($export) {
@@ -814,7 +866,219 @@ $(document).on('pjax:end',_scInit);
             $batch->disableDelete();
         });
 
+        $ajaxActionUrlTemplate = admin_url('api/subscriptions/__ID__/action');
+        $ajaxDetailsUrlTemplate = admin_url('subscriptions/__ID__/ajax-details');
+        $csrf = csrf_token();
+
+        Admin::html(<<<HTML
+<div class="modal fade" id="subDetailsModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content" style="border-radius:0">
+      <div class="modal-header" style="background:#2f3a4b;color:#fff;border-bottom:0;padding:8px 14px">
+        <button type="button" class="close" data-dismiss="modal" style="color:#fff;opacity:1">&times;</button>
+        <h4 class="modal-title" style="font-size:15px;font-weight:700"><i class="fa fa-credit-card"></i> Subscription Details</h4>
+      </div>
+      <div class="modal-body" id="subDetailBody" style="background:#f5f7fa;padding:12px 14px;max-height:72vh;overflow-y:auto">
+        <div class="text-center" style="padding:30px 0"><i class="fa fa-spinner fa-spin fa-2x text-muted"></i></div>
+      </div>
+      <div class="modal-footer" style="background:#f5f7fa;border-top:1px solid #ddd;padding:8px 14px">
+        <a id="subDetailFullLink" href="#" class="btn btn-sm btn-default" target="_blank"><i class="fa fa-external-link"></i> Full Page</a>
+        <button type="button" class="btn btn-sm btn-default" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+HTML);
+
+        Admin::script(<<<JS
+(function () {
+    var actionTpl = '{$ajaxActionUrlTemplate}';
+    var detailsTpl = '{$ajaxDetailsUrlTemplate}';
+    var token = '{$csrf}';
+
+    // ── Details popup ──────────────────────────────────────────────────
+    $(document).off('click.subdet', '.js-sub-details').on('click.subdet', '.js-sub-details', function () {
+        var id = $(this).data('id');
+        if (!id) return;
+        var body = $('#subDetailBody');
+        body.html('<div class="text-center" style="padding:30px 0"><i class="fa fa-spinner fa-spin fa-2x text-muted"></i></div>');
+        $('#subDetailFullLink').attr('href', detailsTpl.replace('__ID__', id).replace('/ajax-details', ''));
+        $('#subDetailsModal').modal('show');
+
+        $.ajax({
+            url: detailsTpl.replace('__ID__', encodeURIComponent(String(id))),
+            type: 'GET',
+            dataType: 'json',
+            success: function (res) {
+                if (!res || !res.success) {
+                    body.html('<div class="alert alert-danger">' + (res && res.message ? res.message : 'Failed to load details.') + '</div>');
+                    return;
+                }
+                var d = res.data;
+                var s = d.subscription;
+                var u = d.user;
+                var txns = d.transactions || [];
+
+                function badge(val, map) {
+                    var cls = (map && map[val]) ? map[val] : 'default';
+                    return '<span class="label label-' + cls + '">' + (val || '-') + '</span>';
+                }
+
+                var statusMap = { Active: 'success', Pending: 'warning', Expired: 'danger', Cancelled: 'default', Failed: 'danger' };
+                var payMap = { Completed: 'success', Pending: 'warning', Processing: 'info', Failed: 'danger' };
+
+                var txnRows = '';
+                for (var i = 0; i < txns.length; i++) {
+                    var t = txns[i];
+                    txnRows += '<tr><td>' + (t.id || '-') + '</td><td>' + (t.amount || '0') + ' ' + (t.currency || '') + '</td>'
+                        + '<td>' + badge(t.status, { success: 'success', pending: 'warning', failed: 'danger' }) + '</td>'
+                        + '<td>' + (t.payment_method || '-') + '</td>'
+                        + '<td style="font-size:11px">' + (t.created_at || '-') + '</td></tr>';
+                }
+
+                var html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';
+                function cell(k, v) { return '<div style="background:#fff;border:1px solid #dde2e7;padding:7px 10px"><div style="font-size:10px;text-transform:uppercase;color:#6c7f8f;margin-bottom:2px">' + k + '</div><div style="font-size:13px;font-weight:700;color:#2d3a47">' + (v || '-') + '</div></div>'; }
+
+                html += cell('Status', badge(s.status, statusMap));
+                html += cell('Payment', badge(s.payment_status, payMap));
+                html += cell('Plan', s.plan_name || '-');
+                html += cell('Amount', (s.currency || 'UGX') + ' ' + (s.amount_paid ? Number(s.amount_paid).toLocaleString() : '0'));
+                html += cell('Start', s.start_date_time || '-');
+                html += cell('End', s.end_date_time || '-');
+                html += cell('App', s.app_type || '-');
+                html += cell('Platform', s.platform || '-');
+                html += cell('Days', s.days || '-');
+                html += '</div>';
+
+                html += '<div style="background:#fff;border:1px solid #dde2e7;padding:8px 10px;margin-bottom:10px">';
+                html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#5a6a78;margin-bottom:6px"><i class="fa fa-user"></i> Subscriber</div>';
+                html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
+                html += cell('Name', u.name);
+                html += cell('Phone', u.phone ? '<a href="https://wa.me/' + u.phone.replace(/\\D/g, '') + '" target="_blank">' + u.phone + '</a>' : '-');
+                html += cell('Email', u.email);
+                html += cell('Account State', u.account_state || '-');
+                html += cell('Member Since', u.created_at || '-');
+                html += cell('Last Online', u.last_online_at || '-');
+                html += '</div></div>';
+
+                if (s.pesapal_tracking_id) {
+                    html += '<div style="background:#fff;border:1px solid #dde2e7;padding:7px 10px;margin-bottom:10px">';
+                    html += '<div style="font-size:10px;text-transform:uppercase;color:#6c7f8f;margin-bottom:2px">Pesapal Tracking ID</div>';
+                    html += '<code style="font-size:12px">' + s.pesapal_tracking_id + '</code></div>';
+                }
+
+                if (txns.length) {
+                    html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#5a6a78;margin-bottom:4px"><i class="fa fa-exchange"></i> Transactions (' + txns.length + ')</div>';
+                    html += '<div style="overflow-x:auto"><table class="table table-condensed table-bordered" style="background:#fff;font-size:12px;margin-bottom:0">';
+                    html += '<thead><tr><th>#</th><th>Amount</th><th>Status</th><th>Method</th><th>Date</th></tr></thead>';
+                    html += '<tbody>' + txnRows + '</tbody></table></div>';
+                } else {
+                    html += '<div class="text-muted" style="font-size:12px">No transactions recorded.</div>';
+                }
+
+                body.html(html);
+            },
+            error: function (xhr) {
+                var msg = 'Failed to load details.';
+                if (xhr && xhr.responseJSON && xhr.responseJSON.message) msg = xhr.responseJSON.message;
+                body.html('<div class="alert alert-danger">' + msg + '</div>');
+            }
+        });
+    });
+
+    // ── Quick Fix ──────────────────────────────────────────────────────
+    $(document).off('click.subfix', '.js-sub-quick-fix').on('click.subfix', '.js-sub-quick-fix', function () {
+        var btn = $(this);
+        var id = btn.data('id');
+        var action = String(btn.data('action') || '');
+        if (!id || !action) return;
+
+        if (!confirm('Run ' + action + ' on subscription #' + id + '?')) {
+            return;
+        }
+
+        btn.prop('disabled', true);
+        $.ajax({
+            url: actionTpl.replace('__ID__', encodeURIComponent(String(id))),
+            type: 'POST',
+            dataType: 'json',
+            data: { _token: token, action: action },
+            success: function (res) {
+                if (res && res.success) {
+                    toastr.success(res.message || 'Action completed.');
+                    setTimeout(function () { location.reload(); }, 700);
+                    return;
+                }
+                toastr.error((res && res.message) ? res.message : 'Action failed.');
+                btn.prop('disabled', false);
+            },
+            error: function (xhr) {
+                var msg = 'Action failed.';
+                if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                    msg = xhr.responseJSON.message;
+                }
+                toastr.error(msg);
+                btn.prop('disabled', false);
+            }
+        });
+    });
+}());
+JS);
+
         return $grid;
+    }
+
+    // ─── AJAX DETAILS POPUP ─────────────────────────────────────────────
+    public function ajaxDetails(Request $request, int $id)
+    {
+        $subscription = Subscription::with(['user', 'plan', 'transactions'])->find($id);
+
+        if (!$subscription) {
+            return response()->json(['success' => false, 'message' => 'Subscription not found.'], 404);
+        }
+
+        $user = $subscription->user;
+        $plan = $subscription->plan;
+
+        $transactions = $subscription->transactions->map(function ($t) {
+            return [
+                'id'             => (int) $t->id,
+                'amount'         => $t->amount ?? 0,
+                'currency'       => (string) ($t->currency ?? 'UGX'),
+                'status'         => (string) ($t->status ?? ''),
+                'payment_method' => (string) ($t->payment_method ?? '-'),
+                'created_at'     => optional($t->created_at)->format('Y-m-d H:i'),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'subscription' => [
+                    'id'                   => (int) $subscription->id,
+                    'status'               => (string) ($subscription->status ?? ''),
+                    'payment_status'       => (string) ($subscription->payment_status ?? ''),
+                    'plan_name'            => (string) ($plan->name ?? '-'),
+                    'amount_paid'          => $subscription->amount_paid ?? 0,
+                    'currency'             => (string) ($subscription->currency ?? 'UGX'),
+                    'days'                 => $subscription->days ?? '-',
+                    'start_date_time'      => optional($subscription->start_date_time)->format('Y-m-d H:i'),
+                    'end_date_time'        => optional($subscription->end_date_time)->format('Y-m-d H:i'),
+                    'app_type'             => (string) ($subscription->app_type ?? ''),
+                    'platform'             => (string) ($subscription->platform ?? ''),
+                    'pesapal_tracking_id'  => (string) ($subscription->pesapal_tracking_id ?? ''),
+                ],
+                'user' => [
+                    'name'          => (string) ($user->name ?? '-'),
+                    'email'         => (string) ($user->email ?? ''),
+                    'phone'         => (string) ($user->phone_number ?? ''),
+                    'account_state' => (string) ($user->account_state ?? ''),
+                    'created_at'    => optional($user->created_at)->format('Y-m-d'),
+                    'last_online_at'=> optional($user->last_online_at)->format('Y-m-d H:i'),
+                ],
+                'transactions' => $transactions,
+            ],
+        ]);
     }
 
     // ─── DETAIL / SHOW ──────────────────────────────────────────────────
@@ -822,8 +1086,7 @@ $(document).on('pjax:end',_scInit);
     {
         $subscription = Subscription::with(['user', 'plan', 'transactions'])->findOrFail($id);
         $show = new Show($subscription);
-        $prefix = config('admin.route.prefix', 'admin');
-        $show->resource($prefix ? "/{$prefix}/subscriptions" : '/subscriptions');
+        $show->resource(admin_url('subscriptions'));
 
         $show->panel()->title('Subscription #' . $subscription->id);
 
@@ -1011,8 +1274,7 @@ $(function(){
     protected function form()
     {
         $form = new Form(new Subscription());
-        $prefix = config('admin.route.prefix', 'admin');
-        $userSearchUrl = $prefix ? "/{$prefix}/api/users" : "/api/users";
+        $userSearchUrl = admin_url('api/users');
 
         $form->tab('Subscription', function ($form) use ($userSearchUrl) {
             $form->select('user_id', 'User')
