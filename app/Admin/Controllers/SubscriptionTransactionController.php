@@ -417,10 +417,6 @@ class SubscriptionTransactionController extends AdminController
     {
         $grid = new Grid(new SubscriptionTransaction());
         $grid->model()->orderBy('id', 'desc');
-        //check if status is not set by get
-        if (!request()->has('status')) {
-            $grid->model()->where('status', 'Completed');
-        }
 
         // Quick filters
         $grid->quickSearch('pesapal_tracking_id', 'merchant_reference', 'confirmation_code');
