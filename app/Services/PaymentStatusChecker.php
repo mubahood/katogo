@@ -28,10 +28,15 @@ use Illuminate\Support\Facades\Cache;
 class PaymentStatusChecker
 {
     protected $pesapalService;
+    protected $flutterwaveService;
 
-    public function __construct(SubscriptionPesapalService $pesapalService)
+    public function __construct(
+        SubscriptionPesapalService $pesapalService,
+        SubscriptionFlutterwaveService $flutterwaveService
+    )
     {
         $this->pesapalService = $pesapalService;
+        $this->flutterwaveService = $flutterwaveService;
     }
 
     /**
@@ -49,6 +54,7 @@ class PaymentStatusChecker
 
         Log::info('🔍 PaymentStatusChecker: Starting payment status check', [
             'subscription_id' => $subscription->id,
+            'gateway' => $subscription->payment_gateway ?? $subscription->payment_method,
             'tracking_id' => $subscription->pesapal_tracking_id,
             'max_retries' => $maxRetries,
         ]);
@@ -70,15 +76,22 @@ class PaymentStatusChecker
         }
 
         try {
-            // Verify tracking ID exists
-            if (!$subscription->pesapal_tracking_id) {
+            $gateway = strtolower((string) ($subscription->payment_gateway ?: $subscription->payment_method ?: 'pesapal'));
+            $gateway = in_array($gateway, ['pesapal', 'flutterwave'], true) ? $gateway : 'pesapal';
+            $trackingId = $gateway === 'flutterwave'
+                ? ($subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference)
+                : $subscription->pesapal_tracking_id;
+
+            // Verify payment identifier exists
+            if (empty($trackingId)) {
                 Log::error('❌ PaymentStatusChecker: No tracking ID found', [
                     'subscription_id' => $subscription->id,
+                    'gateway' => $gateway,
                 ]);
 
                 return [
                     'success' => false,
-                    'error' => 'No payment tracking ID found',
+                    'error' => 'No payment identifier found',
                 ];
             }
 
@@ -108,16 +121,44 @@ class PaymentStatusChecker
                 try {
                     Log::info("🔄 PaymentStatusChecker: Attempt {$attempt}/{$maxRetries}", [
                         'subscription_id' => $subscription->id,
+                        'gateway' => $gateway,
                     ]);
 
+                    if ($gateway === 'flutterwave') {
+                        $result = DB::transaction(function () use ($subscription, $trackingId) {
+                            $lockedSubscription = Subscription::lockForUpdate()->find($subscription->id);
+
+                            if (!$lockedSubscription) {
+                                throw new \Exception('Subscription not found');
+                            }
+
+                            if ($this->isAlreadyProcessed($lockedSubscription)) {
+                                return [
+                                    'status' => 'success',
+                                    'subscription' => $lockedSubscription,
+                                    'already_processed' => true,
+                                ];
+                            }
+
+                            return $this->flutterwaveService->processCallbackWithFallback((string) $trackingId, null);
+                        });
+
+                        Log::info('✅ PaymentStatusChecker: Flutterwave status check successful', [
+                            'subscription_id' => $subscription->id,
+                            'attempt' => $attempt,
+                            'status' => $result['status'] ?? 'unknown',
+                        ]);
+
+                        $lock->release();
+                        return array_merge($result, ['success' => true, 'attempts' => $attempt]);
+                    }
+
                     // Query Pesapal API
-                    $statusResult = $this->pesapalService->getTransactionStatus(
-                        $subscription->pesapal_tracking_id
-                    );
+                    $statusResult = $this->pesapalService->getTransactionStatus((string) $trackingId);
 
                     if ($statusResult['success']) {
                         // Process status update within database transaction
-                        $result = DB::transaction(function () use ($subscription, $statusResult) {
+                        $result = DB::transaction(function () use ($subscription, $statusResult, $trackingId) {
                             // Re-fetch subscription with lock to prevent race conditions
                             $lockedSubscription = Subscription::lockForUpdate()
                                 ->find($subscription->id);
@@ -137,7 +178,7 @@ class PaymentStatusChecker
 
                             // Update subscription status
                             $updateResult = $this->pesapalService->updateSubscriptionStatus(
-                                $subscription->pesapal_tracking_id,
+                                (string) $trackingId,
                                 $statusResult['data']
                             );
 
@@ -158,6 +199,7 @@ class PaymentStatusChecker
                     $lastError = $statusResult['error'] ?? 'Unknown error';
                     Log::warning("⚠️ PaymentStatusChecker: Attempt {$attempt} failed", [
                         'subscription_id' => $subscription->id,
+                        'gateway' => $gateway,
                         'error' => $lastError,
                     ]);
 
@@ -165,6 +207,7 @@ class PaymentStatusChecker
                     $lastError = $e->getMessage();
                     Log::error("❌ PaymentStatusChecker: Attempt {$attempt} exception", [
                         'subscription_id' => $subscription->id,
+                        'gateway' => $gateway,
                         'error' => $lastError,
                         'trace' => $e->getTraceAsString(),
                     ]);
@@ -258,7 +301,10 @@ class PaymentStatusChecker
         // Find pending subscriptions
         $pendingSubscriptions = Subscription::whereIn('status', ['Pending', 'Failed', 'Cancelled'])
             ->whereIn('payment_status', ['Pending', 'Processing', 'Failed'])
-            ->whereNotNull('pesapal_tracking_id')
+            ->where(function ($query) {
+                $query->whereNotNull('pesapal_tracking_id')
+                    ->orWhereNotNull('flutterwave_reference');
+            })
             ->where('created_at', '<', $threshold)
             ->where('created_at', '>', $maxAgeThreshold)
             ->orderBy('created_at', 'desc')
