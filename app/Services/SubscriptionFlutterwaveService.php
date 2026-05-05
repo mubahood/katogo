@@ -344,9 +344,45 @@ class SubscriptionFlutterwaveService
 
     public function processCallbackWithFallback(string $txRef, ?string $transactionId = null): array
     {
+        $subscription = Subscription::where('pesapal_merchant_reference', $txRef)
+            ->orWhere('flutterwave_reference', $txRef)
+            ->first();
+
+        if (!$subscription) {
+            throw new \RuntimeException('Subscription not found for Flutterwave reference: ' . $txRef);
+        }
+
         try {
             $verified = $this->verifyByReference($txRef);
         } catch (\Exception $primaryException) {
+            $message = (string) $primaryException->getMessage();
+
+            if ($this->isVerificationNotFoundError($message) && empty($transactionId)) {
+                $subscription->status = 'Failed';
+                $subscription->payment_status = 'Failed';
+                $subscription->failed_at = now();
+                $subscription->payment_failure_reason = $message;
+                $subscription->save();
+
+                $transaction = $this->upsertTransactionRecord(
+                    $subscription,
+                    ['tx_ref' => $txRef],
+                    'Failed',
+                    $message
+                );
+
+                Cache::forget("sub_pending_{$subscription->user_id}");
+                Cache::forget("active_sub_{$subscription->user_id}");
+                Cache::forget("v2_pay_check_{$subscription->user_id}");
+
+                return [
+                    'status' => 'failed',
+                    'subscription' => $subscription,
+                    'transaction' => $transaction,
+                    'verified' => ['status' => 'error', 'message' => $message],
+                ];
+            }
+
             if (empty($transactionId)) {
                 throw $primaryException;
             }
@@ -360,16 +396,8 @@ class SubscriptionFlutterwaveService
             Log::warning('Flutterwave verify_by_reference failed; verify_by_transaction_id fallback succeeded', [
                 'tx_ref' => $txRef,
                 'transaction_id' => $transactionId,
-                'error' => $primaryException->getMessage(),
+                'error' => $message,
             ]);
-        }
-
-        $subscription = Subscription::where('pesapal_merchant_reference', $txRef)
-            ->orWhere('flutterwave_reference', $txRef)
-            ->first();
-
-        if (!$subscription) {
-            throw new \RuntimeException('Subscription not found for Flutterwave reference: ' . $txRef);
         }
 
         $flwStatus = strtolower((string) ($verified['data']['status'] ?? ''));
@@ -465,6 +493,14 @@ class SubscriptionFlutterwaveService
             'transaction' => $transaction,
             'verified' => $verified,
         ];
+    }
+
+    private function isVerificationNotFoundError(string $message): bool
+    {
+        $needle = strtolower($message);
+        return str_contains($needle, 'no transaction was found for this id')
+            || str_contains($needle, 'no transaction found')
+            || str_contains($needle, '404');
     }
 
     public function isValidWebhook(string $rawBody, ?string $signature): bool
