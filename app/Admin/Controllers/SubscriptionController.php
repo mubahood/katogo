@@ -687,14 +687,15 @@ $(document).on('pjax:end',_scInit);
             $map = ['android' => '<i class="fa fa-android" style="color:#a4c639"></i> Android',
                     'ios' => '<i class="fa fa-apple" style="color:#555"></i> iOS'];
             return $map[strtolower($p ?? '')] ?? ucfirst($p ?? '-');
-        })->sortable();
+        })->sortable()->hide();
 
         $grid->column('user.name', 'Subscriber')->display(function () {
             if ($this->user) {
                 $userUrl = admin_url('users/' . $this->user->id);
                 $name = e($this->user->name);
-                $email = e($this->user->email);
-                return "<a href='{$userUrl}'><b>{$name}</b></a><br><small class='text-muted'>{$email}</small>";
+                $phone = e($this->user->phone_number ?? '');
+                $phoneLine = $phone !== '' ? "<small class='text-muted'>{$phone}</small>" : "<small class='text-muted' style='opacity:.5'>No phone</small>";
+                return "<a href='{$userUrl}'><b>{$name}</b></a><br>{$phoneLine}";
             }
             return '<span class="text-danger">User not found</span>';
         });
@@ -724,7 +725,7 @@ $(document).on('pjax:end',_scInit);
                 return "<b>{$name}</b><br>{$badge}";
             }
             return '<span class="text-muted">-</span>';
-        });
+        })->hide();
 
         $grid->column('amount_paid', 'Amount')->display(function ($amt) {
             $cur = $this->currency ?? 'UGX';
@@ -786,7 +787,7 @@ $(document).on('pjax:end',_scInit);
 
         $grid->column('created_at', 'Created')->display(function ($d) {
             return Carbon::parse($d)->format('Y-m-d H:i');
-        })->sortable();
+        })->sortable()->hide();
 
         $grid->column('pesapal_tracking_id', 'Pesapal ID')->display(function ($v) {
             if (!$v) return '-';
@@ -871,6 +872,7 @@ $(document).on('pjax:end',_scInit);
         $csrf = csrf_token();
 
         Admin::html(<<<HTML
+<!-- Subscription Details Modal -->
 <div class="modal fade" id="subDetailsModal" tabindex="-1" role="dialog">
   <div class="modal-dialog modal-lg" role="document">
     <div class="modal-content" style="border-radius:0">
@@ -884,6 +886,30 @@ $(document).on('pjax:end',_scInit);
       <div class="modal-footer" style="background:#f5f7fa;border-top:1px solid #ddd;padding:8px 14px">
         <a id="subDetailFullLink" href="#" class="btn btn-sm btn-default" target="_blank"><i class="fa fa-external-link"></i> Full Page</a>
         <button type="button" class="btn btn-sm btn-default" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Auto-Fix / Activate Modal -->
+<div class="modal fade" id="subFixModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
+  <div class="modal-dialog" role="document" style="max-width:520px">
+    <div class="modal-content" style="border-radius:0">
+      <div class="modal-header" id="subFixModalHeader" style="background:#2c6fad;color:#fff;border-bottom:0;padding:8px 14px">
+        <h4 class="modal-title" id="subFixModalTitle" style="font-size:15px;font-weight:700"><i class="fa fa-wrench"></i> Auto Fix</h4>
+      </div>
+      <div class="modal-body" style="padding:16px">
+        <div id="subFixProgress" style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <i class="fa fa-spinner fa-spin fa-lg" id="subFixSpinner" style="color:#2c6fad"></i>
+            <span id="subFixStatusText" style="font-weight:600;font-size:14px">Preparing…</span>
+          </div>
+          <div style="background:#f4f6f8;border:1px solid #e0e5ea;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;max-height:220px;overflow-y:auto" id="subFixLog"></div>
+        </div>
+        <div id="subFixResult" style="display:none"></div>
+      </div>
+      <div class="modal-footer" style="padding:8px 14px;border-top:1px solid #eee">
+        <button type="button" class="btn btn-sm btn-default" id="subFixCloseBtn" data-dismiss="modal" disabled>Close</button>
       </div>
     </div>
   </div>
@@ -993,32 +1019,85 @@ HTML);
         var action = String(btn.data('action') || '');
         if (!id || !action) return;
 
-        if (!confirm('Run ' + action + ' on subscription #' + id + '?')) {
-            return;
+        var isRecheck = action === 'recheck-payment';
+        var headerColor = isRecheck ? '#b07d00' : '#1a7a3c';
+        var icon = isRecheck ? 'fa-refresh' : 'fa-bolt';
+        var label = isRecheck ? 'Re-check Payment' : 'Activate Subscription';
+
+        // Prepare modal
+        $('#subFixModalHeader').css('background', headerColor);
+        $('#subFixModalTitle').html('<i class="fa ' + icon + '"></i> ' + label + ' — #' + id);
+        $('#subFixSpinner').show().css('color', headerColor);
+        $('#subFixStatusText').text('Sending request…').css('color', '#333');
+        $('#subFixLog').html('<span style="color:#888">▶ Initiating ' + action + ' for subscription #' + id + '…</span>');
+        $('#subFixResult').hide().html('');
+        $('#subFixCloseBtn').prop('disabled', true);
+        $('#subFixModal').modal('show');
+
+        function log(msg, color) {
+            var ts = new Date().toTimeString().slice(0,8);
+            $('#subFixLog').append('<br><span style="color:' + (color||'#444') + '">[' + ts + '] ' + msg + '</span>');
+            var el = document.getElementById('subFixLog');
+            el.scrollTop = el.scrollHeight;
         }
 
-        btn.prop('disabled', true);
+        log('Connected. Running: ' + action + '…');
+
         $.ajax({
             url: actionTpl.replace('__ID__', encodeURIComponent(String(id))),
             type: 'POST',
             dataType: 'json',
             data: { _token: token, action: action },
             success: function (res) {
-                if (res && res.success) {
-                    toastr.success(res.message || 'Action completed.');
-                    setTimeout(function () { location.reload(); }, 700);
-                    return;
+                var ok = res && res.success;
+                $('#subFixSpinner').hide();
+
+                if (ok) {
+                    log('✓ ' + (res.message || 'Completed successfully.'), '#1a7a3c');
+                    // Show any extra steps from response
+                    if (res.steps && Array.isArray(res.steps)) {
+                        for (var i = 0; i < res.steps.length; i++) {
+                            log('  · ' + res.steps[i], '#2c6fad');
+                        }
+                    }
+                    $('#subFixStatusText').text('Completed').css('color', '#1a7a3c');
+                    $('#subFixResult').show().html(
+                        '<div class="alert alert-success" style="margin:0;padding:8px 12px;font-size:13px">'
+                        + '<i class="fa fa-check-circle"></i> ' + (res.message || 'Action completed successfully.')
+                        + '</div>'
+                    );
+                    // Reload grid after short delay
+                    setTimeout(function () {
+                        $('#subFixModal').modal('hide');
+                        location.reload();
+                    }, 1800);
+                } else {
+                    log('✗ ' + (res && res.message ? res.message : 'Action failed.'), '#c0392b');
+                    $('#subFixStatusText').text('Failed').css('color', '#c0392b');
+                    $('#subFixResult').show().html(
+                        '<div class="alert alert-danger" style="margin:0;padding:8px 12px;font-size:13px">'
+                        + '<i class="fa fa-times-circle"></i> ' + (res && res.message ? res.message : 'Action failed.')
+                        + '</div>'
+                    );
                 }
-                toastr.error((res && res.message) ? res.message : 'Action failed.');
-                btn.prop('disabled', false);
+                $('#subFixCloseBtn').prop('disabled', false);
             },
             error: function (xhr) {
-                var msg = 'Action failed.';
+                var msg = 'Request failed.';
                 if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
                     msg = xhr.responseJSON.message;
+                } else if (xhr && xhr.status) {
+                    msg = 'HTTP ' + xhr.status + ' error.';
                 }
-                toastr.error(msg);
-                btn.prop('disabled', false);
+                $('#subFixSpinner').hide();
+                log('✗ ' + msg, '#c0392b');
+                $('#subFixStatusText').text('Error').css('color', '#c0392b');
+                $('#subFixResult').show().html(
+                    '<div class="alert alert-danger" style="margin:0;padding:8px 12px;font-size:13px">'
+                    + '<i class="fa fa-exclamation-triangle"></i> ' + msg
+                    + '</div>'
+                );
+                $('#subFixCloseBtn').prop('disabled', false);
             }
         });
     });
