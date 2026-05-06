@@ -4,6 +4,13 @@ now we need to update the app version to playstore, in yaml file, increase the a
 
 now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. let us start with lugaflix app (/Users/mac/Desktop/github/lugaflix)
 
+i want you to document each and everything new that has been added into "/Users/mac/Desktop/github/lugaflix" ..
+
+following our core principles alreaducmentation how we implment changes to rest of the apps so all apps can be in sync in terms of featueres but ideintifred and branded as 3 different apsps,
+i want you yo carefully sycng all cghanges in lugaflix in rest of the apps i.e, (ugflix - /Users/mac/Desktop/github/luganda-translated-movies-mobo) and (Muno App - /Users/mac/Desktop/github/muno-app-free-luganda-movies).
+make sure you do eeverything so rest of those 2 remaining apps are fully in synch with lugaflix in terms of featues.
+you can start by pnnaing everything into an md file so you can follow the tasks step by step without skiping any. test everything ensure no any room for any error
+
 <en-US>
 - Fix the error of logging in every time
 - Fixed the error of black screen deadlock after logging in
