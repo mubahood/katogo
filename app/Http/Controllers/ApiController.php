@@ -17,6 +17,7 @@ use App\Models\SubscriptionTransaction;
 use App\Models\TrendingNotification;
 use App\Models\User;
 use App\Models\Utils;
+use App\Services\AccountMergeService;
 use App\Services\SubscriptionPesapalService;
 use Carbon\Carbon;
 use Dflydev\DotAccessData\Util;
@@ -2147,15 +2148,8 @@ class ApiController extends BaseController
             return $this->error('Please enter a valid Uganda phone number.');
         }
 
-        $phoneOwner = User::where('phone_number', $normalizedPhone)
-            ->where('id', '!=', $u->id)
-            ->first();
-        if ($phoneOwner != null) {
-            return $this->error('That phone number is already linked to another account.');
-        }
-
-        $u->phone_number = $normalizedPhone;
-
+        $emailOwner = null;
+        $normalizedEmail = '';
         if (!empty($email)) {
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 return $this->error('Please enter a valid email address.');
@@ -2165,16 +2159,84 @@ class ApiController extends BaseController
                 return $this->error('Please enter your real email address.');
             }
 
-            $emailOwner = User::where('email', $email)
+            $normalizedEmail = strtolower($email);
+        }
+
+        $phoneOwner = $this->findPhoneOwnerForMerge($normalizedPhone, (int) $u->id);
+
+        if (!empty($normalizedEmail)) {
+            $emailOwner = User::where('email', $normalizedEmail)
                 ->where('id', '!=', $u->id)
                 ->first();
-            if ($emailOwner != null) {
-                return $this->error('That email address is already linked to another account.');
+        }
+
+        if ($phoneOwner != null || $emailOwner != null) {
+            $mergeService = app(AccountMergeService::class);
+
+            if (!$mergeService->isAutoMergeWindowOpen()) {
+                return $this->error('Account already on another number.');
             }
 
-            $u->email = $email;
+            $mergeTarget = $this->resolveMergeTargetUser($phoneOwner, $emailOwner);
+            if ($mergeTarget == null) {
+                return $this->error('Phone number and email belong to different accounts. Please contact support.');
+            }
+
+            $sourceUserIdBeforeMerge = (int) $u->id;
+            try {
+                $u = $mergeService->mergeIntoExistingAccount($u, $mergeTarget, [
+                    'incoming_phone' => $normalizedPhone,
+                    'incoming_email' => $normalizedEmail,
+                    'reason' => 'profile_wizard_contact_conflict',
+                    'request_ip' => $r->ip(),
+                    'request_user_agent' => (string) $r->userAgent(),
+                ]);
+            } catch (\Throwable $mergeError) {
+                Log::error('Profile wizard contact merge failed', [
+                    'source_user_id' => $u->id,
+                    'target_user_id' => $mergeTarget->id,
+                    'error' => $mergeError->getMessage(),
+                ]);
+
+                return $this->error('Failed to merge account data. Please try again shortly.');
+            }
+
+            $u->phone_number = $normalizedPhone;
+            if (!empty($normalizedEmail)) {
+                $u->email = $normalizedEmail;
+                $u->username = $normalizedEmail;
+            }
+
+            $this->syncProfileWizardProgress($u);
+            if ($this->profileWizardHasColumn('profile_completion_step')) {
+                $u->profile_completion_step = max((int) ($u->profile_completion_step ?? 0), 2);
+            }
+            $u->save();
+
+            $newToken = auth('api')->setTTL(60 * 24 * 365 * 5)->login($u);
+            if (!$newToken) {
+                return $this->error('Account merged, but failed to create a session token. Please login again.');
+            }
+
+            return $this->success(
+                $this->buildProfileWizardPayloadWithToken($u, $newToken, [
+                    'merged' => true,
+                    'from_user_id' => $sourceUserIdBeforeMerge,
+                    'to_user_id' => (int) $u->id,
+                    'phone_number' => $normalizedPhone,
+                    'email' => $normalizedEmail,
+                ]),
+                'Contact details saved and account merged successfully.',
+                200
+            );
+        }
+
+        $u->phone_number = $normalizedPhone;
+
+        if (!empty($normalizedEmail)) {
+            $u->email = $normalizedEmail;
             // Keep username/email in sync for DBs where username is non-null.
-            $u->username = $email;
+            $u->username = $normalizedEmail;
         }
 
         $this->syncProfileWizardProgress($u);
@@ -2353,6 +2415,66 @@ class ApiController extends BaseController
         }
 
         return User::find($authUser->id);
+    }
+
+    private function resolveMergeTargetUser(?User $phoneOwner, ?User $emailOwner): ?User
+    {
+        if ($phoneOwner != null && $emailOwner != null && (int) $phoneOwner->id !== (int) $emailOwner->id) {
+            return null;
+        }
+
+        if ($phoneOwner != null) {
+            return $phoneOwner;
+        }
+
+        return $emailOwner;
+    }
+
+    private function findPhoneOwnerForMerge(string $normalizedPhone, int $excludeUserId): ?User
+    {
+        $digits = preg_replace('/\D+/', '', $normalizedPhone);
+        $last9 = strlen($digits) >= 9 ? substr($digits, -9) : $digits;
+
+        $variants = array_values(array_unique(array_filter([
+            $normalizedPhone,
+            '+' . $normalizedPhone,
+            $digits,
+            strlen($last9) === 9 ? ('0' . $last9) : null,
+            $last9,
+        ])));
+
+        return User::where('id', '!=', $excludeUserId)
+            ->where(function ($q) use ($variants, $digits, $last9) {
+                $q->whereIn('phone_number', $variants);
+
+                if (!empty($digits)) {
+                    $q->orWhereRaw(
+                        "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone_number, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') = ?",
+                        [$digits]
+                    );
+                }
+
+                if (!empty($last9)) {
+                    $q->orWhere('phone_number', 'like', "%{$last9}");
+                }
+            })
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function buildProfileWizardPayloadWithToken(User $u, string $token, ?array $mergeMeta = null): array
+    {
+        $payload = $this->buildProfileWizardPayload($u);
+        $freshUser = $u->fresh();
+        $userData = $freshUser ? $freshUser->toArray() : $u->toArray();
+        $userData['token'] = $token;
+        $userData['remember_token'] = $token;
+        $payload['user'] = $userData;
+        if ($mergeMeta != null) {
+            $payload['accounts_merged'] = $mergeMeta;
+        }
+
+        return $payload;
     }
 
     private function buildProfileWizardPayload(User $u): array

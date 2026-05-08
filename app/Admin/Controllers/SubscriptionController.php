@@ -1450,18 +1450,30 @@ $(function(){
                 ]);
 
             case 'activate':
-                $subscription->status = 'Active';
-                $subscription->payment_status = 'Completed';
-                if (!$subscription->start_date_time) {
-                    $subscription->start_date_time = Carbon::now();
-                }
-                if (!$subscription->end_date_time) {
-                    $plan = $subscription->plan;
-                    $days = $plan ? $plan->duration_days : ($subscription->days ?: 30);
-                    $subscription->end_date_time = Carbon::now()->addDays($days);
-                }
-                $subscription->payment_confirmed_at = Carbon::now();
-                $subscription->save();
+                DB::transaction(function () use ($subscription) {
+                    $subscription->status = 'Active';
+                    $subscription->payment_status = 'Completed';
+                    if (!$subscription->start_date_time) {
+                        $subscription->start_date_time = Carbon::now();
+                    }
+                    if (!$subscription->end_date_time) {
+                        $plan = $subscription->plan;
+                        $days = $plan ? $plan->duration_days : ($subscription->days ?: 30);
+                        $subscription->end_date_time = Carbon::now()->addDays($days);
+                    }
+                    $subscription->payment_confirmed_at = Carbon::now();
+                    $subscription->payment_url = null;
+                    $subscription->payment_failure_reason = null;
+                    $subscription->failed_at = null;
+                    $subscription->save();
+
+                    $this->syncCompletedAdminTransaction($subscription, 'admin_activate');
+                });
+
+                Cache::forget("sub_pending_{$subscription->user_id}");
+                Cache::forget("active_sub_{$subscription->user_id}");
+                Cache::forget("v2_pay_check_{$subscription->user_id}");
+
                 return response()->json(['success' => true, 'message' => 'Subscription activated successfully.']);
 
             case 'extend':
@@ -1504,14 +1516,24 @@ $(function(){
                 if ($days <= 0) {
                     return response()->json(['success' => false, 'message' => 'Days must be greater than 0.']);
                 }
-                $subscription->status = 'Active';
-                $subscription->payment_status = 'Completed';
-                $subscription->payment_method = 'admin_grant';
-                $subscription->start_date_time = Carbon::now();
-                $subscription->end_date_time = Carbon::now()->addDays($days);
-                $subscription->days = $days;
-                $subscription->payment_confirmed_at = Carbon::now();
-                $subscription->save();
+
+                DB::transaction(function () use ($subscription, $days) {
+                    $subscription->status = 'Active';
+                    $subscription->payment_status = 'Completed';
+                    $subscription->payment_method = 'admin_grant';
+                    $subscription->start_date_time = Carbon::now();
+                    $subscription->end_date_time = Carbon::now()->addDays($days);
+                    $subscription->days = $days;
+                    $subscription->payment_confirmed_at = Carbon::now();
+                    $subscription->save();
+
+                    $this->syncCompletedAdminTransaction($subscription, 'admin_grant');
+                });
+
+                Cache::forget("sub_pending_{$subscription->user_id}");
+                Cache::forget("active_sub_{$subscription->user_id}");
+                Cache::forget("v2_pay_check_{$subscription->user_id}");
+
                 return response()->json([
                     'success' => true,
                     'message' => "Granted {$days} free days. Active until {$subscription->end_date_time}",
@@ -1523,6 +1545,48 @@ $(function(){
     }
 
     // ─── HELPERS ────────────────────────────────────────────────────────
+    private function syncCompletedAdminTransaction(Subscription $subscription, string $source): void
+    {
+        $transaction = SubscriptionTransaction::query()
+            ->where('subscription_id', $subscription->id)
+            ->where('transaction_type', '!=', 'Withdrawal')
+            ->orderByDesc('id')
+            ->first();
+
+        $payload = [
+            'admin_completion' => [
+                'source' => $source,
+                'synced_at' => Carbon::now()->toIso8601String(),
+                'admin_id' => Admin::user()->id ?? null,
+            ],
+        ];
+
+        if ($transaction) {
+            $transaction->status = 'Completed';
+            $transaction->payment_method = $subscription->payment_method ?: $transaction->payment_method;
+            $transaction->pesapal_tracking_id = $subscription->pesapal_tracking_id ?: $transaction->pesapal_tracking_id;
+            $transaction->merchant_reference = $subscription->pesapal_merchant_reference ?: $transaction->merchant_reference;
+            $transaction->error_message = null;
+            $transaction->response_payload = array_merge($transaction->response_payload ?? [], $payload);
+            $transaction->save();
+            return;
+        }
+
+        SubscriptionTransaction::create([
+            'subscription_id' => $subscription->id,
+            'user_id' => $subscription->user_id,
+            'transaction_type' => $subscription->is_extension ? 'Renewal' : 'Initial',
+            'platform' => $subscription->app_type,
+            'amount' => $subscription->amount_paid,
+            'currency' => $subscription->currency,
+            'status' => 'Completed',
+            'pesapal_tracking_id' => $subscription->pesapal_tracking_id,
+            'merchant_reference' => $subscription->pesapal_merchant_reference,
+            'payment_method' => $subscription->payment_method,
+            'response_payload' => $payload,
+        ]);
+    }
+
     private function fmt($num)
     {
         return number_format($num);

@@ -59,6 +59,23 @@ class PaymentStatusChecker
             'max_retries' => $maxRetries,
         ]);
 
+        // DEADLOCK GUARD: if payment_status is already Completed locally, the local record
+        // is authoritative. Never call the remote gateway — it may return a stale "pending"
+        // response and push the client back into the pending-payment screen.
+        $subscription->refresh();
+        if ($subscription->payment_status === 'Completed') {
+            Log::info('ℹ️ PaymentStatusChecker: payment_status=Completed locally — skipping gateway call', [
+                'subscription_id' => $subscription->id,
+                'status' => $subscription->status,
+            ]);
+            return [
+                'success' => true,
+                'status' => $subscription->status,
+                'payment_status' => 'Completed',
+                'already_processed' => true,
+            ];
+        }
+
         // Prevent concurrent status checks for same subscription
         $lockKey = "payment_check_{$subscription->id}";
         $lock = Cache::lock($lockKey, 30); // 30 second lock
@@ -264,13 +281,9 @@ class PaymentStatusChecker
      */
     protected function isAlreadyProcessed(Subscription $subscription)
     {
-        // Only treat truly completed subscriptions as final.
-        // Failed/Cancelled records may still be recovered if Pesapal confirms completion later.
-        if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
-            return true;
-        }
-
-        if ($subscription->status === 'Expired' && $subscription->payment_status === 'Completed') {
+        // payment_status=Completed is the local source of truth.
+        // If the payment is already confirmed locally, never go to the gateway.
+        if ($subscription->payment_status === 'Completed') {
             return true;
         }
 

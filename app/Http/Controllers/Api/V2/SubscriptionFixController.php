@@ -305,20 +305,18 @@ class SubscriptionFixController extends Controller
             }
 
             // If this subscription is already marked Active locally,
-            // normalize every related payment field before any gateway check.
+            // treat the fix request as successful without mutating local state.
             if ($subscription->status === 'Active') {
-                $normalized = $this->normalizeActiveSubscriptionState($subscription);
-                $subscription->refresh();
                 $subscription->load(['plan', 'transactions']);
 
                 return response()->json([
                     'code' => 1,
                     'status' => 200,
-                    'message' => '✅ This subscription was already marked active and has now been fully synced as paid.',
+                    'message' => '✅ This subscription is already marked active. Nothing needed to be changed.',
                     'data' => [
                         'subscription' => $subscription->toApiArray(),
                         'already_active' => true,
-                        'fixed' => $normalized,
+                        'fixed' => true,
                     ],
                 ]);
             }
@@ -576,15 +574,10 @@ class SubscriptionFixController extends Controller
 
         try {
             if ($subscription->status === 'Active') {
-                $wasUpdated = $this->normalizeActiveSubscriptionState($subscription);
-                $subscription->refresh();
-
-                $result['fixed'] = $wasUpdated;
-                $result['message'] = $wasUpdated
-                    ? 'Subscription was already active locally and has now been fully marked as paid.'
-                    : 'Subscription is already active and fully paid.';
-                $result['new_status'] = 'Active';
-                $result['new_payment_status'] = 'Completed';
+                $result['fixed'] = true;
+                $result['message'] = 'Subscription is already marked active locally. No payment or subscription status changes were made.';
+                $result['new_status'] = $subscription->status;
+                $result['new_payment_status'] = $subscription->payment_status;
 
                 return $result;
             }
@@ -740,121 +733,6 @@ class SubscriptionFixController extends Controller
         }
 
         return $result;
-    }
-
-    /**
-     * If a subscription is already marked Active locally, make all payment state
-     * and transaction state consistent without depending on another gateway round trip.
-     */
-    private function normalizeActiveSubscriptionState(Subscription $subscription): bool
-    {
-        $didChange = false;
-
-        DB::transaction(function () use ($subscription, &$didChange) {
-            $locked = Subscription::lockForUpdate()->find($subscription->id);
-            if (!$locked || $locked->status !== 'Active') {
-                return;
-            }
-
-            if ($locked->payment_status !== 'Completed') {
-                $locked->payment_status = 'Completed';
-                $didChange = true;
-            }
-
-            if (!$locked->payment_confirmed_at) {
-                $locked->payment_confirmed_at = now();
-                $didChange = true;
-            }
-
-            if ($locked->failed_at !== null) {
-                $locked->failed_at = null;
-                $didChange = true;
-            }
-
-            if ($locked->cancelled_at !== null) {
-                $locked->cancelled_at = null;
-                $didChange = true;
-            }
-
-            if ($locked->cancelled_reason !== null) {
-                $locked->cancelled_reason = null;
-                $didChange = true;
-            }
-
-            $pesapalResponse = $locked->pesapal_response ?? [];
-            $alreadyTagged = is_array($pesapalResponse) && array_key_exists('active_fix_sync', $pesapalResponse);
-            if (!$alreadyTagged) {
-                $locked->pesapal_response = array_merge(
-                    $pesapalResponse,
-                    ['active_fix_sync' => ['synced_at' => now()->toIso8601String()]]
-                );
-                $didChange = true;
-            }
-
-            if ($didChange) {
-                $locked->save();
-            }
-
-            $transactions = SubscriptionTransaction::where('subscription_id', $locked->id)->get();
-
-            if ($transactions->isEmpty()) {
-                SubscriptionTransaction::create([
-                    'subscription_id' => $locked->id,
-                    'user_id' => $locked->user_id,
-                    'transaction_type' => $locked->is_extension ? 'Renewal' : 'Initial',
-                    'platform' => $locked->app_type,
-                    'amount' => $locked->amount_paid,
-                    'currency' => $locked->currency,
-                    'status' => 'Completed',
-                    'pesapal_tracking_id' => $locked->pesapal_tracking_id,
-                    'merchant_reference' => $locked->pesapal_merchant_reference,
-                    'payment_method' => $locked->payment_method,
-                    'response_payload' => [
-                        'active_fix_sync' => [
-                            'source' => 'local_active_status',
-                            'synced_at' => now()->toIso8601String(),
-                        ],
-                    ],
-                ]);
-                $didChange = true;
-                return;
-            }
-
-            foreach ($transactions as $transaction) {
-                $transactionChanged = false;
-
-                if ($transaction->status !== 'Completed') {
-                    $transaction->status = 'Completed';
-                    $transactionChanged = true;
-                }
-
-                if ($transaction->error_message !== null) {
-                    $transaction->error_message = null;
-                    $transactionChanged = true;
-                }
-
-                $responsePayload = $transaction->response_payload ?? [];
-                if (!is_array($responsePayload) || !array_key_exists('active_fix_sync', $responsePayload)) {
-                    $transaction->response_payload = array_merge(
-                        is_array($responsePayload) ? $responsePayload : [],
-                        [
-                            'active_fix_sync' => [
-                                'source' => 'local_active_status',
-                                'synced_at' => now()->toIso8601String(),
-                            ],
-                        ]
-                    );
-                    $transactionChanged = true;
-                }
-
-                if ($transactionChanged) {
-                    $transaction->save();
-                    $didChange = true;
-                }
-            }
-        });
-
-        return $didChange;
     }
 
     /**

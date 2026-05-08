@@ -316,6 +316,11 @@ class SubscriptionApiController extends Controller
             // Eager-load plan + user to avoid extra queries in initializePayment()
             $subscription->load('plan', 'user');
 
+            // Always create a bootstrap transaction row before gateway calls.
+            // This guarantees every subscription has a payment audit trail even if
+            // gateway initialization fails before returning redirect/tracking data.
+            $this->ensureBootstrapTransactionRecord($subscription, $gateway);
+
             // ===== INITIALIZE PAYMENT =====
             $callbackUrl = $request->callback_url;
 
@@ -402,6 +407,8 @@ class SubscriptionApiController extends Controller
                     $subscription->payment_failure_reason = 'Payment initialization failed: ' . $e->getMessage();
                     $subscription->cancelled_reason = 'Payment initialization failed';
                     $subscription->save();
+
+                    $this->markLatestTransactionAsFailed($subscription, $e->getMessage());
 
                     Log::warning('Subscription marked as Failed due to payment init failure', [
                         'subscription_id' => $subscription->id,
@@ -888,13 +895,34 @@ class SubscriptionApiController extends Controller
                 $subscription = $resolved;
             }
 
-            // Check if already fully active+completed — no need to re-check
-            if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+            // If the subscription is already marked Active locally, always treat
+            // it as the source of truth and sync payment/transaction state first.
+            if ($subscription->status === 'Active') {
+                $this->normalizeActiveSubscriptionAndTransactions($subscription, 'check_status');
+                $subscription->refresh();
+
                 return response()->json([
                     'code' => 1,
                     'status' => 200,
-                    'message' => 'Subscription is already active and paid',
-                    'data' => $subscription->toApiArray(),
+                    'message' => 'Subscription is already active and has been fully synced as paid',
+                    'data' => array_merge($subscription->toApiArray(), [
+                        'payment_transaction' => $this->getLatestPaymentTransactionApiArray($subscription),
+                        'already_active' => true,
+                    ]),
+                ]);
+            }
+
+            // DEADLOCK GUARD: payment_status=Completed is locally authoritative.
+            // Even if subscription status is not yet Active, never call the gateway.
+            if ($subscription->payment_status === 'Completed') {
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Payment is already marked as completed.',
+                    'data' => array_merge($subscription->toApiArray(), [
+                        'payment_transaction' => $this->getLatestPaymentTransactionApiArray($subscription),
+                        'already_active' => true,
+                    ]),
                 ]);
             }
 
@@ -1004,6 +1032,7 @@ class SubscriptionApiController extends Controller
                 $pendingSubscription = $user->subscriptions()
                     ->with('plan')
                     ->whereIn('payment_status', ['Pending', 'Processing'])
+                    ->where('status', '!=', 'Active')
                     ->orderBy('created_at', 'DESC')
                     ->first();
 
@@ -1107,8 +1136,18 @@ class SubscriptionApiController extends Controller
                 ], 404);
             }
 
-            // Never block payment on status shape. For non-active records, normalize to pending.
-            if (!($subscription->status === 'Active' && $subscription->payment_status === 'Completed')) {
+            // DEADLOCK GUARD: never reset a subscription whose payment_status is already Completed.
+            if ($subscription->payment_status === 'Completed') {
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Payment is already marked as completed.',
+                    'data' => $subscription->toApiArray(),
+                ]);
+            }
+
+            // For non-active records, normalize to pending so payment can be initiated.
+            if ($subscription->status !== 'Active') {
                 $subscription->status = 'Pending';
                 $subscription->payment_status = 'Pending';
                 $subscription->save();
@@ -1215,6 +1254,36 @@ class SubscriptionApiController extends Controller
                     'message' => 'No actionable subscription found for this user',
                     'data' => null,
                 ], 404);
+            }
+
+            if ($subscription->status === 'Active') {
+                $this->normalizeActiveSubscriptionAndTransactions($subscription, 'check_pending_payment');
+                $subscription->refresh();
+
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Subscription is already active and has been fully synced as paid',
+                    'data' => $this->buildPaymentCheckResponseData($subscription, $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method), [
+                        'status' => 'success',
+                        'short_circuited' => true,
+                    ]),
+                ]);
+            }
+
+            // DEADLOCK GUARD: if payment_status is already Completed, return success
+            // immediately without hitting the remote gateway.
+            if ($subscription->payment_status === 'Completed') {
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Payment is already marked as completed.',
+                    'data' => $this->buildPaymentCheckResponseData(
+                        $subscription,
+                        $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method),
+                        ['status' => 'success']
+                    ),
+                ]);
             }
 
             $gateway = $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method);
@@ -2062,8 +2131,18 @@ class SubscriptionApiController extends Controller
             'order_tracking_id' => $subscription->payment_gateway === 'flutterwave'
                 ? ($subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference)
                 : $subscription->pesapal_tracking_id,
+            'payment_transaction' => $this->getLatestPaymentTransactionApiArray($subscription),
             'subscription' => $subscription->toApiArray(),
         ];
+    }
+
+    private function getLatestPaymentTransactionApiArray(Subscription $subscription): ?array
+    {
+        $transaction = SubscriptionTransaction::where('subscription_id', $subscription->id)
+            ->orderByDesc('id')
+            ->first();
+
+        return $transaction ? $transaction->toApiArray() : null;
     }
 
     private function extractGatewayResponseMessage(Subscription $subscription, string $gateway): ?string
@@ -2241,6 +2320,8 @@ class SubscriptionApiController extends Controller
                     throw new \RuntimeException('Pesapal fallback did not return a usable payment action.');
                 }
 
+                $this->assertPaymentTransactionRecordExists($subscription, $paymentResult, 'pesapal');
+
                 return [
                     'gateway' => 'pesapal',
                     'payment_result' => $paymentResult,
@@ -2293,6 +2374,79 @@ class SubscriptionApiController extends Controller
         if (!$query->exists()) {
             throw new \RuntimeException('Payment initialization aborted: transaction audit record missing for ' . $gateway . '.');
         }
+    }
+
+    private function ensureBootstrapTransactionRecord(Subscription $subscription, string $gateway): void
+    {
+        $method = $this->resolveGateway($gateway);
+
+        $existing = SubscriptionTransaction::where('subscription_id', $subscription->id)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existing) {
+            return;
+        }
+
+        SubscriptionTransaction::create([
+            'subscription_id' => $subscription->id,
+            'user_id' => $subscription->user_id,
+            'transaction_type' => $subscription->is_extension ? 'Renewal' : 'Initial',
+            'platform' => $subscription->app_type,
+            'amount' => $subscription->amount_paid,
+            'currency' => $subscription->currency,
+            'status' => 'Pending',
+            'pesapal_tracking_id' => $subscription->pesapal_tracking_id ?: ($subscription->flutterwave_reference ?: null),
+            'merchant_reference' => $subscription->pesapal_merchant_reference,
+            'payment_method' => $method,
+            'request_payload' => [
+                'bootstrap' => true,
+                'source' => 'create_subscription_before_gateway_init',
+            ],
+            'response_payload' => [
+                'status' => 'awaiting_gateway_initialization',
+                'gateway' => $method,
+            ],
+        ]);
+    }
+
+    private function markLatestTransactionAsFailed(Subscription $subscription, string $error): void
+    {
+        $tx = SubscriptionTransaction::where('subscription_id', $subscription->id)
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$tx) {
+            $tx = SubscriptionTransaction::create([
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+                'transaction_type' => $subscription->is_extension ? 'Renewal' : 'Initial',
+                'platform' => $subscription->app_type,
+                'amount' => $subscription->amount_paid,
+                'currency' => $subscription->currency,
+                'status' => 'Failed',
+                'pesapal_tracking_id' => $subscription->pesapal_tracking_id ?: ($subscription->flutterwave_reference ?: null),
+                'merchant_reference' => $subscription->pesapal_merchant_reference,
+                'payment_method' => $subscription->payment_gateway ?: $subscription->payment_method,
+                'error_message' => 'Payment initialization failed: ' . $error,
+                'response_payload' => [
+                    'status' => 'initialization_failed',
+                    'error' => $error,
+                ],
+            ]);
+
+            return;
+        }
+
+        $tx->status = 'Failed';
+        $tx->error_message = 'Payment initialization failed: ' . $error;
+        $tx->response_payload = array_merge($tx->response_payload ?? [], [
+            'init_failure' => [
+                'error' => $error,
+                'at' => now()->toDateTimeString(),
+            ],
+        ]);
+        $tx->save();
     }
 
     /**
@@ -2368,8 +2522,116 @@ class SubscriptionApiController extends Controller
             ]);
         }
 
+        $this->syncCompletedPaymentTransactions($subscription, $source);
+
         $this->invalidateUserPaymentCaches($subscription);
         $this->syncPaymentSupportTicketByStatus($subscription);
+    }
+
+    private function normalizeActiveSubscriptionAndTransactions(Subscription $subscription, string $source): void
+    {
+        $subscription->refresh();
+
+        $changed = false;
+
+        if ($subscription->payment_status !== 'Completed') {
+            $subscription->payment_status = 'Completed';
+            $changed = true;
+        }
+
+        if (!$subscription->payment_confirmed_at) {
+            $subscription->payment_confirmed_at = now();
+            $changed = true;
+        }
+
+        if ($subscription->failed_at !== null) {
+            $subscription->failed_at = null;
+            $changed = true;
+        }
+
+        if ($subscription->payment_failure_reason !== null) {
+            $subscription->payment_failure_reason = null;
+            $changed = true;
+        }
+
+        if ($subscription->payment_url !== null) {
+            $subscription->payment_url = null;
+            $changed = true;
+        }
+
+        if ($subscription->cancelled_at !== null) {
+            $subscription->cancelled_at = null;
+            $changed = true;
+        }
+
+        if ($subscription->cancelled_reason !== null) {
+            $subscription->cancelled_reason = null;
+            $changed = true;
+        }
+
+        if ($changed) {
+            $subscription->save();
+        }
+
+        $this->syncCompletedPaymentTransactions($subscription, $source);
+        $this->invalidateUserPaymentCaches($subscription);
+        $this->syncPaymentSupportTicketByStatus($subscription);
+    }
+
+    private function syncCompletedPaymentTransactions(Subscription $subscription, string $source): void
+    {
+        $transactions = SubscriptionTransaction::where('subscription_id', $subscription->id)->get();
+
+        if ($transactions->isEmpty()) {
+            SubscriptionTransaction::create([
+                'subscription_id' => $subscription->id,
+                'user_id' => $subscription->user_id,
+                'transaction_type' => $subscription->is_extension ? 'Renewal' : 'Initial',
+                'platform' => $subscription->app_type,
+                'amount' => $subscription->amount_paid,
+                'currency' => $subscription->currency,
+                'status' => 'Completed',
+                'pesapal_tracking_id' => $subscription->pesapal_tracking_id,
+                'merchant_reference' => $subscription->pesapal_merchant_reference,
+                'payment_method' => $subscription->payment_method,
+                'response_payload' => [
+                    'active_sync' => [
+                        'source' => $source,
+                        'synced_at' => now()->toIso8601String(),
+                    ],
+                ],
+            ]);
+            return;
+        }
+
+        foreach ($transactions as $transaction) {
+            $transactionChanged = false;
+
+            if ($transaction->status !== 'Completed') {
+                $transaction->status = 'Completed';
+                $transactionChanged = true;
+            }
+
+            if ($transaction->error_message !== null) {
+                $transaction->error_message = null;
+                $transactionChanged = true;
+            }
+
+            $responsePayload = is_array($transaction->response_payload) ? $transaction->response_payload : [];
+            if (!array_key_exists('active_sync', $responsePayload)) {
+                $transaction->response_payload = array_merge($responsePayload, [
+                    'active_sync' => [
+                        'source' => $source,
+                        'synced_at' => now()->toIso8601String(),
+                    ],
+                ]);
+                $transactionChanged = true;
+            }
+
+            if ($transactionChanged) {
+                $transaction->save();
+            }
+        }
     }
 
     private function syncPaymentSupportTicketByStatus(Subscription $subscription): void
