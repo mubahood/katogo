@@ -43,6 +43,8 @@ Route::group([
 
 
     $router->resource('subscription-transactions', SubscriptionTransactionController::class);
+    $router->resource('merged-accounts', MergedAccountController::class);
+    $router->get('merged-accounts/{id}/sync-access', 'MergedAccountController@syncAccess')->where(['id' => '[0-9]+']);
     $router->get('subscriptions/analytics', 'SubscriptionController@analytics');
     $router->get('subscriptions/{id}/ajax-details', 'SubscriptionController@ajaxDetails')->where(['id' => '[0-9]+']);
     $router->resource('subscriptions', SubscriptionController::class);

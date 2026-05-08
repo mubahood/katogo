@@ -138,6 +138,9 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('auth/profile-wizard/preferences', [ApiController::class, 'profile_wizard_preferences']);
     Route::post('auth/profile-wizard/photo', [ApiController::class, 'profile_wizard_photo']);
     Route::post('auth/profile-wizard/finish', [ApiController::class, 'finish_profile_wizard']);
+    Route::get('auth/account-merge-wizard/state', [ApiController::class, 'account_merge_wizard_state']);
+    Route::post('auth/account-merge-wizard/preview', [ApiController::class, 'account_merge_preview']);
+    Route::post('auth/account-merge-wizard/confirm', [ApiController::class, 'account_merge_confirm']);
 
 
     Route::get('account/watchlist', [DynamicCrudController::class, 'get_watchlist']);

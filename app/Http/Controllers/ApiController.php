@@ -29,6 +29,7 @@ use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use OpenApi\Annotations as OA;
 use Illuminate\Support\Facades\Schema;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -2071,6 +2072,219 @@ class ApiController extends BaseController
         return $this->success($this->buildProfileWizardPayload($u), 'Profile wizard state loaded.', 200);
     }
 
+    public function account_merge_wizard_state(Request $r)
+    {
+        $u = $this->resolveProfileWizardUser($r);
+        if ($u == null) {
+            return $this->error('User not found.', 401);
+        }
+
+        /** @var AccountMergeService $mergeService */
+        $mergeService = app(AccountMergeService::class);
+        $stats = $mergeService->getMergeStatsForUser((int) $u->id);
+
+        return $this->success([
+            'steps' => [
+                ['key' => 'intro', 'title' => 'Why merge?', 'description' => 'Understand what merging does and safety features.'],
+                ['key' => 'find', 'title' => 'Find old account', 'description' => 'Search by phone or email to find your old account.'],
+                ['key' => 'confirm', 'title' => 'Confirm merge', 'description' => 'Review old account details and finalize merge.'],
+            ],
+            'constraints' => [
+                'merge_window_open' => $mergeService->isAutoMergeWindowOpen(),
+                'max_merges_per_account' => $mergeService->getMaxMergesPerAccount(),
+                'uganda_phone_format_example' => '2567XXXXXXXX',
+                'preview_token_ttl_seconds' => 600,
+            ],
+            'my_merge_stats' => $stats,
+        ], 'Account merge wizard state loaded.');
+    }
+
+    public function account_merge_preview(Request $r)
+    {
+        $requestUser = $this->resolveProfileWizardUser($r);
+        if ($requestUser == null) {
+            return $this->error('User not found.', 401);
+        }
+
+        /** @var AccountMergeService $mergeService */
+        $mergeService = app(AccountMergeService::class);
+        if (!$mergeService->isAutoMergeWindowOpen()) {
+            return $this->error('Account merge window has closed. Please contact support.');
+        }
+
+        // Accept only 'phone' or 'email' as transfer_by (single field search)
+        $transferBy = strtolower(trim((string) $r->input('transfer_by', '')));
+        if (!in_array($transferBy, ['phone', 'email'], true)) {
+            return $this->error('Please choose search method: phone or email.');
+        }
+
+        // Normalize the old account contact (single field)
+        $oldPhone = $transferBy === 'phone' 
+            ? $this->normalizeUgandaPhoneIfPossible((string) $r->input('old_phone_number', ''))
+            : '';
+        $oldEmail = $transferBy === 'email' 
+            ? $this->normalizeMergeEmailIfPossible((string) $r->input('old_email', ''))
+            : '';
+
+        // Validate that we have exactly one contact field (the one being searched)
+        if ($transferBy === 'phone' && empty($oldPhone)) {
+            return $this->error('Please provide a valid Uganda phone number (format: 2567XXXXXXXX).');
+        }
+        if ($transferBy === 'email' && empty($oldEmail)) {
+            return $this->error('Please provide a valid email address.');
+        }
+
+        // Find the old account by the single contact field
+        [$oldUser, $oldConflict] = $this->findMergeUserByContact($oldPhone, $oldEmail);
+        if ($oldConflict) {
+            return $this->error('This contact belongs to multiple accounts. Please contact support.');
+        }
+        if ($oldUser == null) {
+            return $this->error('No account found with this ' . ($transferBy === 'phone' ? 'phone number' : 'email address') . '.');
+        }
+
+        // New account is the logged-in user (no need to search)
+        $newUser = $requestUser;
+
+        if ((int) $oldUser->id === (int) $newUser->id) {
+            return $this->error('Old and new account cannot be the same account.');
+        }
+
+        // Check merge limits for both accounts
+        $oldStats = $mergeService->getMergeStatsForUser((int) $oldUser->id);
+        $newStats = $mergeService->getMergeStatsForUser((int) $newUser->id);
+        if (($oldStats['limit_reached'] ?? false) === true) {
+            return $this->error('Old account has reached merge limit (6). Cannot proceed with merge.');
+        }
+        if (($newStats['limit_reached'] ?? false) === true) {
+            return $this->error('Your account has reached merge limit (6). Please contact support.');
+        }
+
+        // Count data to be transferred
+        $subscriptionsToMove = DB::table('subscriptions')->where('user_id', $oldUser->id)->count();
+        $transactionsToMove = DB::table('subscription_transactions')->where('user_id', $oldUser->id)->count();
+
+        // Generate preview token with single-field metadata
+        $previewToken = Str::random(64);
+        $cacheKey = 'acct_merge_preview_' . $previewToken;
+        Cache::put($cacheKey, [
+            'requested_by_user_id' => (int) $requestUser->id,
+            'source_user_id' => (int) $oldUser->id,
+            'target_user_id' => (int) $newUser->id,
+            'transfer_by' => $transferBy,
+            'old_phone_number' => $oldPhone,
+            'old_email' => $oldEmail,
+            'created_at' => now()->toDateTimeString(),
+        ], now()->addMinutes(10));
+
+        return $this->success([
+            'preview_token' => $previewToken,
+            'expires_in_seconds' => 600,
+            'accounts' => [
+                'old' => $this->buildMergeAccountPreview($oldUser),
+            ],
+            'transfer_summary' => [
+                'subscriptions_to_move' => (int) $subscriptionsToMove,
+                'subscription_transactions_to_move' => (int) $transactionsToMove,
+                'merge_limit_per_account' => $mergeService->getMaxMergesPerAccount(),
+                'old_account_merge_stats' => $oldStats,
+            ],
+            'warnings' => [
+                'Please confirm the old account details before final merge.',
+                'This merge operation is transactional and rollback-safe.',
+            ],
+        ], 'Old account found. Review and confirm to proceed with merge.');
+    }
+
+    public function account_merge_confirm(Request $r)
+    {
+        $requestUser = $this->resolveProfileWizardUser($r);
+        if ($requestUser == null) {
+            return $this->error('User not found.', 401);
+        }
+
+        $previewToken = trim((string) $r->input('preview_token', ''));
+        if ($previewToken === '') {
+            return $this->error('Preview token is required.');
+        }
+
+        $cacheKey = 'acct_merge_preview_' . $previewToken;
+        $previewData = Cache::get($cacheKey);
+        if (!is_array($previewData)) {
+            return $this->error('Merge preview session expired. Please start again.');
+        }
+
+        if ((int) ($previewData['requested_by_user_id'] ?? 0) !== (int) $requestUser->id) {
+            return $this->error('This merge session does not belong to your account.', 403);
+        }
+
+        $sourceUserId = (int) ($previewData['source_user_id'] ?? 0);
+        $targetUserId = (int) ($previewData['target_user_id'] ?? 0);
+        if ($sourceUserId < 1 || $targetUserId < 1 || $sourceUserId === $targetUserId) {
+            return $this->error('Invalid merge session payload. Please restart merge.');
+        }
+
+        /** @var User|null $sourceUser */
+        $sourceUser = User::find($sourceUserId);
+        /** @var User|null $targetUser */
+        $targetUser = User::find($targetUserId);
+
+        if ($sourceUser == null || $targetUser == null) {
+            return $this->error('One of the accounts no longer exists. Please restart merge.');
+        }
+
+        /** @var AccountMergeService $mergeService */
+        $mergeService = app(AccountMergeService::class);
+
+        try {
+            $mergedUser = $mergeService->mergeIntoExistingAccount($sourceUser, $targetUser, [
+                'reason' => 'manual_merge_wizard_confirmed',
+                'match_type' => (string) ($previewData['transfer_by'] ?? 'phone'),
+                'request_ip' => $r->ip(),
+                'request_user_agent' => (string) $r->userAgent(),
+            ]);
+        } catch (\RuntimeException $e) {
+            Log::warning('ACCOUNT_MERGE_WIZARD_RUNTIME_BLOCK', [
+                'source_user_id' => $sourceUserId,
+                'target_user_id' => $targetUserId,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->error($e->getMessage(), 409);
+        } catch (\Throwable $e) {
+            Log::error('ACCOUNT_MERGE_WIZARD_CONFIRM_FAILED', [
+                'source_user_id' => $sourceUserId,
+                'target_user_id' => $targetUserId,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->error('Merge failed and was rolled back. Please try again or contact support.');
+        }
+
+        Cache::forget($cacheKey);
+
+        $newToken = auth('api')->setTTL(60 * 24 * 365 * 5)->login($mergedUser);
+        if (!$newToken) {
+            return $this->error('Merge completed, but failed to create a new session. Please login again.');
+        }
+
+        $freshUser = $mergedUser->fresh();
+        $userData = $freshUser ? $freshUser->toArray() : $mergedUser->toArray();
+        $userData['token'] = $newToken;
+        $userData['remember_token'] = $newToken;
+
+        return $this->success([
+            'user' => $userData,
+            'accounts_merged' => [
+                'merged' => true,
+                'from_user_id' => $sourceUserId,
+                'to_user_id' => (int) $mergedUser->id,
+            ],
+            'next_steps' => [
+                'Use your new account for future login and payments.',
+                'If you use third-party integrations, refresh saved account identifiers.',
+            ],
+        ], 'Accounts merged successfully.');
+    }
+
     public function profile_wizard_personal_info(Request $r)
     {
         $u = $this->resolveProfileWizardUser($r);
@@ -2198,7 +2412,12 @@ class ApiController extends BaseController
                     'error' => $mergeError->getMessage(),
                 ]);
 
-                return $this->error('Failed to merge account data. Please try again shortly.');
+                $message = trim((string) $mergeError->getMessage());
+                if ($message === '') {
+                    $message = 'Failed to merge account data. Please try again shortly.';
+                }
+
+                return $this->error($message);
             }
 
             $u->phone_number = $normalizedPhone;
@@ -2428,6 +2647,87 @@ class ApiController extends BaseController
         }
 
         return $emailOwner;
+    }
+
+    private function findMergeUserByContact(?string $normalizedPhone, ?string $normalizedEmail): array
+    {
+        $phoneOwner = null;
+        if (!empty($normalizedPhone)) {
+            $phoneOwner = $this->findPhoneOwnerForMerge($normalizedPhone, 0);
+        }
+
+        $emailOwner = null;
+        if (!empty($normalizedEmail)) {
+            $emailOwner = User::whereRaw('LOWER(TRIM(email)) = ?', [strtolower(trim($normalizedEmail))])
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        if ($phoneOwner != null && $emailOwner != null && (int) $phoneOwner->id !== (int) $emailOwner->id) {
+            return [null, true];
+        }
+
+        return [$phoneOwner ?? $emailOwner, false];
+    }
+
+    private function normalizeMergeEmailIfPossible(?string $value): string
+    {
+        $email = strtolower(trim((string) $value));
+        if (empty($email)) {
+            return '';
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return '';
+        }
+        if ($this->looksLikeAutoGeneratedEmail($email)) {
+            return '';
+        }
+
+        return $email;
+    }
+
+    private function buildMergeAccountPreview(User $u): array
+    {
+        $phone = $this->normalizeUgandaPhoneIfPossible($u->phone_number);
+        $email = strtolower(trim((string) ($u->email ?? '')));
+
+        return [
+            'id' => (int) $u->id,
+            'name' => (string) ($u->name ?? ''),
+            'first_name' => (string) ($u->first_name ?? ''),
+            'last_name' => (string) ($u->last_name ?? ''),
+            'email_masked' => $this->maskEmail($email),
+            'phone_masked' => $this->maskPhone($phone),
+            'account_state' => (string) ($u->account_state ?? ''),
+            'app_type' => (string) ($u->app_type ?? ''),
+            'created_at' => !empty($u->created_at) ? Carbon::parse($u->created_at)->toDateTimeString() : null,
+        ];
+    }
+
+    private function maskEmail(string $email): string
+    {
+        if (empty($email) || !str_contains($email, '@')) {
+            return '';
+        }
+
+        [$local, $domain] = explode('@', $email, 2);
+        if (strlen($local) <= 2) {
+            $maskedLocal = str_repeat('*', strlen($local));
+        } else {
+            $maskedLocal = substr($local, 0, 1) . str_repeat('*', max(1, strlen($local) - 2)) . substr($local, -1);
+        }
+
+        return $maskedLocal . '@' . $domain;
+    }
+
+    private function maskPhone(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone ?? '');
+        if (empty($digits) || strlen($digits) < 5) {
+            return '';
+        }
+
+        return substr($digits, 0, 4) . str_repeat('*', max(1, strlen($digits) - 7)) . substr($digits, -3);
     }
 
     private function findPhoneOwnerForMerge(string $normalizedPhone, int $excludeUserId): ?User
