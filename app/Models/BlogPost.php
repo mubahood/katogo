@@ -9,7 +9,7 @@ class BlogPost extends Model
     protected $table = 'blog_posts';
 
     protected $fillable = [
-        'title', 'content', 'excerpt', 'image_url', 'category',
+        'title', 'content', 'excerpt', 'image_url', 'youtube_url', 'category',
         'author_id', 'author_name', 'status', 'views_count',
         'likes_count', 'comments_count', 'is_pinned', 'comments_enabled',
     ];

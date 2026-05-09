@@ -12,6 +12,7 @@ use Encore\Admin\Grid;
 use Encore\Admin\Show;
 use Encore\Admin\Layout\Content;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class UserController extends AdminController
 {
@@ -427,55 +428,74 @@ class UserController extends AdminController
     {
         $form = new Form(new User());
 
-        $form->tab('Account', function ($form) {
-            $form->select('app_type', 'App Type')->options(['ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno', 'web' => 'Web'])->default('ugflix');
-            $form->text('username', 'Username');
-            $form->text('name', 'Name');
-            $form->email('email', 'Email');
-            $form->password('password', 'Password');
-            $form->image('avatar', 'Avatar');
-            $form->text('status', 'Status')->default('active');
-            $form->text('is_guest', 'Guest')->default('No');
-            $form->text('google_id', 'Google ID');
+        // Temporary diagnostics for production save issues on /users/{id}/edit.
+        $form->saving(function (Form $form) {
+            // Password is intentionally not editable from this admin form.
+            $form->ignore('password');
+
+            Log::debug('ADMIN_USERS_FORM_SAVING', [
+                'route' => request()->path(),
+                'method' => request()->method(),
+                'editing_user_id' => $form->model()->id ?? null,
+                'email' => (string) ($form->email ?? ''),
+                'phone_number' => (string) ($form->phone_number ?? ''),
+                'status' => (string) ($form->status ?? ''),
+                'app_type' => (string) ($form->app_type ?? ''),
+                'password_ignored' => true,
+            ]);
         });
 
-        $form->tab('Personal', function ($form) {
-            $form->text('first_name', 'First Name');
-            $form->text('last_name', 'Last Name');
-            $form->text('phone_number', 'Phone');
-            $form->text('phone_number_2', 'Phone 2');
-            $form->text('sex', 'Sex');
-            $form->date('dob', 'Date of Birth')->default(date('Y-m-d'));
-            $form->textarea('bio', 'Bio');
-            $form->text('tagline', 'Tagline');
-            $form->text('occupation', 'Occupation');
-            $form->text('education_level', 'Education');
+        $form->saved(function (Form $form) {
+            Log::debug('ADMIN_USERS_FORM_SAVED', [
+                'route' => request()->path(),
+                'method' => request()->method(),
+                'saved_user_id' => $form->model()->id ?? null,
+            ]);
         });
 
-        $form->tab('Location', function ($form) {
-            $form->text('country', 'Country');
-            $form->text('state', 'State');
-            $form->text('city', 'City');
-            $form->text('address', 'Address');
-            $form->decimal('latitude', 'Latitude');
-            $form->decimal('longitude', 'Longitude');
-        });
+        $form->divider('Account');
+        $form->select('app_type', 'App Type')->options(['ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno', 'web' => 'Web'])->default('ugflix');
+        $form->text('username', 'Username');
+        $form->text('name', 'Name');
+        $form->email('email', 'Email');
+        $form->image('avatar', 'Avatar');
+        $form->text('status', 'Status')->default('active');
+        $form->text('is_guest', 'Guest')->default('No');
+        $form->text('google_id', 'Google ID');
 
-        $form->tab('Settings', function ($form) {
-            $form->text('safe_mode', 'Safe Mode')->default('On');
-            $form->text('content_filtering', 'Content Filtering')->default('On');
-            $form->text('profile_visibility', 'Profile Visibility')->default('Public');
-            $form->switch('email_verified', 'Email Verified');
-            $form->switch('phone_verified', 'Phone Verified');
-            $form->text('push_notifications', 'Push Notifications');
-            $form->text('email_notifications', 'Email Notifications');
-        });
+        $form->divider('Personal');
+        $form->text('first_name', 'First Name');
+        $form->text('last_name', 'Last Name');
+        $form->text('phone_number', 'Phone');
+        $form->text('phone_number_2', 'Phone 2');
+        $form->text('sex', 'Sex');
+        $form->date('dob', 'Date of Birth')->default(date('Y-m-d'));
+        $form->textarea('bio', 'Bio');
+        $form->text('tagline', 'Tagline');
+        $form->text('occupation', 'Occupation');
+        $form->text('education_level', 'Education');
 
-        $form->tab('Subscription', function ($form) {
-            $form->text('subscription_tier', 'Tier');
-            $form->datetime('subscription_expires', 'Expires')->default(date('Y-m-d H:i:s'));
-            $form->number('credits_balance', 'Credits');
-        });
+        $form->divider('Location');
+        $form->text('country', 'Country');
+        $form->text('state', 'State');
+        $form->text('city', 'City');
+        $form->text('address', 'Address');
+        $form->decimal('latitude', 'Latitude');
+        $form->decimal('longitude', 'Longitude');
+
+        $form->divider('Settings');
+        $form->text('safe_mode', 'Safe Mode')->default('On');
+        $form->text('content_filtering', 'Content Filtering')->default('On');
+        $form->text('profile_visibility', 'Profile Visibility')->default('Public');
+        $form->switch('email_verified', 'Email Verified');
+        $form->switch('phone_verified', 'Phone Verified');
+        $form->text('push_notifications', 'Push Notifications');
+        $form->text('email_notifications', 'Email Notifications');
+
+        $form->divider('Subscription');
+        $form->text('subscription_tier', 'Tier');
+        $form->datetime('subscription_expires', 'Expires')->default(date('Y-m-d H:i:s'));
+        $form->number('credits_balance', 'Credits');
 
         return $form;
     }

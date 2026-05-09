@@ -136,11 +136,6 @@ class SubscriptionFlutterwaveService
         foreach ($latest as $prev) {
             $fromHistory = $this->extractPhoneFromSubscription($prev);
             if ($fromHistory !== '') {
-                Log::info('Flutterwave: using phone from payment history', [
-                    'user_id' => $subscription->user_id,
-                    'subscription_id' => $subscription->id,
-                    'source_subscription_id' => $prev->id,
-                ]);
                 return $fromHistory;
             }
         }
@@ -157,7 +152,6 @@ class SubscriptionFlutterwaveService
             $normalized = $this->normalizePhone((string) ($candidate ?? ''));
             if ($normalized !== '') {
                 Log::info('Flutterwave: using phone from user profile', [
-                    'user_id' => $subscription->user_id,
                     'subscription_id' => $subscription->id,
                 ]);
                 return $normalized;
@@ -352,23 +346,42 @@ class SubscriptionFlutterwaveService
             throw new \RuntimeException('Subscription not found for Flutterwave reference: ' . $txRef);
         }
 
+        // Idempotency guard: never downgrade an already confirmed payment.
+        if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+            $transaction = $this->upsertTransactionRecord(
+                $subscription,
+                ['tx_ref' => $txRef],
+                'Completed',
+                null
+            );
+
+            return [
+                'status' => 'success',
+                'subscription' => $subscription,
+                'transaction' => $transaction,
+                'verified' => ['status' => 'local_already_paid'],
+            ];
+        }
+
         try {
             $verified = $this->verifyByReference($txRef);
         } catch (\Exception $primaryException) {
             $message = (string) $primaryException->getMessage();
 
             if ($this->isVerificationNotFoundError($message) && empty($transactionId)) {
-                $subscription->status = 'Failed';
-                $subscription->payment_status = 'Failed';
-                $subscription->failed_at = now();
-                $subscription->payment_failure_reason = $message;
+                // "No transaction found" is common before the customer completes
+                // authorization on mobile money prompt. Keep it pending.
+                $subscription->status = 'Pending';
+                $subscription->payment_status = 'Processing';
+                $subscription->failed_at = null;
+                $subscription->payment_failure_reason = null;
                 $subscription->save();
 
                 $transaction = $this->upsertTransactionRecord(
                     $subscription,
                     ['tx_ref' => $txRef],
-                    'Failed',
-                    $message
+                    'Pending',
+                    null
                 );
 
                 Cache::forget("sub_pending_{$subscription->user_id}");
@@ -376,7 +389,7 @@ class SubscriptionFlutterwaveService
                 Cache::forget("v2_pay_check_{$subscription->user_id}");
 
                 return [
-                    'status' => 'failed',
+                    'status' => 'pending',
                     'subscription' => $subscription,
                     'transaction' => $transaction,
                     'verified' => ['status' => 'error', 'message' => $message],
@@ -409,7 +422,7 @@ class SubscriptionFlutterwaveService
         $subscription->flutterwave_transaction_id = $gatewayRef ?: ($subscription->flutterwave_transaction_id ?? null);
         $subscription->flutterwave_response = $verified;
 
-        if ($flwStatus === 'successful') {
+        if (in_array($flwStatus, ['successful', 'success', 'completed'], true)) {
             $subscription->save();
 
             /** @var SubscriptionActivationService $activationService */
@@ -420,6 +433,7 @@ class SubscriptionFlutterwaveService
             );
 
             $transaction = $this->upsertTransactionRecord($subscription, $gatewayData, 'Completed');
+            $this->syncSubscriptionPaymentTransactionsToCompleted($subscription);
 
             // Flush hot caches so clients immediately observe activated subscription
             Cache::forget("sub_pending_{$subscription->user_id}");
@@ -441,7 +455,7 @@ class SubscriptionFlutterwaveService
             ];
         }
 
-        if (in_array($flwStatus, ['failed', 'cancelled'], true)) {
+        if (in_array($flwStatus, ['failed', 'cancelled', 'canceled', 'error'], true)) {
             $subscription->status = 'Failed';
             $subscription->payment_status = 'Failed';
             $subscription->failed_at = now();
@@ -491,6 +505,22 @@ class SubscriptionFlutterwaveService
         return str_contains($needle, 'no transaction was found for this id')
             || str_contains($needle, 'no transaction found')
             || str_contains($needle, '404');
+    }
+
+    private function syncSubscriptionPaymentTransactionsToCompleted(Subscription $subscription): void
+    {
+        SubscriptionTransaction::where('subscription_id', $subscription->id)
+            ->where(function ($q) {
+                $q->whereNull('transaction_type')
+                    ->orWhere('transaction_type', '!=', 'Withdrawal');
+            })
+            ->where('status', '!=', 'Completed')
+            ->get()
+            ->each(function (SubscriptionTransaction $tx) {
+                $tx->status = 'Completed';
+                $tx->error_message = null;
+                $tx->save();
+            });
     }
 
     public function isValidWebhook(string $rawBody, ?string $signature): bool

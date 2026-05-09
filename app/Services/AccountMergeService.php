@@ -14,7 +14,8 @@ class AccountMergeService
 {
     private const AUTO_MERGE_DEADLINE = '2026-09-30 23:59:59';
     private const MIN_OLD_ACCOUNT_AGE_HOURS = 24;
-    private const MAX_MERGES_PER_ACCOUNT = 6;
+    // 0 means unlimited merges (limit disabled).
+    private const MAX_MERGES_PER_ACCOUNT = 0;
 
     /**
      * Merge is allowed up to and including 30 September 2026.
@@ -35,6 +36,16 @@ class AccountMergeService
     public function getMergeStatsForUser(int $userId): array
     {
         $completedMerges = $this->countCompletedMergesForUser($userId);
+
+        if (self::MAX_MERGES_PER_ACCOUNT <= 0) {
+            return [
+                'user_id' => $userId,
+                'completed_merges' => $completedMerges,
+                'remaining_merges' => null,
+                'max_merges' => self::MAX_MERGES_PER_ACCOUNT,
+                'limit_reached' => false,
+            ];
+        }
 
         return [
             'user_id' => $userId,
@@ -367,6 +378,7 @@ class AccountMergeService
         $digits = preg_replace('/\D+/', '', $normalizedPhone);
         $last9 = strlen($digits) >= 9 ? substr($digits, -9) : $digits;
         $phoneColumns = $this->mergePhoneColumns();
+        $paymentAccountUserIds = $this->findPaymentAccountUserIdsByPhone($normalizedPhone);
 
         $variants = array_values(array_unique(array_filter([
             $normalizedPhone,
@@ -377,7 +389,7 @@ class AccountMergeService
         ])));
 
         return User::where('id', '!=', $excludeUserId)
-            ->where(function ($q) use ($variants, $digits, $last9, $phoneColumns) {
+            ->where(function ($q) use ($variants, $digits, $last9, $phoneColumns, $paymentAccountUserIds) {
                 foreach ($phoneColumns as $column) {
                     $q->orWhereIn($column, $variants);
 
@@ -392,9 +404,54 @@ class AccountMergeService
                         $q->orWhere($column, 'like', "%{$last9}");
                     }
                 }
+
+                if (!empty($paymentAccountUserIds)) {
+                    $q->orWhereIn('id', $paymentAccountUserIds);
+                }
             })
             ->orderByDesc('id')
             ->get();
+    }
+
+    private function findPaymentAccountUserIdsByPhone(string $normalizedPhone): array
+    {
+        if (!Schema::hasTable('subscription_transactions') || !Schema::hasColumn('subscription_transactions', 'payment_account')) {
+            return [];
+        }
+
+        $digits = preg_replace('/\D+/', '', $normalizedPhone);
+        if (empty($digits)) {
+            return [];
+        }
+
+        $last9 = strlen($digits) >= 9 ? substr($digits, -9) : $digits;
+        $variants = array_values(array_unique(array_filter([
+            $normalizedPhone,
+            '+' . $normalizedPhone,
+            $digits,
+            strlen($last9) === 9 ? ('0' . $last9) : null,
+            $last9,
+        ])));
+
+        return DB::table('subscription_transactions')
+            ->whereNotNull('user_id')
+            ->where(function ($q) use ($variants, $digits, $last9) {
+                $q->whereIn('payment_account', $variants)
+                    ->orWhereRaw(
+                        "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(payment_account, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') = ?",
+                        [$digits]
+                    );
+
+                if (!empty($last9)) {
+                    $q->orWhere('payment_account', 'like', "%{$last9}");
+                }
+            })
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function mergePhoneColumns(): array
@@ -1000,6 +1057,10 @@ class AccountMergeService
 
     private function ensureMergeLimitNotReached(int $userId, string $label): void
     {
+        if (self::MAX_MERGES_PER_ACCOUNT <= 0) {
+            return;
+        }
+
         $count = $this->countCompletedMergesForUser($userId);
         if ($count >= self::MAX_MERGES_PER_ACCOUNT) {
             throw new \RuntimeException(
@@ -1015,6 +1076,10 @@ class AccountMergeService
 
     private function ensureBatchMergeLimitNotReached(int $targetUserId, array $sourceUserIds): void
     {
+        if (self::MAX_MERGES_PER_ACCOUNT <= 0) {
+            return;
+        }
+
         $sourceUserIds = array_values(array_unique(array_filter(array_map('intval', $sourceUserIds), function ($id) use ($targetUserId) {
             return $id > 0 && $id !== $targetUserId;
         })));

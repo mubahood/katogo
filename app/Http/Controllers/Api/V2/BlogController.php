@@ -44,13 +44,13 @@ class BlogController extends Controller
     protected const REPORT_THRESHOLD = 3; // Auto-hide after N reports
 
     protected const LIST_FIELDS = [
-        'id', 'title', 'excerpt', 'image_url', 'category',
+        'id', 'title', 'excerpt', 'image_url', 'youtube_url', 'category',
         'author_name', 'views_count', 'likes_count', 'comments_count',
         'is_pinned', 'created_at',
     ];
 
     protected const DETAIL_FIELDS = [
-        'id', 'title', 'content', 'excerpt', 'image_url', 'category',
+        'id', 'title', 'content', 'excerpt', 'image_url', 'youtube_url', 'category',
         'author_name', 'status', 'views_count', 'likes_count', 'comments_count',
         'is_pinned', 'comments_enabled', 'created_at', 'updated_at',
     ];

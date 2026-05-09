@@ -71,3 +71,9 @@ i want you yo carefully under how this is implmented both in app and backend.
 then carefully introduce this web prlatoform keyword.
 introduce it across everything including in payment prefix, and everything including in stats of graphs n dashboard, and all pages .
 ensure perfection and no room for any error.
+.
+
+now I want us to debug things step by set here.
+
+create a special indipend php backend powered , and bootstap front end and ajax jquest with javescript that we shall use for debging subscrptions.
+if we enter subscrtion payment reference.. it should be able to go to 

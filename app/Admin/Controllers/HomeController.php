@@ -59,7 +59,7 @@ class HomeController extends Controller
             ->where('payment_status', 'Completed')
             ->sum('amount_paid');
         $totalWithdrawals = DB::table('subscription_transactions')
-            ->where('status', 'completed')
+            ->whereRaw('LOWER(status) = ?', ['completed'])
             ->where('transaction_type', 'Withdrawal')
             ->sum('amount');
         $netRevenue = $subRevenue + $totalWithdrawals;
@@ -117,7 +117,7 @@ class HomeController extends Controller
         $dailyRevenueRaw = DB::table('subscription_transactions')
             ->join('admin_users', 'admin_users.id', '=', 'subscription_transactions.user_id')
             ->select(DB::raw('DATE(subscription_transactions.created_at) as d'), 'admin_users.app_type', DB::raw('SUM(subscription_transactions.amount) as total'))
-            ->where('subscription_transactions.status', 'completed')
+            ->whereRaw('LOWER(subscription_transactions.status) = ?', ['completed'])
             ->where('subscription_transactions.transaction_type', '!=', 'Withdrawal')
             ->where('subscription_transactions.created_at', '>=', $thirtyDaysAgo)
             ->groupBy('d', 'admin_users.app_type')
@@ -180,7 +180,7 @@ class HomeController extends Controller
         $dailySubsRaw = DB::table('subscription_transactions')
             ->select(DB::raw('DATE(created_at) as d'), DB::raw('COUNT(*) as cnt'), DB::raw('SUM(amount) as total'))
             ->where('created_at', '>=', $thirtyDaysAgo)
-            ->where('status', 'completed')
+            ->whereRaw('LOWER(status) = ?', ['completed'])
             ->where('transaction_type', '!=', 'Withdrawal')
             ->groupBy('d')
             ->orderBy('d', 'desc')
