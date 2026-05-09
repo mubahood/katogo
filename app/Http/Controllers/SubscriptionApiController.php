@@ -11,6 +11,8 @@ use App\Models\Utils;
 use App\Services\SubscriptionPesapalService;
 use App\Services\SubscriptionFlutterwaveService;
 use App\Services\PaymentStatusChecker;
+use App\Services\AccountMergeService;
+use App\Services\SubscriptionActivationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -27,15 +29,18 @@ class SubscriptionApiController extends Controller
     protected $pesapalService;
     protected $flutterwaveService;
     protected $statusChecker;
+    protected $accountMergeService;
 
     public function __construct(
         SubscriptionPesapalService $pesapalService,
         SubscriptionFlutterwaveService $flutterwaveService,
-        PaymentStatusChecker $statusChecker
+        PaymentStatusChecker $statusChecker,
+        AccountMergeService $accountMergeService
     ) {
         $this->pesapalService = $pesapalService;
         $this->flutterwaveService = $flutterwaveService;
         $this->statusChecker = $statusChecker;
+        $this->accountMergeService = $accountMergeService;
     }
 
     /**
@@ -196,6 +201,7 @@ class SubscriptionApiController extends Controller
                 'payment_gateway' => 'nullable|string|in:pesapal,flutterwave',
                 'payment_channel' => 'nullable|string|in:card,mobile_money',
                 'mobile_money_phone' => 'nullable|string|max:30',
+                'email' => 'nullable|email|max:255',
             ]);
 
             if ($validator->fails()) {
@@ -234,6 +240,68 @@ class SubscriptionApiController extends Controller
 
             $paymentChannel = strtolower(trim((string) $request->input('payment_channel', '')));
             $mobileMoneyPhone = $request->input('mobile_money_phone');
+            $submittedEmail = $request->input('email');
+            $mergeMeta = null;
+
+            // Optional account merge by submitted contact before creating a new subscription.
+            // This prevents charging on an auto-generated account when submitted phone/email
+            // belongs to the user's older real account.
+            if (!empty(trim((string) $mobileMoneyPhone)) || !empty(trim((string) $submittedEmail))) {
+                try {
+                    $mergeResult = $this->accountMergeService->mergeForSubscriptionByContact(
+                        $user,
+                        $mobileMoneyPhone,
+                        $submittedEmail,
+                        [
+                            'reason' => 'subscription_create_contact_match',
+                            'request_ip' => $request->ip(),
+                            'request_user_agent' => (string) $request->userAgent(),
+                        ]
+                    );
+                } catch (\RuntimeException $e) {
+                    return response()->json([
+                        'code' => 0,
+                        'status' => 409,
+                        'message' => $e->getMessage(),
+                        'data' => [
+                            'merge_block_reason' => 'merge_limit_or_policy',
+                        ],
+                    ], 409);
+                }
+
+                if (!empty($mergeResult['blocked'])) {
+                    return response()->json([
+                        'code' => 0,
+                        'status' => 409,
+                        'message' => $mergeResult['message'] ?? 'This phone number is linked to another account. Please use that account.',
+                        'data' => [
+                            'phone_number' => $mergeResult['phone_number'] ?? null,
+                            'email' => $mergeResult['email'] ?? null,
+                            'merge_block_reason' => $mergeResult['reason'] ?? null,
+                            'owner_user_id' => $mergeResult['owner_user_id'] ?? null,
+                        ],
+                    ], 409);
+                }
+
+                if (!empty($mergeResult['merged']) && !empty($mergeResult['user'])) {
+                    $mergeMeta = [
+                        'merged' => true,
+                        'from_user_id' => $mergeResult['from_user_id'] ?? null,
+                        'to_user_id' => $mergeResult['to_user_id'] ?? null,
+                        'phone_number' => $mergeResult['phone_number'] ?? null,
+                        'email' => $mergeResult['email'] ?? null,
+                    ];
+
+                    $user = $mergeResult['user'];
+                    $mobileMoneyPhone = $mergeResult['phone_number'] ?? $mobileMoneyPhone;
+
+                    Log::info('Subscription create: account merged before payment init', [
+                        'from_user_id' => $mergeMeta['from_user_id'],
+                        'to_user_id' => $mergeMeta['to_user_id'],
+                        'phone_number' => $mergeMeta['phone_number'],
+                    ]);
+                }
+            }
 
             // Channel preference only sets sensible defaults when gateway is not explicitly provided.
             $explicitGatewayRequested = !empty(trim((string) $request->input('payment_gateway')));
@@ -379,6 +447,7 @@ class SubscriptionApiController extends Controller
                     'amount' => $subscription->amount_paid,
                     'currency' => $subscription->currency,
                     'payment_gateway' => $gateway,
+                    'accounts_merged' => $mergeMeta,
                 ],
             ]);
 
@@ -706,6 +775,83 @@ class SubscriptionApiController extends Controller
                 'code' => 0,
                 'status' => 500,
                 'message' => 'Failed to retrieve subscription history',
+                'data' => null,
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a single subscription details payload for the current user.
+     * GET /api/subscriptions/{id}/details
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function details(Request $request, $id)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 401,
+                    'message' => 'Authentication required',
+                    'data' => null,
+                ], 401);
+            }
+
+            $subscription = $user->subscriptions()->with('plan')->find($id);
+
+            if (!$subscription) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 404,
+                    'message' => 'Subscription not found',
+                    'data' => null,
+                ], 404);
+            }
+
+            if ($subscription->status === 'Active') {
+                $this->normalizeActiveSubscriptionAndTransactions($subscription, 'subscription_details_endpoint');
+                $subscription->refresh();
+            }
+
+            $subscriptionData = $subscription->toApiArray();
+
+            return response()->json([
+                'code' => 1,
+                'status' => 200,
+                'message' => 'Subscription details retrieved successfully',
+                'data' => [
+                    'subscription' => $subscriptionData,
+                    'available_actions' => $this->buildSubscriptionAvailableActions($subscription),
+                    'action_endpoints' => [
+                        'check_payment' => '/api/subscriptions/' . $subscription->id . '/check-payment',
+                        'retry_payment' => '/api/subscriptions/retry-payment',
+                        'cancel_pending' => '/api/subscriptions/' . $subscription->id . '/cancel',
+                        'initiate_payment' => '/api/subscriptions/' . $subscription->id . '/initiate-payment',
+                        'history' => '/api/subscriptions/history',
+                    ],
+                    'server_time' => now()->toIso8601String(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get subscription details', [
+                'user_id' => $request->user()?->id,
+                'subscription_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'code' => 0,
+                'status' => 500,
+                'message' => 'Failed to retrieve subscription details',
                 'data' => null,
             ], 500);
         }
@@ -1044,7 +1190,9 @@ class SubscriptionApiController extends Controller
                         'status' => 200,
                         'message' => 'Pending subscription found',
                         'data' => [
+                            'logged_user_id' => (int) $user->id,
                             'has_pending' => true,
+                            'available_actions' => $this->buildPendingScreenActions($pendingSubscription),
                             'pending_subscription' => [
                                 'id' => $pendingSubscription->id,
                                 'user_id' => $pendingSubscription->user_id,
@@ -1068,6 +1216,7 @@ class SubscriptionApiController extends Controller
                                 'created_at' => $pendingSubscription->created_at->toIso8601String(),
                                 'expires_at' => null,
                             ],
+                            'server_synced_at' => now()->toIso8601String(),
                         ],
                     ];
                 }
@@ -1077,8 +1226,10 @@ class SubscriptionApiController extends Controller
                     'status' => 200,
                     'message' => 'No pending subscription. USER ID: ' . $user->id,
                     'data' => [
+                        'logged_user_id' => (int) $user->id,
                         'has_pending' => false,
                         'pending_subscription' => null,
+                        'server_synced_at' => now()->toIso8601String(),
                     ],
                 ];
             });
@@ -1183,6 +1334,9 @@ class SubscriptionApiController extends Controller
             ] = $this->initializePaymentWithFallback($subscription, $gateway, $callbackUrl);
 
             if ($paymentResult['success']) {
+                $this->invalidateUserPaymentCaches($subscription);
+                $this->syncPaymentSupportTicketByStatus($subscription);
+
                 return response()->json([
                     'code' => 1,
                     'status' => 200,
@@ -1198,6 +1352,7 @@ class SubscriptionApiController extends Controller
                         'amount' => $subscription->amount_paid,
                         'currency' => $subscription->currency,
                         'payment_gateway' => $gateway,
+                        'checked_at' => now()->toIso8601String(),
                     ],
                 ]);
             }
@@ -1259,6 +1414,8 @@ class SubscriptionApiController extends Controller
             if ($subscription->status === 'Active') {
                 $this->normalizeActiveSubscriptionAndTransactions($subscription, 'check_pending_payment');
                 $subscription->refresh();
+                $this->invalidateUserPaymentCaches($subscription);
+                $this->syncPaymentSupportTicketByStatus($subscription);
 
                 return response()->json([
                     'code' => 1,
@@ -1267,6 +1424,7 @@ class SubscriptionApiController extends Controller
                     'data' => $this->buildPaymentCheckResponseData($subscription, $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method), [
                         'status' => 'success',
                         'short_circuited' => true,
+                        'checked_at' => now()->toIso8601String(),
                     ]),
                 ]);
             }
@@ -1274,6 +1432,9 @@ class SubscriptionApiController extends Controller
             // DEADLOCK GUARD: if payment_status is already Completed, return success
             // immediately without hitting the remote gateway.
             if ($subscription->payment_status === 'Completed') {
+                $this->invalidateUserPaymentCaches($subscription);
+                $this->syncPaymentSupportTicketByStatus($subscription);
+
                 return response()->json([
                     'code' => 1,
                     'status' => 200,
@@ -1281,7 +1442,10 @@ class SubscriptionApiController extends Controller
                     'data' => $this->buildPaymentCheckResponseData(
                         $subscription,
                         $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method),
-                        ['status' => 'success']
+                        [
+                            'status' => 'success',
+                            'checked_at' => now()->toIso8601String(),
+                        ]
                     ),
                 ]);
             }
@@ -1316,6 +1480,7 @@ class SubscriptionApiController extends Controller
                         'next_action_type' => $paymentResult['next_action_type'] ?? null,
                         'order_tracking_id' => $paymentResult['order_tracking_id'] ?? null,
                         'subscription' => $subscription->fresh()->toApiArray(),
+                        'checked_at' => now()->toIso8601String(),
                     ],
                 ]);
             }
@@ -1339,6 +1504,9 @@ class SubscriptionApiController extends Controller
                 $result = $this->pesapalService->updateSubscriptionStatus($subscription->pesapal_tracking_id, $statusResult['data']);
                 $subscription->refresh();
             }
+
+            $this->invalidateUserPaymentCaches($subscription);
+            $this->syncPaymentSupportTicketByStatus($subscription);
 
             return response()->json([
                 'code' => 1,
@@ -1474,6 +1642,125 @@ class SubscriptionApiController extends Controller
                 'status' => 500,
                 'message' => 'Failed to cancel subscription',
                 'data' => null,
+            ], 500);
+        }
+    }
+
+    /**
+     * Regenerate a fresh payment link for pending/failed subscription.
+     * POST /api/subscriptions/{id}/regenerate-link
+     */
+    public function regeneratePaymentLink(Request $request, $id)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                $user = Utils::get_user($request);
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 401,
+                    'message' => 'Authentication required',
+                    'data' => null,
+                ], 401);
+            }
+
+            $subscription = $this->resolveUserActionableSubscription($user, (int) $id, true);
+            if (!$subscription) {
+                return response()->json([
+                    'code' => 0,
+                    'status' => 404,
+                    'message' => 'No actionable subscription found for this user',
+                    'data' => null,
+                ], 404);
+            }
+
+            if ($subscription->status === 'Active' && $subscription->payment_status === 'Completed') {
+                return response()->json([
+                    'code' => 1,
+                    'status' => 200,
+                    'message' => 'Subscription is already active and paid',
+                    'data' => [
+                        'subscription_id' => $subscription->id,
+                        'order_tracking_id' => $subscription->pesapal_tracking_id,
+                        'merchant_reference' => $subscription->pesapal_merchant_reference,
+                        'redirect_url' => $subscription->payment_url,
+                        'payment_gateway' => $this->resolveGateway($subscription->payment_gateway ?: $subscription->payment_method),
+                        'already_active' => true,
+                    ],
+                ]);
+            }
+
+            $gateway = $this->resolveGateway($request->input('payment_gateway') ?: ($subscription->payment_gateway ?: $subscription->payment_method));
+
+            $subscription->status = 'Pending';
+            $subscription->payment_status = 'Pending';
+            $subscription->payment_url = null;
+            $subscription->failed_at = null;
+            $subscription->payment_failure_reason = null;
+            $subscription->cancelled_at = null;
+            $subscription->cancelled_reason = null;
+            $subscription->payment_gateway = $gateway;
+            $subscription->payment_method = $gateway;
+
+            if ($gateway === 'flutterwave') {
+                $subscription->flutterwave_reference = null;
+                $subscription->flutterwave_transaction_id = null;
+                $subscription->flutterwave_response = null;
+            } else {
+                $subscription->pesapal_tracking_id = null;
+                $subscription->pesapal_transaction_id = null;
+                $subscription->pesapal_signature = null;
+                $subscription->pesapal_response = null;
+            }
+
+            $subscription->save();
+
+            Cache::forget("sub_pending_{$user->id}");
+            $this->ensureBootstrapTransactionRecord($subscription, $gateway);
+
+            [
+                'gateway' => $gateway,
+                'payment_result' => $paymentResult,
+            ] = $this->initializePaymentWithFallback($subscription, $gateway, $request->input('callback_url'));
+
+            $this->invalidateUserPaymentCaches($subscription);
+            $this->syncPaymentSupportTicketByStatus($subscription);
+
+            return response()->json([
+                'code' => 1,
+                'status' => 200,
+                'message' => 'A fresh payment link has been generated successfully',
+                'data' => [
+                    'subscription_id' => $subscription->id,
+                    'order_tracking_id' => $paymentResult['order_tracking_id'] ?? null,
+                    'merchant_reference' => $paymentResult['merchant_reference'] ?? null,
+                    'redirect_url' => $paymentResult['redirect_url'] ?? null,
+                    'payment_message' => $paymentResult['payment_message'] ?? null,
+                    'next_action_type' => $paymentResult['next_action_type'] ?? null,
+                    'payment_status' => $paymentResult['payment_status'] ?? $subscription->payment_status,
+                    'payment_gateway' => $gateway,
+                    'regenerated_at' => now()->toIso8601String(),
+                    'subscription' => $subscription->fresh()->toApiArray(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to regenerate payment link', [
+                'user_id' => $request->user()?->id,
+                'subscription_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'code' => 0,
+                'status' => 500,
+                'message' => 'Failed to regenerate payment link',
+                'data' => [
+                    'technical_error' => $e->getMessage(),
+                ],
             ], 500);
         }
     }
@@ -2119,15 +2406,17 @@ class SubscriptionApiController extends Controller
     private function buildPaymentCheckResponseData(Subscription $subscription, string $gateway, array $result): array
     {
         $subscription->refresh();
+        $isSuccess = ($subscription->status === 'Active' && $subscription->payment_status === 'Completed');
 
         return [
-            'success' => true,
+            'success' => $isSuccess,
             'status' => $subscription->status,
             'payment_status' => $subscription->payment_status,
             'payment_gateway' => $gateway,
             'gateway_status' => $result['status'] ?? null,
             'gateway_response_message' => $this->extractGatewayResponseMessage($subscription, $gateway),
             'next_step_explanation' => $this->buildNextStepExplanation($subscription),
+            'checked_at' => $result['checked_at'] ?? now()->toIso8601String(),
             'order_tracking_id' => $subscription->payment_gateway === 'flutterwave'
                 ? ($subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference)
                 : $subscription->pesapal_tracking_id,
@@ -2185,6 +2474,26 @@ class SubscriptionApiController extends Controller
         }
 
         return 'The payment is still pending or processing. Complete the gateway prompt if it is waiting on your phone, then check status again.';
+    }
+
+    private function buildPendingScreenActions(Subscription $subscription): array
+    {
+        $status = strtolower((string) $subscription->status);
+        $paymentStatus = strtolower((string) $subscription->payment_status);
+
+        $canPayNow = in_array($paymentStatus, ['pending', 'processing', 'failed'], true);
+        $canCheck = in_array($paymentStatus, ['pending', 'processing', 'failed'], true);
+        $canRegenerate = in_array($paymentStatus, ['pending', 'processing', 'failed'], true)
+            || in_array($status, ['failed', 'cancelled'], true);
+        $canCancel = $status !== 'active' && $paymentStatus !== 'completed';
+
+        return [
+            'pay_now' => $canPayNow,
+            'check_status' => $canCheck,
+            'run_fix' => true,
+            'regenerate_link' => $canRegenerate,
+            'cancel' => $canCancel,
+        ];
     }
 
     private function extractFlutterwaveTxRef(Request $request): ?string
@@ -2450,6 +2759,34 @@ class SubscriptionApiController extends Controller
     }
 
     /**
+     * Compute actionable operations for subscription details UI.
+     */
+    private function buildSubscriptionAvailableActions(Subscription $subscription): array
+    {
+        $status = strtolower((string) $subscription->status);
+        $paymentStatus = strtolower((string) $subscription->payment_status);
+
+        $canCheckPayment = in_array($paymentStatus, ['pending', 'processing'], true)
+            || in_array($status, ['pending', 'processing'], true);
+
+        $canRetryPayment = in_array($paymentStatus, ['failed', 'pending'], true)
+            || $status === 'failed';
+
+        $canCancelPending = $canCheckPayment
+            && $status !== 'active'
+            && $paymentStatus !== 'completed';
+
+        $canRenew = $status === 'expired';
+
+        return [
+            'check_payment' => $canCheckPayment,
+            'retry_payment' => $canRetryPayment,
+            'cancel_pending' => $canCancelPending,
+            'renew' => $canRenew,
+        ];
+    }
+
+    /**
      * Resolve a user-owned subscription for payment actions.
      * Treats incoming ID as a hint and falls back to latest actionable subscription.
      */
@@ -2485,42 +2822,19 @@ class SubscriptionApiController extends Controller
         $originalStatus = $subscription->status;
         $originalPaymentStatus = $subscription->payment_status;
 
-        $subscription->status = 'Active';
-        $subscription->payment_status = 'Completed';
+        /** @var SubscriptionActivationService $activationService */
+        $activationService = app(SubscriptionActivationService::class);
+        $subscription = $activationService->activatePaidSubscription($subscription, $source);
 
-        if (!$subscription->payment_confirmed_at) {
-            $subscription->payment_confirmed_at = now();
-        }
-
-        if (!$subscription->start_date_time) {
-            $subscription->start_date_time = now();
-        }
-
-        if (!$subscription->end_date_time) {
-            $days = max(1, (int) $subscription->days);
-            $subscription->end_date_time = \Carbon\Carbon::parse($subscription->start_date_time)->addHours($days * 24);
-        }
-
-        if (!$subscription->grace_period_end && $subscription->end_date_time) {
-            $subscription->grace_period_end = \Carbon\Carbon::parse($subscription->end_date_time)->addDays(3);
-        }
-
-        $subscription->failed_at = null;
-        $subscription->payment_failure_reason = null;
-
-        if ($subscription->isDirty()) {
-            $subscription->save();
-
-            Log::info('Subscription callback success normalized', [
-                'subscription_id' => $subscription->id,
-                'user_id' => $subscription->user_id,
-                'source' => $source,
-                'from_status' => $originalStatus,
-                'from_payment_status' => $originalPaymentStatus,
-                'to_status' => $subscription->status,
-                'to_payment_status' => $subscription->payment_status,
-            ]);
-        }
+        Log::info('Subscription callback success normalized', [
+            'subscription_id' => $subscription->id,
+            'user_id' => $subscription->user_id,
+            'source' => $source,
+            'from_status' => $originalStatus,
+            'from_payment_status' => $originalPaymentStatus,
+            'to_status' => $subscription->status,
+            'to_payment_status' => $subscription->payment_status,
+        ]);
 
         $this->syncCompletedPaymentTransactions($subscription, $source);
 

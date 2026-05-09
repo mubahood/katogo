@@ -678,7 +678,9 @@ class MovieModel extends Model
 
             // Store old URL before transfer
             if (empty($this->old_video_url)) {
-                $this->old_video_url = $videoUrl;
+                $safeOldUrl = trim((string) $videoUrl);
+                $safeOldUrl = preg_replace('/[\x00-\x1F\x7F]/u', '', $safeOldUrl) ?? $safeOldUrl;
+                $this->old_video_url = mb_substr($safeOldUrl, 0, 60000);
                 $this->save();
             }
 

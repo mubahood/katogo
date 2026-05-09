@@ -79,12 +79,14 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('subscriptions/default-gateway', [SubscriptionApiController::class, 'setDefaultGateway']);
     Route::get('subscriptions/my-subscription', [SubscriptionApiController::class, 'mySubscription']);
     Route::get('subscriptions/history', [SubscriptionApiController::class, 'history']);
+    Route::get('subscriptions/{id}/details', [SubscriptionApiController::class, 'details']);
     Route::post('subscriptions/retry-payment', [SubscriptionApiController::class, 'retryPayment']);
     Route::post('subscriptions/check-status', [SubscriptionApiController::class, 'checkStatus']);
 
     // Pending Subscription Management Routes
     Route::get('subscriptions/pending', [SubscriptionApiController::class, 'getPending']);
     Route::post('subscriptions/{id}/initiate-payment', [SubscriptionApiController::class, 'initiatePayment']);
+    Route::post('subscriptions/{id}/regenerate-link', [SubscriptionApiController::class, 'regeneratePaymentLink']);
     Route::post('subscriptions/{id}/check-payment', [SubscriptionApiController::class, 'checkPendingPayment']);
     Route::post('subscriptions/{id}/cancel', [SubscriptionApiController::class, 'cancelPending']);
 });

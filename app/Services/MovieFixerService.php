@@ -670,7 +670,7 @@ class MovieFixerService
         if ($newUrl !== $oldUrlRaw) {
             // Preserve old URL for reference
             if (!empty($oldUrlRaw) && strlen($oldUrlRaw) > 5) {
-                $movie->old_video_url = $oldUrlRaw;
+                $movie->old_video_url = $this->normalizeOldVideoUrlForStorage($oldUrlRaw);
             }
             $movie->url = $newUrl;
             $changes['url'] = ['old' => $oldUrlRaw, 'new' => $newUrl];
@@ -1275,5 +1275,22 @@ class MovieFixerService
             'message' => $reason,
             'error'   => $reason,
         ];
+    }
+
+    /**
+     * Guard against oversized/invalid strings before persisting old video URLs.
+     */
+    protected function normalizeOldVideoUrlForStorage(?string $url): ?string
+    {
+        $value = trim((string) $url);
+        if ($value === '') {
+            return null;
+        }
+
+        // Remove control chars that can break SQL/text rendering.
+        $value = preg_replace('/[\x00-\x1F\x7F]/u', '', $value) ?? $value;
+
+        // TEXT supports up to 65535 bytes; keep safe headroom.
+        return mb_substr($value, 0, 60000);
     }
 }

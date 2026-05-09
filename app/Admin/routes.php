@@ -83,23 +83,49 @@ Route::group([
 
     // API: User search (Select2 AJAX for subscription form)
     $router->get('api/users', function (\Illuminate\Http\Request $request) {
-        $q = trim($request->get('q', ''));
-        $query = \App\Models\User::limit(20)->select(['id', 'name', 'email']);
+        $q = trim((string) ($request->get('q', $request->get('search', $request->get('term', '')))));
+        $perPage = 20;
+
+        $query = \App\Models\User::query()->select(['id', 'name', 'email', 'phone_number']);
+
         if ($q !== '') {
             if (is_numeric($q)) {
-                $query->where('id', $q);
+                $query->where('id', (int) $q);
             } else {
                 $query->where(function ($sq) use ($q) {
                     $sq->where('name', 'like', "%{$q}%")
-                       ->orWhere('email', 'like', "%{$q}%");
+                        ->orWhere('email', 'like', "%{$q}%")
+                        ->orWhere('phone_number', 'like', "%{$q}%");
                 });
             }
         }
-        $results = $query->get()->map(fn($u) => [
-            'id'   => $u->id,
-            'text' => "{$u->name} ({$u->email})",
-        ])->values()->toArray();
-        return response()->json(['results' => $results]);
+
+        $paginator = $query
+            ->orderByDesc('id')
+            ->paginate($perPage);
+
+        $paginator->getCollection()->transform(function ($u) {
+            $name = trim((string) ($u->name ?? ''));
+            $email = trim((string) ($u->email ?? ''));
+            $phone = trim((string) ($u->phone_number ?? ''));
+            $phoneText = $phone !== '' ? (' | ' . $phone) : '';
+
+            if ($name === '' && $email === '') {
+                $text = '#' . $u->id . $phoneText;
+            } elseif ($email === '') {
+                $text = '#' . $u->id . ' - ' . $name . $phoneText;
+            } elseif ($name === '') {
+                $text = '#' . $u->id . ' - ' . $email . $phoneText;
+            } else {
+                $text = '#' . $u->id . ' - ' . $name . ' (' . $email . ')' . $phoneText;
+            }
+
+            $u->id = (string) $u->id;
+            $u->text = $text;
+            return $u;
+        });
+
+        return response()->json($paginator);
     });
 
     // API: Admin subscription actions (recheck, activate, cancel, extend, mark-expired)

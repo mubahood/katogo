@@ -865,93 +865,12 @@ class SubscriptionPesapalService
             // ==================== PAYMENT SUCCESS ====================
             // FIXED: Use strict === comparison to avoid type coercion issues
             if ($statusCodeInt === 1 || strtolower($paymentStatus ?? '') === 'completed') {
-                
-        
-                // Check if subscription is already active
-                $isAlreadyActive = ($subscription->status === 'Active' && $subscription->payment_status === 'Completed');
-                
-                if ($isAlreadyActive) {
-                    Log::info('ℹ️ Pesapal: Subscription ALREADY ACTIVE - Will not update start_date_time', [
-                        'subscription_id' => $subscription->id,
-                        'existing_start_date' => $subscription->start_date_time,
-                        'existing_end_date' => $subscription->end_date_time,
-                    ]);
-                }
-
-                // Update subscription - CAREFULLY
-                $subscription->status = 'Active';
-                $subscription->payment_status = 'Completed';
-                
-                // ALWAYS recalculate start_date_time on FIRST activation.
-                // We never preserve a pre-set start from the Pending phase — it may have
-                // been set months before payment and would cause immediate expiry.
-                if (!$isAlreadyActive) {
-                    // For extensions, start from end of the subscription being extended
-                    if ($subscription->is_extension && $subscription->extended_from_id) {
-                        $parentSub = Subscription::find($subscription->extended_from_id);
-                        if ($parentSub && $parentSub->end_date_time && $parentSub->end_date_time > now()) {
-                            $subscription->start_date_time = $parentSub->end_date_time;
-                            Log::info('📅 Pesapal: Setting extension start_date_time from parent', [
-                                'parent_id' => $parentSub->id,
-                                'start_date_time' => $subscription->start_date_time,
-                            ]);
-                        } else {
-                            $subscription->start_date_time = now();
-                        }
-                    } else {
-                        $subscription->start_date_time = now();
-                    }
-                    Log::info('📅 Pesapal: Setting start_date_time (first activation)', [
-                        'start_date_time' => $subscription->start_date_time,
-                    ]);
-                } else {
-                    Log::info('📅 Pesapal: Keeping existing start_date_time (already active)', [
-                        'start_date_time' => $subscription->start_date_time,
-                    ]);
-                }
-
-                // ALWAYS recalculate end_date_time on first activation.
-                // Never trust a pre-set end_date_time — it may be wrong.
-                if (!$isAlreadyActive) {
-                    $days = (int) $subscription->days;
-                    if ($days <= 0) {
-                        // Fallback: load duration from the plan
-                        $subscription->load('plan');
-                        $days = $subscription->plan ? (int) $subscription->plan->duration_days : 3;
-                        $subscription->days = $days;
-                        Log::warning('⚠️ Pesapal: subscription.days was 0 — loaded from plan', [
-                            'plan_duration_days' => $days,
-                        ]);
-                    }
-                    $subscription->end_date_time = \Carbon\Carbon::parse($subscription->start_date_time)->addHours($days * 24);
-                    $subscription->grace_period_end = \Carbon\Carbon::parse($subscription->end_date_time)->addDays(3);
-                    Log::info('📅 Pesapal: Calculated end_date_time and grace_period_end', [
-                        'days'             => $days,
-                        'start_date_time'  => $subscription->start_date_time,
-                        'end_date_time'    => $subscription->end_date_time,
-                        'grace_period_end' => $subscription->grace_period_end,
-                    ]);
-                }
-
-                // Set payment confirmed timestamp
-                if (!$subscription->payment_confirmed_at) {
-                    $subscription->payment_confirmed_at = now();
-                    Log::info('✅ Pesapal: Setting payment_confirmed_at', [
-                        'payment_confirmed_at' => $subscription->payment_confirmed_at,
-                    ]);
-                }
-
-                // Clear failed_at if it was set
-                if ($subscription->failed_at) {
-                    $subscription->failed_at = null;
-                    Log::info('🔄 Pesapal: Clearing failed_at timestamp');
-                }
-
-                // Clear payment_failure_reason on success (in case this was a retry after failure)
-                if ($subscription->payment_failure_reason) {
-                    $subscription->payment_failure_reason = null;
-                    Log::info('🔄 Pesapal: Clearing payment_failure_reason (retry succeeded)');
-                }
+                /** @var SubscriptionActivationService $activationService */
+                $activationService = app(SubscriptionActivationService::class);
+                $subscription = $activationService->activatePaidSubscription(
+                    $subscription,
+                    'pesapal_status_update'
+                );
 
                 // Update pesapal response data
                 $subscription->pesapal_response = array_merge(

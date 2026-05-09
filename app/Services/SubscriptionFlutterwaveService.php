@@ -410,24 +410,14 @@ class SubscriptionFlutterwaveService
         $subscription->flutterwave_response = $verified;
 
         if ($flwStatus === 'successful') {
-            if ($subscription->is_extension && $subscription->extendedFrom) {
-                $startDate = $subscription->extendedFrom->end_date_time > now()
-                    ? $subscription->extendedFrom->end_date_time
-                    : now();
-            } else {
-                $startDate = now();
-            }
-
-            $subscription->start_date_time = $startDate;
-            $subscription->end_date_time = $startDate->copy()->addDays($subscription->days);
-            $subscription->grace_period_end = $subscription->end_date_time->copy()->addDays(3);
-            $subscription->status = 'Active';
-            $subscription->payment_status = 'Completed';
-            $subscription->payment_confirmed_at = now();
-            $subscription->failed_at = null;
-            $subscription->payment_failure_reason = null;
-            $subscription->cancelled_reason = null;
             $subscription->save();
+
+            /** @var SubscriptionActivationService $activationService */
+            $activationService = app(SubscriptionActivationService::class);
+            $subscription = $activationService->activatePaidSubscription(
+                $subscription,
+                'flutterwave_callback_success'
+            );
 
             $transaction = $this->upsertTransactionRecord($subscription, $gatewayData, 'Completed');
 

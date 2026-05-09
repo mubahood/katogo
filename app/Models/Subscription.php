@@ -142,10 +142,16 @@ class Subscription extends Model
             }
         });
 
+        static::saved(function ($subscription) {
+            self::forgetSubscriptionCaches((int) $subscription->user_id);
+        });
+
         // Handle cascading deletes in code (not database)
         static::deleting(function ($subscription) {
             // Delete related transactions
             $subscription->transactions()->delete();
+
+            self::forgetSubscriptionCaches((int) $subscription->user_id);
 
             Log::info('Subscription deleted', [
                 'subscription_id' => $subscription->id,
@@ -405,6 +411,7 @@ class Subscription extends Model
         // Clear the activeSubscription cache so the manifest immediately reflects the new status
         Cache::forget("active_sub_{$this->user_id}");
         Cache::forget("v2_pay_check_{$this->user_id}");
+        Cache::forget("v1_sub_info_{$this->user_id}");
 
         Log::info('Subscription activated', [
             'subscription_id' => $this->id,
@@ -413,6 +420,17 @@ class Subscription extends Model
             'end_date'        => $this->end_date_time,
             'grace_end'       => $this->grace_period_end,
         ]);
+    }
+
+    private static function forgetSubscriptionCaches(int $userId): void
+    {
+        if ($userId < 1) {
+            return;
+        }
+
+        Cache::forget("active_sub_{$userId}");
+        Cache::forget("v2_pay_check_{$userId}");
+        Cache::forget("v1_sub_info_{$userId}");
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Models\SubscriptionPlan;
 use App\Models\SubscriptionTransaction;
 use App\Models\User;
 use App\Services\PaymentStatusChecker;
+use App\Services\SubscriptionActivationService;
 use Carbon\Carbon;
 use Encore\Admin\Facades\Admin;
 use Encore\Admin\Controllers\AdminController;
@@ -1354,66 +1355,181 @@ $(function(){
     {
         $form = new Form(new Subscription());
         $userSearchUrl = admin_url('api/users');
+        $planOptions = SubscriptionPlan::query()
+            ->orderBy('sort_order')
+            ->orderBy('price')
+            ->get()
+            ->mapWithKeys(function (SubscriptionPlan $plan) {
+                $price = $plan->currency ? $plan->currency . ' ' . number_format((float) $plan->getActualPrice(), 0) : number_format((float) $plan->getActualPrice(), 0);
+                return [
+                    $plan->id => sprintf('%s - %s - %s days', $plan->name, $price, (int) $plan->duration_days),
+                ];
+            })
+            ->all();
 
-        $form->tab('Subscription', function ($form) use ($userSearchUrl) {
-            $form->select('user_id', 'User')
-                ->options(function ($id) {
-                    $user = User::find($id);
-                    if ($user) return [$user->id => $user->name . ' (' . $user->email . ')'];
-                    return [];
-                })
-                ->ajax($userSearchUrl)
-                ->rules('required')
-                ->help('Search by name, email, or ID');
+        $form->divider('Subscriber & Plan');
 
-            $form->select('plan_id', 'Plan')
-                ->options(SubscriptionPlan::pluck('name', 'id'))
-                ->rules('required');
+        $form->select('user_id', 'User')
+            ->options(function ($id) {
+                $user = User::find($id);
+                if ($user) {
+                    return [$user->id => $user->name . ' (' . $user->email . ')'];
+                }
 
-            $form->decimal('amount_paid', 'Amount Paid')
-                ->rules('required|numeric|min:0');
-            $form->text('currency', 'Currency')->default('UGX')->rules('required');
-        });
+                return [];
+            })
+            ->ajax($userSearchUrl)
+            ->rules('required')
+            ->help('Required. Search by name, email, phone number, or user ID.');
 
-        $form->tab('Status & Payment', function ($form) {
-            $form->radio('status', 'Status')->options([
-                'Pending' => 'Pending', 'Active' => 'Active',
-                'Expired' => 'Expired', 'Cancelled' => 'Cancelled', 'Failed' => 'Failed',
-            ])->default('Pending')->rules('required');
+        $form->select('plan_id', 'Plan')
+            ->options($planOptions)
+            ->rules('required')
+            ->help('Required. Duration and recommended price are shown in the option label.');
 
-            $form->radio('payment_status', 'Payment Status')->options([
-                'Pending' => 'Pending', 'Processing' => 'Processing',
-                'Completed' => 'Completed', 'Failed' => 'Failed', 'Refunded' => 'Refunded',
-            ])->default('Pending')->rules('required');
+        $form->hidden('days');
+        $form->hidden('payment_method');
+        $form->hidden('payment_confirmed_at');
+        $form->hidden('failed_at');
 
-            $form->textarea('payment_failure_reason', 'Failure Reason')->rows(2);
+        $form->decimal('amount_paid', 'Amount Paid')
+            ->rules('nullable|numeric|min:0')
+            ->help('Optional. Leave empty to use the selected plan price automatically.');
 
-            $form->select('app_type', 'App Type')->options([
-                'ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App', 'web' => 'Web',
-            ]);
-            $form->select('platform', 'Platform')->options([
-                'android' => 'Android', 'ios' => 'iOS',
-            ]);
-        });
+        $form->text('currency', 'Currency')
+            ->default('UGX')
+            ->help('Optional. Leave empty to use the plan currency or UGX.');
 
-        $form->tab('Dates', function ($form) {
-            $form->datetime('start_date_time', 'Start Date');
-            $form->datetime('end_date_time', 'End Date');
-        });
+        $form->divider('Status');
 
-        $form->tab('Payment Reference', function ($form) {
-            $form->text('pesapal_tracking_id', 'Pesapal Tracking ID');
-            $form->text('pesapal_merchant_reference', 'Merchant Reference');
-        });
+        $form->radio('status', 'Status')->options([
+            'Pending' => 'Pending', 'Active' => 'Active',
+            'Expired' => 'Expired', 'Cancelled' => 'Cancelled', 'Failed' => 'Failed',
+        ])->default('Active')->rules('required');
+
+        $form->radio('payment_status', 'Payment Status')->options([
+            'Pending' => 'Pending', 'Processing' => 'Processing',
+            'Completed' => 'Completed', 'Failed' => 'Failed', 'Refunded' => 'Refunded',
+        ])->default('Completed')->rules('required');
+
+        $form->textarea('payment_failure_reason', 'Failure Reason')
+            ->rows(2)
+            ->help('Optional. Only fill this when the payment status is Failed.');
+
+        $form->divider('Optional Overrides');
+
+        $form->select('app_type', 'App Type')->options([
+            'ugflix' => 'UGFlix', 'lugaflix' => 'LugaFlix', 'muno_app' => 'Muno App', 'web' => 'Web',
+        ])->help('Optional. Leave empty to use the selected user\'s app.');
+
+        $form->select('platform', 'Platform')->options([
+            'android' => 'Android', 'ios' => 'iOS',
+        ])->help('Optional. Leave empty to use the selected user\'s platform.');
+
+        $form->datetime('start_date_time', 'Start Date')
+            ->help('Optional. Leave empty and the system will set it when the subscription becomes active.');
+
+        $form->datetime('end_date_time', 'End Date')
+            ->help('Optional. Leave empty and the system will calculate it from the selected plan.');
+
+        $form->text('pesapal_tracking_id', 'Pesapal Tracking ID')
+            ->help('Optional. Only fill this if you already have an external payment tracking ID.');
+
+        $form->text('pesapal_merchant_reference', 'Merchant Reference')
+            ->help('Optional. Leave empty to auto-generate a reference.');
 
         $form->saving(function (Form $form) {
-            if ($form->status === 'Active' && !$form->model()->start_date_time) {
-                $form->start_date_time = Carbon::now();
-                $plan = SubscriptionPlan::find($form->plan_id);
-                if ($plan) {
-                    $form->end_date_time = Carbon::now()->addDays($plan->duration_days);
+            $subscription = $form->model();
+            $user = $form->user_id ? User::find($form->user_id) : null;
+            $plan = $form->plan_id ? SubscriptionPlan::find($form->plan_id) : null;
+            $resolvedDays = !empty($form->days) ? (int) $form->days : (int) ($plan->duration_days ?? $subscription->days ?? 0);
+
+            if ($resolvedDays > 0) {
+                $form->days = $resolvedDays;
+                $subscription->days = $resolvedDays;
+            }
+
+            if (empty($form->amount_paid) && $plan) {
+                $form->amount_paid = $plan->getActualPrice();
+            }
+
+            if (empty($form->currency)) {
+                $form->currency = $plan->currency ?? 'UGX';
+            }
+
+            if (empty($form->app_type) && $user && !empty($user->app_type)) {
+                $form->app_type = $user->app_type;
+            }
+
+            if (empty($form->platform) && $user && !empty($user->platform)) {
+                $form->platform = $user->platform;
+            }
+
+            if (empty($form->pesapal_merchant_reference)) {
+                $prefix = 'SUB';
+                if (!empty($form->app_type)) {
+                    $prefix = match ((string) $form->app_type) {
+                        'lugaflix' => 'LUG',
+                        'muno_app' => 'MUN',
+                        'web' => 'WEB',
+                        default => 'SUB',
+                    };
+                } elseif (!empty($subscription->pesapal_merchant_reference)) {
+                    $form->pesapal_merchant_reference = $subscription->pesapal_merchant_reference;
+                }
+
+                if (empty($form->pesapal_merchant_reference) && !empty($form->user_id)) {
+                    $form->pesapal_merchant_reference = $prefix . '-' . $form->user_id . '-' . time();
                 }
             }
+
+            if ($form->status === 'Active' && empty($form->start_date_time)) {
+                $form->start_date_time = Carbon::now();
+            }
+
+            if ($form->status === 'Active' && empty($form->end_date_time) && $plan) {
+                $start = $form->start_date_time ? Carbon::parse($form->start_date_time) : Carbon::now();
+                $form->end_date_time = $start->copy()->addDays((int) $plan->duration_days);
+            }
+
+            if (empty($form->payment_method)) {
+                $form->payment_method = 'admin_form';
+            }
+
+            $subscription->payment_method = $form->payment_method;
+
+            if ($form->payment_status === 'Completed' && empty($form->payment_confirmed_at)) {
+                $form->payment_confirmed_at = Carbon::now();
+                $form->payment_failure_reason = null;
+                $form->failed_at = null;
+            }
+
+            if (!empty($form->payment_confirmed_at)) {
+                $subscription->payment_confirmed_at = $form->payment_confirmed_at;
+            }
+
+            if (in_array($form->payment_status, ['Failed', 'Refunded'], true) && empty($form->failed_at)) {
+                $form->failed_at = Carbon::now();
+            }
+
+            $subscription->failed_at = $form->failed_at ?: null;
+
+            if ($form->payment_status !== 'Failed') {
+                $form->payment_failure_reason = null;
+            }
+        });
+
+        $form->saved(function (Form $form) {
+            /** @var Subscription $subscription */
+            $subscription = $form->model()->fresh();
+
+            if (!$subscription) {
+                return;
+            }
+
+            DB::transaction(function () use ($subscription) {
+                $this->syncAdminFormTransaction($subscription);
+            });
         });
 
         return $form;
@@ -1450,31 +1566,45 @@ $(function(){
                 ]);
 
             case 'activate':
-                DB::transaction(function () use ($subscription) {
-                    $subscription->status = 'Active';
-                    $subscription->payment_status = 'Completed';
-                    if (!$subscription->start_date_time) {
-                        $subscription->start_date_time = Carbon::now();
-                    }
-                    if (!$subscription->end_date_time) {
-                        $plan = $subscription->plan;
-                        $days = $plan ? $plan->duration_days : ($subscription->days ?: 30);
-                        $subscription->end_date_time = Carbon::now()->addDays($days);
-                    }
-                    $subscription->payment_confirmed_at = Carbon::now();
-                    $subscription->payment_url = null;
-                    $subscription->payment_failure_reason = null;
-                    $subscription->failed_at = null;
-                    $subscription->save();
+                $activationResult = DB::transaction(function () use ($subscription) {
+                    /** @var SubscriptionActivationService $activationService */
+                    $activationService = app(SubscriptionActivationService::class);
+                    $result = $activationService->activatePaidSubscriptionWithAudit(
+                        $subscription,
+                        'admin_activate'
+                    );
 
-                    $this->syncCompletedAdminTransaction($subscription, 'admin_activate');
+                    /** @var Subscription $activated */
+                    $activated = $result['subscription'];
+                    $audit = $result['audit'];
+
+                    $this->syncCompletedAdminTransaction($activated, 'admin_activate');
+
+                    return [
+                        'activated' => $activated,
+                        'audit' => $audit,
+                    ];
                 });
+
+                /** @var Subscription $activated */
+                $activated = $activationResult['activated'];
+                $audit = $activationResult['audit'];
 
                 Cache::forget("sub_pending_{$subscription->user_id}");
                 Cache::forget("active_sub_{$subscription->user_id}");
                 Cache::forget("v2_pay_check_{$subscription->user_id}");
 
-                return response()->json(['success' => true, 'message' => 'Subscription activated successfully.']);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Subscription activated successfully.',
+                    'audit' => $audit,
+                    'steps' => [
+                        'Anchor source: ' . ($audit['anchor_source'] ?? 'unknown'),
+                        'Stacking used: ' . (($audit['used_stacking'] ?? false) ? 'yes' : 'no'),
+                        'Start: ' . ($activated->start_date_time?->toIso8601String() ?? '-'),
+                        'End: ' . ($activated->end_date_time?->toIso8601String() ?? '-'),
+                    ],
+                ]);
 
             case 'extend':
                 $days = (int)$request->input('days', 0);
@@ -1585,6 +1715,62 @@ $(function(){
             'payment_method' => $subscription->payment_method,
             'response_payload' => $payload,
         ]);
+    }
+
+    private function syncAdminFormTransaction(Subscription $subscription): void
+    {
+        $transaction = SubscriptionTransaction::query()
+            ->where('subscription_id', $subscription->id)
+            ->where('transaction_type', '!=', 'Withdrawal')
+            ->orderByDesc('id')
+            ->first();
+
+        $payload = [
+            'admin_form_sync' => [
+                'synced_at' => Carbon::now()->toIso8601String(),
+                'admin_id' => Admin::user()->id ?? null,
+                'subscription_status' => (string) ($subscription->status ?? ''),
+                'payment_status' => (string) ($subscription->payment_status ?? ''),
+            ],
+        ];
+
+        $txStatus = $this->mapSubscriptionPaymentStatusToTransactionStatus((string) $subscription->payment_status);
+
+        $attributes = [
+            'user_id' => $subscription->user_id,
+            'transaction_type' => $subscription->is_extension ? 'Renewal' : 'Initial',
+            'platform' => $subscription->app_type,
+            'amount' => $subscription->amount_paid,
+            'currency' => $subscription->currency,
+            'status' => $txStatus,
+            'pesapal_tracking_id' => $subscription->pesapal_tracking_id,
+            'merchant_reference' => $subscription->pesapal_merchant_reference,
+            'payment_method' => $subscription->payment_method ?: 'admin_form',
+            'error_message' => $txStatus === 'Failed' ? ($subscription->payment_failure_reason ?: 'Marked failed from admin form') : null,
+        ];
+
+        if ($transaction) {
+            $transaction->fill($attributes);
+            $transaction->response_payload = array_merge($transaction->response_payload ?? [], $payload);
+            $transaction->save();
+            return;
+        }
+
+        SubscriptionTransaction::create(array_merge($attributes, [
+            'subscription_id' => $subscription->id,
+            'response_payload' => $payload,
+        ]));
+    }
+
+    private function mapSubscriptionPaymentStatusToTransactionStatus(string $paymentStatus): string
+    {
+        return match ($paymentStatus) {
+            'Completed' => 'Completed',
+            'Processing' => 'Processing',
+            'Failed' => 'Failed',
+            'Refunded' => 'Refunded',
+            default => 'Pending',
+        };
     }
 
     private function fmt($num)
