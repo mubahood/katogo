@@ -75,5 +75,13 @@ ensure perfection and no room for any error.
 
 now I want us to debug things step by set here.
 
+under 
+/subscription-transactions add a button on record called fix, this should have modal that is like that of /series-movies
+
+/series-movies has p werful modal and jaascrapt used for fixing, please be inspred by the same aporach
+
 create a special indipend php backend powered , and bootstap front end and ajax jquest with javescript that we shall use for debging subscrptions.
-if we enter subscrtion payment reference.. it should be able to go to 
+if we enter subscrtion payment reference.. it should be able to go to flutter wave or pesa pal using our centralized functions, then show is wellrogansied raw resonse from the paynment get way.
+then we shall have tools to trigger different fixees.
+
+you can

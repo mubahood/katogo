@@ -6,7 +6,12 @@ use App\Models\SubscriptionTransaction;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
+use App\Services\PaymentStatusChecker;
+use App\Services\SubscriptionActivationService;
+use App\Services\SubscriptionFlutterwaveService;
+use App\Services\SubscriptionPesapalService;
 use Carbon\Carbon;
+use Encore\Admin\Facades\Admin;
 use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
@@ -17,8 +22,10 @@ use Encore\Admin\Layout\Column;
 use Encore\Admin\Widgets\Box;
 use Encore\Admin\Widgets\InfoBox;
 use Encore\Admin\Widgets\Table;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class SubscriptionTransactionController extends AdminController
 {
@@ -622,6 +629,21 @@ class SubscriptionTransactionController extends AdminController
                 return "<span class='text-danger' title='" . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . "'>{$short}" . (mb_strlen($error) > 80 ? '...' : '') . "</span>";
             });
 
+        $grid->column('record_actions', __('Fix'))
+            ->display(function () {
+                $ref = trim((string) ($this->pesapal_tracking_id ?: $this->merchant_reference ?: ''));
+                $gateway = strtolower((string) ($this->payment_method ?? ''));
+                $hint = str_contains($gateway, 'flutter') ? 'flutterwave' : 'pesapal';
+                $safeRef = htmlspecialchars($ref, ENT_QUOTES, 'UTF-8');
+                $safeGateway = htmlspecialchars($hint, ENT_QUOTES, 'UTF-8');
+
+                return "<button type='button' class='btn btn-xs btn-warning js-subtx-fix' "
+                    . "data-id='" . (int) $this->id . "' "
+                    . "data-ref='{$safeRef}' "
+                    . "data-gateway='{$safeGateway}'>"
+                    . "<i class='fa fa-wrench'></i> Fix</button>";
+            });
+
         // Filters
         $grid->filter(function ($filter) {
             $filter->disableIdFilter();
@@ -747,7 +769,468 @@ class SubscriptionTransactionController extends AdminController
             $export->except(['actions']);
         });
 
+        $inspectUrl = admin_url('api/subscription-transactions/debug/inspect');
+        $applyFixUrl = admin_url('api/subscription-transactions/debug/apply-fix');
+        $csrf = csrf_token();
+        $fixConfigJs = json_encode([
+            'inspectUrl' => $inspectUrl,
+            'applyFixUrl' => $applyFixUrl,
+            'token' => $csrf,
+        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+
+                Admin::html(<<<HTML
+<style>
+    #subTxFixModal .modal-dialog{width:96vw;max-width:96vw;margin:2vh auto}
+    #subTxFixModal .modal-content{height:96vh}
+    #subTxFixModal .stx-grid{display:grid;gap:10px}
+    #subTxFixModal .stx-grid-3{grid-template-columns:1fr 1fr 1fr}
+    #subTxFixModal .stx-grid-2{grid-template-columns:1fr 1fr}
+    #subTxFixModal .stx-card{background:#11162a;border:1px solid #2f3957;padding:8px 10px;min-height:74px}
+    #subTxFixModal .stx-title{font-size:10px;text-transform:uppercase;color:#93a4c7;margin-bottom:4px;letter-spacing:.4px}
+    #subTxFixModal .stx-val{font-size:12px;color:#dbe7ff;line-height:1.5;word-break:break-word}
+    #subTxFixModal .stx-pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#1f365b;color:#b7dcff}
+    #subTxFixModal .stx-scroller{max-height:30vh;overflow:auto}
+    @media (max-width:1100px){
+        #subTxFixModal .stx-grid-3{grid-template-columns:1fr}
+        #subTxFixModal .stx-grid-2{grid-template-columns:1fr}
+    }
+</style>
+
+<div class="modal fade" id="subTxFixModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content" style="border-radius:0;border:1px solid #1f1f34;overflow:hidden">
+            <div class="modal-header" style="background:#0f1220;color:#dbe7ff;border-bottom:1px solid #2a2f45;padding:10px 14px">
+                <button type="button" class="close" data-dismiss="modal" style="color:#dbe7ff;opacity:1">&times;</button>
+                <h4 class="modal-title" style="font-size:15px;font-weight:700;margin:0"><i class="fa fa-wrench"></i> Subscription Transaction Fix Lab</h4>
+            </div>
+            <div class="modal-body" style="background:#0b0e1a;color:#c8d4ef;padding:12px 14px;overflow:auto">
+                <div class="stx-grid stx-grid-3" style="margin-bottom:10px">
+                    <div style="grid-column: span 2;display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+                        <div style="flex:1;min-width:260px">
+                            <label class="stx-title" style="display:block">Payment Reference</label>
+                            <input type="text" id="subTxFixRef" class="form-control" placeholder="order_tracking_id / merchant_reference / tx_ref" style="border-radius:0;background:#12172a;color:#dbe7ff;border:1px solid #2f3957" />
+                        </div>
+                        <div style="width:190px">
+                            <label class="stx-title" style="display:block">Gateway</label>
+                            <select id="subTxFixGateway" class="form-control" style="border-radius:0;background:#12172a;color:#dbe7ff;border:1px solid #2f3957">
+                                <option value="auto">Auto Detect</option>
+                                <option value="pesapal">Pesapal</option>
+                                <option value="flutterwave">Flutterwave</option>
+                            </select>
+                        </div>
+                        <div style="width:190px">
+                            <label class="stx-title" style="display:block">Actions</label>
+                            <button type="button" class="btn btn-sm btn-info" id="subTxInspectBtn" style="width:100%;border-radius:0"><i class="fa fa-search"></i> Inspect Gateway</button>
+                        </div>
+                    </div>
+                    <div class="stx-card">
+                        <div class="stx-title">Normalized Outcome</div>
+                        <div id="subTxOutcome" class="stx-val">Not inspected yet.</div>
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                    <button type="button" class="btn btn-sm btn-warning" id="subTxForceVerifyBtn" style="border-radius:0"><i class="fa fa-refresh"></i> Force Verify</button>
+                    <button type="button" class="btn btn-sm btn-success" id="subTxActivateBtn" style="border-radius:0"><i class="fa fa-bolt"></i> Force Activate</button>
+                    <button type="button" class="btn btn-sm btn-primary" id="subTxMarkCompletedBtn" style="border-radius:0"><i class="fa fa-check"></i> Mark Tx Completed</button>
+                    <button type="button" class="btn btn-sm btn-danger" id="subTxMarkFailedBtn" style="border-radius:0"><i class="fa fa-times"></i> Mark Tx Failed</button>
+                </div>
+
+                <div id="subTxFixSummary" class="stx-card" style="font-size:12px;min-height:50px;margin-bottom:10px">Ready. Select a transaction row and run Inspect Gateway.</div>
+
+                <div class="stx-grid stx-grid-3" style="margin-bottom:10px">
+                    <div class="stx-card">
+                        <div class="stx-title">Subscription</div>
+                        <div id="subTxSubCard" class="stx-val">-</div>
+                    </div>
+                    <div class="stx-card">
+                        <div class="stx-title">User Snippet</div>
+                        <div id="subTxUserCard" class="stx-val">-</div>
+                    </div>
+                    <div class="stx-card">
+                        <div class="stx-title">Transaction</div>
+                        <div id="subTxTxnCard" class="stx-val">-</div>
+                    </div>
+                </div>
+
+                <div class="stx-grid stx-grid-2">
+                    <div class="stx-card">
+                        <div class="stx-title">Log</div>
+                        <pre id="subTxFixLog" class="stx-scroller" style="margin:0;padding:8px;color:#9ad1ff;background:#060814;border:1px solid #2f3957;font-size:11px;line-height:1.5"></pre>
+                    </div>
+                    <div class="stx-card">
+                        <div class="stx-title">Gateway Raw Response</div>
+                        <pre id="subTxFixRaw" class="stx-scroller" style="margin:0;padding:8px;color:#b5f7c8;background:#060814;border:1px solid #2f3957;font-size:11px;line-height:1.5"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="background:#0f1220;border-top:1px solid #2a2f45;padding:8px 14px">
+                <button type="button" class="btn btn-default btn-sm" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+HTML);
+
+        Admin::script("window.SubTxFixConfig = {$fixConfigJs};");
+        Admin::js('/assets/subtx-fix-modal.js');
+
         return $grid;
+    }
+
+    public function debugInspect(Request $request)
+    {
+        try {
+            $ctx = $this->resolveDebugContext(
+                $request->input('transaction_id'),
+                (string) $request->input('reference', ''),
+                (string) $request->input('gateway', 'auto')
+            );
+
+            $raw = $this->fetchGatewayRawStatus($ctx['gateway'], $ctx['reference']);
+            $normalized = $this->normalizeGatewayResponse($ctx['gateway'], $raw);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'gateway' => $ctx['gateway'],
+                    'reference' => $ctx['reference'],
+                    'subscription_id' => $ctx['subscription']?->id,
+                    'transaction_id' => $ctx['transaction']?->id,
+                    'subscription_status' => $ctx['subscription']?->status,
+                    'payment_status' => $ctx['subscription']?->payment_status,
+                    'subscription' => $this->buildSubscriptionSnippet($ctx['subscription']),
+                    'user' => $this->buildUserSnippet($ctx['subscription'], $ctx['transaction']),
+                    'transaction' => $this->buildTransactionSnippet($ctx['transaction']),
+                    'normalized' => $normalized,
+                    'raw_gateway_response' => $raw,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Subscription transaction debugInspect failed', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $request->input('transaction_id'),
+                'reference' => $request->input('reference'),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function debugApplyFix(Request $request)
+    {
+        $action = (string) $request->input('action', '');
+
+        try {
+            $ctx = $this->resolveDebugContext(
+                $request->input('transaction_id'),
+                (string) $request->input('reference', ''),
+                (string) $request->input('gateway', 'auto')
+            );
+
+            $subscription = $ctx['subscription'];
+            $transaction = $ctx['transaction'];
+            if (!$subscription && in_array($action, ['force_verify', 'force_activate'], true)) {
+                throw new \RuntimeException('No subscription found for this reference.');
+            }
+
+            $raw = null;
+
+            switch ($action) {
+                case 'force_verify':
+                    $raw = $this->runForceVerify($ctx['gateway'], $subscription, $ctx['reference']);
+                    if (!$raw) {
+                        $raw = $this->fetchGatewayRawStatus($ctx['gateway'], $ctx['reference']);
+                    }
+                    break;
+
+                case 'force_activate':
+                    /** @var SubscriptionActivationService $activationService */
+                    $activationService = app(SubscriptionActivationService::class);
+                    $activated = $activationService->activatePaidSubscription($subscription, 'admin_debug_force_activate');
+                    $activated->payment_status = 'Completed';
+                    $activated->payment_confirmed_at = $activated->payment_confirmed_at ?: now();
+                    $activated->save();
+
+                    if ($transaction) {
+                        $transaction->status = 'Completed';
+                        $transaction->error_message = null;
+                        $transaction->save();
+                    }
+                    break;
+
+                case 'mark_tx_completed':
+                    if (!$transaction) {
+                        throw new \RuntimeException('Transaction not found. Open fix from a row or provide matching reference.');
+                    }
+                    $transaction->status = 'Completed';
+                    $transaction->error_message = null;
+                    $transaction->save();
+                    break;
+
+                case 'mark_tx_failed':
+                    if (!$transaction) {
+                        throw new \RuntimeException('Transaction not found. Open fix from a row or provide matching reference.');
+                    }
+                    $transaction->status = 'Failed';
+                    $transaction->error_message = $transaction->error_message ?: 'Marked failed via admin debug tool';
+                    $transaction->save();
+                    break;
+
+                default:
+                    throw new \RuntimeException('Unknown fix action: ' . $action);
+            }
+
+            $subscription?->refresh();
+            $normalized = $raw ? $this->normalizeGatewayResponse($ctx['gateway'], $raw) : null;
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Action executed: ' . $action,
+                'data' => [
+                    'gateway' => $ctx['gateway'],
+                    'reference' => $ctx['reference'],
+                    'subscription_id' => $subscription?->id,
+                    'transaction_id' => $transaction?->id,
+                    'subscription_status' => $subscription?->status,
+                    'payment_status' => $subscription?->payment_status,
+                    'subscription' => $this->buildSubscriptionSnippet($subscription),
+                    'user' => $this->buildUserSnippet($subscription, $transaction),
+                    'transaction' => $this->buildTransactionSnippet($transaction),
+                    'normalized' => $normalized,
+                    'raw_gateway_response' => $raw,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Subscription transaction debugApplyFix failed', [
+                'error' => $e->getMessage(),
+                'action' => $action,
+                'transaction_id' => $request->input('transaction_id'),
+                'reference' => $request->input('reference'),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    private function resolveDebugContext($transactionId, string $reference, string $gateway): array
+    {
+        $transaction = null;
+        $subscription = null;
+
+        if (!empty($transactionId)) {
+            $transaction = SubscriptionTransaction::find((int) $transactionId);
+            if ($transaction && $transaction->subscription_id) {
+                $subscription = Subscription::find((int) $transaction->subscription_id);
+            }
+            if ($reference === '' && $transaction) {
+                $reference = (string) ($transaction->pesapal_tracking_id ?: $transaction->merchant_reference ?: '');
+            }
+        }
+
+        if ($reference !== '' && !$subscription) {
+            $subscription = Subscription::query()
+                ->where('pesapal_tracking_id', $reference)
+                ->orWhere('pesapal_merchant_reference', $reference)
+                ->orWhere('flutterwave_reference', $reference)
+                ->first();
+        }
+
+        if ($subscription) {
+            $subscription->loadMissing(['user', 'plan']);
+        }
+
+        if ($reference !== '' && !$transaction) {
+            $transaction = SubscriptionTransaction::query()
+                ->where('pesapal_tracking_id', $reference)
+                ->orWhere('merchant_reference', $reference)
+                ->first();
+        }
+
+        if ($reference === '') {
+            throw new \RuntimeException('Payment reference is required.');
+        }
+
+        $resolvedGateway = $this->resolveGateway($gateway, $subscription, $transaction, $reference);
+
+        return [
+            'gateway' => $resolvedGateway,
+            'reference' => $reference,
+            'transaction' => $transaction,
+            'subscription' => $subscription,
+        ];
+    }
+
+    private function resolveGateway(string $gateway, ?Subscription $subscription, ?SubscriptionTransaction $transaction, string $reference): string
+    {
+        $candidate = strtolower(trim($gateway));
+        if (in_array($candidate, ['pesapal', 'flutterwave'], true)) {
+            return $candidate;
+        }
+
+        $subGateway = strtolower((string) ($subscription?->payment_gateway ?: $subscription?->payment_method ?: ''));
+        if (str_contains($subGateway, 'flutter')) {
+            return 'flutterwave';
+        }
+        if (str_contains($subGateway, 'pesapal')) {
+            return 'pesapal';
+        }
+
+        $txMethod = strtolower((string) ($transaction?->payment_method ?: ''));
+        if (str_contains($txMethod, 'flutter')) {
+            return 'flutterwave';
+        }
+
+        if (str_starts_with(strtolower($reference), 'flw')) {
+            return 'flutterwave';
+        }
+
+        return 'pesapal';
+    }
+
+    private function fetchGatewayRawStatus(string $gateway, string $reference): array
+    {
+        if ($gateway === 'flutterwave') {
+            /** @var SubscriptionFlutterwaveService $flutterwave */
+            $flutterwave = app(SubscriptionFlutterwaveService::class);
+            return $flutterwave->verifyByReference($reference);
+        }
+
+        /** @var SubscriptionPesapalService $pesapal */
+        $pesapal = app(SubscriptionPesapalService::class);
+        return $pesapal->getTransactionStatus($reference);
+    }
+
+    private function runForceVerify(string $gateway, Subscription $subscription, string $reference): array
+    {
+        if ($gateway === 'flutterwave') {
+            /** @var SubscriptionFlutterwaveService $flutterwave */
+            $flutterwave = app(SubscriptionFlutterwaveService::class);
+            $txRef = $subscription->flutterwave_reference ?: $subscription->pesapal_merchant_reference ?: $reference;
+            return $flutterwave->processCallback($txRef);
+        }
+
+        /** @var PaymentStatusChecker $checker */
+        $checker = app(PaymentStatusChecker::class);
+        return $checker->forceVerifyPayment($subscription);
+    }
+
+    private function normalizeGatewayResponse(string $gateway, array $raw): array
+    {
+        if ($gateway === 'flutterwave') {
+            $body = $raw['data'] ?? $raw;
+            $statusRaw = strtolower((string) ($body['status'] ?? $raw['status'] ?? 'unknown'));
+            $mapped = in_array($statusRaw, ['successful', 'success', 'completed'], true)
+                ? 'completed'
+                : (in_array($statusRaw, ['failed', 'cancelled', 'canceled', 'error'], true) ? 'failed' : 'pending');
+
+            return [
+                'gateway' => 'flutterwave',
+                'status_raw' => $statusRaw,
+                'status_normalized' => $mapped,
+                'gateway_reference' => (string) ($body['tx_ref'] ?? $body['txRef'] ?? ''),
+                'merchant_reference' => (string) ($body['tx_ref'] ?? $body['txRef'] ?? ''),
+                'tracking_reference' => (string) ($body['flw_ref'] ?? ''),
+                'amount' => $body['amount'] ?? null,
+                'currency' => $body['currency'] ?? null,
+                'message' => (string) ($raw['message'] ?? $body['processor_response'] ?? ''),
+                'error_code' => (string) ($raw['code'] ?? ''),
+            ];
+        }
+
+        $body = $raw['data'] ?? [];
+        $statusCode = (int) ($body['status_code'] ?? -1);
+        $statusDesc = strtoupper((string) ($body['payment_status_description'] ?? $body['status'] ?? 'UNKNOWN'));
+        $mapped = ($statusCode === 1 || $statusDesc === 'COMPLETED')
+            ? 'completed'
+            : (($statusDesc === 'INVALID' || $statusCode === 0) ? 'pending' : 'failed');
+
+        return [
+            'gateway' => 'pesapal',
+            'status_raw' => $statusDesc,
+            'status_normalized' => $mapped,
+            'gateway_reference' => (string) ($body['order_tracking_id'] ?? ''),
+            'merchant_reference' => (string) ($body['merchant_reference'] ?? ''),
+            'tracking_reference' => (string) ($body['order_tracking_id'] ?? ''),
+            'amount' => $body['amount'] ?? null,
+            'currency' => $body['currency'] ?? null,
+            'message' => (string) (($body['error']['message'] ?? null) ?: ($body['message'] ?? '')),
+            'error_code' => (string) (($body['error']['code'] ?? null) ?: ($body['status_code'] ?? '')),
+        ];
+    }
+
+    private function buildSubscriptionSnippet(?Subscription $subscription): ?array
+    {
+        if (!$subscription) {
+            return null;
+        }
+
+        return [
+            'id' => $subscription->id,
+            'status' => (string) ($subscription->status ?? ''),
+            'payment_status' => (string) ($subscription->payment_status ?? ''),
+            'app_type' => (string) ($subscription->app_type ?? ''),
+            'platform' => (string) ($subscription->platform ?? ''),
+            'plan' => (string) ($subscription->plan?->name ?? ''),
+            'amount_paid' => $subscription->amount_paid,
+            'currency' => (string) ($subscription->currency ?? 'UGX'),
+            'start_date_time' => optional($subscription->start_date_time)->toDateTimeString(),
+            'end_date_time' => optional($subscription->end_date_time)->toDateTimeString(),
+            'pesapal_tracking_id' => (string) ($subscription->pesapal_tracking_id ?? ''),
+            'merchant_reference' => (string) ($subscription->pesapal_merchant_reference ?? ''),
+            'flutterwave_reference' => (string) ($subscription->flutterwave_reference ?? ''),
+        ];
+    }
+
+    private function buildUserSnippet(?Subscription $subscription, ?SubscriptionTransaction $transaction): ?array
+    {
+        $user = $subscription?->user;
+        if (!$user && $transaction?->user_id) {
+            $user = User::find((int) $transaction->user_id);
+        }
+
+        if (!$user) {
+            return null;
+        }
+
+        return [
+            'id' => $user->id,
+            'name' => (string) ($user->name ?? ''),
+            'email' => (string) ($user->email ?? ''),
+            'phone_number' => (string) ($user->phone_number ?? ''),
+            'app_type' => (string) ($user->app_type ?? ''),
+            'platform' => (string) ($user->platform ?? ''),
+            'account_state' => (string) ($user->account_state ?? ''),
+            'created_at' => optional($user->created_at)->toDateTimeString(),
+            'last_online_at' => optional($user->last_online_at)->toDateTimeString(),
+        ];
+    }
+
+    private function buildTransactionSnippet(?SubscriptionTransaction $transaction): ?array
+    {
+        if (!$transaction) {
+            return null;
+        }
+
+        return [
+            'id' => $transaction->id,
+            'status' => (string) ($transaction->status ?? ''),
+            'transaction_type' => (string) ($transaction->transaction_type ?? ''),
+            'amount' => $transaction->amount,
+            'currency' => (string) ($transaction->currency ?? 'UGX'),
+            'payment_method' => (string) ($transaction->payment_method ?? ''),
+            'merchant_reference' => (string) ($transaction->merchant_reference ?? ''),
+            'tracking_id' => (string) ($transaction->pesapal_tracking_id ?? ''),
+            'confirmation_code' => (string) ($transaction->confirmation_code ?? ''),
+            'error_message' => (string) ($transaction->error_message ?? ''),
+            'created_at' => optional($transaction->created_at)->toDateTimeString(),
+        ];
     }
 
     /**

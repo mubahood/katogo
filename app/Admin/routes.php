@@ -130,6 +130,8 @@ Route::group([
 
     // API: Admin subscription actions (recheck, activate, cancel, extend, mark-expired)
     $router->post('api/subscriptions/{id}/action', 'SubscriptionController@adminAction');
+    $router->post('api/subscription-transactions/debug/inspect', 'SubscriptionTransactionController@debugInspect');
+    $router->post('api/subscription-transactions/debug/apply-fix', 'SubscriptionTransactionController@debugApplyFix');
 
     $router->resource('companies', CompanyController::class);
     $router->resource('stock-categories', StockCategoryController::class);
