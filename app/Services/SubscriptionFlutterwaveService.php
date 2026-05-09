@@ -416,6 +416,7 @@ class SubscriptionFlutterwaveService
         $flwStatus = strtolower((string) ($verified['data']['status'] ?? ''));
         $gatewayRef = (string) ($verified['data']['flw_ref'] ?? '');
         $gatewayData = is_array($verified['data'] ?? null) ? $verified['data'] : [];
+        $isNotFoundPayload = $this->isVerificationNotFoundPayload($verified);
 
         $subscription->payment_method = 'flutterwave';
         $subscription->flutterwave_reference = $txRef;
@@ -455,7 +456,7 @@ class SubscriptionFlutterwaveService
             ];
         }
 
-        if (in_array($flwStatus, ['failed', 'cancelled', 'canceled', 'error'], true)) {
+        if (in_array($flwStatus, ['failed', 'cancelled', 'canceled', 'error'], true) && !$isNotFoundPayload) {
             $subscription->status = 'Failed';
             $subscription->payment_status = 'Failed';
             $subscription->failed_at = now();
@@ -481,8 +482,11 @@ class SubscriptionFlutterwaveService
             ];
         }
 
+        // Treat gateway "not found yet" verification payloads as transient.
         $subscription->status = 'Pending';
         $subscription->payment_status = 'Processing';
+        $subscription->failed_at = null;
+        $subscription->payment_failure_reason = null;
         $subscription->save();
 
         $transaction = $this->upsertTransactionRecord($subscription, $gatewayData, 'Pending');
@@ -505,6 +509,18 @@ class SubscriptionFlutterwaveService
         return str_contains($needle, 'no transaction was found for this id')
             || str_contains($needle, 'no transaction found')
             || str_contains($needle, '404');
+    }
+
+    private function isVerificationNotFoundPayload(array $verified): bool
+    {
+        $message = strtolower(implode(' ', array_filter([
+            (string) ($verified['message'] ?? ''),
+            (string) ($verified['data']['processor_response'] ?? ''),
+            (string) ($verified['data']['status_message'] ?? ''),
+            (string) ($verified['data']['response_message'] ?? ''),
+        ])));
+
+        return $this->isVerificationNotFoundError($message);
     }
 
     private function syncSubscriptionPaymentTransactionsToCompleted(Subscription $subscription): void
