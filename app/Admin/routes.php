@@ -134,6 +134,11 @@ Route::group([
     $router->post('api/subscription-transactions/debug/apply-fix', 'SubscriptionTransactionController@debugApplyFix');
     $router->post('api/subscription-transactions/batch-fix-single', 'SubscriptionTransactionController@batchFixSingle');
 
+    // API: Subscription debug/fix lab (direct subscription-level debugging)
+    $router->post('api/subscriptions/debug/inspect', 'SubscriptionController@debugInspect');
+    $router->post('api/subscriptions/debug/apply-fix', 'SubscriptionController@debugApplyFix');
+    $router->post('api/subscriptions/debug/batch-fix-single', 'SubscriptionController@batchFixSingle');
+
     $router->resource('companies', CompanyController::class);
     $router->resource('stock-categories', StockCategoryController::class);
     $router->resource('stock-sub-categories', StockSubCategoryController::class);
