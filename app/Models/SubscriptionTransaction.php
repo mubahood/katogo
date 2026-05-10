@@ -33,6 +33,10 @@ class SubscriptionTransaction extends Model
         'refunded_by',
         'refunded_at',
         'refund_reason',
+        'is_fixed',
+        'fix_time',
+        'api_gateway_response',
+        'fix_successful',
     ];
 
     protected $casts = [
@@ -40,6 +44,7 @@ class SubscriptionTransaction extends Model
         'request_payload' => 'array',
         'response_payload' => 'array',
         'refunded_at' => 'datetime',
+        'fix_time' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

@@ -246,6 +246,7 @@ class SubscriptionApiController extends Controller
             // Optional account merge by submitted contact before creating a new subscription.
             // This prevents charging on an auto-generated account when submitted phone/email
             // belongs to the user's older real account.
+            // IMPORTANT: Merge failures are NON-FATAL. Payment must always be allowed to proceed.
             if (!empty(trim((string) $mobileMoneyPhone)) || !empty(trim((string) $submittedEmail))) {
                 try {
                     $mergeResult = $this->accountMergeService->mergeForSubscriptionByContact(
@@ -258,47 +259,85 @@ class SubscriptionApiController extends Controller
                             'request_user_agent' => (string) $request->userAgent(),
                         ]
                     );
-                } catch (\RuntimeException $e) {
-                    return response()->json([
-                        'code' => 0,
-                        'status' => 409,
-                        'message' => $e->getMessage(),
-                        'data' => [
-                            'merge_block_reason' => 'merge_limit_or_policy',
-                        ],
-                    ], 409);
-                }
 
-                if (!empty($mergeResult['blocked'])) {
-                    return response()->json([
-                        'code' => 0,
-                        'status' => 409,
-                        'message' => $mergeResult['message'] ?? 'This phone number is linked to another account. Please use that account.',
-                        'data' => [
+                    if (!empty($mergeResult['blocked'])) {
+                        $blockReason = $mergeResult['reason'] ?? 'unknown';
+
+                        if ($blockReason === 'source_not_auto_generated') {
+                            // Current user is a real (non-auto) account but the submitted
+                            // phone/email belongs to another account.
+                            // Attempt a background merge into the current user WITHOUT
+                            // the auto-generated-source restriction, so their old data
+                            // is absorbed and payment proceeds on this account.
+                            try {
+                                $mergeResult = $this->accountMergeService->autoMergeMatchesIntoCurrentUser(
+                                    $user,
+                                    $mobileMoneyPhone,
+                                    $submittedEmail,
+                                    [
+                                        'reason' => 'subscription_create_bg_merge',
+                                        'require_auto_generated_source' => false,
+                                        'request_ip' => $request->ip(),
+                                        'request_user_agent' => (string) $request->userAgent(),
+                                    ]
+                                );
+
+                                if (!empty($mergeResult['blocked'])) {
+                                    // Still blocked (e.g. contact_owner_conflict) — log and continue
+                                    Log::warning('Subscription create: bg merge still blocked (non-fatal, payment proceeds)', [
+                                        'user_id' => $user->id,
+                                        'reason' => $mergeResult['reason'] ?? 'unknown',
+                                        'phone' => $mergeResult['phone_number'] ?? $mobileMoneyPhone,
+                                    ]);
+                                    $mergeResult = ['blocked' => false, 'merged' => false];
+                                }
+                            } catch (\Throwable $retryEx) {
+                                Log::warning('Subscription create: bg merge retry exception (non-fatal, payment proceeds)', [
+                                    'user_id' => $user->id,
+                                    'block_reason' => $blockReason,
+                                    'error' => $retryEx->getMessage(),
+                                ]);
+                                $mergeResult = ['blocked' => false, 'merged' => false];
+                            }
+                        } else {
+                            // merge_window_closed, contact_owner_conflict, or other policy block.
+                            // Log and let payment proceed on the current account.
+                            Log::warning('Subscription create: merge blocked (non-fatal, payment proceeds)', [
+                                'user_id' => $user->id,
+                                'reason' => $blockReason,
+                                'phone' => $mergeResult['phone_number'] ?? $mobileMoneyPhone,
+                                'email' => $mergeResult['email'] ?? $submittedEmail,
+                            ]);
+                            $mergeResult = ['blocked' => false, 'merged' => false];
+                        }
+                    }
+
+                    if (!empty($mergeResult['merged']) && !empty($mergeResult['user'])) {
+                        $mergeMeta = [
+                            'merged' => true,
+                            'from_user_id' => $mergeResult['from_user_id'] ?? null,
+                            'to_user_id' => $mergeResult['to_user_id'] ?? null,
                             'phone_number' => $mergeResult['phone_number'] ?? null,
                             'email' => $mergeResult['email'] ?? null,
-                            'merge_block_reason' => $mergeResult['reason'] ?? null,
-                            'owner_user_id' => $mergeResult['owner_user_id'] ?? null,
-                        ],
-                    ], 409);
-                }
+                        ];
 
-                if (!empty($mergeResult['merged']) && !empty($mergeResult['user'])) {
-                    $mergeMeta = [
-                        'merged' => true,
-                        'from_user_id' => $mergeResult['from_user_id'] ?? null,
-                        'to_user_id' => $mergeResult['to_user_id'] ?? null,
-                        'phone_number' => $mergeResult['phone_number'] ?? null,
-                        'email' => $mergeResult['email'] ?? null,
-                    ];
+                        $user = $mergeResult['user'];
+                        $mobileMoneyPhone = $mergeResult['phone_number'] ?? $mobileMoneyPhone;
 
-                    $user = $mergeResult['user'];
-                    $mobileMoneyPhone = $mergeResult['phone_number'] ?? $mobileMoneyPhone;
-
-                    Log::info('Subscription create: account merged before payment init', [
-                        'from_user_id' => $mergeMeta['from_user_id'],
-                        'to_user_id' => $mergeMeta['to_user_id'],
-                        'phone_number' => $mergeMeta['phone_number'],
+                        Log::info('Subscription create: account merged before payment init', [
+                            'from_user_id' => $mergeMeta['from_user_id'],
+                            'to_user_id' => $mergeMeta['to_user_id'],
+                            'phone_number' => $mergeMeta['phone_number'],
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    // Any unexpected error (including RuntimeException from merge limit checks)
+                    // must never block payment. Log it and move on.
+                    Log::warning('Subscription create: merge exception (non-fatal, payment proceeds)', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                        'phone' => $mobileMoneyPhone,
+                        'email' => $submittedEmail,
                     ]);
                 }
             }

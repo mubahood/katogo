@@ -132,6 +132,7 @@ Route::group([
     $router->post('api/subscriptions/{id}/action', 'SubscriptionController@adminAction');
     $router->post('api/subscription-transactions/debug/inspect', 'SubscriptionTransactionController@debugInspect');
     $router->post('api/subscription-transactions/debug/apply-fix', 'SubscriptionTransactionController@debugApplyFix');
+    $router->post('api/subscription-transactions/batch-fix-single', 'SubscriptionTransactionController@batchFixSingle');
 
     $router->resource('companies', CompanyController::class);
     $router->resource('stock-categories', StockCategoryController::class);

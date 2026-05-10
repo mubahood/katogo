@@ -629,6 +629,40 @@ class SubscriptionTransactionController extends AdminController
                 return "<span class='text-danger' title='" . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . "'>{$short}" . (mb_strlen($error) > 80 ? '...' : '') . "</span>";
             });
 
+        $grid->column('is_fixed', __('Fixed?'))
+            ->display(function ($val) {
+                if ($val === 'Yes') {
+                    return "<span class='label label-success'><i class='fa fa-check'></i> Fixed</span>";
+                }
+                return "<span class='label label-default'>No</span>";
+            })->sortable();
+
+        $grid->column('fix_successful', __('Fix OK?'))
+            ->display(function ($val) {
+                if ($val === 'Yes') {
+                    return "<span class='label label-success'><i class='fa fa-check-circle'></i> Success</span>";
+                }
+                if ($val === 'No' && $this->is_fixed === 'Yes') {
+                    return "<span class='label label-danger'><i class='fa fa-times-circle'></i> No</span>";
+                }
+                return "<span class='label label-default'>-</span>";
+            })->sortable();
+
+        $grid->column('fix_time', __('Fix Time'))
+            ->display(function ($val) {
+                if (!$val) return '<span class="text-muted">-</span>';
+                return Carbon::parse($val)->format('M d, H:i');
+            })->sortable();
+
+        $grid->column('api_gateway_response', __('GW Response'))
+            ->display(function ($val) {
+                if (!$val) return '-';
+                $short = mb_substr($val, 0, 60);
+                $full = htmlspecialchars($val, ENT_QUOTES, 'UTF-8');
+                $display = htmlspecialchars($short, ENT_QUOTES, 'UTF-8');
+                return "<span title='{$full}'>{$display}" . (mb_strlen($val) > 60 ? '...' : '') . "</span>";
+            })->hide();
+
         $grid->column('record_actions', __('Fix'))
             ->display(function () {
                 $ref = trim((string) ($this->pesapal_tracking_id ?: $this->merchant_reference ?: ''));
@@ -758,6 +792,16 @@ class SubscriptionTransactionController extends AdminController
                     '1' => 'Yes',
                     '0' => 'No',
                 ]);
+
+                $filter->equal('is_fixed', 'Fix Attempted')->select([
+                    'Yes' => 'Yes — attempted',
+                    'No'  => 'No — not yet',
+                ]);
+
+                $filter->equal('fix_successful', 'Fix Successful')->select([
+                    'Yes' => 'Yes — activated',
+                    'No'  => 'No — not successful',
+                ]);
             });
 
             $filter->between('amount', 'Amount Range');
@@ -769,12 +813,23 @@ class SubscriptionTransactionController extends AdminController
             $export->except(['actions']);
         });
 
+        $grid->tools(function ($tools) {
+            $tools->append(
+                '<div class="btn-group" style="margin-right:5px">' .
+                '<button type="button" class="btn btn-sm btn-primary js-batch-fix-btn">' .
+                '<i class="fa fa-cogs"></i> Batch Fix Selected' .
+                '</button></div>'
+            );
+        });
+
         $inspectUrl = admin_url('api/subscription-transactions/debug/inspect');
         $applyFixUrl = admin_url('api/subscription-transactions/debug/apply-fix');
+        $batchFixSingleUrl = admin_url('api/subscription-transactions/batch-fix-single');
         $csrf = csrf_token();
         $fixConfigJs = json_encode([
             'inspectUrl' => $inspectUrl,
             'applyFixUrl' => $applyFixUrl,
+            'batchFixSingleUrl' => $batchFixSingleUrl,
             'token' => $csrf,
         ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
@@ -870,6 +925,66 @@ class SubscriptionTransactionController extends AdminController
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="subTxBatchFixModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
+    <div class="modal-dialog" style="width:98vw;max-width:98vw;margin:1vh auto" role="document">
+        <div class="modal-content" style="border-radius:4px;border:1px solid #1f2a45;overflow:hidden;height:97vh;display:flex;flex-direction:column">
+            <!-- Header -->
+            <div class="modal-header" style="background:#0f1220;color:#dbe7ff;border-bottom:1px solid #2a2f45;padding:10px 16px;flex-shrink:0">
+                <button type="button" class="close" data-dismiss="modal" style="color:#dbe7ff;opacity:1">&times;</button>
+                <h4 class="modal-title" style="font-size:15px;font-weight:700;margin:0">
+                    <i class="fa fa-cogs"></i> Batch Fix — Subscription Transactions
+                </h4>
+            </div>
+            <!-- Stats bar -->
+            <div style="background:#090d18;border-bottom:1px solid #1a2236;padding:8px 16px;flex-shrink:0">
+                <div style="display:flex;flex-wrap:wrap;gap:10px 24px;font-size:12px;align-items:center">
+                    <span style="color:#9fb2d9">Total: <strong id="bfTotal" style="color:#fff">0</strong></span>
+                    <span style="color:#9fb2d9">Done: <strong id="bfDone" style="color:#c8d4ef">0</strong></span>
+                    <span style="color:#7dffa1">&#x2705; Activated: <strong id="bfActivated">0</strong></span>
+                    <span style="color:#f8c471">&#x23F3; Pending: <strong id="bfPending">0</strong></span>
+                    <span style="color:#ff9f9f">&#x274C; Conf. Failed: <strong id="bfConfFailed">0</strong></span>
+                    <span style="color:#ffb84d">&#x26A0; Errors: <strong id="bfErrors">0</strong></span>
+                    <span style="color:#9fb2d9">&#x23ED; Skipped: <strong id="bfSkipped">0</strong></span>
+                    <span style="color:#9fb2d9;margin-left:auto;font-style:italic" id="bfStatusLine">Select rows and click Start Fix.</span>
+                </div>
+                <div class="progress" style="height:18px;border-radius:3px;margin-top:7px;background:#1a1f35">
+                    <div id="bfProgressBar" class="progress-bar progress-bar-striped active" role="progressbar"
+                         aria-valuemin="0" aria-valuemax="100"
+                         style="width:0%;height:100%;font-size:11px;font-weight:700;transition:width .4s ease;background:linear-gradient(90deg,#2196F3,#21CBF3)">0%</div>
+                </div>
+            </div>
+            <!-- Tab nav -->
+            <ul class="nav nav-tabs" style="background:#0b0e1a;border-bottom:1px solid #1a2236;padding:0 12px;margin:0;flex-shrink:0">
+                <li class="active"><a id="bfLogTab" href="#bfPaneLog" data-toggle="tab" style="color:#9ad1ff;font-size:12px;padding:8px 14px"><i class="fa fa-terminal"></i> Live Log</a></li>
+                <li><a id="bfDetailTabLink" href="#bfPaneDetail" data-toggle="tab" style="color:#9ad1ff;font-size:12px;padding:8px 14px"><i class="fa fa-info-circle"></i> Current Item</a></li>
+                <li><a id="bfSummaryTab" href="#bfPaneSummary" data-toggle="tab" style="color:#9ad1ff;font-size:12px;padding:8px 14px"><i class="fa fa-table"></i> Summary</a></li>
+            </ul>
+            <!-- Tab content (fills remaining height) -->
+            <div class="tab-content" style="flex:1;overflow:hidden;background:#0b0e1a">
+                <!-- Log tab -->
+                <div id="bfPaneLog" class="tab-pane active" style="height:100%;padding:10px 14px;box-sizing:border-box">
+                    <pre id="bfLog" style="height:100%;overflow-y:auto;background:#060814;color:#9ad1ff;border:1px solid #2f3957;padding:10px;font-family:Consolas,monospace;font-size:11px;line-height:1.6;margin:0;border-radius:3px;white-space:pre-wrap;box-sizing:border-box"></pre>
+                </div>
+                <!-- Current item detail tab -->
+                <div id="bfPaneDetail" class="tab-pane" style="height:100%;padding:10px 14px;box-sizing:border-box;overflow-y:auto">
+                    <div id="bfItemDetail" style="color:#4a5878;font-size:12px;padding:24px 0;text-align:center">Item details will appear here as each transaction is processed.</div>
+                </div>
+                <!-- Summary tab -->
+                <div id="bfPaneSummary" class="tab-pane" style="height:100%;padding:10px 14px;box-sizing:border-box;overflow:auto">
+                    <div id="bfSummaryContent" style="color:#7a90b9;font-size:12px;padding:20px;text-align:center">Summary will appear here after the batch completes.</div>
+                </div>
+            </div>
+            <!-- Footer -->
+            <div class="modal-footer" style="background:#0f1220;border-top:1px solid #2a2f45;padding:8px 16px;flex-shrink:0;display:flex;align-items:center">
+                <span style="font-size:11px;color:#9fb2d9;flex:1"><i class="fa fa-info-circle"></i> Verifies each selected transaction against its payment gateway. Activations set start_date = fix time.</span>
+                <button id="bfStartBtn" type="button" class="btn btn-sm btn-primary" style="margin-left:8px"><i class="fa fa-play"></i> ▶ Start Fix</button>
+                <button id="bfStopBtn" type="button" class="btn btn-sm btn-warning" style="display:none;margin-left:8px"><i class="fa fa-stop"></i> ⛔ Stop</button>
+                <button type="button" class="btn btn-sm btn-default" data-dismiss="modal" style="margin-left:8px">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 HTML);
 
         Admin::script("window.SubTxFixConfig = {$fixConfigJs};");
@@ -958,6 +1073,9 @@ HTML);
                     if ($transaction) {
                         $transaction->status = 'Completed';
                         $transaction->error_message = null;
+                        $transaction->is_fixed = 'Yes';
+                        $transaction->fix_time = now();
+                        $transaction->fix_successful = 'Yes';
                         $transaction->save();
                     }
                     break;
@@ -1017,6 +1135,275 @@ HTML);
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    public function batchFixSingle(Request $request)
+    {
+        $txId = (int) $request->input('transaction_id');
+
+        if (!$txId) {
+            return response()->json(['success' => false, 'transaction_id' => $txId, 'message' => 'Invalid transaction ID', 'result' => 'error'], 200);
+        }
+
+        try {
+            $transaction = SubscriptionTransaction::find($txId);
+            if (!$transaction) {
+                return response()->json(['success' => false, 'transaction_id' => $txId, 'message' => 'Transaction not found', 'result' => 'error'], 200);
+            }
+
+            // Ensure transaction is linked to its subscription (resolve by user_id if missing)
+            $subscription = null;
+            if ($transaction->subscription_id) {
+                $subscription = Subscription::with('plan')->find((int) $transaction->subscription_id);
+            }
+            if (!$subscription) {
+                // Try to find the subscription by user_id + matching fields
+                $subscription = Subscription::with('plan')
+                    ->where('user_id', $transaction->user_id)
+                    ->where(function ($q) use ($transaction) {
+                        $q->where('pesapal_tracking_id', $transaction->pesapal_tracking_id)
+                          ->orWhere('pesapal_merchant_reference', $transaction->merchant_reference)
+                          ->orWhere('flutterwave_reference', $transaction->merchant_reference);
+                    })
+                    ->latest('id')
+                    ->first();
+                // Backfill the foreign key if we found it
+                if ($subscription && !$transaction->subscription_id) {
+                    $transaction->subscription_id = $subscription->id;
+                }
+            }
+
+            // Resolve payment reference
+            $reference = (string) ($transaction->pesapal_tracking_id ?: $transaction->merchant_reference ?: '');
+            if ($reference === '' && $subscription) {
+                $reference = (string) ($subscription->pesapal_tracking_id
+                    ?: $subscription->flutterwave_reference
+                    ?: $subscription->pesapal_merchant_reference
+                    ?: '');
+            }
+
+            if ($reference === '') {
+                $transaction->is_fixed     = 'Yes';
+                $transaction->fix_time     = now();
+                $transaction->fix_successful = 'No';
+                $transaction->api_gateway_response = 'No payment reference found on transaction or subscription.';
+                $transaction->save();
+
+                return response()->json([
+                    'success'          => false,
+                    'transaction_id'   => $txId,
+                    'subscription_id'  => $transaction->subscription_id,
+                    'message'          => 'No payment reference found',
+                    'result'           => 'no_reference',
+                    'fix_successful'   => 'No',
+                    'gateway_details'  => null,
+                    'subscription_before' => null,
+                    'subscription_after'  => null,
+                ], 200);
+            }
+
+            // Snapshot subscription before any changes
+            $subBefore = $subscription ? [
+                'id'             => $subscription->id,
+                'status'         => $subscription->status,
+                'payment_status' => $subscription->payment_status,
+                'start_date_time' => $subscription->start_date_time
+                    ? \Carbon\Carbon::parse($subscription->start_date_time)->toDateTimeString()
+                    : null,
+                'end_date_time'  => $subscription->end_date_time
+                    ? \Carbon\Carbon::parse($subscription->end_date_time)->toDateTimeString()
+                    : null,
+                'plan'           => $subscription->plan->name ?? null,
+                'days'           => $subscription->days,
+                'app_type'       => $subscription->app_type,
+                'platform'       => $subscription->platform,
+            ] : null;
+
+            // Resolve gateway and fetch live status
+            $gateway    = $this->resolveGateway('auto', $subscription, $transaction, $reference);
+            $raw        = $this->fetchGatewayRawStatus($gateway, $reference);
+            $normalized = $this->normalizeGatewayResponse($gateway, $raw);
+            $rawJson    = mb_substr(json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 0, 65535);
+
+            // Extract human-readable gateway details
+            $gatewayDetails = $this->extractBatchFixGatewayDetails($gateway, $raw, $normalized);
+
+            $fixSuccessful = 'No';
+            $resultLabel   = 'unchanged';
+            $activationAudit = null;
+
+            switch ($normalized['status_normalized']) {
+                case 'completed':
+                    // Mark transaction as Completed and link to subscription
+                    $transaction->status        = 'Completed';
+                    $transaction->error_message = null;
+
+                    if ($subscription) {
+                        // Activate the subscription with force_start_now so start_date_time = fix time
+                        /** @var SubscriptionActivationService $activationService */
+                        $activationService = app(SubscriptionActivationService::class);
+                        $activationResult  = $activationService->activatePaidSubscriptionWithAudit(
+                            $subscription,
+                            'batch_fix',
+                            ['force_start_now' => true]
+                        );
+                        $subscription = $activationResult['subscription'];
+                        $activationAudit = $activationResult['audit'];
+
+                        // Sync all non-withdrawal transactions for this subscription to Completed
+                        SubscriptionTransaction::where('subscription_id', $subscription->id)
+                            ->where('id', '!=', $txId)
+                            ->where('transaction_type', '!=', 'withdrawal')
+                            ->whereNotIn('status', ['Completed', 'Refunded'])
+                            ->update(['status' => 'Completed']);
+
+                        // Ensure payment linkage fields are consistent
+                        $subscription->payment_status        = 'Completed';
+                        $subscription->payment_confirmed_at  = $subscription->payment_confirmed_at ?: now();
+                        $subscription->save();
+                        $subscription->refresh();
+                    }
+
+                    $fixSuccessful = 'Yes';
+                    $resultLabel   = 'activated';
+                    break;
+
+                case 'failed':
+                    if ($subscription && $subscription->status === 'Pending') {
+                        $subscription->status              = 'Failed';
+                        $subscription->payment_status      = 'Failed';
+                        $subscription->failed_at           = $subscription->failed_at ?: now();
+                        $subscription->payment_failure_reason = $normalized['message'] ?? 'Gateway confirmed failed';
+                        $subscription->save();
+                        $subscription->refresh();
+                    }
+                    $fixSuccessful = 'No';
+                    $resultLabel   = 'confirmed_failed';
+                    break;
+
+                default:
+                    $fixSuccessful = 'No';
+                    $resultLabel   = 'still_pending';
+                    break;
+            }
+
+            // Snapshot subscription after changes
+            $subAfter = $subscription ? [
+                'id'              => $subscription->id,
+                'status'          => $subscription->status,
+                'payment_status'  => $subscription->payment_status,
+                'start_date_time' => $subscription->start_date_time
+                    ? \Carbon\Carbon::parse($subscription->start_date_time)->toDateTimeString()
+                    : null,
+                'end_date_time'   => $subscription->end_date_time
+                    ? \Carbon\Carbon::parse($subscription->end_date_time)->toDateTimeString()
+                    : null,
+                'grace_period_end' => $subscription->grace_period_end
+                    ? \Carbon\Carbon::parse($subscription->grace_period_end)->toDateTimeString()
+                    : null,
+                'plan'            => $subscription->plan->name ?? null,
+                'days'            => $subscription->days,
+            ] : null;
+
+            // Persist fix audit on the transaction
+            $transaction->is_fixed            = 'Yes';
+            $transaction->fix_time            = now();
+            $transaction->fix_successful      = $fixSuccessful;
+            $transaction->api_gateway_response = $rawJson;
+            $transaction->save();
+
+            return response()->json([
+                'success'              => true,
+                'transaction_id'       => $txId,
+                'subscription_id'      => $transaction->subscription_id,
+                'result'               => $resultLabel,
+                'fix_successful'       => $fixSuccessful,
+                'gateway'              => $gateway,
+                'reference'            => $reference,
+                'normalized_status'    => $normalized['status_normalized'],
+                'message'              => "[{$gateway}] {$resultLabel} — " . ($normalized['status_raw'] ?? ''),
+                'gateway_details'      => $gatewayDetails,
+                'subscription_before'  => $subBefore,
+                'subscription_after'   => $subAfter,
+                'activation_audit'     => $activationAudit,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error('batchFixSingle failed', ['tx_id' => $txId, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+
+            try {
+                SubscriptionTransaction::where('id', $txId)->update([
+                    'is_fixed'             => 'Yes',
+                    'fix_time'             => now(),
+                    'fix_successful'       => 'No',
+                    'api_gateway_response' => 'Error: ' . mb_substr($e->getMessage(), 0, 500),
+                ]);
+            } catch (\Throwable $ignored) {
+                // best-effort
+            }
+
+            return response()->json([
+                'success'         => false,
+                'transaction_id'  => $txId,
+                'subscription_id' => null,
+                'message'         => $e->getMessage(),
+                'result'          => 'error',
+                'fix_successful'  => 'No',
+                'gateway_details' => null,
+                'subscription_before' => null,
+                'subscription_after'  => null,
+            ], 200);
+        }
+    }
+
+    /**
+     * Extract human-readable payment details from a raw gateway response for batch fix display.
+     */
+    private function extractBatchFixGatewayDetails(string $gateway, array $raw, array $normalized): array
+    {
+        $details = [
+            'gateway'         => $gateway,
+            'status_raw'      => $normalized['status_raw']      ?? null,
+            'status_normalized' => $normalized['status_normalized'] ?? null,
+            'error_code'      => $normalized['error_code']      ?? null,
+            'error_message'   => $normalized['message']         ?? null,
+            'amount'          => null,
+            'currency'        => null,
+            'payment_date'    => null,
+            'customer_name'   => null,
+            'customer_phone'  => null,
+            'customer_email'  => null,
+            'payment_method'  => null,
+            'network_operator' => null,
+            'description'     => null,
+        ];
+
+        if ($gateway === 'flutterwave') {
+            $data = is_array($raw['data'] ?? null) ? $raw['data'] : [];
+            $details['amount']          = $data['amount']       ?? $data['charged_amount'] ?? null;
+            $details['currency']        = $data['currency']     ?? null;
+            $details['payment_date']    = $data['created_at']   ?? null;
+            $details['payment_method']  = $data['payment_type'] ?? null;
+            $customer                   = is_array($data['customer'] ?? null) ? $data['customer'] : [];
+            $details['customer_name']   = $customer['name']     ?? null;
+            $details['customer_phone']  = $customer['phone_number'] ?? null;
+            $details['customer_email']  = $customer['email']    ?? null;
+            $meta                       = is_array($data['meta'] ?? null) ? $data['meta'] : [];
+            $details['network_operator'] = $meta['MobileMoneyNetwork'] ?? $meta['network'] ?? null;
+            $details['description']     = $data['narration']    ?? null;
+        } elseif ($gateway === 'pesapal') {
+            $details['amount']          = $raw['amount']        ?? null;
+            $details['currency']        = $raw['currency']      ?? null;
+            $details['payment_date']    = $raw['created_date']  ?? $raw['payment_date'] ?? null;
+            $details['payment_method']  = $raw['payment_method'] ?? null;
+            $details['customer_name']   = $raw['customer_name'] ?? null;
+            $details['customer_phone']  = $raw['phone_number']  ?? null;
+            $details['customer_email']  = $raw['customer_email_address'] ?? null;
+            $details['network_operator'] = $raw['payment_account'] ?? null;
+            $details['description']     = $raw['payment_status_description'] ?? $raw['description'] ?? null;
+        }
+
+        return $details;
     }
 
     private function resolveDebugContext($transactionId, string $reference, string $gateway): array

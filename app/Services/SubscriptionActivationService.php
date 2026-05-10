@@ -18,9 +18,9 @@ class SubscriptionActivationService
      * - Otherwise, start from the latest paid active end-date when present (day stacking).
      * - Always compute duration in hours (days * 24) to avoid date drift.
      */
-    public function activatePaidSubscription(Subscription $subscription, string $source = 'unknown'): Subscription
+    public function activatePaidSubscription(Subscription $subscription, string $source = 'unknown', array $options = []): Subscription
     {
-        $result = $this->activatePaidSubscriptionWithAudit($subscription, $source);
+        $result = $this->activatePaidSubscriptionWithAudit($subscription, $source, $options);
 
         return $result['subscription'];
     }
@@ -30,9 +30,9 @@ class SubscriptionActivationService
      *
      * @return array{subscription: Subscription, audit: array<string, mixed>}
      */
-    public function activatePaidSubscriptionWithAudit(Subscription $subscription, string $source = 'unknown'): array
+    public function activatePaidSubscriptionWithAudit(Subscription $subscription, string $source = 'unknown', array $options = []): array
     {
-        return DB::transaction(function () use ($subscription, $source) {
+        return DB::transaction(function () use ($subscription, $source, $options) {
             $locked = Subscription::with('plan')->lockForUpdate()->findOrFail($subscription->id);
             $now = now();
             $previousStart = $locked->start_date_time;
@@ -47,7 +47,8 @@ class SubscriptionActivationService
                 && $locked->start_date_time !== null
                 && $locked->end_date_time !== null;
 
-            $anchorMeta = $this->resolveStartAnchorMeta($locked, $now);
+            $forceNow = (bool) ($options['force_start_now'] ?? false);
+            $anchorMeta = $this->resolveStartAnchorMeta($locked, $now, $forceNow);
             $anchor = $anchorMeta['anchor'];
 
             $locked->status = 'Active';
@@ -133,8 +134,17 @@ class SubscriptionActivationService
         return max(1, $days);
     }
 
-    private function resolveStartAnchorMeta(Subscription $subscription, Carbon $now): array
+    private function resolveStartAnchorMeta(Subscription $subscription, Carbon $now, bool $forceNow = false): array
     {
+        if ($forceNow) {
+            return [
+                'anchor'                     => $now->copy(),
+                'anchor_source'              => 'forced_now_batch_fix',
+                'resolved_extended_parent_end' => null,
+                'resolved_latest_active_end' => null,
+            ];
+        }
+
         $anchor = $now->copy();
         $anchorSource = 'now';
         $resolvedExtendedParentEnd = null;
