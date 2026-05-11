@@ -1124,57 +1124,113 @@ JS);
         Admin::html(<<<HTML
 <!-- Subscription Fix Lab Modal (single row) -->
 <div class="modal fade" id="subFixLabModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
-  <div class="modal-dialog" role="document" style="width:96%;max-width:860px">
+  <div class="modal-dialog" role="document" style="width:98%;max-width:1260px;margin:20px auto">
     <div class="modal-content" style="border-radius:0;background:#1a1e2a;color:#c9d1d9">
-      <div class="modal-header" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 16px;display:flex;align-items:center;justify-content:space-between">
-        <h4 class="modal-title" id="subFixLabTitle" style="font-size:15px;font-weight:700;color:#e6edf3;margin:0"><i class="fa fa-flask"></i> Subscription Fix Lab</h4>
-        <button type="button" class="close" data-dismiss="modal" style="color:#8b949e;opacity:1;font-size:20px;line-height:1;background:none;border:0">&times;</button>
+      <div class="modal-header" style="background:#161b22;border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;justify-content:space-between">
+        <h4 class="modal-title" id="subFixLabTitle" style="font-size:16px;font-weight:700;color:#e6edf3;margin:0"><i class="fa fa-flask"></i> Subscription Fix Lab</h4>
+        <button type="button" class="close" data-dismiss="modal" style="color:#8b949e;opacity:1;font-size:22px;line-height:1;background:none;border:0">&times;</button>
       </div>
-      <div class="modal-body" style="padding:14px 16px">
-        <!-- Hidden inputs for reference/gateway -->
-        <input type="hidden" id="subFixLabRef" value="">
-        <input type="hidden" id="subFixLabGateway" value="auto">
-        <!-- Meta row -->
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px" id="subFixLabMeta"></div>
-        <!-- Inspect Result -->
-        <div id="subFixLabInspectBlock" style="display:none;margin-bottom:12px">
-          <div style="font-size:11px;text-transform:uppercase;color:#8b949e;margin-bottom:4px">Gateway Inspect Result</div>
-          <div id="subFixLabNormalized" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"></div>
-          <details style="cursor:pointer">
-            <summary style="font-size:11px;color:#8b949e;user-select:none">Raw Gateway Response</summary>
-            <pre id="subFixLabRaw" style="background:#0d1117;border:1px solid #30363d;padding:8px;font-size:11px;color:#79c0ff;max-height:160px;overflow:auto;margin-top:4px;white-space:pre-wrap;word-break:break-all"></pre>
-          </details>
-        </div>
-        <!-- Subscription snapshot -->
-        <div id="subFixLabSubSnap" style="display:none;margin-bottom:12px">
-          <div style="font-size:11px;text-transform:uppercase;color:#8b949e;margin-bottom:4px">Subscription Snapshot</div>
-          <div id="subFixLabSubSnapBody" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px"></div>
-        </div>
-        <!-- Actions -->
-        <div style="margin-bottom:12px">
-          <div style="font-size:11px;text-transform:uppercase;color:#8b949e;margin-bottom:6px">Actions</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px">
-            <button class="btn btn-xs btn-info js-subfix-action" data-action="force_verify" style="font-size:12px"><i class="fa fa-refresh"></i> Force Verify</button>
-            <button class="btn btn-xs btn-success js-subfix-action" data-action="force_activate" style="font-size:12px"><i class="fa fa-bolt"></i> Force Activate</button>
-            <button class="btn btn-xs btn-warning js-subfix-action" data-action="mark_payment_completed" style="font-size:12px"><i class="fa fa-check"></i> Mark Payment Completed</button>
-            <button class="btn btn-xs btn-danger js-subfix-action" data-action="mark_payment_failed" style="font-size:12px"><i class="fa fa-times"></i> Mark Payment Failed</button>
-            <button class="btn btn-xs js-subfix-action" data-action="mark_subscription_active" style="font-size:12px;background:#238636;color:#fff"><i class="fa fa-play"></i> Mark Sub Active</button>
-            <button class="btn btn-xs btn-default js-subfix-action" data-action="mark_subscription_expired" style="font-size:12px"><i class="fa fa-clock-o"></i> Mark Sub Expired</button>
-            <button class="btn btn-xs btn-default js-subfix-action" data-action="mark_subscription_cancelled" style="font-size:12px"><i class="fa fa-ban"></i> Mark Sub Cancelled</button>
-            <span style="display:flex;align-items:center;gap:4px">
-              <input type="number" id="subFixLabExtendDays" min="1" max="3650" value="30" style="width:64px;height:24px;font-size:12px;padding:2px 6px;border:1px solid #444;background:#0d1117;color:#c9d1d9;border-radius:3px">
-              <button class="btn btn-xs btn-primary js-subfix-action" data-action="extend_subscription" style="font-size:12px"><i class="fa fa-calendar-plus-o"></i> Extend Days</button>
-            </span>
+
+      <!-- Two-column body -->
+      <div class="modal-body" style="padding:0;display:flex;height:82vh;overflow:hidden">
+
+        <!-- LEFT: Subscription summary + transaction list -->
+        <div style="width:36%;border-right:1px solid #30363d;display:flex;flex-direction:column;overflow:hidden;background:#0d1117">
+
+          <!-- Subscription summary card -->
+          <div id="subFixLabSubSummary" style="padding:12px 14px;border-bottom:1px solid #30363d;font-size:12px;background:#161b22;flex-shrink:0">
+            <div style="font-size:10px;text-transform:uppercase;color:#8b949e;margin-bottom:6px;letter-spacing:.5px"><i class="fa fa-credit-card"></i> Subscription</div>
+            <div style="color:#4a5878">Loading&hellip;</div>
+          </div>
+
+          <!-- Transaction list header -->
+          <div style="padding:6px 10px 6px 12px;border-bottom:1px solid #30363d;background:#161b22;flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:10px;text-transform:uppercase;color:#8b949e;letter-spacing:.5px"><i class="fa fa-exchange"></i> Payment Transactions <span id="subFixLabTxCount" style="color:#58a6ff"></span></span>
+            <button id="subFixLabNewPayBtn" class="btn btn-xs btn-success" style="font-size:11px;padding:2px 8px"><i class="fa fa-plus"></i> New Payment</button>
+          </div>
+
+          <!-- Scrollable transaction list -->
+          <div id="subFixLabTxList" style="flex:1;overflow-y:auto;padding:4px 0">
+            <div style="color:#4a5878;font-size:12px;padding:24px;text-align:center">Loading&hellip;</div>
           </div>
         </div>
-        <!-- Action log -->
-        <div style="font-size:11px;text-transform:uppercase;color:#8b949e;margin-bottom:4px">Action Log</div>
-        <div id="subFixLabLog" style="background:#0d1117;border:1px solid #30363d;padding:8px 10px;font-family:monospace;font-size:12px;max-height:180px;overflow-y:auto;color:#c9d1d9;min-height:50px"></div>
-        <div id="subFixLabActionResult" style="margin-top:8px"></div>
-      </div>
+
+        <!-- RIGHT: Inspector + actions + log -->
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+
+          <!-- Gateway inspect result area -->
+          <div id="subFixLabInspectArea" style="padding:12px 16px;border-bottom:1px solid #30363d;background:#0d1117;flex-shrink:0;min-height:48px;max-height:240px;overflow-y:auto">
+            <div style="color:#4a5878;font-size:12px;text-align:center;padding:14px 0">Click a transaction on the left to inspect its gateway status</div>
+          </div>
+
+          <!-- Actions -->
+          <div style="padding:10px 16px;border-bottom:1px solid #30363d;background:#161b22;flex-shrink:0">
+            <div style="font-size:10px;text-transform:uppercase;color:#8b949e;margin-bottom:8px;letter-spacing:.5px">
+              Actions <span id="subFixLabActiveTxBadge" style="margin-left:6px;font-size:10px;color:#58a6ff;font-weight:700"></span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <button class="btn btn-xs btn-info js-subfix-action" data-action="force_verify" style="font-size:12px"><i class="fa fa-refresh"></i> Force Verify</button>
+              <button class="btn btn-xs btn-success js-subfix-action" data-action="force_activate" style="font-size:12px"><i class="fa fa-bolt"></i> Force Activate Sub</button>
+              <button class="btn btn-xs btn-warning js-subfix-action" data-action="mark_payment_completed" style="font-size:12px"><i class="fa fa-check"></i> Mark Payment Completed</button>
+              <button class="btn btn-xs btn-danger js-subfix-action" data-action="mark_payment_failed" style="font-size:12px"><i class="fa fa-times"></i> Mark Payment Failed</button>
+              <button class="btn btn-xs js-subfix-action" data-action="mark_subscription_active" style="font-size:12px;background:#238636;color:#fff;border:0;border-radius:3px;padding:1px 8px"><i class="fa fa-play"></i> Mark Sub Active</button>
+              <button class="btn btn-xs btn-default js-subfix-action" data-action="mark_subscription_expired" style="font-size:12px"><i class="fa fa-clock-o"></i> Expire Sub</button>
+              <button class="btn btn-xs btn-default js-subfix-action" data-action="mark_subscription_cancelled" style="font-size:12px"><i class="fa fa-ban"></i> Cancel Sub</button>
+              <span style="display:flex;align-items:center;gap:4px">
+                <input type="number" id="subFixLabExtendDays" min="1" max="3650" value="30" style="width:60px;height:24px;font-size:12px;padding:2px 6px;border:1px solid #444;background:#0d1117;color:#c9d1d9;border-radius:3px">
+                <button class="btn btn-xs btn-primary js-subfix-action" data-action="extend_subscription" style="font-size:12px"><i class="fa fa-calendar-plus-o"></i> Extend Days</button>
+              </span>
+            </div>
+          </div>
+
+          <!-- Action log -->
+          <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:10px 16px;min-height:0">
+            <div style="font-size:10px;text-transform:uppercase;color:#8b949e;margin-bottom:6px;letter-spacing:.5px">Action Log</div>
+            <div id="subFixLabLog" style="flex:1;background:#0d1117;border:1px solid #30363d;padding:8px 10px;font-family:monospace;font-size:12px;overflow-y:auto;color:#c9d1d9;white-space:pre-wrap;min-height:0"></div>
+            <div id="subFixLabActionResult" style="margin-top:8px;font-size:12px;flex-shrink:0"></div>
+          </div>
+        </div>
+      </div><!-- end two-column body -->
+
+      <!-- Hidden state inputs -->
+      <input type="hidden" id="subFixLabRef" value="">
+      <input type="hidden" id="subFixLabGateway" value="auto">
+
       <div class="modal-footer" style="background:#161b22;border-top:1px solid #30363d;padding:8px 16px">
-        <button type="button" class="btn btn-sm btn-default" id="subFixLabInspectBtn" style="font-size:12px"><i class="fa fa-search"></i> Inspect Gateway</button>
+        <button type="button" class="btn btn-sm btn-info" id="subFixLabInspectBtn" style="font-size:12px"><i class="fa fa-search"></i> Re-Inspect Selected Tx</button>
         <button type="button" class="btn btn-sm btn-default" data-dismiss="modal" style="font-size:12px">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Initiate New Payment Modal (shown on top of Fix Lab) -->
+<div class="modal fade" id="subInitPayModal" tabindex="-1" role="dialog" style="z-index:1080">
+  <div class="modal-dialog" role="document" style="max-width:440px;margin:80px auto">
+    <div class="modal-content" style="border-radius:4px;background:#1a1e2a;color:#c9d1d9;border:1px solid #30363d">
+      <div class="modal-header" style="background:#161b22;border-bottom:1px solid #30363d;padding:12px 18px">
+        <h4 class="modal-title" style="font-size:15px;font-weight:700;color:#e6edf3;margin:0"><i class="fa fa-credit-card"></i> Initiate New Payment</h4>
+        <button type="button" class="close" data-dismiss="modal" style="color:#8b949e;opacity:1;font-size:22px;background:none;border:0">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:18px 20px">
+        <p style="font-size:12px;color:#8b949e;margin-bottom:14px">A new payment order will be created for this subscription via the selected gateway. The user must open the payment link to complete the payment.</p>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:#9fb2d9;display:block;margin-bottom:4px">Phone Number (Mobile Money)</label>
+          <input type="tel" id="subInitPayPhone" placeholder="e.g. 0772123456" style="width:100%;padding:7px 10px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;font-size:13px">
+          <div style="font-size:10px;color:#6e7681;margin-top:3px">Enter the phone number linked to the Mobile Money account</div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:#9fb2d9;display:block;margin-bottom:4px">Gateway</label>
+          <select id="subInitPayGateway" style="width:100%;padding:7px 10px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;font-size:13px">
+            <option value="flutterwave" selected>Flutterwave</option>
+            <option value="pesapal">Pesapal</option>
+          </select>
+        </div>
+        <div id="subInitPayResult" style="font-size:12px;min-height:20px"></div>
+      </div>
+      <div class="modal-footer" style="background:#161b22;border-top:1px solid #30363d;padding:8px 16px;display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" id="subInitPaySubmitBtn" class="btn btn-sm btn-success" style="font-size:12px"><i class="fa fa-paper-plane"></i> Initiate Payment</button>
+        <button type="button" class="btn btn-sm btn-default" data-dismiss="modal" style="font-size:12px">Cancel</button>
       </div>
     </div>
   </div>
@@ -1182,7 +1238,7 @@ JS);
 
 <!-- Subscription Batch Fix Modal -->
 <div class="modal fade" id="subBatchFixModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
-  <div class="modal-dialog" role="document" style="width:96%;max-width:820px">
+  <div class="modal-dialog" role="document" style="width:98%;max-width:1200px;margin:20px auto">
     <div class="modal-content" style="border-radius:0;background:#1a1e2a;color:#c9d1d9">
       <div class="modal-header" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 16px">
         <h4 class="modal-title" style="font-size:15px;font-weight:700;color:#e6edf3;margin:0"><i class="fa fa-tasks"></i> Batch Fix Subscriptions</h4>
@@ -1199,7 +1255,7 @@ JS);
           <li><a href="#subBatchTabDetails" data-toggle="tab" style="background:transparent;color:#8b949e;border-color:transparent;font-size:12px">Details</a></li>
           <li><a href="#subBatchTabSummary" data-toggle="tab" style="background:transparent;color:#8b949e;border-color:transparent;font-size:12px">Summary</a></li>
         </ul>
-        <div class="tab-content" style="background:#0d1117;border:1px solid #30363d;border-top:0;min-height:200px;max-height:300px;overflow-y:auto">
+        <div class="tab-content" style="background:#0d1117;border:1px solid #30363d;border-top:0;min-height:300px;max-height:460px;overflow-y:auto">
           <div class="tab-pane active" id="subBatchTabLog" style="padding:8px 10px;font-family:monospace;font-size:12px;color:#c9d1d9"></div>
           <div class="tab-pane" id="subBatchTabDetails" style="padding:8px 10px"></div>
           <div class="tab-pane" id="subBatchTabSummary" style="padding:10px 14px;font-size:13px"></div>
@@ -1213,19 +1269,21 @@ JS);
 </div>
 HTML);
 
-        $inspectUrl      = admin_url('api/subscriptions/debug/inspect');
-        $applyFixUrl     = admin_url('api/subscriptions/debug/apply-fix');
-        $batchFixSingleUrl = admin_url('api/subscriptions/debug/batch-fix-single');
+        $inspectUrl         = admin_url('api/subscriptions/debug/inspect');
+        $applyFixUrl        = admin_url('api/subscriptions/debug/apply-fix');
+        $batchFixSingleUrl  = admin_url('api/subscriptions/debug/batch-fix-single');
+        $initiatePaymentUrl = admin_url('api/subscriptions/debug/initiate-payment');
 
         $fixConfigJs = json_encode([
-            'inspectUrl'       => $inspectUrl,
-            'applyFixUrl'      => $applyFixUrl,
-            'batchFixSingleUrl' => $batchFixSingleUrl,
-            'token'            => csrf_token(),
+            'inspectUrl'          => $inspectUrl,
+            'applyFixUrl'         => $applyFixUrl,
+            'batchFixSingleUrl'   => $batchFixSingleUrl,
+            'initiatePaymentUrl'  => $initiatePaymentUrl,
+            'token'               => csrf_token(),
         ]);
 
         Admin::script("window.SubFixConfig = {$fixConfigJs};");
-        Admin::js('/assets/sub-fix-modal.js?v=' . time());
+        Admin::script(file_get_contents(public_path('assets/sub-fix-modal.js')));
 
         return $grid;
     }
@@ -1905,26 +1963,59 @@ $(function(){
     public function debugInspect(Request $request)
     {
         try {
-            $ctx = $this->resolveSubDebugContext(
-                $request->input('subscription_id'),
-                (string) $request->input('reference', ''),
-                (string) $request->input('gateway', 'auto')
-            );
+            $transactionId   = $request->input('transaction_id');
+            $referenceRaw    = (string) $request->input('reference', '');   // what the caller sent
+            $reference       = $referenceRaw;
+            $gateway         = (string) $request->input('gateway', 'auto');
+            $subscriptionId  = $request->input('subscription_id');
 
-            $raw        = $this->subFetchGatewayRaw($ctx['gateway'], $ctx['reference']);
-            $normalized = $this->subNormalizeGateway($ctx['gateway'], $raw);
+            // Track whether the caller explicitly asked for a gateway call:
+            // Only call gateway when a transaction_id or non-empty reference was supplied.
+            $callerWantsGateway = ($transactionId !== null && $transactionId !== '') || $referenceRaw !== '';
+
+            // If a specific transaction ID is given, derive reference + gateway from it
+            if ($transactionId) {
+                $tx = SubscriptionTransaction::find((int) $transactionId);
+                if ($tx) {
+                    if ($reference === '') {
+                        $reference = (string) ($tx->pesapal_tracking_id ?: $tx->merchant_reference ?: '');
+                    }
+                    if ($gateway === 'auto') {
+                        $gwHint  = strtolower((string) ($tx->payment_method ?? ''));
+                        $gateway = str_contains($gwHint, 'flutter') ? 'flutterwave' : 'pesapal';
+                    }
+                    if (!$subscriptionId) {
+                        $subscriptionId = $tx->subscription_id;
+                    }
+                }
+            }
+
+            $ctx = $this->resolveSubDebugContext($subscriptionId, $reference, $gateway);
+
+            // Fetch all transactions linked to this subscription
+            $allTransactions = $this->subBuildAllTransactions($ctx['subscription']);
+
+            // Only call gateway when the caller explicitly provided a tx_id or reference.
+            // Never auto-call gateway on the initial "list-only" load (avoids timeout).
+            $raw        = null;
+            $normalized = null;
+            if ($callerWantsGateway && $ctx['reference'] !== '') {
+                $raw        = $this->subFetchGatewayRaw($ctx['gateway'], $ctx['reference']);
+                $normalized = $this->subNormalizeGateway($ctx['gateway'], $raw);
+            }
 
             return response()->json([
                 'success' => true,
                 'data'    => [
                     'gateway'             => $ctx['gateway'],
                     'reference'           => $ctx['reference'],
+                    'transaction_id'      => $transactionId ? (int) $transactionId : null,
                     'subscription_id'     => $ctx['subscription']?->id,
                     'subscription_status' => $ctx['subscription']?->status,
                     'payment_status'      => $ctx['subscription']?->payment_status,
                     'subscription'        => $this->subBuildSubscriptionSnippet($ctx['subscription']),
                     'user'                => $this->subBuildUserSnippet($ctx['subscription']),
-                    'transaction'         => $this->subBuildTransactionSnippet($ctx['subscription']),
+                    'all_transactions'    => $allTransactions,
                     'normalized'          => $normalized,
                     'raw_gateway_response' => $raw,
                 ],
@@ -1933,6 +2024,7 @@ $(function(){
             Log::error('Subscription debugInspect failed', [
                 'error'           => $e->getMessage(),
                 'subscription_id' => $request->input('subscription_id'),
+                'transaction_id'  => $request->input('transaction_id'),
                 'reference'       => $request->input('reference'),
             ]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -1941,14 +2033,31 @@ $(function(){
 
     public function debugApplyFix(Request $request)
     {
-        $action = (string) $request->input('action', '');
+        $action        = (string) $request->input('action', '');
+        $transactionId = $request->input('transaction_id');
+        $reference     = (string) $request->input('reference', '');
+        $gateway       = (string) $request->input('gateway', 'auto');
+        $subscriptionId = $request->input('subscription_id');
+
+        // If transaction_id given, resolve reference/gateway/subscription from that tx
+        if ($transactionId) {
+            $txRow = SubscriptionTransaction::find((int) $transactionId);
+            if ($txRow) {
+                if ($reference === '') {
+                    $reference = (string) ($txRow->pesapal_tracking_id ?: $txRow->merchant_reference ?: '');
+                }
+                if ($gateway === 'auto') {
+                    $gwHint  = strtolower((string) ($txRow->payment_method ?? ''));
+                    $gateway = str_contains($gwHint, 'flutter') ? 'flutterwave' : 'pesapal';
+                }
+                if (!$subscriptionId) {
+                    $subscriptionId = $txRow->subscription_id;
+                }
+            }
+        }
 
         try {
-            $ctx = $this->resolveSubDebugContext(
-                $request->input('subscription_id'),
-                (string) $request->input('reference', ''),
-                (string) $request->input('gateway', 'auto')
-            );
+            $ctx = $this->resolveSubDebugContext($subscriptionId, $reference, $gateway);
 
             $subscription = $ctx['subscription'];
             if (!$subscription && in_array($action, ['force_verify', 'force_activate'], true)) {
@@ -1984,12 +2093,24 @@ $(function(){
                     $subscription->payment_confirmed_at = $subscription->payment_confirmed_at ?: now();
                     $subscription->save();
                     $this->syncCompletedAdminTransaction($subscription, 'admin_debug_mark_completed');
+                    // Also update the specific transaction record if provided
+                    if ($transactionId) {
+                        SubscriptionTransaction::where('id', (int) $transactionId)->update([
+                            'status'         => 'Completed',
+                            'is_fixed'       => true,
+                            'fix_time'       => now(),
+                            'fix_successful' => 'Yes',
+                        ]);
+                    }
                     break;
 
                 case 'mark_payment_failed':
                     if (!$subscription) throw new \RuntimeException('Subscription not found.');
                     $subscription->payment_status = 'Failed';
                     $subscription->save();
+                    if ($transactionId) {
+                        SubscriptionTransaction::where('id', (int) $transactionId)->update(['status' => 'Failed']);
+                    }
                     break;
 
                 case 'mark_subscription_active':
@@ -2039,7 +2160,7 @@ $(function(){
                     'payment_status'      => $subscription?->payment_status,
                     'subscription'        => $this->subBuildSubscriptionSnippet($subscription),
                     'user'                => $this->subBuildUserSnippet($subscription),
-                    'transaction'         => $this->subBuildTransactionSnippet($subscription),
+                    'all_transactions'    => $this->subBuildAllTransactions($subscription),
                     'normalized'          => $normalized,
                     'raw_gateway_response' => $raw,
                 ],
@@ -2048,8 +2169,9 @@ $(function(){
             Log::error('Subscription debugApplyFix failed', [
                 'error'           => $e->getMessage(),
                 'action'          => $action,
-                'subscription_id' => $request->input('subscription_id'),
-                'reference'       => $request->input('reference'),
+                'subscription_id' => $subscriptionId,
+                'transaction_id'  => $transactionId,
+                'reference'       => $reference,
             ]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
@@ -2191,6 +2313,7 @@ $(function(){
 
         if (!empty($subscriptionId)) {
             $subscription = Subscription::with(['user', 'plan'])->find((int) $subscriptionId);
+            // Only auto-fill reference from subscription if caller didn't supply one
             if ($subscription && $reference === '') {
                 $reference = (string) ($subscription->pesapal_tracking_id
                     ?: $subscription->flutterwave_reference
@@ -2211,10 +2334,7 @@ $(function(){
             throw new \RuntimeException('Provide a subscription ID or payment reference.');
         }
 
-        if ($subscription && $reference === '') {
-            throw new \RuntimeException('Subscription has no payment reference on record.');
-        }
-
+        // Allow empty reference (subscription found but no reference yet) — caller skips gateway call
         $resolvedGateway = $this->subResolveGateway($gateway, $subscription, $reference);
 
         return [
@@ -2332,6 +2452,119 @@ $(function(){
             'app_type'      => (string) ($user->app_type ?? ''),
             'account_state' => (string) ($user->account_state ?? ''),
         ];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Admin Fix Lab: Initiate a new payment for a subscription
+    //  POST api/subscriptions/debug/initiate-payment
+    //  Body: { subscription_id, phone, gateway }
+    // ─────────────────────────────────────────────────────────────────────────
+    public function debugInitiatePayment(Request $request)
+    {
+        $subscriptionId = $request->input('subscription_id');
+        $phone          = trim((string) $request->input('phone', ''));
+        $gateway        = strtolower(trim((string) $request->input('gateway', 'pesapal')));
+
+        if (!$subscriptionId) {
+            return response()->json(['success' => false, 'message' => 'subscription_id is required.'], 422);
+        }
+        if ($phone === '') {
+            return response()->json(['success' => false, 'message' => 'Phone number is required.'], 422);
+        }
+        if (!in_array($gateway, ['pesapal', 'flutterwave'], true)) {
+            return response()->json(['success' => false, 'message' => 'Gateway must be pesapal or flutterwave.'], 422);
+        }
+
+        try {
+            $subscription = Subscription::with(['user', 'plan'])->find((int) $subscriptionId);
+            if (!$subscription) {
+                throw new \RuntimeException('Subscription #' . $subscriptionId . ' not found.');
+            }
+            if (!$subscription->user) {
+                throw new \RuntimeException('Subscription has no associated user.');
+            }
+            if (!$subscription->plan) {
+                throw new \RuntimeException('Subscription has no associated plan.');
+            }
+
+            // Ensure merchant reference exists (required by both gateways)
+            if (empty($subscription->pesapal_merchant_reference)) {
+                $subscription->pesapal_merchant_reference = 'SUB-' . $subscription->id . '-' . strtoupper(substr(hash('sha256', $subscription->id . time()), 0, 8));
+                $subscription->save();
+            }
+
+            if ($gateway === 'pesapal') {
+                $svc    = app(\App\Services\SubscriptionPesapalService::class);
+                $result = $svc->initializePayment($subscription, null, $phone);
+            } else {
+                $svc    = app(\App\Services\SubscriptionFlutterwaveService::class);
+                $result = $svc->initializePayment($subscription, null, $phone);
+            }
+
+            $subscription->refresh();
+
+            return response()->json([
+                'success'         => true,
+                'message'         => 'Payment initiated via ' . $gateway . '. Redirect the user to the payment link.',
+                'gateway'         => $gateway,
+                'redirect_url'    => $result['redirect_url']    ?? ($result['payment_message'] ?? null),
+                'payment_message' => $result['payment_message'] ?? null,
+                'tracking_id'     => $result['order_tracking_id'] ?? null,
+                'merchant_ref'    => $result['merchant_reference'] ?? null,
+                'data'            => [
+                    'subscription'     => $this->subBuildSubscriptionSnippet($subscription),
+                    'user'             => $this->subBuildUserSnippet($subscription),
+                    'all_transactions' => $this->subBuildAllTransactions($subscription),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Subscription debugInitiatePayment failed', [
+                'subscription_id' => $subscriptionId,
+                'phone'           => substr($phone, 0, 6) . '***',
+                'gateway'         => $gateway,
+                'error'           => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    private function subBuildAllTransactions(?Subscription $subscription): array
+    {
+        if (!$subscription) return [];
+        $subTrackingId   = (string) ($subscription->pesapal_tracking_id    ?? '');
+        $subFwRef        = (string) ($subscription->flutterwave_reference   ?? '');
+        $subPaymentUrl   = (string) ($subscription->payment_url             ?? '');
+        return SubscriptionTransaction::where('subscription_id', $subscription->id)
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($tx) use ($subTrackingId, $subFwRef, $subPaymentUrl) {
+                $txTracking = (string) ($tx->pesapal_tracking_id ?? '');
+                $txMref     = (string) ($tx->merchant_reference  ?? '');
+                // Attach subscription's stored payment_url to the tx that owns the current tracking/reference
+                $paymentUrl = '';
+                if ($subPaymentUrl !== '') {
+                    if (($txTracking !== '' && $txTracking === $subTrackingId)
+                        || ($txMref  !== '' && $txMref  === $subFwRef)) {
+                        $paymentUrl = $subPaymentUrl;
+                    }
+                }
+                return [
+                    'id'                  => $tx->id,
+                    'status'              => (string) ($tx->status ?? ''),
+                    'transaction_type'    => (string) ($tx->transaction_type ?? ''),
+                    'amount'              => $tx->amount,
+                    'currency'            => (string) ($tx->currency ?? 'UGX'),
+                    'payment_method'      => (string) ($tx->payment_method ?? ''),
+                    'pesapal_tracking_id' => $txTracking,
+                    'merchant_reference'  => $txMref,
+                    'confirmation_code'   => (string) ($tx->confirmation_code ?? ''),
+                    'error_message'       => (string) ($tx->error_message ?? ''),
+                    'is_fixed'            => (bool) ($tx->is_fixed ?? false),
+                    'fix_successful'      => (string) ($tx->fix_successful ?? ''),
+                    'payment_url'         => $paymentUrl,
+                    'created_at'          => optional($tx->created_at)->format('Y-m-d H:i'),
+                ];
+            })->toArray();
     }
 
     private function subBuildTransactionSnippet(?Subscription $subscription): ?array

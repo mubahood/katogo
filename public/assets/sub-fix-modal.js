@@ -1,22 +1,22 @@
 /**
- * Subscription Fix Modal  v1
+ * Subscription Fix Modal  v2
  * ──────────────────────────
- * 1) Single-row Fix Lab  – inspect + apply actions on one subscription
- * 2) Batch Fix Modal     – progress bar, live log, per-item detail pane,
- *                         final summary table
+ * Two-column layout:
+ *   LEFT  — subscription summary + full payment-transaction list (clickable)
+ *   RIGHT — selected transaction gateway inspector + fix actions + log
  *
- * Config: window.SubFixConfig = { inspectUrl, applyFixUrl, batchFixSingleUrl, token }
+ * Config: window.SubFixConfig = { inspectUrl, applyFixUrl, batchFixSingleUrl, initiatePaymentUrl, token }
  * Trigger (single): .js-sub-fix-lab  [data-id] [data-ref] [data-gateway]
  * Trigger (batch):  .js-sub-batch-fix-btn
- * Modal IDs: #subFixLabModal (single), #subBatchFixModal (batch)
  */
 (function () {
     function initSubFixModal() {
         var cfg = window.SubFixConfig || {};
-        var inspectUrl        = String(cfg.inspectUrl        || '');
-        var applyFixUrl       = String(cfg.applyFixUrl       || '');
-        var batchFixSingleUrl = String(cfg.batchFixSingleUrl || '');
-        var token             = String(cfg.token             || '');
+        var inspectUrl          = String(cfg.inspectUrl          || '');
+        var applyFixUrl         = String(cfg.applyFixUrl         || '');
+        var batchFixSingleUrl   = String(cfg.batchFixSingleUrl   || '');
+        var initiatePaymentUrl  = String(cfg.initiatePaymentUrl  || '');
+        var token               = String(cfg.token               || '');
 
         if (!inspectUrl || !applyFixUrl || !token) { return; }
 
@@ -28,7 +28,11 @@
         };
 
         // ── Single-row state ─────────────────────────────────────────────
-        var singleState = { subscriptionId: null };
+        var singleState = {
+            subscriptionId: null,
+            activeTx: null,         // currently selected transaction object
+            allTransactions: []
+        };
 
         // ─────────────────────────────────────────────────────────────────
         //  Shared helpers
@@ -53,184 +57,510 @@
                 + 'font-weight:700;background:' + bg + ';color:#c8ffd4">' + v + '</span>';
         }
 
+        function txStatusKind(status) {
+            var s = String(status || '').toLowerCase();
+            return s === 'completed' ? 'good' : (s === 'failed' ? 'bad' : 'warn');
+        }
+
         // ─────────────────────────────────────────────────────────────────
-        //  Single-row Fix Lab
+        //  Logging
         // ─────────────────────────────────────────────────────────────────
         function logLine(msg, color) {
-            var el = $('#subFixLabLog');
-            if (!el.length) return;
-            el.append($('<span>').css('color', color || '#9ad1ff').text('[' + nowTs() + '] ' + msg + '\n'));
-            el[0].scrollTop = el[0].scrollHeight;
+            var el = document.getElementById('subFixLabLog');
+            if (!el) return;
+            var span = document.createElement('span');
+            span.style.color = color || '#9ad1ff';
+            span.textContent = '[' + nowTs() + '] ' + msg + '\n';
+            el.appendChild(span);
+            el.scrollTop = el.scrollHeight;
         }
 
         function setActionResult(html) {
-            $('#subFixLabActionResult').html(html);
+            var el = document.getElementById('subFixLabActionResult');
+            if (el) el.innerHTML = html;
         }
 
-        function renderSubSnippet(data) {
-            var s = data.subscription  || {};
-            var u = data.user          || {};
-            var t = data.transaction   || {};
-            var n = data.normalized    || {};
+        // ─────────────────────────────────────────────────────────────────
+        //  Subscription summary (left panel top)
+        // ─────────────────────────────────────────────────────────────────
+        function renderSubSummary(s, u) {
+            if (!s) return;
+            var subKind = String(s.status || '').toLowerCase() === 'active' ? 'good'
+                        : String(s.status || '').toLowerCase() === 'expired' ? 'bad' : 'warn';
+            var payKind = String(s.payment_status || '').toLowerCase() === 'completed' ? 'good'
+                        : String(s.payment_status || '').toLowerCase() === 'failed' ? 'bad' : 'warn';
 
-            var normKind = n.status_normalized === 'completed' ? 'good'
-                         : n.status_normalized === 'failed'    ? 'bad' : 'warn';
+            var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:11px;line-height:1.6">'
+                + '<div>' + statusPill(s.status, subKind) + ' ' + statusPill(s.payment_status, payKind) + '</div>'
+                + '<div style="text-align:right;color:#8b949e">Sub #' + esc(s.id) + '</div>'
+                + '<div><span style="color:#8b949e">Plan:</span> <b style="color:#e6edf3">' + esc(s.plan) + '</b></div>'
+                + '<div><span style="color:#8b949e">Amt:</span> <b style="color:#e6edf3">' + esc(s.currency || 'UGX') + ' ' + esc(s.amount_paid) + '</b></div>'
+                + '<div><span style="color:#8b949e">App:</span> ' + esc(s.app_type) + '</div>'
+                + '<div><span style="color:#8b949e">Days:</span> ' + esc(s.days) + '</div>'
+                + '<div style="grid-column:1/-1"><span style="color:#8b949e">Start:</span> ' + esc(s.start_date_time) + ' → ' + esc(s.end_date_time) + '</div>'
+                + '</div>';
 
-            // Normalized banner
-            $('#subFixLabNormalized').html(
-                statusPill((n.status_normalized || 'unknown').toUpperCase(), normKind)
-                + ' <span style="margin-left:6px;font-size:11px;color:#9fb2d9">gateway=' + esc(n.gateway || data.gateway) + '</span>'
-                + '<span style="margin-left:8px;font-size:11px;color:#9fb2d9">raw=' + esc(n.status_raw)
-                + ' | code=' + esc(n.error_code) + ' | msg=' + esc(n.message) + '</span>'
-            );
-
-            // Raw JSON
-            $('#subFixLabRaw').text(prettyRaw(data.raw_gateway_response || {}));
-            $('#subFixLabInspectBlock').show();
-
-            // Subscription snapshot
-            var cells = [
-                ['Sub #',         '#' + esc(s.id || data.subscription_id)],
-                ['Status',        statusPill(s.status || data.subscription_status, String(s.status || '').toLowerCase() === 'active' ? 'good' : 'warn')],
-                ['Payment',       statusPill(s.payment_status || data.payment_status, String(s.payment_status || '').toLowerCase() === 'completed' ? 'good' : 'warn')],
-                ['Plan',          esc(s.plan)],
-                ['App',           esc(s.app_type)],
-                ['Platform',      esc(s.platform)],
-                ['Amount',        esc(s.currency || 'UGX') + ' ' + esc(s.amount_paid)],
-                ['Start',         esc(s.start_date_time)],
-                ['End',           esc(s.end_date_time)],
-                ['Days',          esc(s.days)],
-                ['Tracking ID',   esc(s.pesapal_tracking_id)],
-                ['Merchant Ref',  esc(s.merchant_reference)],
-                ['FLW Ref',       esc(s.flutterwave_reference)],
-                ['Gateway',       esc(s.payment_gateway)],
-            ];
-
-            if (u.id) {
-                cells.push(['User #', '#' + esc(u.id) + ' ' + esc(u.name)]);
-                cells.push(['Email', esc(u.email)]);
-                cells.push(['Phone', esc(u.phone_number)]);
-                cells.push(['Account', esc(u.account_state)]);
-            }
-            if (t && t.id) {
-                cells.push(['Tx #', '#' + esc(t.id)]);
-                cells.push(['Tx Status', statusPill(t.status, String(t.status || '').toLowerCase() === 'completed' ? 'good' : 'warn')]);
-                cells.push(['Tx Method', esc(t.payment_method)]);
-                cells.push(['Tx Amount', esc(t.currency || 'UGX') + ' ' + esc(t.amount)]);
+            if (u) {
+                html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #30363d;font-size:11px;line-height:1.6">'
+                    + '<div><i class="fa fa-user" style="color:#8b949e"></i> <b style="color:#e6edf3">' + esc(u.name) + '</b> <span style="color:#8b949e">#' + esc(u.id) + '</span></div>'
+                    + '<div style="color:#8b949e">' + esc(u.email) + '</div>'
+                    + '<div style="color:#8b949e">' + esc(u.phone_number) + ' · ' + esc(u.account_state) + '</div>'
+                    + '</div>';
             }
 
-            var snapHtml = '';
-            cells.forEach(function (c) {
-                snapHtml += '<div style="background:#0d1117;border:1px solid #30363d;padding:5px 8px;border-radius:3px">'
-                    + '<div style="font-size:9px;text-transform:uppercase;color:#8b949e;margin-bottom:1px">' + c[0] + '</div>'
-                    + '<div style="font-size:11px;color:#c9d1d9">' + c[1] + '</div>'
+            var el = document.getElementById('subFixLabSubSummary');
+            if (el) {
+                el.innerHTML = '<div style="font-size:10px;text-transform:uppercase;color:#8b949e;margin-bottom:6px;letter-spacing:.5px"><i class="fa fa-credit-card"></i> Subscription</div>'
+                    + html;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        //  Transaction list (left panel scrollable)
+        // ─────────────────────────────────────────────────────────────────
+        function renderTxList(transactions) {
+            var el = document.getElementById('subFixLabTxList');
+            var countEl = document.getElementById('subFixLabTxCount');
+            if (!el) return;
+
+            if (countEl) countEl.textContent = transactions.length + ' tx';
+
+            if (!transactions.length) {
+                el.innerHTML = '<div style="color:#4a5878;font-size:12px;padding:20px;text-align:center">No transactions found for this subscription.</div>';
+                return;
+            }
+
+            var html = '';
+            transactions.forEach(function (tx) {
+                var kind = txStatusKind(tx.status);
+                var dotColor = kind === 'good' ? '#3fb950' : kind === 'bad' ? '#f85149' : '#d29922';
+                var ref = tx.pesapal_tracking_id || tx.merchant_reference || '—';
+                var isFixed = tx.is_fixed ? '<span style="margin-left:4px;font-size:9px;color:#3fb950;font-weight:700">FIXED</span>' : '';
+
+                // Pay button: only if payment_url is stored for this tx
+                var payBtn = '';
+                if (tx.payment_url) {
+                    payBtn = '<a href="' + esc(tx.payment_url) + '" target="_blank" rel="noopener noreferrer"'
+                        + ' class="btn btn-xs js-subfix-pay-link"'
+                        + ' style="font-size:10px;padding:1px 7px;background:#1f6feb;color:#fff;border:0;border-radius:3px;text-decoration:none;margin-left:4px"'
+                        + ' onclick="event.stopPropagation()"><i class="fa fa-external-link"></i> Pay</a>';
+                }
+
+                html += '<div class="js-subfix-tx-row" data-tx-id="' + tx.id + '"'
+                    + ' style="padding:9px 12px;border-bottom:1px solid #21262d;cursor:pointer;transition:background .15s"'
+                    + ' onmouseover="this.style.background=\'#1f2937\'" onmouseout="if(!this.classList.contains(\'active-tx\'))this.style.background=\'\'">'
+                    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
+                    +   '<span style="font-size:12px;font-weight:700;color:#e6edf3">Tx #' + esc(tx.id) + '</span>'
+                    +   '<span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
+                    +     '<span style="width:7px;height:7px;border-radius:50%;background:' + dotColor + ';display:inline-block"></span>'
+                    +     '<span style="font-size:11px;color:' + dotColor + '">' + esc(tx.status) + '</span>'
+                    +     isFixed
+                    +     payBtn
+                    +   '</span>'
+                    + '</div>'
+                    + '<div style="display:flex;gap:10px;font-size:11px;color:#8b949e">'
+                    +   '<span>' + esc(tx.currency || 'UGX') + ' ' + esc(tx.amount) + '</span>'
+                    +   '<span>' + esc(tx.payment_method || '—') + '</span>'
+                    +   '<span>' + esc(tx.transaction_type || '—') + '</span>'
+                    + '</div>'
+                    + '<div style="font-size:10px;color:#6e7681;margin-top:2px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(ref) + '">'
+                    +   esc(ref.length > 32 ? ref.slice(0, 32) + '…' : ref)
+                    + '</div>'
+                    + '<div style="font-size:10px;color:#6e7681">' + esc(tx.created_at) + '</div>'
+                    + (tx.error_message ? '<div style="font-size:10px;color:#f85149;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(tx.error_message) + '">⚠ ' + esc(tx.error_message.length > 50 ? tx.error_message.slice(0, 50) + '…' : tx.error_message) + '</div>' : '')
                     + '</div>';
             });
 
-            $('#subFixLabSubSnapBody').html(snapHtml);
-            $('#subFixLabSubSnap').show();
+            el.innerHTML = html;
         }
 
-        function buildPayload(action) {
+        // Highlight the active row
+        function highlightActiveTx(txId) {
+            $('#subFixLabTxList .js-subfix-tx-row').each(function () {
+                var isActive = String($(this).data('txId')) === String(txId);
+                $(this).toggleClass('active-tx', isActive);
+                this.style.background = isActive ? '#1f2937' : '';
+                $(this).find('span:first').css('color', isActive ? '#58a6ff' : '#e6edf3');
+            });
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        //  Inspector area (right panel top)
+        // ─────────────────────────────────────────────────────────────────
+        function renderInspectArea(tx, d) {
+            var n   = d.normalized || {};
+            var raw = d.raw_gateway_response || {};
+            var normKind = n.status_normalized === 'completed' ? 'good'
+                         : n.status_normalized === 'failed'    ? 'bad' : 'warn';
+
+            var html = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+                + statusPill((n.status_normalized || 'unknown').toUpperCase(), normKind)
+                + '<span style="font-size:11px;color:#9fb2d9">gateway=<b>' + esc(n.gateway || d.gateway) + '</b></span>'
+                + '<span style="font-size:11px;color:#9fb2d9">raw=<b>' + esc(n.status_raw) + '</b></span>'
+                + (n.error_code ? '<span style="font-size:11px;color:#f85149">code=' + esc(n.error_code) + '</span>' : '')
+                + (n.message ? '<span style="font-size:11px;color:#f85149">' + esc(n.message) + '</span>' : '')
+                + '</div>';
+
+            // Tx details row
+            html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:4px 10px;font-size:11px;color:#c9d1d9;margin-bottom:8px">';
+            var txFields = [
+                ['Tx #', '#' + esc(tx.id)],
+                ['Tx Status', statusPill(tx.status, txStatusKind(tx.status))],
+                ['Amount', esc(tx.currency || 'UGX') + ' ' + esc(tx.amount)],
+                ['Method', esc(tx.payment_method)],
+                ['Type', esc(tx.transaction_type)],
+                ['Tracking ID', esc(tx.pesapal_tracking_id)],
+                ['Merchant Ref', esc(tx.merchant_reference)],
+                ['Confirm Code', esc(tx.confirmation_code)],
+                ['Date', esc(tx.created_at)],
+                ['Fixed?', tx.is_fixed ? '<span style="color:#3fb950;font-weight:700">Yes (' + esc(tx.fix_successful) + ')</span>' : 'No'],
+            ];
+            txFields.forEach(function (f) {
+                if (f[1] && f[1] !== '—') {
+                    html += '<div><span style="color:#6e7681">' + f[0] + ':</span> ' + f[1] + '</div>';
+                }
+            });
+            html += '</div>';
+
+            // Raw response collapsible
+            if (raw && Object.keys(raw).length) {
+                html += '<details style="cursor:pointer"><summary style="font-size:10px;color:#8b949e;user-select:none">Raw Gateway Response</summary>'
+                    + '<pre style="background:#060d18;border:1px solid #30363d;padding:8px;font-size:10px;color:#79c0ff;max-height:180px;overflow:auto;margin-top:4px;white-space:pre-wrap;word-break:break-all">'
+                    + esc(prettyRaw(raw)) + '</pre></details>';
+            }
+
+            var el = document.getElementById('subFixLabInspectArea');
+            if (el) el.innerHTML = html;
+        }
+
+        function clearInspectArea(msg) {
+            var el = document.getElementById('subFixLabInspectArea');
+            if (el) el.innerHTML = '<div style="color:#4a5878;font-size:12px;text-align:center;padding:14px 0">' + esc(msg || '') + '</div>';
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        //  Select a transaction and inspect it
+        // ─────────────────────────────────────────────────────────────────
+        function selectTx(tx) {
+            singleState.activeTx = tx;
+            highlightActiveTx(tx.id);
+
+            var badge = document.getElementById('subFixLabActiveTxBadge');
+            if (badge) badge.textContent = '— Tx #' + tx.id + ' (' + (tx.status || '') + ')';
+
+            // Resolve reference and gateway from this tx
+            var txRef = tx.pesapal_tracking_id || tx.merchant_reference || '';
+            var txGw  = String(tx.payment_method || '').toLowerCase().indexOf('flutter') >= 0 ? 'flutterwave' : 'pesapal';
+
+            $('#subFixLabRef').val(txRef);
+            $('#subFixLabGateway').val(txGw);
+
+            if (!txRef) {
+                clearInspectArea('This transaction has no payment reference — gateway inspect unavailable.');
+                logLine('Tx #' + tx.id + ' has no payment reference.', '#f8c471');
+                return;
+            }
+
+            logLine('Inspecting Tx #' + tx.id + ' [' + txGw + '] ref=' + txRef + ' …', '#f8c471');
+            clearInspectArea('Fetching gateway status…');
+
+            $.post(inspectUrl, {
+                _token:          token,
+                subscription_id: singleState.subscriptionId,
+                transaction_id:  tx.id,
+                reference:       txRef,
+                gateway:         txGw,
+            })
+            .done(function (res) {
+                if (!res || !res.success) {
+                    clearInspectArea('Inspect failed: ' + (res && res.message ? res.message : 'unknown'));
+                    logLine('Inspect failed: ' + (res && res.message ? res.message : 'unknown'), '#ff7b7b');
+                    return;
+                }
+                var d = res.data || {};
+                renderInspectArea(tx, d);
+                // Refresh tx list if updated
+                if (d.all_transactions && d.all_transactions.length) {
+                    singleState.allTransactions = d.all_transactions;
+                    renderTxList(d.all_transactions);
+                    highlightActiveTx(tx.id);
+                }
+                logLine('Inspect OK — gateway=' + esc(d.gateway) + ' status=' + esc((d.normalized || {}).status_normalized), '#7dffa1');
+            })
+            .fail(function (xhr) {
+                var msg = (xhr.responseJSON || {}).message || ('HTTP ' + (xhr.status || 'error'));
+                clearInspectArea('Inspect request failed: ' + msg);
+                logLine('Inspect error: ' + msg, '#ff7b7b');
+            });
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        //  Initial subscription load (open modal)
+        // ─────────────────────────────────────────────────────────────────
+        function loadSubscription(subscriptionId) {
+            var subEl = document.getElementById('subFixLabSubSummary');
+            var txEl  = document.getElementById('subFixLabTxList');
+            if (subEl) subEl.innerHTML = '<div style="font-size:10px;text-transform:uppercase;color:#8b949e;margin-bottom:6px;letter-spacing:.5px"><i class="fa fa-credit-card"></i> Subscription</div><div style="color:#4a5878">Loading…</div>';
+            if (txEl)  txEl.innerHTML  = '<div style="color:#4a5878;font-size:12px;padding:24px;text-align:center">Loading…</div>';
+            clearInspectArea('Loading subscription…');
+
+            $.post(inspectUrl, {
+                _token:          token,
+                subscription_id: subscriptionId,
+                reference:       '',    // empty = just load sub + tx list, skip gateway
+                gateway:         'auto',
+            })
+            .done(function (res) {
+                if (!res || !res.success) {
+                    logLine('Load failed: ' + (res && res.message ? res.message : 'unknown'), '#ff7b7b');
+                    clearInspectArea('Failed to load subscription.');
+                    return;
+                }
+                var d = res.data || {};
+                singleState.allTransactions = d.all_transactions || [];
+                renderSubSummary(d.subscription, d.user);
+                renderTxList(singleState.allTransactions);
+
+                logLine('Loaded Sub #' + esc(subscriptionId) + ' — ' + singleState.allTransactions.length + ' transaction(s).', '#9ad1ff');
+
+                // Auto-select: prefer pending/processing, then failed, then first
+                var bestTx = null;
+                for (var i = 0; i < singleState.allTransactions.length; i++) {
+                    var s = String(singleState.allTransactions[i].status || '').toLowerCase();
+                    if (s === 'pending' || s === 'processing') { bestTx = singleState.allTransactions[i]; break; }
+                }
+                if (!bestTx) {
+                    for (var j = 0; j < singleState.allTransactions.length; j++) {
+                        if (String(singleState.allTransactions[j].status || '').toLowerCase() === 'failed') {
+                            bestTx = singleState.allTransactions[j]; break;
+                        }
+                    }
+                }
+                if (!bestTx && singleState.allTransactions.length) {
+                    bestTx = singleState.allTransactions[0];
+                }
+
+                if (bestTx) {
+                    logLine('Auto-selecting Tx #' + bestTx.id + ' (' + bestTx.status + ')…', '#9ad1ff');
+                    selectTx(bestTx);
+                } else {
+                    clearInspectArea('No transactions found for this subscription.');
+                }
+            })
+            .fail(function (xhr) {
+                var msg = (xhr.responseJSON || {}).message || ('HTTP ' + (xhr.status || 'error'));
+                logLine('Load error: ' + msg, '#ff7b7b');
+                clearInspectArea('Failed to load: ' + msg);
+            });
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        //  Apply fix action
+        // ─────────────────────────────────────────────────────────────────
+        function runFix(action) {
+            var tx  = singleState.activeTx;
+            var ref = String($('#subFixLabRef').val() || '').trim();
+            var gw  = String($('#subFixLabGateway').val() || 'auto').trim();
+
+            if (!singleState.subscriptionId) {
+                setActionResult('<span class="text-danger">No subscription loaded.</span>');
+                return;
+            }
+
             var days = parseInt($('#subFixLabExtendDays').val(), 10) || 30;
-            return {
+
+            logLine('Running action: ' + action + (tx ? ' on Tx #' + tx.id : '') + ' …', '#f8c471');
+
+            $.post(applyFixUrl, {
                 _token:          token,
                 action:          action,
                 subscription_id: singleState.subscriptionId,
-                reference:       String($('#subFixLabRef').val() || '').trim(),
-                gateway:         String($('#subFixLabGateway').val() || 'auto').trim(),
+                transaction_id:  tx ? tx.id : null,
+                reference:       ref,
+                gateway:         gw,
                 days:            days,
-            };
-        }
+            })
+            .done(function (res) {
+                if (!res || !res.success) {
+                    logLine('Action failed: ' + (res && res.message ? res.message : 'unknown'), '#ff7b7b');
+                    setActionResult('<span class="text-danger">Failed: ' + esc(res && res.message ? res.message : 'unknown') + '</span>');
+                    return;
+                }
+                var d = res.data || {};
+                logLine('✅ ' + (res.message || action), '#7dffa1');
+                logLine('   Sub status: ' + esc(d.subscription_status) + ' | Payment: ' + esc(d.payment_status), '#b8ffd4');
+                setActionResult('<span style="color:#7dffa1"><b>Done:</b> ' + esc(res.message || action) + '</span>');
 
-        function callInspect() {
-            var payload = buildPayload('inspect');
-            if (!payload.reference && !payload.subscription_id) {
-                setActionResult('<span class="text-danger">Provide a payment reference or open from a subscription row.</span>');
-                return;
-            }
-            logLine('Inspecting gateway status…', '#f8c471');
-            $.post(inspectUrl, payload)
-                .done(function (res) {
-                    if (!res || !res.success) {
-                        logLine('Inspect failed: ' + (res && res.message ? res.message : 'unknown'), '#ff7b7b');
-                        setActionResult('<span class="text-danger">Inspect failed: ' + esc(res && res.message ? res.message : 'unknown') + '</span>');
-                        return;
+                // Refresh tx list and subscription summary
+                if (d.all_transactions) {
+                    singleState.allTransactions = d.all_transactions;
+                    renderTxList(d.all_transactions);
+                    if (singleState.activeTx) {
+                        // Find updated tx
+                        var updated = d.all_transactions.find(function(t) { return t.id === singleState.activeTx.id; });
+                        if (updated) { singleState.activeTx = updated; }
+                        highlightActiveTx(singleState.activeTx ? singleState.activeTx.id : null);
                     }
-                    renderSubSnippet(res.data || {});
-                    logLine('Inspect complete — gateway: ' + esc((res.data || {}).gateway || 'unknown'), '#7dffa1');
-                    setActionResult('<span style="color:#7dffa1">Inspect complete. See snapshot above.</span>');
-                })
-                .fail(function (xhr) {
-                    var msg = (xhr.responseJSON || {}).message || ('HTTP ' + (xhr.status || 'error'));
-                    logLine('Inspect error: ' + msg, '#ff7b7b');
-                    setActionResult('<span class="text-danger">Inspect request failed: ' + esc(msg) + '</span>');
-                });
+                }
+                if (d.subscription) renderSubSummary(d.subscription, d.user);
+                if (d.normalized && singleState.activeTx) renderInspectArea(singleState.activeTx, d);
+            })
+            .fail(function (xhr) {
+                var msg = (xhr.responseJSON || {}).message || ('HTTP ' + (xhr.status || 'error'));
+                logLine('Action error: ' + msg, '#ff7b7b');
+                setActionResult('<span class="text-danger">Request failed: ' + esc(msg) + '</span>');
+            });
         }
 
-        function runFix(action) {
-            var payload = buildPayload(action);
-            if (!payload.reference && !payload.subscription_id) {
-                setActionResult('<span class="text-danger">Provide a payment reference or open from a subscription row.</span>');
-                return;
-            }
-            logLine('Running action: ' + action + ' …', '#f8c471');
-            $.post(applyFixUrl, payload)
-                .done(function (res) {
-                    if (!res || !res.success) {
-                        logLine('Action failed: ' + (res && res.message ? res.message : 'unknown'), '#ff7b7b');
-                        setActionResult('<span class="text-danger">Action failed: ' + esc(res && res.message ? res.message : 'unknown') + '</span>');
-                        return;
-                    }
-                    var d = res.data || {};
-                    renderSubSnippet(d);
-                    logLine('Action success: ' + (res.message || action), '#7dffa1');
-                    setActionResult('<span style="color:#7dffa1"><b>Done:</b> ' + esc(res.message || action)
-                        + ' | Sub Status: ' + esc(d.subscription_status) + ' | Payment: ' + esc(d.payment_status) + '</span>');
-                })
-                .fail(function (xhr) {
-                    var msg = (xhr.responseJSON || {}).message || ('HTTP ' + (xhr.status || 'error'));
-                    logLine('Action error: ' + msg, '#ff7b7b');
-                    setActionResult('<span class="text-danger">Request failed: ' + esc(msg) + '</span>');
-                });
-        }
+        // ─────────────────────────────────────────────────────────────────
+        //  Event bindings — single Fix Lab
+        // ─────────────────────────────────────────────────────────────────
 
-        // Bind Fix Lab open button
+        // Open modal from row Fix Lab button
         $(document)
             .off('click.subfixlab', '.js-sub-fix-lab')
             .on('click.subfixlab', '.js-sub-fix-lab', function () {
-                singleState.subscriptionId = $(this).data('id') || null;
-                var ref    = String($(this).data('ref')     || '');
-                var gwHint = String($(this).data('gateway') || 'auto');
+                var subId  = $(this).data('id') || null;
+                singleState = { subscriptionId: subId, activeTx: null, allTransactions: [] };
 
-                $('#subFixLabRef').val(ref);
-                $('#subFixLabGateway').val(['flutterwave', 'pesapal'].includes(gwHint) ? gwHint : 'auto');
-                $('#subFixLabLog').text('');
-                $('#subFixLabRaw').text('');
-                $('#subFixLabNormalized').html('');
-                $('#subFixLabInspectBlock').hide();
-                $('#subFixLabSubSnap').hide();
-                $('#subFixLabSubSnapBody').html('');
-                $('#subFixLabExtendDays').val(30);
+                // Reset UI
+                $('#subFixLabLog').empty();
                 setActionResult('');
-                $('#subFixLabTitle').html('<i class="fa fa-flask"></i> Subscription Fix Lab — #' + singleState.subscriptionId);
-                logLine('Modal opened for subscription #' + singleState.subscriptionId, '#9ad1ff');
-                if (ref) logLine('Reference: ' + ref + ' | Gateway hint: ' + gwHint, '#9ad1ff');
+                clearInspectArea('Loading…');
+                $('#subFixLabActiveTxBadge').text('');
+                $('#subFixLabRef').val('');
+                $('#subFixLabGateway').val('auto');
+                $('#subFixLabExtendDays').val(30);
+                $('#subFixLabTitle').html('<i class="fa fa-flask"></i> Subscription Fix Lab — #' + subId);
+
                 $('#subFixLabModal').modal('show');
+
+                logLine('Loading subscription #' + subId + '…', '#9ad1ff');
+                loadSubscription(subId);
             });
 
-        // Bind Inspect button
+        // Click on a transaction row to select it
+        $(document)
+            .off('click.subfixrow', '#subFixLabTxList')
+            .on('click.subfixrow', '#subFixLabTxList', function (e) {
+                var row = $(e.target).closest('.js-subfix-tx-row');
+                if (!row.length) return;
+                var txId = row.data('txId');
+                var tx   = singleState.allTransactions.find(function (t) { return String(t.id) === String(txId); });
+                if (tx) selectTx(tx);
+            });
+
+        // Re-Inspect button (footer)
         $(document)
             .off('click.subfixinspect', '#subFixLabInspectBtn')
-            .on('click.subfixinspect', '#subFixLabInspectBtn', callInspect);
+            .on('click.subfixinspect', '#subFixLabInspectBtn', function () {
+                if (singleState.activeTx) {
+                    selectTx(singleState.activeTx);
+                } else {
+                    logLine('No transaction selected.', '#f8c471');
+                }
+            });
 
-        // Bind action buttons
+        // Action buttons
         $(document)
             .off('click.subfixaction', '.js-subfix-action')
             .on('click.subfixaction', '.js-subfix-action', function () {
                 var action = String($(this).data('action') || '');
                 if (!action) return;
                 runFix(action);
+            });
+
+        // ─────────────────────────────────────────────────────────────────
+        //  New Payment modal
+        // ─────────────────────────────────────────────────────────────────
+
+        // Open New Payment modal
+        $(document)
+            .off('click.subfixnewpay', '#subFixLabNewPayBtn')
+            .on('click.subfixnewpay', '#subFixLabNewPayBtn', function () {
+                if (!singleState.subscriptionId) {
+                    logLine('No subscription loaded.', '#f8c471');
+                    return;
+                }
+                // Pre-fill phone from subscription user if available
+                var subEl = document.getElementById('subFixLabSubSummary');
+                $('#subInitPayPhone').val('');
+                $('#subInitPayGateway').val('flutterwave');
+                $('#subInitPayResult').html('');
+                $('#subInitPaySubmitBtn').prop('disabled', false).html('<i class="fa fa-paper-plane"></i> Initiate Payment');
+                $('#subInitPayModal').modal('show');
+            });
+
+        // Submit new payment initiation
+        $(document)
+            .off('click.subinitpay', '#subInitPaySubmitBtn')
+            .on('click.subinitpay', '#subInitPaySubmitBtn', function () {
+                if (!initiatePaymentUrl) {
+                    $('#subInitPayResult').html('<span style="color:#f85149">initiatePaymentUrl not configured.</span>');
+                    return;
+                }
+                var phone   = String($('#subInitPayPhone').val() || '').trim();
+                var gateway = String($('#subInitPayGateway').val() || 'pesapal').trim();
+
+                if (!phone) {
+                    $('#subInitPayResult').html('<span style="color:#f85149">Please enter a phone number.</span>');
+                    return;
+                }
+
+                var $btn = $(this);
+                $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Initiating…');
+                $('#subInitPayResult').html('<span style="color:#f8c471">Contacting ' + esc(gateway) + ' gateway…</span>');
+
+                $.post(initiatePaymentUrl, {
+                    _token:          token,
+                    subscription_id: singleState.subscriptionId,
+                    phone:           phone,
+                    gateway:         gateway,
+                })
+                .done(function (res) {
+                    $btn.prop('disabled', false).html('<i class="fa fa-paper-plane"></i> Initiate Payment');
+                    if (!res || !res.success) {
+                        $('#subInitPayResult').html('<span style="color:#f85149">Failed: ' + esc((res && res.message) || 'unknown error') + '</span>');
+                        return;
+                    }
+
+                    var payUrl = res.redirect_url || '';
+                    var payMsg = res.payment_message || '';
+
+                    var resultHtml = '<span style="color:#7dffa1"><b>Payment initiated!</b></span> ';
+                    if (payUrl) {
+                        resultHtml += '<a href="' + esc(payUrl) + '" target="_blank" rel="noopener noreferrer"'
+                            + ' style="display:inline-block;margin-top:8px;padding:4px 12px;background:#1f6feb;color:#fff;border-radius:4px;text-decoration:none;font-size:12px">'
+                            + '<i class="fa fa-external-link"></i> Open Payment Link</a>';
+                    } else if (payMsg) {
+                        resultHtml += '<div style="margin-top:6px;font-size:11px;color:#f8c471">' + esc(payMsg) + '</div>';
+                    }
+                    resultHtml += '<div style="font-size:10px;color:#6e7681;margin-top:6px">Tracking: ' + esc(res.tracking_id || '—') + '</div>';
+                    $('#subInitPayResult').html(resultHtml);
+
+                    logLine('✅ Payment initiated via ' + esc(gateway) + ' | Tracking: ' + esc(res.tracking_id || '—'), '#7dffa1');
+                    if (payUrl) logLine('   Pay URL: ' + payUrl, '#58a6ff');
+
+                    // Refresh tx list + sub summary
+                    var d = (res.data || {});
+                    if (d.all_transactions) {
+                        singleState.allTransactions = d.all_transactions;
+                        renderTxList(d.all_transactions);
+                    }
+                    if (d.subscription) renderSubSummary(d.subscription, d.user);
+
+                    // Close modal after short delay so user can see the link
+                    setTimeout(function () {
+                        // Only auto-close if they haven't clicked the link yet
+                        if (!payUrl) $('#subInitPayModal').modal('hide');
+                    }, 3000);
+                })
+                .fail(function (xhr) {
+                    $btn.prop('disabled', false).html('<i class="fa fa-paper-plane"></i> Initiate Payment');
+                    var msg = (xhr.responseJSON || {}).message || ('HTTP ' + (xhr.status || 'error'));
+                    $('#subInitPayResult').html('<span style="color:#f85149">Request failed: ' + esc(msg) + '</span>');
+                    logLine('Initiate payment error: ' + msg, '#ff7b7b');
+                });
             });
 
         // ─────────────────────────────────────────────────────────────────
@@ -263,12 +593,10 @@
                 + ' · <b>' + esc(res.gateway || '—') + '</b>'
                 + ' · ref=' + esc(res.reference || '—') + '</span></div>';
 
-            // Gateway normalized
+            var gwNorm = res.normalized || {};
             html += '<div style="background:#060814;border:1px solid #2f3957;border-radius:4px;padding:8px;margin-bottom:8px">'
                 + '<div style="font-size:10px;text-transform:uppercase;color:#93a4c7;margin-bottom:4px">Gateway</div>'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 16px;line-height:1.6">';
-
-            var gwNorm = res.normalized || {};
             [
                 ['Status (raw)', gwNorm.status_raw],
                 ['Status (norm)', gwNorm.status_normalized],
@@ -282,7 +610,6 @@
             });
             html += '</div></div>';
 
-            // Subscription before/after
             if (sb.id || sa.id) {
                 html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
                 function subCard(label, data, accent) {
@@ -301,7 +628,6 @@
                 html += '</div>';
             }
 
-            // Raw
             if (raw && Object.keys(raw).length) {
                 html += '<details style="cursor:pointer"><summary style="font-size:10px;color:#8b949e">Raw Gateway Response</summary>'
                     + '<pre style="background:#0d1117;border:1px solid #30363d;padding:6px;font-size:10px;color:#79c0ff;max-height:120px;overflow:auto;margin-top:4px;white-space:pre-wrap;word-break:break-all">'
@@ -405,7 +731,6 @@
 
             $('#subBatchCloseBtn').prop('disabled', false);
 
-            // Switch to summary tab
             setTimeout(function () {
                 var summaryTab = document.querySelector('.nav-tabs a[href="#subBatchTabSummary"]');
                 if (summaryTab) $(summaryTab).tab('show');
@@ -499,17 +824,14 @@
         }
 
         function openBatchFix(ids) {
-            if (!batchFixSingleUrl) {
-                alert('Batch fix URL not configured. Please reload the page.');
-                return;
-            }
+            if (!batchFixSingleUrl) { alert('Batch fix URL not configured.'); return; }
             batchState = {
                 ids: ids, current: 0, total: ids.length, stopped: false, rows: [],
                 results: { activated: 0, pending: 0, confirmed_failed: 0, errors: 0, skipped: 0 }
             };
 
             $('#subBatchProgressBar').css('width', '0%');
-            $('#subBatchSummaryBar').html('Loaded <b>' + ids.length + '</b> subscription(s). Click Start to begin.');
+            $('#subBatchSummaryBar').html('Loaded <b>' + ids.length + '</b> subscription(s). Starting…');
             $('#subBatchCloseBtn').prop('disabled', true);
 
             var logEl = document.getElementById('subBatchTabLog');
@@ -519,17 +841,14 @@
             var sumEl = document.getElementById('subBatchTabSummary');
             if (sumEl) sumEl.innerHTML = '<div style="color:#7a90b9;font-size:12px;padding:20px;text-align:center">Summary will appear after the batch completes.</div>';
 
-            // Switch to log tab
             var logTab = document.querySelector('.nav-tabs a[href="#subBatchTabLog"]');
             if (logTab) $(logTab).tab('show');
 
             bfLog('Loaded ' + ids.length + ' subscription ID(s): '
                 + ids.slice(0, 15).join(', ') + (ids.length > 15 ? ' … and ' + (ids.length - 15) + ' more' : ''), '#9ad1ff');
-            bfLog('Processing will start immediately…', '#f8c471');
 
             $('#subBatchFixModal').modal('show');
 
-            // Auto-start after a short delay so modal is visible
             setTimeout(function () {
                 bfLog('Starting batch fix…', '#f8c471');
                 processNextBatchItem();
@@ -541,14 +860,12 @@
             .off('click.subbatchfix', '.js-sub-batch-fix-btn')
             .on('click.subbatchfix', '.js-sub-batch-fix-btn', function () {
                 var ids = [];
-                // Try laravel-admin selected() API
                 if ($.admin && $.admin.grid && typeof $.admin.grid.selected === 'function') {
                     $.each($.admin.grid.selected(), function (i, val) {
                         var n = parseInt(val, 10);
                         if (!isNaN(n)) ids.push(n);
                     });
                 }
-                // Fallback: scan checked row checkboxes
                 if (ids.length === 0) {
                     $('.grid-row-checkbox').each(function () {
                         if ($(this).prop('checked') || $(this).parent().hasClass('checked')) {
@@ -559,14 +876,12 @@
                 }
                 if (ids.length === 0) {
                     var notice = 'Please select at least one subscription row first (tick the checkboxes on the left).';
-                    if (typeof toastr !== 'undefined') { toastr.warning(notice); }
-                    else { alert(notice); }
+                    if (typeof toastr !== 'undefined') { toastr.warning(notice); } else { alert(notice); }
                     return;
                 }
                 openBatchFix(ids);
             });
 
-        // ── Batch modal: Close button ─────────────────────────────────────
         $(document)
             .off('click.subbatchclose', '#subBatchCloseBtn')
             .on('click.subbatchclose', '#subBatchCloseBtn', function () {
