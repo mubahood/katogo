@@ -808,7 +808,7 @@ $(document).on('pjax:end',_scInit);
             $ref     = htmlspecialchars((string) ($this->pesapal_tracking_id ?: $this->flutterwave_reference ?: $this->pesapal_merchant_reference ?: ''), ENT_QUOTES, 'UTF-8');
             $gwHint  = str_contains(strtolower((string) ($this->payment_gateway ?: $this->payment_method ?: '')), 'flutter') ? 'flutterwave' : 'pesapal';
 
-            return "<div style='display:flex;flex-wrap:wrap;gap:4px'>"
+            return "<div style='display:flex;flex-direction:column;gap:4px;align-items:flex-start'>"
                 . "<button type='button' class='btn btn-xs btn-info js-sub-details' data-id='" . (int) $this->id . "'><i class='fa fa-eye'></i> Details</button>"
                 . "<button type='button' class='btn btn-xs {$fixClass} js-sub-quick-fix' data-id='" . (int) $this->id . "' data-action='{$fixAction}'><i class='fa fa-wrench'></i> {$fixLabel}</button>"
                 . "<button type='button' class='btn btn-xs btn-danger js-sub-fix-lab' "
