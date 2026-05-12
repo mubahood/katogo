@@ -819,6 +819,17 @@ $(document).on('pjax:end',_scInit);
                 . "</div>";
         });
 
+            $grid->column('fix_lab_action', 'Fix Lab')->display(function () {
+                $ref = htmlspecialchars((string) ($this->pesapal_tracking_id ?: $this->flutterwave_reference ?: $this->pesapal_merchant_reference ?: ''), ENT_QUOTES, 'UTF-8');
+                $gwHint = str_contains(strtolower((string) ($this->payment_gateway ?: $this->payment_method ?: '')), 'flutter') ? 'flutterwave' : 'pesapal';
+
+                return "<button type='button' class='btn btn-xs btn-danger js-sub-fix-lab' "
+                . "data-id='" . (int) $this->id . "' "
+                . "data-ref='{$ref}' "
+                . "data-gateway='{$gwHint}'>"
+                . "<i class='fa fa-flask'></i> Fix Lab</button>";
+            });
+
         // Export — clean, human-readable CSV (no HTML)
         $grid->export(function ($export) {
             $export->filename('Subscriptions_' . date('Y-m-d'));
