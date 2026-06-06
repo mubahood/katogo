@@ -239,6 +239,9 @@ Route::group([
     $router->resource('blog-posts', BlogPostController::class);
     $router->resource('blog-comments', BlogCommentController::class);
 
+    // System Configuration (singleton — shows edit form directly)
+    $router->resource('system-configs', SystemConfigController::class);
+
     // Debug Player Proxy (server-side cURL video URL testing — requires admin session)
     $router->post('debug-player/proxy', 'DebugPlayerProxyController@proxy');
     // Debug Player Fix Movie (re-fetch from source, repair broken records — requires admin session)

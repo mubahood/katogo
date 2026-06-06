@@ -28,11 +28,18 @@ return [
         'https://lugaflix.mruodel.com',
         'https://movies.mruodel.com',
         'https://about.u-lits.com',
+        // New store domains
+        'https://lugaflix.store',
+        'https://www.lugaflix.store',
+        'https://munoapp.store',
+        'https://www.munoapp.store',
     ],
 
     'allowed_origins_patterns' => [
         '/^https:\/\/(.+\.)?mruodel\.com$/',
         '/^https:\/\/(.+\.)?ugnews24\.info$/',
+        '/^https:\/\/(www\.)?lugaflix\.store$/',
+        '/^https:\/\/(www\.)?munoapp\.store$/',
     ],
 
     'allowed_headers' => ['*'],

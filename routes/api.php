@@ -18,6 +18,8 @@ use App\Http\Controllers\Api\V2\StreamingController as V2StreamingController;
 use App\Http\Controllers\Api\V2\DownloadController as V2DownloadController;
 use App\Http\Controllers\Api\V2\TriviaController as V2TriviaController;
 use App\Http\Controllers\Api\V2\GameStatsController as V2GameStatsController;
+use App\Http\Controllers\Api\V2\SystemConfigController as V2SystemConfigController;
+use App\Http\Controllers\Api\IosReviewController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
 use Illuminate\Http\Request;
@@ -30,6 +32,17 @@ use App\Http\Controllers\MigrationController;
 
 // ── One-time migration endpoint (REMOVE after migration) ────
 Route::post('run-migration', [MigrationController::class, 'runMigration']);
+
+// ════════════════════════════════════════════
+//  iOS Review Mode — public, no auth required
+//  Simplified endpoints for App Store reviewers
+// ════════════════════════════════════════════
+Route::prefix('ios')->group(function () {
+    Route::get('config',        [IosReviewController::class, 'config']);
+    Route::get('movies',        [IosReviewController::class, 'movies']);
+    Route::get('movies/{id}',   [IosReviewController::class, 'movie'])->where('id', '[0-9]+');
+    Route::get('genres',        [IosReviewController::class, 'genres']);
+});
 
 Route::middleware('throttle:auth')->group(function () {
     Route::post('auth/password-reset', [ApiController::class, 'password_reset']);
@@ -203,6 +216,9 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     //  V2 API — Clean, paginated, optimised
     // ════════════════════════════════════════════
     Route::prefix('v2')->group(function () {
+        // System config — called at startup by all clients (no extra auth needed)
+        Route::get('system-config',       [V2SystemConfigController::class, 'index']);
+
         // V2 Manifest — optimised, lean
         Route::get('manifest',            [V2ManifestController::class, 'index']);
 
