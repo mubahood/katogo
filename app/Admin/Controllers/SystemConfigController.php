@@ -8,7 +8,6 @@ use Encore\Admin\Controllers\AdminController;
 use Encore\Admin\Form;
 use Encore\Admin\Grid;
 use Encore\Admin\Layout\Content;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
 class SystemConfigController extends AdminController
@@ -61,13 +60,9 @@ class SystemConfigController extends AdminController
                 ->pluck('title', 'id')
                 ->toArray();
 
-            $form->multipleSelect('ios_review_movie_ids_raw', 'Review Movies')
+            $form->multipleSelect('ios_review_movie_ids', 'Review Movies')
                 ->options($movies)
-                ->help('Movies shown during iOS review. Leave empty to auto-select top 10 free movies.')
-                ->saving(function ($value) {
-                    // multipleSelect returns array — encode to JSON for storage
-                    return json_encode(array_values((array) $value));
-                });
+                ->help('Movies shown during iOS review. Leave empty to auto-select top 10 free movies.');
         });
 
         $form->tab('Maintenance', function (Form $form) {
@@ -87,8 +82,7 @@ class SystemConfigController extends AdminController
                 ->help('iOS users below this build number will be forced to update.');
         });
 
-        $form->saved(function (Form $form) {
-            // Clear config cache so the API returns fresh data immediately
+        $form->saved(function () {
             Cache::forget('system_config');
             Cache::forget('ios_review_movies_default');
         });

@@ -23,6 +23,7 @@ class SystemConfig extends Model
         'maintenance_mode'     => 'boolean',
         'min_android_version'  => 'integer',
         'min_ios_version'      => 'integer',
+        'ios_review_movie_ids' => 'array',
     ];
 
     /**
