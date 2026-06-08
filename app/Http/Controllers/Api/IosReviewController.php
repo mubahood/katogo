@@ -51,12 +51,7 @@ class IosReviewController extends Controller
         $genre   = trim($request->input('genre', ''));
 
         $query = MovieModel::where('status', 'Active')
-            ->where(function ($q) {
-                $q->where('platform_type', 'ios')
-                  ->orWhere('platform_type', 'all')
-                  ->orWhereNull('platform_type')
-                  ->orWhere('platform_type', '');
-            })
+            ->where('platform_type', 'ios')
             ->where(function ($q) {
                 $q->where('is_premium', 'No')
                   ->orWhere('is_premium', false)
@@ -68,6 +63,7 @@ class IosReviewController extends Controller
                 'genre', 'type', 'vj', 'year', 'duration',
                 'rating', 'imdb_rating', 'views_count',
                 'description', 'is_premium', 'platform_type',
+                'url', 'video_url',
             ]);
 
         if ($genre !== '') {
@@ -105,7 +101,7 @@ class IosReviewController extends Controller
                 'genre', 'type', 'vj', 'year', 'duration', 'rating',
                 'imdb_rating', 'imdb_votes', 'views_count', 'description',
                 'director', 'stars', 'country', 'language',
-                'is_premium', 'platform_type',
+                'is_premium', 'platform_type', 'url', 'video_url',
             ])
             ->first();
 
@@ -129,12 +125,7 @@ class IosReviewController extends Controller
     {
         $genres = Cache::remember('ios_review_genres', 1800, function () {
             return MovieModel::where('status', 'Active')
-                ->where(function ($q) {
-                    $q->where('platform_type', 'ios')
-                      ->orWhere('platform_type', 'all')
-                      ->orWhereNull('platform_type')
-                      ->orWhere('platform_type', '');
-                })
+                ->where('platform_type', 'ios')
                 ->whereNotNull('genre')
                 ->where('genre', '!=', '')
                 ->distinct()

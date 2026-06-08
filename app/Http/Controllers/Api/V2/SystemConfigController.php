@@ -57,18 +57,24 @@ class SystemConfigController extends Controller
                         ->toArray()
                 );
             } else {
-                // No specific IDs set — serve a small safe default set
+                // No specific IDs set — only movies explicitly marked platform_type = 'ios'
                 $data['ios_review_movies'] = Cache::remember(
                     'ios_review_movies_default',
                     600,
                     fn() => MovieModel::where('status', 'Active')
-                        ->where('is_premium', false)
+                        ->where('platform_type', 'ios')
+                        ->where(function ($q) {
+                            $q->where('is_premium', 'No')
+                              ->orWhere('is_premium', false)
+                              ->orWhere('is_premium', 0)
+                              ->orWhereNull('is_premium');
+                        })
                         ->orderBy('views_time_count', 'desc')
                         ->limit(10)
                         ->select([
                             'id', 'title', 'thumbnail_url', 'genre',
                             'type', 'vj', 'year', 'duration', 'rating',
-                            'is_premium',
+                            'is_premium', 'platform_type',
                         ])
                         ->get()
                         ->toArray()

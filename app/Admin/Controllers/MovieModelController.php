@@ -253,20 +253,27 @@ class MovieModelController extends AdminController
             ->hide()
         ;
 
-        //platform_type grid 
-        $grid->column('platform_type', __('Platform type'))
-            ->display(function ($platform_type) {
-                if ($platform_type == null || $platform_type == '') {
-                    return 'All';
-                }
-                return $platform_type;
-            })->sortable()
-            ->hide()
-            ->filter([
-                'all' => 'All',
+        //platform_type grid
+        $grid->column('platform_type', __('Platform'))
+            ->editable('select', [
+                'all'     => 'All',
                 'android' => 'Android',
-                'ios' => 'iOS',
-            ])->sortable();
+                'ios'     => 'iOS',
+            ])
+            ->display(function ($value) {
+                $badges = [
+                    'all'     => '<span style="background:#28a745;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">All</span>',
+                    'android' => '<span style="background:#3ddc84;color:#000;padding:2px 8px;border-radius:4px;font-size:11px;">Android</span>',
+                    'ios'     => '<span style="background:#007aff;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">iOS</span>',
+                ];
+                return $badges[$value] ?? $badges['all'];
+            })
+            ->filter([
+                'all'     => 'All',
+                'android' => 'Android',
+                'ios'     => 'iOS',
+            ])
+            ->sortable();
 
         //url link
         $grid->column('url', __('Url'))

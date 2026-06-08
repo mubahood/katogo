@@ -19,10 +19,17 @@ class SystemConfigController extends AdminController
      */
     public function index(Content $content): Content
     {
+        $config = SystemConfig::instance();
+        $form   = $this->form();
+        // Explicitly set the action so Encore Admin doesn't try to derive it
+        // from request()->getUri() (which produces a wrong URL when the edit
+        // form is embedded directly in the index page).
+        $form->setAction(admin_url('system-configs/' . $config->id));
+
         return $content
             ->title('System Configuration')
             ->description('Global settings for the LugaFlix platform')
-            ->body($this->form()->edit(SystemConfig::instance()->id));
+            ->body($form->edit($config->id));
     }
 
     protected function grid(): Grid
@@ -45,41 +52,50 @@ class SystemConfigController extends AdminController
     {
         $form = new Form(new SystemConfig());
 
-        $form->tab('iOS App Store Review', function (Form $form) {
-            $form->switch('ios_review_mode', 'iOS Review Mode')
-                ->help('When ON, iOS users see a simplified review version of the app. Android is unaffected.');
+        $form->divider('iOS App Store Review');
 
-            $form->text('ios_review_message', 'Review Home Message')
-                ->default('Welcome to LugaFlix')
-                ->help('Shown on the simplified home screen during iOS review.');
+        $form->radio('ios_review_mode', 'iOS Review Mode')
+            ->options(['0' => 'Off', '1' => 'On'])
+            ->help('When On, iOS users see a simplified review version of the app. Android is unaffected.');
 
-            // Build a multi-select of available movies
-            $movies = MovieModel::where('status', 'Active')
-                ->orderBy('title')
-                ->limit(200)
-                ->pluck('title', 'id')
-                ->toArray();
+        $form->text('ios_review_message', 'Review Home Message')
+            ->default('Welcome to LugaFlix')
+            ->help('Shown on the simplified home screen during iOS review.');
 
-            $form->multipleSelect('ios_review_movie_ids', 'Review Movies')
-                ->options($movies)
-                ->help('Movies shown during iOS review. Leave empty to auto-select top 10 free movies.');
-        });
+        $movies = MovieModel::where('status', 'Active')
+            ->orderBy('title')
+            ->limit(200)
+            ->pluck('title', 'id')
+            ->toArray();
 
-        $form->tab('Maintenance', function (Form $form) {
-            $form->switch('maintenance_mode', 'Maintenance Mode')
-                ->help('When ON, app shows maintenance message to all users.');
-            $form->textarea('maintenance_message', 'Maintenance Message')
-                ->rows(2)
-                ->placeholder('We are performing scheduled maintenance. Back shortly.');
-        });
+        $form->multipleSelect('ios_review_movie_ids', 'Review Movies')
+            ->options($movies)
+            ->help('Movies shown during iOS review. Leave empty to auto-select top 10 free movies.');
 
-        $form->tab('Version Requirements', function (Form $form) {
-            $form->number('min_android_version', 'Min Android App Version')
-                ->min(1)
-                ->help('Android users below this build number will be forced to update.');
-            $form->number('min_ios_version', 'Min iOS App Version')
-                ->min(1)
-                ->help('iOS users below this build number will be forced to update.');
+        $form->divider('Maintenance');
+
+        $form->radio('maintenance_mode', 'Maintenance Mode')
+            ->options(['0' => 'Off', '1' => 'On'])
+            ->help('When On, the app shows a maintenance message to all users.');
+
+        $form->textarea('maintenance_message', 'Maintenance Message')
+            ->rows(2)
+            ->placeholder('We are performing scheduled maintenance. Back shortly.');
+
+        $form->divider('Version Requirements');
+
+        $form->number('min_android_version', 'Min Android App Version')
+            ->min(1)
+            ->help('Android users below this build number will be forced to update.');
+
+        $form->number('min_ios_version', 'Min iOS App Version')
+            ->min(1)
+            ->help('iOS users below this build number will be forced to update.');
+
+        // Normalise radio string values to booleans before save
+        $form->saving(function (Form $form) {
+            $form->ios_review_mode  = (bool) $form->ios_review_mode;
+            $form->maintenance_mode = (bool) $form->maintenance_mode;
         });
 
         $form->saved(function () {
@@ -87,7 +103,6 @@ class SystemConfigController extends AdminController
             Cache::forget('ios_review_movies_default');
         });
 
-        // Disable delete — this is a singleton record
         $form->tools(function (Form\Tools $tools) {
             $tools->disableDelete();
             $tools->disableView();

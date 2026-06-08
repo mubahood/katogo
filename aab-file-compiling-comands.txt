@@ -94,3 +94,6 @@ https://movies.mruodel.com/subscriptions
 should give full control to dedebug /subscriptions but relevant to /subscriptions but achieve exacly smilar payment things as it is  in /subscription-transactions
 
 make sure you do it very carefuvely and perfectly 
+
+.
+
