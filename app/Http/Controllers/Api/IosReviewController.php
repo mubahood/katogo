@@ -187,6 +187,13 @@ class IosReviewController extends Controller
 
         $id = (int) $user->id;
 
+        if ($id === 1) {
+            return response()->json([
+                'code'    => 0,
+                'message' => 'This is the admin account and cannot be deleted.',
+            ], 403);
+        }
+
         $account = Administrator::find($id);
         if (!$account) {
             return response()->json(['code' => 0, 'message' => 'Account not found.'], 404);
