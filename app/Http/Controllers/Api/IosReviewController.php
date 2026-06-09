@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\MovieModel;
 use App\Models\SystemConfig;
+use App\Models\Utils;
+use Encore\Admin\Auth\Database\Administrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Dedicated controller for the simplified iOS App Store review experience.
@@ -40,6 +43,22 @@ class IosReviewController extends Controller
     }
 
     /**
+     * Resolve relative image paths to full storage URLs.
+     * Also strips the raw local_video_link column from output.
+     */
+    private function resolveMovie(array $arr): array
+    {
+        $base = rtrim(config('app.url'), '/') . '/storage/';
+        foreach (['thumbnail_url', 'image_url', 'poster_url'] as $field) {
+            if (!empty($arr[$field]) && !str_starts_with((string) $arr[$field], 'http')) {
+                $arr[$field] = $base . ltrim((string) $arr[$field], '/');
+            }
+        }
+        unset($arr['local_video_link']);
+        return $arr;
+    }
+
+    /**
      * GET /api/ios/movies?page=1&per_page=20&genre=Action
      *
      * Paginated movies for iOS review mode.
@@ -63,7 +82,7 @@ class IosReviewController extends Controller
                 'genre', 'type', 'vj', 'year', 'duration',
                 'rating', 'imdb_rating', 'views_count',
                 'description', 'is_premium', 'platform_type',
-                'url', 'video_url',
+                'url', 'local_video_link',
             ]);
 
         if ($genre !== '') {
@@ -73,11 +92,16 @@ class IosReviewController extends Controller
         $movies = $query->orderBy('views_time_count', 'desc')
                         ->paginate($perPage);
 
+        $resolved = array_map(
+            fn($m) => $this->resolveMovie($m->toArray()),
+            $movies->items()
+        );
+
         return response()->json([
             'code'    => 1,
             'message' => 'OK',
             'data'    => [
-                'movies'       => $movies->items(),
+                'movies'       => $resolved,
                 'current_page' => $movies->currentPage(),
                 'last_page'    => $movies->lastPage(),
                 'total'        => $movies->total(),
@@ -101,7 +125,7 @@ class IosReviewController extends Controller
                 'genre', 'type', 'vj', 'year', 'duration', 'rating',
                 'imdb_rating', 'imdb_votes', 'views_count', 'description',
                 'director', 'stars', 'country', 'language',
-                'is_premium', 'platform_type', 'url', 'video_url',
+                'is_premium', 'platform_type', 'url', 'local_video_link',
             ])
             ->first();
 
@@ -112,7 +136,7 @@ class IosReviewController extends Controller
         return response()->json([
             'code'    => 1,
             'message' => 'OK',
-            'data'    => $movie,
+            'data'    => $this->resolveMovie($movie->toArray()),
         ]);
     }
 
@@ -142,6 +166,72 @@ class IosReviewController extends Controller
             'code'    => 1,
             'message' => 'OK',
             'data'    => $genres,
+        ]);
+    }
+
+    /**
+     * DELETE /api/ios/account
+     *
+     * Permanently delete the authenticated user's account.
+     * Requires JWT auth. Irreversible — anonymises personal data and
+     * hard-deletes subscriptions, tokens, and the account row.
+     */
+    public function deleteAccount(Request $request): JsonResponse
+    {
+        // Use auth guard directly — Utils::get_user() falls back to a guest user
+        // which would bypass the null check; auth()->user() is null when unauthenticated.
+        $user = auth('api')->user();
+        if (!$user || (int) $user->id < 1) {
+            return response()->json(['code' => 0, 'message' => 'Not authenticated.'], 401);
+        }
+
+        $id = (int) $user->id;
+
+        $account = Administrator::find($id);
+        if (!$account) {
+            return response()->json(['code' => 0, 'message' => 'Account not found.'], 404);
+        }
+
+        try {
+            DB::transaction(function () use ($id, $account) {
+                // Wipe personal data before deleting
+                $account->name     = 'Deleted User';
+                $account->username = 'deleted_' . $id;
+                $account->email    = 'deleted_' . $id . '@deleted.local';
+                $account->password = '';
+                $account->remember_token = null;
+                $account->save();
+
+                // Remove related data (best-effort, silent on missing tables)
+                $tables = [
+                    'subscriptions'     => 'user_id',
+                    'transactions'      => 'user_id',
+                    'watch_histories'   => 'user_id',
+                    'watchlists'        => 'user_id',
+                    'device_tokens'     => 'user_id',
+                    'support_tickets'   => 'user_id',
+                ];
+                foreach ($tables as $table => $col) {
+                    try {
+                        DB::table($table)->where($col, $id)->delete();
+                    } catch (\Exception) {
+                        // table may not exist — skip silently
+                    }
+                }
+
+                // Hard-delete the account row
+                $account->delete();
+            });
+        } catch (\Exception) {
+            return response()->json([
+                'code'    => 0,
+                'message' => 'Could not delete account. Please try again.',
+            ], 500);
+        }
+
+        return response()->json([
+            'code'    => 1,
+            'message' => 'Your account has been permanently deleted.',
         ]);
     }
 }

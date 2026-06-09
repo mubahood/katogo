@@ -41,16 +41,674 @@ class SubscriptionController extends AdminController
 
     public function analytics(Content $content)
     {
+        $body = $this->buildAnalyticsPage();
         return $content
-            ->title('Subscription Data Analytics')
-            ->description('Data-only subscription insights and trends')
-            ->row($this->buildStatsCards())
-            ->row($this->buildChartsSection())
-            ->row(function (Row $row) {
-                $row->column(12, '<div style="margin:8px 0 6px 0"><span class="label label-default" style="font-size:11px;padding:6px 8px">Secondary Subscription Statistics</span></div>');
-                $row->column(6, $this->appPlatformBreakdownBox());
-                $row->column(6, $this->expiringSubscriptionsBox());
-            });
+            ->title('Subscription Analytics')
+            ->description('Revenue, growth, and subscriber insights')
+            ->row($body);
+    }
+
+    // ─── ANALYTICS PAGE ─────────────────────────────────────────────────
+    protected function buildAnalyticsPage()
+    {
+        return Cache::remember('analytics_page_v3', 180, function () {
+            $now = Carbon::now();
+
+            // ── Core totals ───────────────────────────────────────────────
+            $totalRevenue        = Subscription::where('payment_status', 'Completed')->sum('amount_paid');
+            $totalCompleted      = Subscription::where('payment_status', 'Completed')->count();
+            $totalAttempted      = Subscription::count();
+            $activeCount         = Subscription::where('status', 'Active')->count();
+            $uniqueSubscribers   = Subscription::where('payment_status', 'Completed')->distinct('user_id')->count('user_id');
+            $pendingCount        = Subscription::where('payment_status', 'Pending')->count();
+            $renewalCount        = Subscription::where('payment_status', 'Completed')->where('is_extension', 1)->count();
+            $newSubCount         = $totalCompleted - $renewalCount;
+            $paySuccessRate      = $totalAttempted > 0 ? round(($totalCompleted / $totalAttempted) * 100, 1) : 0;
+            $arpu                = $uniqueSubscribers > 0 ? round($totalRevenue / $uniqueSubscribers) : 0;
+            $churned             = Subscription::whereIn('status', ['Expired', 'Cancelled'])->count();
+            $churnRate           = $totalAttempted > 0 ? round(($churned / $totalAttempted) * 100, 1) : 0;
+
+            // ── Period comparisons ────────────────────────────────────────
+            $thisMonthRev  = Subscription::where('payment_status', 'Completed')
+                ->whereMonth('created_at', $now->month)->whereYear('created_at', $now->year)->sum('amount_paid');
+            $lastMonthRev  = Subscription::where('payment_status', 'Completed')
+                ->whereMonth('created_at', $now->copy()->subMonth()->month)
+                ->whereYear('created_at', $now->copy()->subMonth()->year)->sum('amount_paid');
+            $thisMonthCnt  = Subscription::where('payment_status', 'Completed')
+                ->whereMonth('created_at', $now->month)->whereYear('created_at', $now->year)->count();
+            $lastMonthCnt  = Subscription::where('payment_status', 'Completed')
+                ->whereMonth('created_at', $now->copy()->subMonth()->month)
+                ->whereYear('created_at', $now->copy()->subMonth()->year)->count();
+            $momRevPct     = $lastMonthRev > 0 ? round((($thisMonthRev - $lastMonthRev) / $lastMonthRev) * 100, 1) : ($thisMonthRev > 0 ? 100 : 0);
+            $momCntPct     = $lastMonthCnt > 0 ? round((($thisMonthCnt - $lastMonthCnt) / $lastMonthCnt) * 100, 1) : ($thisMonthCnt > 0 ? 100 : 0);
+
+            $todayRev      = Subscription::where('payment_status', 'Completed')->whereDate('created_at', $now->toDateString())->sum('amount_paid');
+            $todayCnt      = Subscription::where('payment_status', 'Completed')->whereDate('created_at', $now->toDateString())->count();
+            $yesterdayRev  = Subscription::where('payment_status', 'Completed')->whereDate('created_at', $now->copy()->subDay()->toDateString())->sum('amount_paid');
+            $yesterdayCnt  = Subscription::where('payment_status', 'Completed')->whereDate('created_at', $now->copy()->subDay()->toDateString())->count();
+            $dodRevPct     = $yesterdayRev > 0 ? round((($todayRev - $yesterdayRev) / $yesterdayRev) * 100, 1) : ($todayRev > 0 ? 100 : 0);
+
+            $thisWeekRev   = Subscription::where('payment_status', 'Completed')->where('created_at', '>=', $now->copy()->startOfWeek())->sum('amount_paid');
+            $lastWeekRev   = Subscription::where('payment_status', 'Completed')
+                ->whereBetween('created_at', [$now->copy()->subWeek()->startOfWeek(), $now->copy()->subWeek()->endOfWeek()])->sum('amount_paid');
+            $wowPct        = $lastWeekRev > 0 ? round((($thisWeekRev - $lastWeekRev) / $lastWeekRev) * 100, 1) : ($thisWeekRev > 0 ? 100 : 0);
+
+            $expiringToday  = Subscription::where('status', 'Active')->whereDate('end_date_time', $now->toDateString())->count();
+            $expiring7Days  = Subscription::where('status', 'Active')->whereBetween('end_date_time', [$now, $now->copy()->addDays(7)])->count();
+
+            // ── Per-app stats ─────────────────────────────────────────────
+            $appStats = Subscription::where('payment_status', 'Completed')
+                ->selectRaw("app_type, COUNT(*) as cnt, SUM(amount_paid) as rev, COUNT(DISTINCT user_id) as users")
+                ->groupBy('app_type')->get()->keyBy('app_type');
+
+            $appActive = Subscription::where('status', 'Active')
+                ->selectRaw("app_type, COUNT(*) as cnt")->groupBy('app_type')->pluck('cnt', 'app_type');
+
+            $appConfigs = [
+                'lugaflix'  => ['LugaFlix', '#4a90e2', 'fa-film', 'rgba(74,144,226,'],
+                'ugflix'    => ['UGFlix',   '#27ae60', 'fa-play-circle', 'rgba(39,174,96,'],
+                'muno_app'  => ['Muno',     '#e74c3c', 'fa-television', 'rgba(231,76,60,'],
+                'web'       => ['Web',      '#9b59b6', 'fa-globe', 'rgba(155,89,182,'],
+            ];
+
+            // ── Payment gateway split ─────────────────────────────────────
+            $gwStats = Subscription::where('payment_status', 'Completed')
+                ->selectRaw("payment_gateway, COUNT(*) as cnt, SUM(amount_paid) as rev")
+                ->groupBy('payment_gateway')->get()->keyBy('payment_gateway');
+            $pesapalRev   = (float)($gwStats['pesapal']->rev ?? 0);
+            $flutterRev   = (float)($gwStats['flutterwave']->rev ?? 0);
+            $pesapalCnt   = (int)($gwStats['pesapal']->cnt ?? 0);
+            $flutterCnt   = (int)($gwStats['flutterwave']->cnt ?? 0);
+
+            // ── Platform (iOS/Android) ────────────────────────────────────
+            $platformStats = Subscription::where('payment_status', 'Completed')
+                ->selectRaw("LOWER(platform) as platform, COUNT(*) as cnt, SUM(amount_paid) as rev")
+                ->groupBy('platform')->get()->keyBy('platform');
+            $androidRev = (float)($platformStats['android']->rev ?? 0);
+            $iosRev     = (float)($platformStats['ios']->rev ?? 0);
+            $androidCnt = (int)($platformStats['android']->cnt ?? 0);
+            $iosCnt     = (int)($platformStats['ios']->cnt ?? 0);
+
+            // ── Top subscribers ───────────────────────────────────────────
+            $topSubs = DB::select("
+                SELECT u.name, u.phone_number, u.id as user_id,
+                       COUNT(s.id) as total_subs, SUM(s.amount_paid) as total_spent,
+                       MAX(s.created_at) as last_sub
+                FROM subscriptions s
+                JOIN admin_users u ON s.user_id = u.id
+                WHERE s.payment_status='Completed'
+                GROUP BY s.user_id, u.name, u.phone_number, u.id
+                ORDER BY total_spent DESC LIMIT 10
+            ");
+
+            // ── Plan breakdown ────────────────────────────────────────────
+            $plans = Subscription::where('payment_status', 'Completed')
+                ->join('subscription_plans', 'subscriptions.plan_id', '=', 'subscription_plans.id')
+                ->selectRaw('subscription_plans.name, subscription_plans.price, COUNT(*) as count, SUM(subscriptions.amount_paid) as total')
+                ->groupBy('subscription_plans.name', 'subscription_plans.price')
+                ->orderByDesc('total')->get();
+
+            // ── Expiring soon ─────────────────────────────────────────────
+            $expiringSoon = Subscription::where('status', 'Active')
+                ->whereBetween('end_date_time', [$now, $now->copy()->addDays(7)])
+                ->with('user')->orderBy('end_date_time')->limit(8)->get();
+
+            // ── 12-month trend ────────────────────────────────────────────
+            $monthStart12 = $now->copy()->subMonths(11)->startOfMonth();
+            $monthly12Raw = Subscription::where('payment_status', 'Completed')->where('created_at', '>=', $monthStart12)
+                ->selectRaw("DATE_FORMAT(created_at,'%Y-%m') as ym, app_type, SUM(amount_paid) as rev, COUNT(*) as cnt")
+                ->groupBy('ym', 'app_type')->get();
+
+            $monthly12Labels = []; $monthly12Map = [];
+            for ($i = 11; $i >= 0; $i--) {
+                $ms = $now->copy()->subMonths($i)->startOfMonth();
+                $ym = $ms->format('Y-m');
+                $monthly12Labels[] = $ms->format("M 'y");
+                $monthly12Map[$ym] = ['muno_app' => 0, 'lugaflix' => 0, 'ugflix' => 0, 'web' => 0, 'total' => 0, 'cnt' => 0];
+            }
+            foreach ($monthly12Raw as $row) {
+                if (isset($monthly12Map[$row->ym])) {
+                    $at = $row->app_type ?? 'web';
+                    if (isset($monthly12Map[$row->ym][$at])) $monthly12Map[$row->ym][$at] += (float)$row->rev;
+                    $monthly12Map[$row->ym]['total'] += (float)$row->rev;
+                    $monthly12Map[$row->ym]['cnt']   += (int)$row->cnt;
+                }
+            }
+            $m12Muno = []; $m12Lg = []; $m12Ug = []; $m12Web = []; $m12Total = []; $m12Cnt = [];
+            foreach ($monthly12Map as $v) {
+                $m12Muno[] = $v['muno_app']; $m12Lg[] = $v['lugaflix']; $m12Ug[] = $v['ugflix'];
+                $m12Web[] = $v['web']; $m12Total[] = $v['total']; $m12Cnt[] = $v['cnt'];
+            }
+
+            // ── 30-day daily ──────────────────────────────────────────────
+            $dailyRaw = Subscription::where('payment_status', 'Completed')
+                ->where('created_at', '>=', $now->copy()->subDays(29)->startOfDay())
+                ->selectRaw("DATE(created_at) as d, app_type, SUM(amount_paid) as rev, COUNT(*) as cnt")
+                ->groupBy('d', 'app_type')->get();
+
+            $d30Labels = []; $d30Map = [];
+            for ($i = 29; $i >= 0; $i--) {
+                $d = $now->copy()->subDays($i)->format('Y-m-d');
+                $d30Labels[] = Carbon::parse($d)->format('d M');
+                $d30Map[$d] = ['muno_app' => 0, 'lugaflix' => 0, 'ugflix' => 0, 'web' => 0, 'total' => 0, 'cnt' => 0];
+            }
+            foreach ($dailyRaw as $row) {
+                if (isset($d30Map[$row->d])) {
+                    $at = $row->app_type ?? 'web';
+                    if (isset($d30Map[$row->d][$at])) $d30Map[$row->d][$at] += (float)$row->rev;
+                    $d30Map[$row->d]['total'] += (float)$row->rev; $d30Map[$row->d]['cnt'] += (int)$row->cnt;
+                }
+            }
+            $d30Muno=[]; $d30Lg=[]; $d30Ug=[]; $d30Web=[]; $d30Total=[]; $d30Cnt=[];
+            foreach ($d30Map as $v) {
+                $d30Muno[]=$v['muno_app']; $d30Lg[]=$v['lugaflix']; $d30Ug[]=$v['ugflix']; $d30Web[]=$v['web'];
+                $d30Total[]=$v['total']; $d30Cnt[]=$v['cnt'];
+            }
+
+            // ── Hourly pattern ────────────────────────────────────────────
+            $hourlyRaw = Subscription::where('payment_status', 'Completed')
+                ->selectRaw("HOUR(created_at) as hr, COUNT(*) as cnt, SUM(amount_paid) as rev")
+                ->groupBy('hr')->orderBy('hr')->get()->keyBy('hr');
+            $hourlyLabels = []; $hourlyCnt = []; $hourlyRev = [];
+            for ($h = 0; $h < 24; $h++) {
+                $label = $h === 0 ? '12am' : ($h < 12 ? "{$h}am" : ($h === 12 ? '12pm' : ($h-12).'pm'));
+                $hourlyLabels[] = $label;
+                $hourlyCnt[]    = (int)($hourlyRaw[$h]->cnt ?? 0);
+                $hourlyRev[]    = (float)($hourlyRaw[$h]->rev ?? 0);
+            }
+
+            // ── Day-of-week pattern ───────────────────────────────────────
+            $dowRaw = Subscription::where('payment_status', 'Completed')
+                ->selectRaw("DAYOFWEEK(created_at)-1 as dow, COUNT(*) as cnt, SUM(amount_paid) as rev")
+                ->groupBy('dow')->orderBy('dow')->get()->keyBy('dow');
+            $dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            $dowCnt = []; $dowRev = [];
+            for ($d = 0; $d < 7; $d++) {
+                $dowCnt[] = (int)($dowRaw[$d]->cnt ?? 0); $dowRev[] = (float)($dowRaw[$d]->rev ?? 0);
+            }
+
+            // ── Payment/status breakdown ──────────────────────────────────
+            $payBreakdown    = Subscription::selectRaw("payment_status, COUNT(*) as cnt")->groupBy('payment_status')->pluck('cnt', 'payment_status');
+            $statusBreakdown = Subscription::selectRaw("status, COUNT(*) as cnt")->groupBy('status')->pluck('cnt', 'status');
+
+            // ─────────────────────────────────────────────────────────────
+            // BUILD HTML
+            // ─────────────────────────────────────────────────────────────
+            $refreshedAt = $now->format('d M Y, H:i');
+            $analyticsUrl = admin_url('subscriptions/analytics');
+            $subsUrl      = admin_url('subscriptions');
+
+            // ── KPI helpers ───────────────────────────────────────────────
+            $trend = fn($pct) => $pct > 0
+                ? "<span style='color:#27ae60;font-size:10px'>▲ {$pct}%</span>"
+                : ($pct < 0 ? "<span style='color:#e74c3c;font-size:10px'>▼ " . abs($pct) . "%</span>"
+                             : "<span style='color:#95a5a6;font-size:10px'>— 0%</span>");
+
+            $kpi = function ($icon, $color, $value, $label, $sub = '', $link = '') use ($trend) {
+                $wrap = $link ? "href='{$link}'" : '';
+                $tag  = $link ? 'a' : 'div';
+                return <<<HTML
+<{$tag} {$wrap} class="an-kpi" style="border-top:3px solid {$color};text-decoration:none;color:inherit">
+  <div class="an-kpi-icon" style="background:{$color}22;color:{$color}"><i class="fa {$icon}"></i></div>
+  <div class="an-kpi-body">
+    <div class="an-kpi-val">{$value}</div>
+    <div class="an-kpi-lbl">{$label}</div>
+    {$sub}
+  </div>
+</{$tag}>
+HTML;
+            };
+
+            $ugx = fn($n) => 'UGX ' . number_format($n);
+
+            // ── Build chart JSON ──────────────────────────────────────────
+            $chartData = json_encode([
+                'd30' => ['labels'=>$d30Labels,'muno'=>$d30Muno,'lg'=>$d30Lg,'ug'=>$d30Ug,'web'=>$d30Web,'total'=>$d30Total,'cnt'=>$d30Cnt],
+                'm12' => ['labels'=>$monthly12Labels,'muno'=>$m12Muno,'lg'=>$m12Lg,'ug'=>$m12Ug,'web'=>$m12Web,'total'=>$m12Total,'cnt'=>$m12Cnt],
+                'hourly' => ['labels'=>$hourlyLabels,'cnt'=>$hourlyCnt,'rev'=>$hourlyRev],
+                'dow'    => ['labels'=>$dowLabels,'cnt'=>$dowCnt,'rev'=>$dowRev],
+                'payment'=> ['completed'=>$payBreakdown['Completed']??0,'pending'=>$payBreakdown['Pending']??0,'processing'=>$payBreakdown['Processing']??0,'failed'=>$payBreakdown['Failed']??0],
+                'status' => ['active'=>$statusBreakdown['Active']??0,'expired'=>$statusBreakdown['Expired']??0,'pending'=>$statusBreakdown['Pending']??0,'cancelled'=>$statusBreakdown['Cancelled']??0],
+                'platform_rev' => array_map(fn($a) => (float)($appStats[$a]->rev ?? 0), array_keys($appConfigs)),
+                'gateway_rev'  => [$pesapalRev, $flutterRev],
+                'gateway_cnt'  => [$pesapalCnt, $flutterCnt],
+                'os_rev'       => [$androidRev, $iosRev],
+                'os_cnt'       => [$androidCnt, $iosCnt],
+                'plans'        => ['labels'=>$plans->pluck('name'),'counts'=>$plans->pluck('count'),'revenues'=>$plans->pluck('total')],
+                'renewal'      => ['new'=>$newSubCount,'renewal'=>$renewalCount],
+            ]);
+
+            // ── KPI cards ─────────────────────────────────────────────────
+            $momRevTrend  = $trend($momRevPct);
+            $momCntTrend  = $trend($momCntPct);
+            $wowTrend     = $trend($wowPct);
+            $dodRevTrend  = $trend($dodRevPct);
+            $churnColor   = $churnRate > 40 ? '#e74c3c' : ($churnRate > 25 ? '#f39c12' : '#27ae60');
+            $srColor      = $paySuccessRate < 25 ? '#e74c3c' : ($paySuccessRate < 40 ? '#f39c12' : '#27ae60');
+
+            $kpiRow1 = $kpi('fa-money', '#27ae60', $ugx($totalRevenue), 'Total Revenue (All Time)', "<div class='an-kpi-sub'>".number_format($totalCompleted)." paid subs</div>", $subsUrl.'?payment_status=Completed');
+            $kpiRow1 .= $kpi('fa-calendar-check-o', '#4a90e2', $ugx($thisMonthRev), 'This Month', "<div class='an-kpi-sub'>{$momRevTrend} vs last month · ".number_format($thisMonthCnt)." sales</div>");
+            $kpiRow1 .= $kpi('fa-sun-o', '#f39c12', $ugx($todayRev), 'Today', "<div class='an-kpi-sub'>{$dodRevTrend} vs yesterday · {$todayCnt} sales</div>");
+            $kpiRow1 .= $kpi('fa-bolt', '#e67e22', $ugx($thisWeekRev), 'This Week', "<div class='an-kpi-sub'>{$wowTrend} vs last week</div>");
+            $kpiRow1 .= $kpi('fa-check-circle', '#1abc9c', number_format($activeCount), 'Active Subscribers', "<div class='an-kpi-sub'>".number_format($uniqueSubscribers)." unique all-time</div>", $subsUrl.'?status=Active');
+            $kpiRow1 .= $kpi('fa-clock-o', '#e74c3c', number_format($pendingCount), 'Pending Payments', "<div class='an-kpi-sub'>Awaiting confirmation</div>", $subsUrl.'?payment_status=Pending');
+
+            $kpiRow2 = $kpi('fa-user-plus', '#8e44ad', number_format($newSubCount), 'New Subscribers (Total)', "<div class='an-kpi-sub'>{$momCntTrend} vs last month</div>");
+            $kpiRow2 .= $kpi('fa-refresh', '#16a085', number_format($renewalCount), 'Renewals (Total)', "<div class='an-kpi-sub'>".round($renewalCount / max($totalCompleted, 1) * 100, 1)."% of all paid</div>");
+            $kpiRow2 .= $kpi('fa-bar-chart', $srColor, $paySuccessRate . '%', 'Payment Success Rate', "<div class='an-kpi-sub'>{$totalCompleted} of {$totalAttempted} attempts</div>");
+            $kpiRow2 .= $kpi('fa-user-circle', '#2980b9', $ugx($arpu), 'ARPU (Avg/User)', "<div class='an-kpi-sub'>All-time per unique subscriber</div>");
+            $kpiRow2 .= $kpi('fa-exclamation-triangle', '#e74c3c', number_format($expiringToday), 'Expiring Today', "<div class='an-kpi-sub'>{$expiring7Days} within 7 days</div>");
+            $kpiRow2 .= $kpi('fa-line-chart', $churnColor, $churnRate . '%', 'Churn Rate', "<div class='an-kpi-sub'>Expired + cancelled / total</div>");
+
+            // ── Per-app KPI row ───────────────────────────────────────────
+            $appKpiRow = '';
+            foreach ($appConfigs as $key => [$name, $color, $icon, $rgba]) {
+                $rev = (float)($appStats[$key]->rev ?? 0);
+                $cnt = (int)($appStats[$key]->cnt ?? 0);
+                $act = (int)($appActive[$key] ?? 0);
+                $pct = $totalRevenue > 0 ? round($rev / $totalRevenue * 100, 1) : 0;
+                $appKpiRow .= <<<HTML
+<div class="an-app-card" style="border-left:4px solid {$color}">
+  <div class="an-app-head"><i class="fa {$icon}" style="color:{$color}"></i> <b>{$name}</b> <span class="an-badge" style="background:{$rgba}.15);color:{$color}">{$pct}%</span></div>
+  <div class="an-app-rev">{$ugx($rev)}</div>
+  <div class="an-app-meta">
+    <span><b>{$this->fmt($cnt)}</b> paid</span>
+    <span><b style="color:#27ae60">{$act}</b> active</span>
+  </div>
+</div>
+HTML;
+            }
+
+            // ── Top subscribers table ─────────────────────────────────────
+            $topSubRows = '';
+            $rank = 1;
+            $rankColors = ['#f1c40f','#bdc3c7','#cd7f32'];
+            foreach ($topSubs as $sub) {
+                $medal = isset($rankColors[$rank-1]) ? "<span style='color:{$rankColors[$rank-1]}'><i class='fa fa-trophy'></i></span>" : "<span style='color:#aaa'>#{$rank}</span>";
+                $phone = htmlspecialchars($sub->phone_number ?? '-');
+                $name  = htmlspecialchars($sub->name ?? 'Unknown');
+                $userUrl = admin_url('users/' . $sub->user_id);
+                $lastSubDate = Carbon::parse($sub->last_sub)->format('d M Y');
+                $topSubRows .= "<tr><td style='width:30px;text-align:center'>{$medal}</td><td><a href='{$userUrl}'><b>{$name}</b></a><br><small style='color:#888'>{$phone}</small></td><td style='text-align:center'><b>{$sub->total_subs}</b></td><td><b style='color:#27ae60'>".number_format($sub->total_spent)."</b></td><td><small style='color:#888'>{$lastSubDate}</small></td></tr>";
+                $rank++;
+            }
+
+            // ── Plan table ────────────────────────────────────────────────
+            $planRows = '';
+            foreach ($plans as $plan) {
+                $pct = $totalRevenue > 0 ? round($plan->total / $totalRevenue * 100, 1) : 0;
+                $barW = max(4, $pct);
+                $planRows .= "<tr><td><b>{$plan->name}</b></td><td style='text-align:center'>".number_format($plan->count)."</td><td><b style='color:#27ae60'>".number_format($plan->total)."</b></td><td style='min-width:80px'><div style='background:#f0f0f0;border-radius:3px;height:8px;overflow:hidden'><div style='background:#4a90e2;width:{$barW}%;height:100%'></div></div><small style='color:#888'>{$pct}%</small></td></tr>";
+            }
+            if (!$plans->count()) $planRows = '<tr><td colspan="4" style="text-align:center;color:#999">No data</td></tr>';
+
+            // ── Expiring soon table ───────────────────────────────────────
+            $expiringRows = '';
+            foreach ($expiringSoon as $sub) {
+                $user  = $sub->user;
+                $days  = (int)Carbon::now()->diffInDays(Carbon::parse($sub->end_date_time), false);
+                $urgency = $days <= 1 ? '#e74c3c' : ($days <= 3 ? '#f39c12' : '#4a90e2');
+                $name  = $user ? htmlspecialchars($user->name) : 'Unknown';
+                $phone = $user ? htmlspecialchars($user->phone_number ?? '-') : '-';
+                $expiresAt = Carbon::parse($sub->end_date_time)->format('d M, H:i');
+                $expiringRows .= "<tr><td><b>{$name}</b><br><small style='color:#888'>{$phone}</small></td><td><span style='color:{$urgency};font-weight:700'>{$days}d</span></td><td style='font-size:11px;color:#666'>{$expiresAt}</td></tr>";
+            }
+            if (!$expiringSoon->count()) $expiringRows = '<tr><td colspan="3" style="text-align:center;color:#999;padding:12px">None expiring this week</td></tr>';
+
+            // ── HTML output ───────────────────────────────────────────────
+            $html = <<<HTML
+<style>
+/* ─ Analytics page ─────────────────────────── */
+.an-wrap{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;padding:0 2px}
+.an-section-title{font-size:10px;font-weight:700;color:#7f8c8d;text-transform:uppercase;letter-spacing:.7px;margin:18px 0 8px;display:flex;align-items:center;gap:6px}
+.an-section-title::after{content:'';flex:1;height:1px;background:#ecf0f1}
+
+/* KPI cards */
+.an-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:4px}
+.an-kpi{background:#fff;border-radius:8px;padding:14px 15px;box-shadow:0 1px 5px rgba(0,0,0,.07);display:flex;align-items:flex-start;gap:12px;transition:box-shadow .15s;cursor:default}
+a.an-kpi{cursor:pointer}
+a.an-kpi:hover{box-shadow:0 3px 14px rgba(0,0,0,.12);transform:translateY(-1px)}
+.an-kpi-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.an-kpi-icon i{font-size:17px}
+.an-kpi-body{flex:1;min-width:0}
+.an-kpi-val{font-size:17px;font-weight:800;color:#1a1a2e;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.an-kpi-lbl{font-size:10px;color:#7f8c8d;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin:2px 0}
+.an-kpi-sub{font-size:10px;color:#95a5a6;margin-top:2px}
+
+/* App cards */
+.an-app-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:4px}
+.an-app-card{background:#fff;border-radius:8px;padding:14px 15px;box-shadow:0 1px 5px rgba(0,0,0,.07)}
+.an-app-head{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:13px}
+.an-app-rev{font-size:18px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
+.an-app-meta{display:flex;justify-content:space-between;font-size:11px;color:#7f8c8d}
+.an-badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;margin-left:auto}
+
+/* Charts */
+.an-chart-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.an-chart-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.an-chart-grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.an-chart-grid-full{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+.an-box{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 5px rgba(0,0,0,.07);border:1px solid #f4f6f7}
+.an-box-title{font-size:11px;font-weight:700;color:#555;margin-bottom:12px;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.4px}
+.an-box-title i{font-size:14px}
+
+/* Tables */
+.an-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.an-tbl th{text-align:left;padding:7px 10px;border-bottom:2px solid #ecf0f1;font-weight:700;color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+.an-tbl td{padding:7px 10px;border-bottom:1px solid #f8f9fa}
+.an-tbl tr:hover td{background:#fafbfc}
+.an-tbl tr:last-child td{border-bottom:none}
+
+/* Header bar */
+.an-header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);border-radius:10px;padding:20px 24px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;color:#fff}
+.an-header .an-logo{font-size:20px;font-weight:800;letter-spacing:.5px}
+.an-header .an-meta{font-size:11px;color:#bdc3c7;margin-top:3px}
+.an-header-right{text-align:right}
+.an-header-right .an-bignum{font-size:28px;font-weight:800;color:#f1c40f}
+.an-header-right .an-biglbl{font-size:10px;color:#bdc3c7;text-transform:uppercase;letter-spacing:.5px}
+
+/* Responsive */
+@media(max-width:900px){
+  .an-chart-grid-2,.an-chart-grid-3,.an-chart-grid-4{grid-template-columns:1fr}
+  .an-kpi-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+}
+</style>
+
+<div class="an-wrap">
+
+<!-- HEADER BANNER -->
+<div class="an-header">
+  <div>
+    <div class="an-logo">📊 Subscription Analytics</div>
+    <div class="an-meta">Last refreshed: {$refreshedAt} &nbsp;·&nbsp; <a href="{$analyticsUrl}" style="color:#4a90e2;font-size:11px"><i class="fa fa-refresh"></i> Refresh</a></div>
+  </div>
+  <div class="an-header-right">
+    <div class="an-bignum">UGX {$this->fmt($totalRevenue)}</div>
+    <div class="an-biglbl">Total Revenue All Time</div>
+    <div style="font-size:11px;color:#ecf0f1;margin-top:4px">{$this->fmt($totalCompleted)} paid &nbsp;·&nbsp; {$this->fmt($uniqueSubscribers)} unique users &nbsp;·&nbsp; {$this->fmt($activeCount)} active</div>
+  </div>
+</div>
+
+<!-- KPI ROW 1: Revenue -->
+<div class="an-section-title"><i class="fa fa-money" style="color:#27ae60"></i> Revenue Overview</div>
+<div class="an-kpi-grid">{$kpiRow1}</div>
+
+<!-- KPI ROW 2: Subscribers -->
+<div class="an-section-title"><i class="fa fa-users" style="color:#4a90e2"></i> Subscribers & Health</div>
+<div class="an-kpi-grid">{$kpiRow2}</div>
+
+<!-- PER-APP CARDS -->
+<div class="an-section-title"><i class="fa fa-mobile" style="color:#8e44ad"></i> Revenue by App</div>
+<div class="an-app-grid">{$appKpiRow}</div>
+
+<!-- 12-MONTH REVENUE TREND (full width) -->
+<div class="an-section-title"><i class="fa fa-area-chart" style="color:#e67e22"></i> 12-Month Revenue Trend</div>
+<div class="an-chart-grid-full">
+  <div class="an-box">
+    <div class="an-box-title"><i class="fa fa-area-chart" style="color:#e67e22"></i> Monthly Revenue — Last 12 Months (UGX) with Per-App Breakdown</div>
+    <div style="position:relative;height:280px"><canvas id="anM12Rev"></canvas></div>
+  </div>
+</div>
+
+<!-- 30-DAY CHARTS -->
+<div class="an-section-title"><i class="fa fa-line-chart" style="color:#4a90e2"></i> Last 30 Days</div>
+<div class="an-chart-grid-2">
+  <div class="an-box">
+    <div class="an-box-title"><i class="fa fa-line-chart" style="color:#4a90e2"></i> Daily Revenue by App (UGX)</div>
+    <div style="position:relative;height:250px"><canvas id="anD30Rev"></canvas></div>
+  </div>
+  <div class="an-box">
+    <div class="an-box-title"><i class="fa fa-bar-chart" style="color:#27ae60"></i> Daily Subscriptions — Revenue + Volume</div>
+    <div style="position:relative;height:250px"><canvas id="anD30Bar"></canvas></div>
+  </div>
+</div>
+
+<!-- ACTIVITY PATTERN -->
+<div class="an-section-title"><i class="fa fa-clock-o" style="color:#9b59b6"></i> Subscription Activity Patterns</div>
+<div class="an-chart-grid-2">
+  <div class="an-box">
+    <div class="an-box-title"><i class="fa fa-clock-o" style="color:#9b59b6"></i> Hour of Day (all completed subscriptions)</div>
+    <div style="position:relative;height:220px"><canvas id="anHourly"></canvas></div>
+  </div>
+  <div class="an-box">
+    <div class="an-box-title"><i class="fa fa-calendar" style="color:#e74c3c"></i> Day of Week (completed subscriptions)</div>
+    <div style="position:relative;height:220px"><canvas id="anDow"></canvas></div>
+  </div>
+</div>
+
+<!-- DONUT CHARTS: BREAKDOWN -->
+<div class="an-section-title"><i class="fa fa-pie-chart" style="color:#f39c12"></i> Breakdowns</div>
+<div class="an-chart-grid-4">
+  <div class="an-box" style="text-align:center">
+    <div class="an-box-title" style="justify-content:center"><i class="fa fa-mobile" style="color:#8e44ad"></i> By App (Revenue)</div>
+    <div style="position:relative;height:200px"><canvas id="anAppPie"></canvas></div>
+  </div>
+  <div class="an-box" style="text-align:center">
+    <div class="an-box-title" style="justify-content:center"><i class="fa fa-credit-card" style="color:#2980b9"></i> Payment Gateway</div>
+    <div style="position:relative;height:200px"><canvas id="anGwPie"></canvas></div>
+  </div>
+  <div class="an-box" style="text-align:center">
+    <div class="an-box-title" style="justify-content:center"><i class="fa fa-mobile" style="color:#27ae60"></i> iOS vs Android</div>
+    <div style="position:relative;height:200px"><canvas id="anOsPie"></canvas></div>
+  </div>
+  <div class="an-box" style="text-align:center">
+    <div class="an-box-title" style="justify-content:center"><i class="fa fa-refresh" style="color:#16a085"></i> New vs Renewal</div>
+    <div style="position:relative;height:200px"><canvas id="anRenewPie"></canvas></div>
+  </div>
+</div>
+<div class="an-chart-grid-2">
+  <div class="an-box" style="text-align:center">
+    <div class="an-box-title" style="justify-content:center"><i class="fa fa-check-circle" style="color:#27ae60"></i> Payment Status</div>
+    <div style="position:relative;height:200px"><canvas id="anPayPie"></canvas></div>
+  </div>
+  <div class="an-box" style="text-align:center">
+    <div class="an-box-title" style="justify-content:center"><i class="fa fa-heartbeat" style="color:#e74c3c"></i> Subscription Status</div>
+    <div style="position:relative;height:200px"><canvas id="anStatPie"></canvas></div>
+  </div>
+</div>
+
+<!-- TABLES SECTION -->
+<div class="an-section-title"><i class="fa fa-table" style="color:#2c3e50"></i> Detailed Tables</div>
+<div class="an-chart-grid-2">
+  <div class="an-box">
+    <div class="an-box-title"><i class="fa fa-trophy" style="color:#f1c40f"></i> Top 10 Subscribers by Revenue</div>
+    <table class="an-tbl">
+      <tr><th>#</th><th>Subscriber</th><th>Subs</th><th>Revenue (UGX)</th><th>Last Sub</th></tr>
+      {$topSubRows}
+    </table>
+  </div>
+  <div class="an-box">
+    <div class="an-box-title"><i class="fa fa-tags" style="color:#8e44ad"></i> Revenue by Plan</div>
+    <table class="an-tbl">
+      <tr><th>Plan</th><th>Count</th><th>Revenue (UGX)</th><th>Share</th></tr>
+      {$planRows}
+    </table>
+    <div style="height:16px"></div>
+    <div class="an-box-title" style="margin-top:8px"><i class="fa fa-clock-o" style="color:#e74c3c"></i> Expiring This Week</div>
+    <table class="an-tbl">
+      <tr><th>Subscriber</th><th>Days Left</th><th>Expires</th></tr>
+      {$expiringRows}
+    </table>
+  </div>
+</div>
+
+</div><!-- .an-wrap -->
+
+<script>
+(function(){
+var D = {$chartData};
+var _c=[];
+function kill(){_c.forEach(function(x){try{x.destroy()}catch(e){}});_c=[];}
+function init(){
+  kill();
+  if(!document.getElementById('anM12Rev')) return;
+
+  var P={
+    muno:    {b:'#e74c3c',bg:'rgba(231,76,60,.15)'},
+    lg:      {b:'#4a90e2',bg:'rgba(74,144,226,.15)'},
+    ug:      {b:'#27ae60',bg:'rgba(39,174,96,.15)'},
+    web:     {b:'#9b59b6',bg:'rgba(155,89,182,.15)'}
+  };
+  var gc='rgba(0,0,0,.04)';
+
+  function base(extra){
+    return Object.assign({
+      responsive:true,maintainAspectRatio:false,
+      legend:{position:'top',labels:{usePointStyle:true,padding:10,fontSize:10}},
+      tooltips:{mode:'index',intersect:false,backgroundColor:'rgba(10,10,30,.9)',
+        titleFontSize:11,bodyFontSize:10,cornerRadius:6,
+        callbacks:{label:function(i,d){
+          var v=i.yLabel, lbl=d.datasets[i.datasetIndex].label||'';
+          return ' '+lbl+': '+(v>=1000?'UGX '+v.toLocaleString():v);
+        }}},
+      hover:{mode:'nearest',intersect:false},
+      scales:{
+        xAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,maxRotation:40}}],
+        yAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true,callback:function(v){return v>=1000?'UGX '+v.toLocaleString():v;}}}]
+      }
+    }, extra||{});
+  }
+
+  function ds(lbl,data,key,fill){
+    return{label:lbl,data:data,borderColor:P[key].b,backgroundColor:fill?P[key].bg:'transparent',
+      pointBackgroundColor:P[key].b,pointRadius:2,pointHoverRadius:5,
+      borderWidth:2,lineTension:.35,fill:!!fill};
+  }
+
+  // 1. 12-month stacked bar
+  _c.push(new Chart(document.getElementById('anM12Rev'),{type:'bar',
+    data:{labels:D.m12.labels,datasets:[
+      {label:'Muno',data:D.m12.muno,backgroundColor:'rgba(231,76,60,.8)',stack:'s'},
+      {label:'LugaFlix',data:D.m12.lg,backgroundColor:'rgba(74,144,226,.8)',stack:'s'},
+      {label:'UGFlix',data:D.m12.ug,backgroundColor:'rgba(39,174,96,.8)',stack:'s'},
+      {label:'Web',data:D.m12.web,backgroundColor:'rgba(155,89,182,.8)',stack:'s'},
+      {label:'Total',data:D.m12.total,type:'line',borderColor:'#f39c12',backgroundColor:'transparent',
+       pointBackgroundColor:'#f39c12',pointRadius:4,pointHoverRadius:7,borderWidth:2,lineTension:.3,fill:false}
+    ]},
+    options:base({scales:{
+      xAxes:[{stacked:true,gridLines:{color:gc,drawBorder:false},ticks:{fontSize:10}}],
+      yAxes:[{stacked:true,gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true,callback:function(v){return v>=1000?'UGX '+v.toLocaleString():v;}}}]
+    }})
+  }));
+
+  // 2. 30-day revenue area
+  _c.push(new Chart(document.getElementById('anD30Rev'),{type:'line',
+    data:{labels:D.d30.labels,datasets:[ds('Muno',D.d30.muno,'muno',1),ds('LugaFlix',D.d30.lg,'lg',1),ds('UGFlix',D.d30.ug,'ug',1),ds('Web',D.d30.web,'web',1)]},
+    options:base()
+  }));
+
+  // 3. 30-day revenue bar + subscription count line (dual axis)
+  _c.push(new Chart(document.getElementById('anD30Bar'),{type:'bar',
+    data:{labels:D.d30.labels,datasets:[
+      {label:'Revenue (UGX)',data:D.d30.total,backgroundColor:'rgba(243,156,18,.75)',borderColor:'#f39c12',borderWidth:1,yAxisID:'y-rev',barPercentage:.8},
+      {label:'Subscriptions',data:D.d30.cnt,type:'line',borderColor:'#4a90e2',backgroundColor:'rgba(74,144,226,.1)',
+       pointBackgroundColor:'#4a90e2',pointRadius:3,borderWidth:2,lineTension:.3,fill:true,yAxisID:'y-cnt'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      legend:{position:'top',labels:{usePointStyle:true,padding:10,fontSize:10}},
+      tooltips:{mode:'index',intersect:false,backgroundColor:'rgba(10,10,30,.9)',titleFontSize:11,bodyFontSize:10,cornerRadius:6},
+      hover:{mode:'nearest',intersect:false},
+      scales:{
+        xAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,maxRotation:40}}],
+        yAxes:[
+          {id:'y-rev',position:'left',gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true,callback:function(v){return v>=1000?'UGX '+v.toLocaleString():v;}}},
+          {id:'y-cnt',position:'right',gridLines:{drawOnChartArea:false},ticks:{fontSize:9,beginAtZero:true}}
+        ]
+      }
+    }
+  }));
+
+  // 4. Hourly bar
+  _c.push(new Chart(document.getElementById('anHourly'),{type:'bar',
+    data:{labels:D.hourly.labels,datasets:[
+      {label:'Subscriptions',data:D.hourly.cnt,backgroundColor:D.hourly.cnt.map(function(v,i){
+        return i>=16&&i<=18?'rgba(231,76,60,.85)':i>=9&&i<=15?'rgba(74,144,226,.75)':'rgba(149,165,166,.5)';
+      }),borderWidth:0,barPercentage:.8}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      legend:{display:false},
+      tooltips:{mode:'index',intersect:false,backgroundColor:'rgba(10,10,30,.9)',titleFontSize:11,bodyFontSize:10},
+      scales:{
+        xAxes:[{gridLines:{display:false},ticks:{fontSize:8}}],
+        yAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true}}]
+      }
+    }
+  }));
+
+  // 5. Day-of-week bar
+  var maxDow=Math.max.apply(null,D.dow.cnt);
+  _c.push(new Chart(document.getElementById('anDow'),{type:'bar',
+    data:{labels:D.dow.labels,datasets:[
+      {label:'Subscriptions',data:D.dow.cnt,
+       backgroundColor:D.dow.cnt.map(function(v){return v===maxDow?'rgba(39,174,96,.85)':'rgba(74,144,226,.65)';}),
+       borderWidth:0,barPercentage:.7}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      legend:{display:false},
+      tooltips:{mode:'index',intersect:false,backgroundColor:'rgba(10,10,30,.9)',titleFontSize:11,bodyFontSize:10},
+      scales:{
+        xAxes:[{gridLines:{display:false},ticks:{fontSize:10}}],
+        yAxes:[{gridLines:{color:gc,drawBorder:false},ticks:{fontSize:9,beginAtZero:true}}]
+      }
+    }
+  }));
+
+  // Doughnut defaults
+  var doBase={responsive:true,maintainAspectRatio:false,cutoutPercentage:58,
+    legend:{position:'bottom',labels:{usePointStyle:true,padding:8,fontSize:9}},
+    tooltips:{callbacks:{label:function(i,d){var v=d.datasets[0].data[i.index];return ' '+d.labels[i.index]+': '+(v>=1000?'UGX '+v.toLocaleString():v);}}}};
+
+  // 6. App revenue doughnut
+  _c.push(new Chart(document.getElementById('anAppPie'),{type:'doughnut',
+    data:{labels:['Muno','LugaFlix','UGFlix','Web'],
+      datasets:[{data:D.platform_rev,backgroundColor:['rgba(231,76,60,.85)','rgba(74,144,226,.85)','rgba(39,174,96,.85)','rgba(155,89,182,.85)'],borderWidth:2,borderColor:'#fff'}]},
+    options:JSON.parse(JSON.stringify(doBase))
+  }));
+
+  // 7. Gateway doughnut
+  _c.push(new Chart(document.getElementById('anGwPie'),{type:'doughnut',
+    data:{labels:['Pesapal','Flutterwave'],
+      datasets:[{data:D.gateway_rev,backgroundColor:['rgba(52,152,219,.85)','rgba(243,156,18,.85)'],borderWidth:2,borderColor:'#fff'}]},
+    options:JSON.parse(JSON.stringify(doBase))
+  }));
+
+  // 8. OS doughnut
+  _c.push(new Chart(document.getElementById('anOsPie'),{type:'doughnut',
+    data:{labels:['Android','iOS'],
+      datasets:[{data:D.os_rev,backgroundColor:['rgba(39,174,96,.85)','rgba(52,152,219,.85)'],borderWidth:2,borderColor:'#fff'}]},
+    options:JSON.parse(JSON.stringify(doBase))
+  }));
+
+  // 9. New vs Renewal doughnut
+  _c.push(new Chart(document.getElementById('anRenewPie'),{type:'doughnut',
+    data:{labels:['New Subscriptions','Renewals'],
+      datasets:[{data:[D.renewal.new,D.renewal.renewal],backgroundColor:['rgba(39,174,96,.85)','rgba(52,152,219,.85)'],borderWidth:2,borderColor:'#fff'}]},
+    options:JSON.parse(JSON.stringify(doBase))
+  }));
+
+  // 10. Payment status doughnut
+  _c.push(new Chart(document.getElementById('anPayPie'),{type:'doughnut',
+    data:{labels:['Completed','Pending','Processing','Failed'],
+      datasets:[{data:[D.payment.completed,D.payment.pending,D.payment.processing,D.payment.failed],
+        backgroundColor:['rgba(39,174,96,.85)','rgba(243,156,18,.85)','rgba(52,152,219,.85)','rgba(231,76,60,.85)'],borderWidth:2,borderColor:'#fff'}]},
+    options:JSON.parse(JSON.stringify(doBase))
+  }));
+
+  // 11. Sub status doughnut
+  _c.push(new Chart(document.getElementById('anStatPie'),{type:'doughnut',
+    data:{labels:['Active','Expired','Pending','Cancelled'],
+      datasets:[{data:[D.status.active,D.status.expired,D.status.pending,D.status.cancelled],
+        backgroundColor:['rgba(39,174,96,.85)','rgba(231,76,60,.85)','rgba(243,156,18,.85)','rgba(149,165,166,.85)'],borderWidth:2,borderColor:'#fff'}]},
+    options:JSON.parse(JSON.stringify(doBase))
+  }));
+}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+$(document).on('pjax:end',init);
+})();
+</script>
+HTML;
+            return $html;
+        }); // end Cache::remember
     }
 
     // ─── COMPACT STAT CARDS ─────────────────────────────────────────────
