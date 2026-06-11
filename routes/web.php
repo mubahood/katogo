@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Process\Process;
 
+
+
 /*
 |--------------------------------------------------------------------------
 | Protected Processing Routes
@@ -5510,23 +5512,21 @@ Route::get('/run-game-menu-seeder', function () {
 // ──────────────────────────────────────────────────────────────────────────
 Route::get('/health', function () {
     $start = microtime(true);
+    $dbOk = false;
+    $cacheOk = false;
 
+    try { DB::statement('SELECT 1'); $dbOk = true; } catch (\Throwable $e) {}
     try {
-        DB::statement('SELECT 1');
-        $dbOk = true;
-    } catch (\Throwable $e) {
-        $dbOk = false;
-    }
+        \Illuminate\Support\Facades\Cache::put('_hc', 'ok', 10);
+        $cacheOk = \Illuminate\Support\Facades\Cache::get('_hc') === 'ok';
+    } catch (\Throwable $e) {}
 
-    $responseMs = round((microtime(true) - $start) * 1000, 1);
-
-    $data = [
-        'status'       => $dbOk ? 'ok' : 'error',
-        'db'           => $dbOk ? 'connected' : 'unreachable',
-        'response_ms'  => $responseMs,
-        'timestamp'    => now()->toISOString(),
-        'environment'  => app()->environment(),
-    ];
-
-    return response()->json($data, $dbOk ? 200 : 503);
+    $healthy = $dbOk && $cacheOk;
+    return response()->json([
+        'status'      => $healthy ? 'ok' : 'degraded',
+        'db'          => $dbOk ? 'ok' : 'fail',
+        'cache'       => $cacheOk ? 'ok' : 'fail',
+        'response_ms' => round((microtime(true) - $start) * 1000, 1),
+        'timestamp'   => now()->toISOString(),
+    ], $healthy ? 200 : 503);
 });

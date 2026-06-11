@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V2\DownloadController as V2DownloadController;
 use App\Http\Controllers\Api\V2\TriviaController as V2TriviaController;
 use App\Http\Controllers\Api\V2\GameStatsController as V2GameStatsController;
 use App\Http\Controllers\Api\V2\SystemConfigController as V2SystemConfigController;
+use App\Http\Controllers\Api\V2\AdminController as V2AdminController;
 use App\Http\Controllers\Api\IosReviewController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
@@ -42,6 +43,11 @@ Route::prefix('ios')->group(function () {
     Route::get('movies',        [IosReviewController::class, 'movies']);
     Route::get('movies/{id}',   [IosReviewController::class, 'movie'])->where('id', '[0-9]+');
     Route::get('genres',        [IosReviewController::class, 'genres']);
+});
+
+// iOS authenticated account actions (JWT required)
+Route::middleware([JwtMiddleware::class])->prefix('ios')->group(function () {
+    Route::delete('account', [IosReviewController::class, 'deleteAccount']);
 });
 
 Route::middleware('throttle:auth')->group(function () {
@@ -284,6 +290,19 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::post('subscriptions/auto-fix',             [V2SubscriptionFixController::class, 'autoFix']);
         Route::post('subscriptions/{id}/force-check',     [V2SubscriptionFixController::class, 'forceCheck']);
         Route::get('subscriptions/{id}/diagnostic',       [V2SubscriptionFixController::class, 'diagnostic']);
+
+        // ════════════════════════════════════════════
+        //  Admin Panel — user id=1 only
+        // ════════════════════════════════════════════
+        Route::get('admin/stats',                                    [V2AdminController::class, 'stats']);
+        Route::get('admin/users/search',                             [V2AdminController::class, 'searchUsers']);
+        Route::get('admin/users/{userId}/subscriptions',             [V2AdminController::class, 'getUserSubscriptions']);
+        Route::post('admin/subscriptions/{subId}/activate',          [V2AdminController::class, 'activateSubscription']);
+        Route::post('admin/subscriptions/{subId}/cancel',            [V2AdminController::class, 'cancelSubscription']);
+        Route::get('admin/recent-subscriptions',                     [V2AdminController::class, 'recentSubscriptions']);
+        Route::get('admin/system-status',                            [V2AdminController::class, 'systemStatus']);
+        Route::post('admin/system/toggle-ios-review',                [V2AdminController::class, 'toggleIosReview']);
+        Route::post('admin/system/toggle-maintenance',               [V2AdminController::class, 'toggleMaintenance']);
 
         // Movie Trivia — public endpoints (no auth required for question bank)
         Route::get('trivia/version',    [V2TriviaController::class, 'version']);

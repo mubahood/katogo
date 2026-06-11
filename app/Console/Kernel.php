@@ -312,6 +312,12 @@ class Kernel extends ConsoleKernel
             // ANALYZE refreshes index statistics so the query planner makes better choices
             \DB::statement('ANALYZE TABLE `' . implode('`, `', $tables) . '`');
         })->weeklyOn(1, '06:00')->name('optimize-analyze-tables')->withoutOverlapping();
+
+        // Prune expired database cache entries daily at 03:00 AM.
+        // Prevents the cache table from bloating (it grew to 212MB before this was added).
+        $schedule->call(function () {
+            \DB::table('cache')->where('expiration', '<', time())->delete();
+        })->dailyAt('03:00')->name('prune-expired-cache')->withoutOverlapping();
     }
 
     /**

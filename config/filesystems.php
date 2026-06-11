@@ -33,7 +33,7 @@ return [
         'admin' => [
             'driver' => 'local',
             'root' => public_path('storage'),
-            'url' => env('APP_URL') . '/storage',
+            'url' => rtrim(env('APP_URL'), '/') . '/storage',
             'visibility' => 'public',
         ],
 

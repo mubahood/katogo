@@ -176,12 +176,6 @@ class SubscriptionPesapalService
         $this->ipnUrl = rtrim($this->appBaseUrl, '/') . '/api/subscriptions/pesapal/ipn';
         $this->callbackUrl = rtrim($this->appBaseUrl, '/') . '/api/subscriptions/pesapal/callback';
 
-        Log::info('Pesapal Service initialized', [
-            'ipn_url' => $this->ipnUrl,
-            'callback_url' => $this->callbackUrl,
-            'base_url' => $this->baseUrl,
-            'has_consumer_key' => !empty($this->consumerKey),
-        ]);
     }
 
     // ================================================================
@@ -816,9 +810,8 @@ class SubscriptionPesapalService
     public function updateSubscriptionStatus($orderTrackingId, $statusData)
     {
         try {
-            Log::info('🔄 Pesapal: Starting subscription status update', [
+            Log::debug('🔄 Pesapal: Starting subscription status update', [
                 'tracking_id' => $orderTrackingId,
-                'status_data' => $statusData,
             ]);
 
             $subscription = Subscription::where('pesapal_tracking_id', $orderTrackingId)->first();
@@ -830,12 +823,9 @@ class SubscriptionPesapalService
                 throw new \Exception('Subscription not found for tracking ID: ' . $orderTrackingId);
             }
 
-            Log::info('📦 Pesapal: Found subscription', [
+            Log::debug('📦 Pesapal: Found subscription', [
                 'subscription_id' => $subscription->id,
                 'user_id' => $subscription->user_id,
-                'current_status' => $subscription->status,
-                'current_payment_status' => $subscription->payment_status,
-                'plan_id' => $subscription->plan_id,
             ]);
 
             $transaction = $subscription->transactions()
@@ -852,11 +842,9 @@ class SubscriptionPesapalService
             $paymentStatus = $statusData['payment_status_description'] ?? $statusData['status'] ?? null;
             $statusCode = $statusData['status_code'] ?? $statusData['payment_status_code'] ?? null;
 
-            Log::info('🔍 Pesapal: Analyzing payment status', [
+            Log::debug('🔍 Pesapal: Analyzing payment status', [
                 'payment_status' => $paymentStatus,
                 'status_code' => $statusCode,
-                'status_code_type' => gettype($statusCode),
-                'full_data' => $statusData,
             ]);
 
             // Normalize status code to integer for strict comparison

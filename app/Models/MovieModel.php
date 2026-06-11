@@ -190,7 +190,13 @@ class MovieModel extends Model
         if ($value == null || $value == '' || strlen($value) < 5) {
             return null;
         }
-        return 'https://storage.googleapis.com/mubahood-movies/' . $value;
+        // Already a full URL — return as-is
+        if (str_starts_with($value, 'http')) {
+            return $value;
+        }
+        // Relative path stored on this server's public disk (e.g. "videos/movie.mp4")
+        $base = rtrim(env('APP_URL', config('app.url')), '/');
+        return $base . '/storage/' . ltrim($value, '/');
     }
 
     //title getter
@@ -229,29 +235,22 @@ class MovieModel extends Model
         return ucwords($value);
     }
 
-    //getter for url
+    // Returns the playable video URL.
+    // Priority: local_video_link (uploaded file) → url (external link)
     public function getUrlAttribute($value)
     {
+        // If a file was uploaded locally, derive the URL from it — ignore the raw url column
+        $localPath = $this->attributes['local_video_link'] ?? null;
+        if (!empty($localPath)) {
+            $base = rtrim(env('APP_URL', config('app.url')), '/');
+            return $base . '/storage/' . ltrim($localPath, '/');
+        }
 
-        $url = $value;
-        //check if url contains  http
-        // if (!str_contains($value, 'googleapis')) {
-        //     //check if is active
-        //     if ($this->status == 'Active' && $this->external_url != null && strlen($this->external_url) > 5) {
-        //         //check if firebase_video_url is not null and not empty
-        //         if ($this->firebase_video_url != null && strlen($this->firebase_video_url) > 5) {
-        //             $url = $this->firebase_video_url;
-        //             $sql = "UPDATE movie_models SET url = '$url', old_video_url = '{$value}' WHERE id = {$this->id}";
-        //             DB::update($sql);
-        //             // return $url;
-        //         }
-        //     }
-        // }
+        if (empty($value)) {
+            return $value;
+        }
 
-        //encode the url
-        $value = $url;
         $value = str_replace(' ', '%20', $value);
-        //replace http with https
         $value = str_replace('http://', 'https://', $value);
         return $value;
     }

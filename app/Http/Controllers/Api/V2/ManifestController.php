@@ -30,6 +30,7 @@ class ManifestController extends Controller
         'id',
         'title',
         'url',
+        'local_video_link',
         'thumbnail_url',
         'genre',
         'type',
@@ -733,17 +734,24 @@ class ManifestController extends Controller
      */
     private function slimMovie($movie): array
     {
+        $storageBase = rtrim(config('app.url'), '/') . '/storage/';
+
         $url = $movie->url ?? '';
         if ($url !== '') {
             $url = str_replace(' ', '%20', $url);
             $url = preg_replace('/^http:/i', 'https:', $url);
         }
 
+        $thumb = $movie->thumbnail_url ?? '';
+        if ($thumb !== '' && !str_starts_with($thumb, 'http')) {
+            $thumb = $storageBase . ltrim($thumb, '/');
+        }
+
         return [
             'id'               => (int) $movie->id,
             'title'            => $movie->title ?? '',
             'url'              => $url,
-            'thumbnail_url'    => $movie->thumbnail_url ?? '',
+            'thumbnail_url'    => $thumb,
             'genre'            => $movie->genre ?? '',
             'type'             => $movie->type ?? 'Movie',
             'vj'               => $movie->vj ?? '',

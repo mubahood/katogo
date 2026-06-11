@@ -47,7 +47,7 @@ class MovieController extends Controller
 
     /** Fields returned in list/search results */
     protected const LIST_FIELDS = [
-        'id', 'title', 'url', 'image_url', 'thumbnail_url',
+        'id', 'title', 'url', 'local_video_link', 'image_url', 'thumbnail_url',
         'year', 'rating', 'duration', 'genre', 'language',
         'type', 'status', 'vj', 'is_premium', 'category_id',
         'views_count', 'likes_count', 'episode_number',
@@ -57,7 +57,7 @@ class MovieController extends Controller
 
     /** Fields returned in full detail response */
     protected const DETAIL_FIELDS = [
-        'id', 'title', 'url', 'image_url', 'thumbnail_url',
+        'id', 'title', 'url', 'local_video_link', 'image_url', 'thumbnail_url',
         'description', 'year', 'rating', 'duration', 'size',
         'genre', 'director', 'stars', 'country', 'language',
         'type', 'status', 'vj', 'actor', 'is_premium',
@@ -70,7 +70,7 @@ class MovieController extends Controller
 
     /** Fields returned for episode listings (minimal) */
     protected const EPISODE_FIELDS = [
-        'id', 'title', 'url', 'thumbnail_url', 'image_url',
+        'id', 'title', 'url', 'local_video_link', 'thumbnail_url', 'image_url',
         'description', 'year', 'rating', 'duration', 'size',
         'genre', 'type', 'status', 'category_id', 'vj',
         'episode_number', 'season_number', 'is_premium',
@@ -1064,16 +1064,32 @@ class MovieController extends Controller
 
     /**
      * Clean URLs in a single item array.
+     * - Converts http: → https:
+     * - Resolves relative image paths (images/... or storage/...) to full storage URLs
+     * - Never exposes local_video_link to clients (it's internal; url getter uses it)
      */
     private function cleanUrlSingle(array $data): array
     {
+        $storageBase = rtrim(config('app.url'), '/') . '/storage/';
+
         $urlFields = ['url', 'image_url', 'thumbnail_url', 'poster_url', 'external_url'];
         foreach ($urlFields as $field) {
-            if (!empty($data[$field])) {
-                $data[$field] = str_replace(' ', '%20', $data[$field]);
+            if (empty($data[$field])) {
+                continue;
+            }
+            $v = (string) $data[$field];
+            // Relative path → full storage URL
+            if (!str_starts_with($v, 'http')) {
+                $data[$field] = $storageBase . ltrim($v, '/');
+            } else {
+                $data[$field] = str_replace(' ', '%20', $v);
                 $data[$field] = preg_replace('/^http:/i', 'https:', $data[$field]);
             }
         }
+
+        // Don't leak the raw local_video_link column to clients
+        unset($data['local_video_link']);
+
         return $data;
     }
 

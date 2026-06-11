@@ -777,223 +777,279 @@ https://storage.googleapis.com/mubahood-movies/m.schooldynamics.ug/storage/video
     protected function form()
     {
         $form = new Form(new MovieModel());
-        $form->text('title', __('Title'))->rules('required');
-        $form->image('thumbnail_url', __('Thumbnail'))
+        $form->disableReset();
+
+        // ── Error banner (shown by JS on validation fail) ──────────────────
+        $form->html('<div id="movie-form-errors" style="display:none;padding:12px 16px;background:#fdf2f2;border:1px solid #e3342f;border-radius:6px;color:#cc1f1a;margin-bottom:16px;font-size:13px;line-height:1.6"></div>');
+
+        // ── Basic Info ──────────────────────────────────────────────────────
+        $form->text('title', 'Title')
+            ->rules('required|max:500')
+            ->placeholder('e.g. The Lion King — Luganda Translation');
+
+        $form->image('thumbnail_url', 'Thumbnail')
             ->removable()
-            ->downloadable();
+            ->help('Poster or screenshot — JPG / PNG recommended');
 
+        $form->select('status', 'Status')
+            ->options(['Active' => 'Active', 'Inactive' => 'Inactive'])
+            ->default('Active')
+            ->rules('required');
 
-        $form->radio('stars', 'Source Type')
-            ->options([
-                'file' => 'FILE',
-                'url' => 'URL',
-            ])
-            ->when('file', function (Form $form) {
-                $form->file('local_video_link', __('Movie file'))->removable();
-            })->when('url', function (Form $form) {
-                $form->text('url', __('Movie url'));
-            })->rules('required');
-
-        //platform_type
-        $form->radio('platform_type', __('Platform type'))
-            ->options([
-                'all' => 'All',
-                'android' => 'Android',
-                'ios' => 'iOS',
-            ])
+        $form->select('platform_type', 'Platform')
+            ->options(['all' => 'All Platforms', 'android' => 'Android Only', 'ios' => 'iOS Only'])
             ->default('all')
             ->rules('required');
 
+        // ── Video Source ───────────────────────────────────────────────────
+        $form->divider('Video Source');
 
-        if ($form->isCreating()) {
-            $active_serrie = SeriesMovie::where('is_active', 'Yes')->first();
-            $has_active_series = $active_serrie ? 'Series' : 'Movie';
+        $form->file('local_video_link', 'Video File')
+            ->disk('admin')
+            ->dir('videos')
+            ->removable()
+            ->help('Upload MP4/MKV up to 5 GB. Stored at /storage/videos/. When set, this takes priority over the URL field.');
 
+        $form->text('url', 'External Video URL')
+            ->placeholder('https://example.com/movie.mp4')
+            ->help('Only used when no file is uploaded above. Paste an external MP4, M3U8, or stream URL.');
 
-            $form->radio('genre', __('genre'))
-                ->options([
-                    'Action' => 'Action',
-                    'Adventure' => 'Adventure',
-                    'Animation' => 'Animation',
-                    'Biography' => 'Biography',
-                    'Comedy' => 'Comedy',
-                    'Crime' => 'Crime',
-                    'Documentary' => 'Documentary',
-                    'Drama' => 'Drama',
-                    'Family' => 'Family',
-                    'Fantasy' => 'Fantasy',
-                    'History' => 'History',
-                    'Horror' => 'Horror',
-                    'Music' => 'Music',
-                    'Musical' => 'Musical',
-                    'Mystery' => 'Mystery',
-                    'Romance' => 'Romance',
-                    'Sci-Fi' => 'Sci-Fi',
-                    'Short' => 'Short',
-                    'Sport' => 'Sport',
-                    'Thriller' => 'Thriller',
-                    "War" => "War",
-                    'Western' => 'Western',
-                ])->rules('required');
+        // ── Classification ──────────────────────────────────────────────────
+        $form->divider('Classification');
 
-            $form->radio('vj', __('VJ'))
-                ->options(
-                    Utils::$JV
-                )->rules('required');
-            $form->radio('type', __('Type'))
-                ->options([
-                    'Movie' => 'Movie',
-                    'Series' => 'Series',
-                ])
-                ->when('Series', function (Form $form) {
-                    $active_serrie = SeriesMovie::where('is_active', 'Yes')->first();
-                    $serrie_id = null;
-                    $number_of_episodes = 0;
-                    if ($active_serrie) {
-                        $count = MovieModel::where('category_id', $active_serrie->id)->count();
-                        if ($count > 0) {
-                            $number_of_episodes = $count;
-                        }
-                        $serrie_id = $active_serrie->id;
-                    }
-                    $number_of_episodes += 1;
-                    $form->radio('category_id', __('Select Series'))->rules('required')
-                        ->options(SeriesMovie::all()->pluck('title', 'id'))
-                        ->default($serrie_id);
-                    $form->decimal('episode_number', 'Episode Position')->rules('required')
-                        ->default($number_of_episodes);
-                })->when('Movie', function (Form $form) {
-                    $form->radio('category', __('Category'))
-                        ->options(
-                            Utils::$CATEGORIES
-                        )->rules('required');
-                })->default($has_active_series);
-        } else {
-
-            $form->radio('genre', __('VJ'))
-                ->options(
-                    Utils::$JV
-                )->rules('required');
-            $form->radio('type', __('Type'))
-                ->options([
-                    'Movie' => 'Movie',
-                    'Series' => 'Series',
-                ])
-                ->when('Series', function (Form $form) {
-                    $form->radio('category_id', __('Select Series'))->rules('required')
-                        ->options(SeriesMovie::all()->pluck('title', 'id'));
-                    $form->decimal('country', 'Position')->rules('required');
-                })->when('Movie', function (Form $form) {
-                    $form->radio('category', __('Category'))
-                        ->options(
-                            Utils::$CATEGORIES
-                        )->rules('required');
-                });
-        }
-        $form->radio('is_processed', __('Is Processed'))
-            ->options([
-                'Yes' => 'Yes',
-                'No' => 'No',
-            ])
-            ->default('No');
-
-        $form->radio('director', __('Advanced Information'))
-            ->options([
-                'Basic' => 'Basic',
-                'Advanced' => 'Advanced',
-            ])
-            ->when('Advanced', function (Form $form) {
-                $form->text('language', __('Language'));
-                $form->text('imdb_url', __('Imdb url'));
-                $form->decimal('imdb_rating', __('Imdb rating'));
-                $form->decimal('imdb_votes', __('Imdb votes'));
-                $form->text('imdb_id', __('Imdb id'));
-                $form->text('views_count', __('Views count'));
-                $form->text('likes_count', __('Likes count'));
-                $form->text('dislikes_count', __('Dislikes count'));
-                $form->text('comments_count', __('Comments count'));
-                $form->text('comments', __('Comments'));
-
-                $description = 'This is a movie';
-
-
-                $form->divider();
-                $form->decimal('year', __('Year'));
-                $form->decimal('rating', __('Rating'));
-                $form->decimal('duration', __('Duration'));
-                $form->quill('description', __('Movie Description'));
-                $form->text('image_url', __('Image url'));
-                $form->decimal('size', __('Size'));
-            })->default('Basic');
-        $form->disableReset();
-        $form->radio('status', __('Status'))
-            ->options([
-                'Active' => 'Active',
-                'Inactive' => 'Inactive',
-            ])
-            ->default('Active')
+        $form->select('genre', 'Genre')
+            ->options(Utils::$CATEGORIES)
             ->rules('required');
-        //plays_on_google
-        $form->radio('plays_on_google', __('Plays on google'))
-            ->options([
-                'Yes' => 'Yes',
-                'No' => 'No',
-            ])
-            ->default('No');
 
-        $form->divider('Video URL Testing');
-        $form->radio('video_url_tested_by_curl', __('Video URL Tested by Curl'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('video_url_tested_by_curl_works', __('Video URL Curl Works'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('video_url_tested_by_human', __('Video URL Tested by Human'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('video_url_tested_by_human_works', __('Video URL Human Works'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
+        $form->select('vj', 'VJ / Translator')
+            ->options(Utils::$JV)
+            ->rules('required');
 
-        $form->divider('Firebase Transfer');
-        $form->radio('firebase_transfer_attempted', __('Firebase Transfer Attempted'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('firebase_transfer_transfer_in_progress', __('Firebase Transfer In Progress'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('firebase_transfer_successful', __('Firebase Transfer Successful'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->text('firebase_transfer_failure_reason', __('Firebase Transfer Failure Reason'));
-        $form->text('firebase_transfer_path', __('Firebase Transfer Path'));
-        $form->text('firebase_video_url', __('Firebase Video URL'));
-        $form->datetime('firebase_video_url_expires_at', __('Firebase Video URL Expires At'));
+        // Auto-detect a sensible default for Type
+        $activeSeries  = SeriesMovie::where('is_active', 'Yes')->first();
+        $defaultType   = $activeSeries ? 'Series' : 'Movie';
 
-        $form->divider('Firebase Video URL Testing');
-        $form->radio('firebase_video_tested_by_curl', __('Firebase Video Tested by Curl'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('firebase_video_tested_by_curl_works', __('Firebase Video Curl Works'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('firebase_video_tested_by_human', __('Firebase Video Tested by Human'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
-        $form->radio('firebase_video_tested_by_human_works', __('Firebase Video Human Works'))
-            ->options(['Yes' => 'Yes', 'No' => 'No'])
-            ->default('No');
+        $form->radio('type', 'Content Type')
+            ->options(['Movie' => 'Movie', 'Series' => 'Series / Episode'])
+            ->default($defaultType)
+            ->when('Series', function (Form $form) use ($activeSeries) {
+                $seriesOptions = SeriesMovie::orderBy('title')->pluck('title', 'id');
 
-        $form->text('old_video_url', __('Old Video URL'));
+                // Next episode number for the active series
+                $defaultSeriesId = $activeSeries->id ?? null;
+                $nextEp = 1;
+                if ($defaultSeriesId) {
+                    $nextEp = MovieModel::where('category_id', $defaultSeriesId)->count() + 1;
+                }
 
-        $form->divider('Fix Tracking');
-        $form->select('fix_status', __('Fix Status'))
-            ->options(['pending' => 'Pending', 'fixed' => 'Fixed', 'error' => 'Error'])
-            ->default('pending');
-        $form->textarea('fix_error_message', __('Fix Error Message'))->rows(2);
-        $form->datetime('fix_date', __('Fix Date'));
-        $form->number('fix_counter', __('Fix Attempts'))->default(0);
+                $form->select('category_id', 'Series / Show')
+                    ->options($seriesOptions)
+                    ->default($defaultSeriesId)
+                    ->rules('required_if:type,Series')
+                    ->placeholder('Select or search for a series…');
+
+                $form->number('episode_number', 'Episode Number')
+                    ->default($nextEp)
+                    ->rules('required_if:type,Series|min:1')
+                    ->help('Position of this episode within the series');
+
+                $form->radio('is_first_episode', 'Is First Episode?')
+                    ->options(['Yes' => 'Yes', 'No' => 'No'])
+                    ->default('No');
+            })
+            ->when('Movie', function (Form $form) {
+                $form->select('category', 'Category')
+                    ->options(Utils::$CATEGORIES);
+            })
+            ->rules('required');
+
+        // ── Optional Info ───────────────────────────────────────────────────
+        $form->divider('More Info (optional)');
+
+        $form->textarea('description', 'Description')->rows(3)->placeholder('Brief summary of the movie…');
+        $form->number('year', 'Year')->placeholder(date('Y'));
+        $form->decimal('rating', 'Rating (out of 10)')->placeholder('7.5');
+        $form->number('duration', 'Duration (minutes)')->placeholder('120');
+        $form->text('language', 'Language')->placeholder('Luganda');
+        $form->text('image_url', 'Poster Image URL')->placeholder('https://…');
+
+        // ── Upload size reminder ────────────────────────────────────────────
+        $form->html('<p style="color:#888;font-size:12px;margin-top:4px">
+            <i class="fa fa-info-circle"></i>
+            Max upload: <strong>5 GB</strong> &nbsp;|&nbsp;
+            Allowed: MP4, MKV, AVI, MOV, WebM
+        </p>');
+
+        // ── Direct XHR submit (bypasses pjax/admin.js, shows progress) ─────
+        $form->html($this->uploadScript());
 
         return $form;
+    }
+
+    /**
+     * Injects the upload overlay + XHR submit handler.
+     * Replaces laravel-admin's pjax/ajax form handling for this form only,
+     * so large file uploads work reliably without server timeouts.
+     */
+    private function uploadScript(): string
+    {
+        return <<<'HTML'
+<style>
+#mup-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 8, 18, 0.96);
+    z-index: 99999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+#mup-track {
+    width: 400px;
+    max-width: 88vw;
+    height: 8px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 18px 0 10px;
+}
+#mup-bar {
+    height: 100%;
+    width: 0%;
+    background: #f39c12;
+    border-radius: 4px;
+    transition: width 0.25s ease;
+}
+</style>
+
+<div id="mup-overlay">
+    <i class="fa fa-cloud-upload" style="font-size:48px;color:#f39c12;margin-bottom:18px"></i>
+    <div style="font-size:21px;font-weight:700;letter-spacing:.3px">Uploading movie file…</div>
+    <div id="mup-track"><div id="mup-bar"></div></div>
+    <div id="mup-status" style="font-size:13px;opacity:.6;margin-bottom:6px">Preparing…</div>
+    <div style="font-size:11px;opacity:.3;margin-top:18px">Do not close or refresh this page</div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    function init() {
+        var $form = $('form.form-horizontal').first();
+        if (!$form.length) return;
+
+        var $overlay = $('#mup-overlay');
+        var $bar     = $('#mup-bar');
+        var $status  = $('#mup-status');
+
+        function showOverlay() { $overlay.css('display', 'flex'); }
+
+        function setProgress(loaded, total) {
+            var pct  = (total > 0) ? Math.min(Math.round(loaded / total * 100), 100) : 0;
+            var lMb  = (loaded / 1048576).toFixed(1);
+            var tMb  = (total  / 1048576).toFixed(1);
+            $bar.css('width', pct + '%');
+            $status.text(lMb + ' MB / ' + tMb + ' MB  (' + pct + '%)');
+        }
+
+        function showError(msg) {
+            $overlay.hide();
+            if (typeof toastr !== 'undefined') {
+                toastr.error(msg, 'Upload failed', { timeOut: 0, extendedTimeOut: 0 });
+            } else {
+                alert('Upload failed:\n' + msg);
+            }
+        }
+
+        function onSuccess() {
+            $bar.css({ width: '100%', background: '#27ae60' });
+            $status.text('Done! Redirecting…');
+        }
+
+        function handleLoad(xhr) {
+            if (xhr.status >= 200 && xhr.status < 400) {
+                onSuccess();
+                // laravel-admin returns JSON with a `redirect` key on success
+                try {
+                    var r = JSON.parse(xhr.responseText);
+                    if (r && r.redirect) {
+                        setTimeout(function () { window.location.href = r.redirect; }, 400);
+                        return;
+                    }
+                } catch (_) {}
+                // Fallback: strip /create or /{id}/edit from current URL
+                var dest = window.location.pathname
+                    .replace(/\/create$/, '')
+                    .replace(/\/\d+\/edit$/, '');
+                setTimeout(function () { window.location.href = dest; }, 400);
+            } else {
+                var msg = 'Server error ' + xhr.status;
+                try {
+                    var r = JSON.parse(xhr.responseText);
+                    if (r.errors) {
+                        // Validation errors — show them inline
+                        $overlay.hide();
+                        var lines = [];
+                        $.each(r.errors, function (field, errs) {
+                            lines.push('<b>' + field + '</b>: ' + errs.join(', '));
+                        });
+                        var $banner = $('#movie-form-errors');
+                        $banner.html(lines.join('<br>')).show();
+                        $('html, body').animate({ scrollTop: $banner.offset().top - 80 }, 300);
+                        return;
+                    }
+                    msg = r.message || msg;
+                } catch (_) {}
+                showError(msg);
+            }
+        }
+
+        function doUpload(e) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            showOverlay();
+            $status.text('Starting…');
+
+            var xhr    = new XMLHttpRequest();
+            var method = ($form.attr('method') || 'POST').toUpperCase();
+            var action = $form.attr('action') || window.location.href;
+
+            xhr.upload.onprogress = function (ev) {
+                if (ev.lengthComputable) setProgress(ev.loaded, ev.total);
+            };
+            xhr.onload   = function () { handleLoad(xhr); };
+            xhr.onerror  = function () { showError('Network error. Check your connection and try again.'); };
+            xhr.ontimeout = function () { showError('Request timed out. Try again.'); };
+
+            xhr.open(method, action, true);
+            xhr.timeout = 0; // no timeout — uploads can take hours
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            xhr.setRequestHeader('Accept', 'application/json, text/plain, */*');
+            xhr.send(new FormData($form[0]));
+
+            return false;
+        }
+
+        // Strip ALL existing submit handlers (admin.js, pjax) then add ours.
+        $form.off('submit').on('submit', doUpload);
+
+        // Intercept submit-button clicks before admin.js can react.
+        $form.find('[type="submit"]').off('click').on('click', function (e) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            $form.trigger('submit');
+        });
+    }
+
+    // Run after admin.js has had a chance to bind its own handlers.
+    $(window).on('load', init);
+    // Fallback if window load already fired (pjax navigation).
+    if (document.readyState === 'complete') init();
+}());
+</script>
+HTML;
     }
 }

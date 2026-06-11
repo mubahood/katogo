@@ -55,3 +55,19 @@
     Header set X-XSS-Protection "1; mode=block"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
+
+# Large file upload support (5 GB)
+<IfModule mod_php.c>
+    php_value upload_max_filesize 5120M
+    php_value post_max_size       5200M
+    php_value memory_limit        512M
+    php_value max_input_time      -1
+    php_value max_execution_time  0
+</IfModule>
+<IfModule mod_php8.c>
+    php_value upload_max_filesize 5120M
+    php_value post_max_size       5200M
+    php_value memory_limit        512M
+    php_value max_input_time      -1
+    php_value max_execution_time  0
+</IfModule>

@@ -37,7 +37,7 @@ class SearchController extends Controller
     use ApiResponser;
 
     protected const LIST_FIELDS = [
-        'id', 'title', 'url', 'image_url', 'thumbnail_url',
+        'id', 'title', 'url', 'local_video_link', 'image_url', 'thumbnail_url',
         'year', 'rating', 'duration', 'genre', 'language',
         'type', 'status', 'vj', 'is_premium', 'category_id',
         'views_count', 'likes_count', 'episode_number',
@@ -1070,15 +1070,23 @@ class SearchController extends Controller
 
     private function cleanUrls(array $items): array
     {
-        return array_map(function ($item) {
+        $storageBase = rtrim(config('app.url'), '/') . '/storage/';
+        return array_map(function ($item) use ($storageBase) {
             $data = $item instanceof \Illuminate\Database\Eloquent\Model ? $item->toArray() : (array) $item;
             $urlFields = ['url', 'image_url', 'thumbnail_url', 'poster_url', 'external_url'];
             foreach ($urlFields as $field) {
-                if (!empty($data[$field])) {
-                    $data[$field] = str_replace(' ', '%20', $data[$field]);
+                if (empty($data[$field])) {
+                    continue;
+                }
+                $v = (string) $data[$field];
+                if (!str_starts_with($v, 'http')) {
+                    $data[$field] = $storageBase . ltrim($v, '/');
+                } else {
+                    $data[$field] = str_replace(' ', '%20', $v);
                     $data[$field] = preg_replace('/^http:/i', 'https:', $data[$field]);
                 }
             }
+            unset($data['local_video_link']);
             return $data;
         }, $items);
     }

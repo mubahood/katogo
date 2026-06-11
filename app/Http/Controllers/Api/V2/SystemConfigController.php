@@ -42,42 +42,63 @@ class SystemConfigController extends Controller
         // Only load review movies when iOS review is actually active
         if ($isIos && $config->ios_review_mode) {
             $movieIds = $config->ios_review_movie_ids_array;
+            $storageBase = rtrim(config('app.url'), '/') . '/storage/';
+
+            $resolveMovies = function ($movies) use ($storageBase) {
+                return $movies->map(function ($m) use ($storageBase) {
+                    $arr = $m->toArray();
+                    // Resolve relative thumbnail to full URL
+                    if (!empty($arr['thumbnail_url']) && !str_starts_with($arr['thumbnail_url'], 'http')) {
+                        $arr['thumbnail_url'] = $storageBase . ltrim($arr['thumbnail_url'], '/');
+                    }
+                    // url getter already handles local_video_link, but expose it cleanly
+                    unset($arr['local_video_link']);
+                    return $arr;
+                })->values()->toArray();
+            };
+
+            // Common playability guard — same rules as /api/ios/movies
+            $playableScope = function ($q) {
+                $q->where('status', 'Active')
+                  ->whereNotNull('url')->where('url', '!=', '')
+                  ->whereNotNull('thumbnail_url')->where('thumbnail_url', '!=', '')
+                  ->where(function ($inner) {
+                      $inner->where('is_premium', 'No')
+                            ->orWhere('is_premium', false)
+                            ->orWhere('is_premium', 0)
+                            ->orWhereNull('is_premium');
+                  });
+            };
+
+            $movieFields = [
+                'id', 'title', 'url', 'local_video_link', 'thumbnail_url', 'genre',
+                'type', 'vj', 'year', 'duration', 'rating', 'is_premium', 'platform_type',
+            ];
+
             if (!empty($movieIds)) {
                 $data['ios_review_movies'] = Cache::remember(
                     'ios_review_movies_' . md5(implode(',', $movieIds)),
                     600,
-                    fn() => MovieModel::whereIn('id', $movieIds)
-                        ->where('status', 'Active')
-                        ->select([
-                            'id', 'title', 'thumbnail_url', 'genre',
-                            'type', 'vj', 'year', 'duration', 'rating',
-                            'is_premium',
-                        ])
-                        ->get()
-                        ->toArray()
+                    fn() => $resolveMovies(
+                        MovieModel::whereIn('id', $movieIds)
+                            ->tap($playableScope)
+                            ->select($movieFields)
+                            ->get()
+                    )
                 );
             } else {
-                // No specific IDs set — only movies explicitly marked platform_type = 'ios'
+                // No specific IDs — show top active ios/all movies that are playable
                 $data['ios_review_movies'] = Cache::remember(
                     'ios_review_movies_default',
                     600,
-                    fn() => MovieModel::where('status', 'Active')
-                        ->where('platform_type', 'ios')
-                        ->where(function ($q) {
-                            $q->where('is_premium', 'No')
-                              ->orWhere('is_premium', false)
-                              ->orWhere('is_premium', 0)
-                              ->orWhereNull('is_premium');
-                        })
-                        ->orderBy('views_time_count', 'desc')
-                        ->limit(10)
-                        ->select([
-                            'id', 'title', 'thumbnail_url', 'genre',
-                            'type', 'vj', 'year', 'duration', 'rating',
-                            'is_premium', 'platform_type',
-                        ])
-                        ->get()
-                        ->toArray()
+                    fn() => $resolveMovies(
+                        MovieModel::whereIn('platform_type', ['ios', 'all'])
+                            ->tap($playableScope)
+                            ->orderBy('views_time_count', 'desc')
+                            ->limit(10)
+                            ->select($movieFields)
+                            ->get()
+                    )
                 );
             }
         }
