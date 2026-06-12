@@ -53,7 +53,6 @@ class TransferBackfill extends Command
         $this->info('Scanning active movies without a Hetzner transfer...');
 
         $queued = 0;
-        $skipped = 0;
         $alreadyDone = 0;
 
         // Build base query: active movies with a url not on Hetzner
@@ -77,11 +76,11 @@ class TransferBackfill extends Command
         $bar = $this->output->createProgressBar($total);
         $bar->start();
 
-        $query->select(['id', 'title', 'url', 'status', 'year', 'quality',
+        $query->select(['id', 'title', 'url', 'status', 'year',
                         'duration', 'poster_url', 'munowatch_id', 'type',
                         'season_number', 'episode_number', 'series_title'])
               ->chunkById($chunk, function ($movies) use (
-                  $dryRun, $limit, &$queued, &$skipped, &$alreadyDone, $bar
+                  $dryRun, $limit, &$queued, &$alreadyDone, $bar
               ) {
                   foreach ($movies as $movie) {
                       $bar->advance();

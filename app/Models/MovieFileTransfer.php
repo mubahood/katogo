@@ -159,7 +159,7 @@ class MovieFileTransfer extends Model
             'movie_id'           => $movie->id,
             'movie_title'        => $movie->title,
             'movie_year'         => $movie->year ?? null,
-            'movie_quality'      => $movie->quality ?? null,
+            'movie_quality'      => null,
             'movie_duration'     => $movie->duration ?? null,
             'movie_poster_url'   => $movie->poster_url ?? null,
             'movie_munowatch_id' => $movie->munowatch_id ?? null,
