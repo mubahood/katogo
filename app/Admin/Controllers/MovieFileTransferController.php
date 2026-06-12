@@ -412,20 +412,22 @@ class MovieFileTransferController extends AdminController
     {
         $t = MovieFileTransfer::findOrFail($id);
         if (!$t->isFailed() && !$t->isRetriable()) {
-            return redirect()->back()->with('error', 'This transfer cannot be retried.');
+            admin_toastr('This transfer cannot be retried.', 'error');
+            return redirect()->back();
         }
         $t->resetToQueued('Manual retry from admin panel');
-        // Boost priority on retry so it jumps the queue
         $t->update(['priority' => $t->priority + 100]);
         TransferMovieToHetzner::dispatch($t->id)->onQueue('transfers');
-        return redirect('/movie-file-transfers')->with('success', "Transfer #{$id} queued for retry (priority boosted).");
+        admin_toastr("Transfer #{$id} queued for retry (priority boosted).", 'success');
+        return redirect('/movie-file-transfers');
     }
 
     public function cancel($id)
     {
         $t = MovieFileTransfer::findOrFail($id);
         $t->cancel();
-        return redirect('/movie-file-transfers')->with('success', "Transfer #{$id} cancelled.");
+        admin_toastr("Transfer #{$id} cancelled.", 'success');
+        return redirect('/movie-file-transfers');
     }
 
     public function retryAllFailed()
@@ -437,13 +439,15 @@ class MovieFileTransferController extends AdminController
             TransferMovieToHetzner::dispatch($t->id)->onQueue('transfers');
             $count++;
         }
-        return redirect('/movie-file-transfers/monitor')->with('success', "Queued {$count} failed transfers for retry.");
+        admin_toastr("Queued {$count} failed transfers for retry.", 'success');
+        return redirect('/movie-file-transfers/monitor');
     }
 
     public function processNow()
     {
-        Artisan::queue('transfers:process', ['--concurrency' => 2, '--limit' => 6]);
-        return redirect('/movie-file-transfers/monitor')->with('success', 'Dispatch command queued — check monitor in a moment.');
+        Artisan::call('transfers:process', ['--concurrency' => 2, '--limit' => 6]);
+        admin_toastr('Dispatch command ran — transfers have been dispatched.', 'success');
+        return redirect('/movie-file-transfers/monitor');
     }
 
     public function backfillRun(Request $request)
@@ -454,19 +458,23 @@ class MovieFileTransferController extends AdminController
         if ($limit > 0) $params['--limit'] = $limit;
         if ($source !== '') $params['--source'] = $source;
 
-        Artisan::call('transfers:backfill', $params);
-
-        $output = trim(Artisan::output());
-        $lines  = array_filter(explode("\n", $output));
-        $queued = 0;
-        foreach ($lines as $line) {
-            if (preg_match('/Queued\s+\|\s*(\d+)/', $line, $m)) {
-                $queued = (int)$m[1];
+        try {
+            Artisan::call('transfers:backfill', $params);
+            $output = trim(Artisan::output());
+            $lines  = array_filter(explode("\n", $output));
+            $queued = 0;
+            foreach ($lines as $line) {
+                if (preg_match('/Queued\s+\|\s*(\d+)/', $line, $m)) {
+                    $queued = (int)$m[1];
+                }
             }
+            admin_toastr("Backfill complete — {$queued} transfer records created. The scheduler will process them by priority.", 'success');
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('[backfillRun] ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            admin_toastr('Backfill failed: ' . $e->getMessage(), 'error');
         }
 
-        return redirect('/movie-file-transfers/backfill')
-            ->with('success', "Backfill complete — {$queued} transfer records created. The scheduler will process them by priority.");
+        return redirect('/movie-file-transfers/backfill');
     }
 
     /** Queue a single specific movie — highest priority (GET from top-10 table or POST from form) */
@@ -474,48 +482,48 @@ class MovieFileTransferController extends AdminController
     {
         $id = $movieId ?? $request->input('movie_id');
         if (!$id) {
-            return redirect('/movie-file-transfers/backfill')->with('error', 'No movie ID provided.');
+            admin_toastr('No movie ID provided.', 'error');
+            return redirect('/movie-file-transfers/backfill');
         }
 
         $movie = MovieModel::find((int)$id);
         if (!$movie) {
-            return redirect('/movie-file-transfers/backfill')->with('error', "Movie #{$id} not found.");
+            admin_toastr("Movie #{$id} not found.", 'error');
+            return redirect('/movie-file-transfers/backfill');
         }
 
         $url = (string)($movie->attributes['url'] ?? $movie->url ?? '');
         if (empty($url)) {
-            return redirect('/movie-file-transfers/backfill')->with('error', "Movie #{$id} has no video URL.");
+            admin_toastr("Movie #{$id} has no video URL.", 'error');
+            return redirect('/movie-file-transfers/backfill');
         }
 
         if (MovieFileTransfer::isAlreadyOnHetzner($url)) {
-            return redirect('/movie-file-transfers/backfill')->with('success', "Movie #{$id} is already on Hetzner Storage — no transfer needed.");
+            admin_toastr("Movie #{$id} is already on Hetzner Storage — no transfer needed.", 'success');
+            return redirect('/movie-file-transfers/backfill');
         }
 
-        // Cancel any existing failed/cancelled transfer, create fresh with max priority
         $existing = MovieFileTransfer::forMovie($movie->id)
             ->whereIn('status', [MovieFileTransfer::STATUS_FAILED, MovieFileTransfer::STATUS_CANCELLED, MovieFileTransfer::STATUS_SKIPPED])
             ->first();
 
         if ($existing) {
             $existing->resetToQueued('Admin: single-movie queue request');
-            // Max priority so it runs next
             $existing->update(['priority' => 999999, 'initiated_by' => 'admin:single']);
             $transfer = $existing;
         } elseif (MovieFileTransfer::hasPendingOrCompleted($movie->id)) {
             $active = MovieFileTransfer::forMovie($movie->id)->whereNotIn('status', [MovieFileTransfer::STATUS_DONE])->first();
-            return redirect('/movie-file-transfers/backfill')->with('success',
-                "Movie #{$id} ({$movie->title}) already has an active transfer" . ($active ? " (#{$active->id})" : '') . ".");
+            admin_toastr("Movie #{$id} ({$movie->title}) already has an active transfer" . ($active ? " (#{$active->id})" : '') . ".", 'success');
+            return redirect('/movie-file-transfers/backfill');
         } else {
             $transfer = MovieFileTransfer::queueForMovie($movie, 'admin:single');
-            // Override with max priority
             $transfer->update(['priority' => 999999]);
         }
 
-        // Dispatch immediately — don't wait for the scheduler
         TransferMovieToHetzner::dispatch($transfer->id)->onQueue('transfers');
 
-        return redirect('/movie-file-transfers/' . $transfer->id)
-            ->with('success', "Movie #{$id} ({$movie->title}) queued at maximum priority and dispatched immediately.");
+        admin_toastr("Movie #{$id} ({$movie->title}) queued at maximum priority and dispatched immediately.", 'success');
+        return redirect('/movie-file-transfers/' . $transfer->id);
     }
 
     // ── Detail (show) ─────────────────────────────────────────────────────────
