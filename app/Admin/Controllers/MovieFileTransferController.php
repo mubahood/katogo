@@ -536,10 +536,17 @@ class MovieFileTransferController extends AdminController
             ]))
             ->count();
 
-        return compact('queued', 'active', 'done', 'failed', 'etaStr', 'storedGb', 'notQueued', 'avgSpeed', 'avgDuration') + [
-            'eta'       => $etaStr,
-            'avg_speed' => $avgSpeed ? number_format($avgSpeed, 1) . ' MB/s' : '—',
-            'stored_gb' => $storedGb,
+        return [
+            'queued'      => $queued,
+            'active'      => $active,
+            'done'        => $done,
+            'failed'      => $failed,
+            'eta'         => $etaStr,
+            'avg_speed'   => $avgSpeed ? number_format($avgSpeed, 1) . ' MB/s' : '—',
+            'stored_gb'   => $storedGb,
+            'not_queued'  => $notQueued,
+            'avg_speed_raw' => $avgSpeed,
+            'avg_duration'  => $avgDuration,
         ];
     }
 }
