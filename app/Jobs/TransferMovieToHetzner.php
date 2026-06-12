@@ -34,8 +34,12 @@ class TransferMovieToHetzner implements ShouldQueue
     /** Job-level timeout — 2 hours for large files. */
     public int $timeout = 7200;
 
-    /** Do not auto-retry at the job level; retry logic lives in the transfer record. */
-    public int $tries = 1;
+    /**
+     * Laravel-level max attempts. Set high because release() increments the attempts
+     * counter — slots-full and disk-guard releases would cause premature failure at $tries=1.
+     * The real retry logic lives inside handle() via the transfer record's attempt_count.
+     */
+    public int $tries = 50;
 
     /** Max simultaneous transfers across all workers (enforced via cache lock). */
     const MAX_CONCURRENT = 20;
@@ -86,11 +90,12 @@ class TransferMovieToHetzner implements ShouldQueue
             return;
         }
 
-        // Global concurrency guard
+        // Global concurrency guard — dispatch a *fresh* job (resets attempt counter)
+        // so the attempts limit never blocks legitimate retries.
         if (!$this->acquireSlot()) {
-            Log::info("[TransferMovieToHetzner] All " . self::MAX_CONCURRENT . " slots occupied. Releasing #{$this->transferId} for 60s.");
-            $this->release(60);
-            return;
+            Log::info("[TransferMovieToHetzner] All " . self::MAX_CONCURRENT . " slots occupied. Re-queuing #{$this->transferId} in 60s.");
+            dispatch(new self($this->transferId))->delay(60)->onQueue('transfers');
+            return; // current job auto-deleted (clean return, no exception)
         }
 
         // Disk-space guard: abort if root disk > 85% full to prevent 500 errors site-wide
@@ -99,7 +104,7 @@ class TransferMovieToHetzner implements ShouldQueue
         if ($diskTotal > 0 && ($diskFree / $diskTotal) < 0.15) {
             $this->releaseSlot();
             Log::warning("[TransferMovieToHetzner] #{$this->transferId} aborted — root disk > 85% full. Free: " . round($diskFree / 1073741824, 1) . " GB");
-            $this->release(300); // retry in 5 min after cleanup
+            dispatch(new self($this->transferId))->delay(300)->onQueue('transfers');
             return;
         }
 
