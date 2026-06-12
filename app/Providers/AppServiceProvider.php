@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use App\Models\ChatMessage;
 use App\Models\MovieDownload;
@@ -34,6 +35,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Force HTTPS for all generated URLs when running behind Nginx SSL termination.
+        // Nginx terminates SSL and forwards to PHP-FPM via FastCGI, so PHP never sees
+        // the HTTPS connection directly. Without this, url() and asset() return http://.
+        if (config('app.env') === 'production') {
+            URL::forceScheme('https');
+        }
+
         // Enforce Nairobi timezone (EAT / GMT+3) globally
         date_default_timezone_set('Africa/Nairobi');
 
