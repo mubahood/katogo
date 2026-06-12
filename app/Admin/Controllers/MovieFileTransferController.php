@@ -252,6 +252,13 @@ class MovieFileTransferController extends AdminController
                     $fc = number_format($stats['failed']);
                     $nq = number_format($stats['not_queued']);
 
+                    $avgSizeMb   = $stats['avg_size_mb'];
+                    $qEstGb      = $stats['queued_est_gb'];
+                    $munoCount   = number_format($stats['muno_count']);
+                    $munoEstTb   = $stats['muno_est_tb'];
+                    $etaQueue    = $stats['eta_queue'];
+                    $etaTotal    = $stats['eta_total'];
+
                     $col->append($this->renderDashboardCss() . "
                         <div class='kt-stat-row'>
                             <a href='/movie-file-transfers?status=queued' class='kt-stat-box' style='--ac:#5b7fa6'>
@@ -284,6 +291,38 @@ class MovieFileTransferController extends AdminController
                                 <div class='l'>On Hetzner</div>
                                 <i class='ico fa fa-hdd-o'></i>
                             </a>
+                        </div>
+                        <div class='kt-stat-row' style='border-top:none;'>
+                            <div class='kt-stat-box' style='--ac:#8e44ad'>
+                                <div class='v'>{$avgSizeMb} MB</div>
+                                <div class='l'>Avg File Size</div>
+                                <i class='ico fa fa-file-video-o'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#16a085'>
+                                <div class='v' id='stat-queue-est'>{$qEstGb} GB</div>
+                                <div class='l'>Queue Est. Size</div>
+                                <i class='ico fa fa-database'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#d35400'>
+                                <div class='v' id='stat-eta-queue'>{$etaQueue}</div>
+                                <div class='l'>ETA (Queue Only)</div>
+                                <i class='ico fa fa-clock-o'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#6c3483'>
+                                <div class='v' id='stat-eta-total'>{$etaTotal}</div>
+                                <div class='l'>ETA (Full Backlog)</div>
+                                <i class='ico fa fa-calendar'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#2c3e50'>
+                                <div class='v'>{$munoCount}</div>
+                                <div class='l'>MunoWatch Movies</div>
+                                <i class='ico fa fa-film'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#7f8c8d'>
+                                <div class='v'>{$munoEstTb} TB</div>
+                                <div class='l'>MunoWatch Est. Total</div>
+                                <i class='ico fa fa-hdd-o'></i>
+                            </div>
                         </div>
                         <div class='kt-toolbar'>
                             <div class='kt-toolbar-left'>
@@ -366,6 +405,13 @@ class MovieFileTransferController extends AdminController
                     $sp = e($stats['avg_speed']);
                     $gb = $stats['stored_gb'];
 
+                    $avgSizeMb   = $stats['avg_size_mb'];
+                    $qEstGb      = $stats['queued_est_gb'];
+                    $munoCount   = number_format($stats['muno_count']);
+                    $munoEstTb   = $stats['muno_est_tb'];
+                    $etaQueue    = $stats['eta_queue'];
+                    $etaTotal    = $stats['eta_total'];
+
                     $col->append($this->renderDashboardCss() . "
                         <div class='kt-stat-row'>
                             <a href='/movie-file-transfers?status=queued' class='kt-stat-box' style='--ac:#5b7fa6'>
@@ -398,6 +444,38 @@ class MovieFileTransferController extends AdminController
                                 <div class='l'>On Hetzner</div>
                                 <i class='ico fa fa-hdd-o'></i>
                             </a>
+                        </div>
+                        <div class='kt-stat-row' style='border-top:none;'>
+                            <div class='kt-stat-box' style='--ac:#8e44ad'>
+                                <div class='v'>{$avgSizeMb} MB</div>
+                                <div class='l'>Avg File Size</div>
+                                <i class='ico fa fa-file-video-o'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#16a085'>
+                                <div class='v' id='stat-queue-est'>{$qEstGb} GB</div>
+                                <div class='l'>Queue Est. Size</div>
+                                <i class='ico fa fa-database'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#d35400'>
+                                <div class='v' id='stat-eta-queue'>{$etaQueue}</div>
+                                <div class='l'>ETA (Queue Only)</div>
+                                <i class='ico fa fa-clock-o'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#6c3483'>
+                                <div class='v' id='stat-eta-total'>{$etaTotal}</div>
+                                <div class='l'>ETA (Full Backlog)</div>
+                                <i class='ico fa fa-calendar'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#2c3e50'>
+                                <div class='v'>{$munoCount}</div>
+                                <div class='l'>MunoWatch Movies</div>
+                                <i class='ico fa fa-film'></i>
+                            </div>
+                            <div class='kt-stat-box' style='--ac:#7f8c8d'>
+                                <div class='v'>{$munoEstTb} TB</div>
+                                <div class='l'>MunoWatch Est. Total</div>
+                                <i class='ico fa fa-hdd-o'></i>
+                            </div>
                         </div>
                     ");
                 });
@@ -1572,12 +1650,15 @@ function ktCopyUrl(url, btn) {
     }
 
     function updateStats(s, mc) {
-        setText("stat-queued", fmt(s.queued));
-        setText("stat-active", s.active + "/" + (mc||MAX_CON));
-        setText("stat-done",   fmt(s.done));
-        setText("stat-failed", fmt(s.failed));
-        setText("stat-speed",  s.avg_speed||"—");
-        setText("stat-stored", (s.stored_gb||0) + " GB");
+        setText("stat-queued",    fmt(s.queued));
+        setText("stat-active",    s.active + "/" + (mc||MAX_CON));
+        setText("stat-done",      fmt(s.done));
+        setText("stat-failed",    fmt(s.failed));
+        setText("stat-speed",     s.avg_speed||"—");
+        setText("stat-stored",    (s.stored_gb||0) + " GB");
+        setText("stat-queue-est", (s.queued_est_gb||0) + " GB");
+        setText("stat-eta-queue", s.eta_queue||"—");
+        setText("stat-eta-total", s.eta_total||"—");
     }
 
     function updateAlerts(s, activeCount) {
@@ -1787,12 +1868,15 @@ function ktCopyUrl(url, btn) {
     }
 
     function updateStats(s, mc) {
-        setText("stat-queued", fmt(s.queued));
-        setText("stat-active", s.active + "/" + (mc||MAX_CON));
-        setText("stat-done",   fmt(s.done));
-        setText("stat-failed", fmt(s.failed));
-        setText("stat-speed",  s.avg_speed||"—");
-        setText("stat-stored", (s.stored_gb||0) + " GB");
+        setText("stat-queued",    fmt(s.queued));
+        setText("stat-active",    s.active + "/" + (mc||MAX_CON));
+        setText("stat-done",      fmt(s.done));
+        setText("stat-failed",    fmt(s.failed));
+        setText("stat-speed",     s.avg_speed||"—");
+        setText("stat-stored",    (s.stored_gb||0) + " GB");
+        setText("stat-queue-est", (s.queued_est_gb||0) + " GB");
+        setText("stat-eta-queue", s.eta_queue||"—");
+        setText("stat-eta-total", s.eta_total||"—");
     }
 
     function updateAlerts(s, activeCount) {
@@ -2043,12 +2127,6 @@ function ktCopyUrl(url, btn) {
         $avgSpeed    = MovieFileTransfer::done()->whereNotNull('transfer_speed_mbps')->avg('transfer_speed_mbps');
         $avgDuration = MovieFileTransfer::done()->whereNotNull('duration_seconds')->avg('duration_seconds');
 
-        $etaStr = '—';
-        if ($queued > 0 && $avgDuration > 0) {
-            $etaHours = round(($queued * $avgDuration) / max(1, TransferMovieToHetzner::MAX_CONCURRENT) / 3600, 1);
-            $etaStr   = "~{$etaHours}h";
-        }
-
         $storedGb = round(
             MovieFileTransfer::done()->whereNotNull('dest_size_bytes')->sum('dest_size_bytes') / 1_073_741_824,
             2
@@ -2066,18 +2144,71 @@ function ktCopyUrl(url, btn) {
 
         $totalActive = MovieModel::where('status', 'Active')->whereNotNull('url')->count();
 
+        // ── New stats ──────────────────────────────────────────────────────────
+
+        // Average file size from completed transfers with known size
+        $avgSizeBytes = MovieFileTransfer::done()->whereNotNull('dest_size_bytes')->avg('dest_size_bytes') ?? 0;
+        $avgSizeMb    = $avgSizeBytes > 0 ? (int) round($avgSizeBytes / 1_048_576) : 0;
+
+        // Estimated GB to transfer everything currently in queue
+        $queuedEstGb = $avgSizeMb > 0
+            ? round($avgSizeMb * $queued / 1024, 1)
+            : 0;
+
+        // is_muno movie count and estimated total size
+        $munoCount = \DB::table('movie_models')
+            ->where('is_muno', 'Yes')
+            ->where('status', 'Active')
+            ->whereNotNull('url')->where('url', '!=', '')
+            ->count();
+        $munoEstTb = $avgSizeMb > 0
+            ? round($avgSizeMb * $munoCount / 1024 / 1024, 1)
+            : 0;
+
+        // ETA for current queue only (at current avg speed × max concurrent workers)
+        $etaQueueStr = '—';
+        if ($queued > 0 && $avgSizeMb > 0 && $avgSpeed > 0) {
+            $totalMb        = $queued * $avgSizeMb;
+            $mbPerSecTotal  = $avgSpeed * TransferMovieToHetzner::MAX_CONCURRENT;
+            $etaQueueSecs   = $totalMb / $mbPerSecTotal;
+            $etaQueueStr    = self::formatEtaSeconds($etaQueueSecs);
+        }
+
+        // ETA for full remaining backlog (queued + not-yet-queued)
+        $totalRemaining = $queued + $notQueued;
+        $etaTotalStr = '—';
+        if ($totalRemaining > 0 && $avgSizeMb > 0 && $avgSpeed > 0) {
+            $totalMb       = $totalRemaining * $avgSizeMb;
+            $mbPerSecTotal = $avgSpeed * TransferMovieToHetzner::MAX_CONCURRENT;
+            $etaTotalStr   = self::formatEtaSeconds($totalMb / $mbPerSecTotal);
+        }
+
         return [
-            'queued'       => $queued,
-            'active'       => $active,
-            'done'         => $done,
-            'failed'       => $failed,
-            'eta'          => $etaStr,
-            'avg_speed'    => $avgSpeed ? number_format($avgSpeed, 1) . ' MB/s' : '—',
-            'stored_gb'    => $storedGb,
-            'not_queued'   => $notQueued,
-            'total_active' => $totalActive,
+            'queued'          => $queued,
+            'active'          => $active,
+            'done'            => $done,
+            'failed'          => $failed,
+            'avg_speed'       => $avgSpeed ? number_format($avgSpeed, 1) . ' MB/s' : '—',
+            'stored_gb'       => $storedGb,
+            'not_queued'      => $notQueued,
+            'total_active'    => $totalActive,
             'avg_speed_raw'   => $avgSpeed,
             'avg_duration'    => $avgDuration,
+            // Estimation stats
+            'avg_size_mb'     => $avgSizeMb,
+            'queued_est_gb'   => $queuedEstGb,
+            'muno_count'      => $munoCount,
+            'muno_est_tb'     => $munoEstTb,
+            'eta_queue'       => $etaQueueStr,
+            'eta_total'       => $etaTotalStr,
         ];
+    }
+
+    private static function formatEtaSeconds(float $seconds): string
+    {
+        if ($seconds <= 0) return '—';
+        if ($seconds < 3600)  return round($seconds / 60) . 'm';
+        if ($seconds < 86400) return round($seconds / 3600, 1) . 'h';
+        return round($seconds / 86400, 1) . 'd';
     }
 }
