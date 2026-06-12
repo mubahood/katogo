@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  * The temp file is written to /mnt/HC_Volume_105999006/transfer_tmp/ on the VPS
  * (the attached Hetzner volume) to avoid filling the root disk.
  *
- * Concurrency: controlled by the 'transfers' queue worker (numprocs=2 in Supervisor)
+ * Concurrency: controlled by the 'transfers' queue worker (numprocs=20 in Supervisor)
  * + a cache-based global slot lock so at most MAX_CONCURRENT jobs run simultaneously.
  */
 class TransferMovieToHetzner implements ShouldQueue
@@ -38,10 +38,16 @@ class TransferMovieToHetzner implements ShouldQueue
     public int $tries = 1;
 
     /** Max simultaneous transfers across all workers (enforced via cache lock). */
-    const MAX_CONCURRENT = 2;
+    const MAX_CONCURRENT = 100;
 
     /** Cache key prefix for the global slot counter. */
     const SLOT_KEY = 'movie_transfer_active_slots';
+
+    /**
+     * Index into headerStrategies() that succeeded in verifySource().
+     * streamDownload() starts from this index so it skips known-bad strategies.
+     */
+    private int $winningStrategy = 0;
 
     public function __construct(public readonly int $transferId) {}
 
@@ -112,10 +118,10 @@ class TransferMovieToHetzner implements ShouldQueue
             $tmpFile = $this->streamDownload($transfer, $tmpDir);
 
             // Step 4: Upload temp file to Hetzner Storage
-            $hetzner   = new HetznerStorageService();
-            $destPath  = $this->buildDestPath($transfer);
-            $hetzner->mkdir('movies/' . date('Y') . '/' . date('m'));
-            $uploaded  = $hetzner->upload($destPath, $tmpFile);
+            $hetzner  = new HetznerStorageService();
+            $destPath = $this->buildDestPath($transfer);
+            $hetzner->mkdir('movies'); // single-level — 201 if new, 405 if exists, both OK
+            $uploaded = $hetzner->upload($destPath, $tmpFile);
 
             if (!$uploaded) {
                 throw new \RuntimeException("Hetzner WebDAV upload returned failure for path: {$destPath}");
@@ -164,27 +170,44 @@ class TransferMovieToHetzner implements ShouldQueue
 
     private function verifySource(MovieFileTransfer $transfer): void
     {
-        $url = $this->sanitizeUrl($transfer->source_url);
-        $ch  = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_NOBODY         => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 10,
-            CURLOPT_TIMEOUT        => 30,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; KatogoTransfer/1.0)',
-        ] + $this->curlSslOptions($url));
+        $url       = $this->sanitizeUrl($transfer->source_url);
+        $strategies = $this->headerStrategies($url);
 
-        curl_exec($ch);
-        $httpCode      = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $contentLength = (int) curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
-        $effectiveUrl  = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
-        $curlError     = curl_error($ch);
-        curl_close($ch);
+        $httpCode      = 0;
+        $contentLength = 0;
+        $effectiveUrl  = null;
+        $curlError     = '';
+
+        foreach ($strategies as $idx => $headers) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_NOBODY         => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS      => 10,
+                CURLOPT_TIMEOUT        => 30,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_HTTPHEADER     => $headers,
+            ] + $this->curlSslOptions($url));
+
+            curl_exec($ch);
+            $httpCode      = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentLength = (int) curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+            $effectiveUrl  = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL) ?: null;
+            $curlError     = curl_error($ch);
+            curl_close($ch);
+
+            if (!$curlError && $httpCode >= 200 && $httpCode < 400) {
+                $this->winningStrategy = $idx;
+                Log::info("[TransferMovieToHetzner] #{$this->transferId} verifySource: strategy {$idx} succeeded (HTTP {$httpCode}).");
+                break;
+            }
+
+            Log::warning("[TransferMovieToHetzner] #{$this->transferId} verifySource: strategy {$idx} failed — HTTP {$httpCode}" . ($curlError ? " ({$curlError})" : '') . '.');
+        }
 
         if ($curlError || $httpCode < 200 || $httpCode >= 400) {
             throw new \RuntimeException(
-                "Source URL unreachable — HTTP {$httpCode}" . ($curlError ? ": {$curlError}" : '')
+                "Source URL unreachable after all header strategies — HTTP {$httpCode}" . ($curlError ? ": {$curlError}" : '')
             );
         }
 
@@ -192,7 +215,6 @@ class TransferMovieToHetzner implements ShouldQueue
         if ($contentLength > 0) {
             $updates['source_size_bytes'] = $contentLength;
         }
-        // If the effective URL after redirects differs, store the sanitized version
         if ($effectiveUrl && $effectiveUrl !== $transfer->source_url) {
             $updates['notes'] = ($transfer->notes ? $transfer->notes . ' | ' : '')
                 . 'Effective URL after redirects: ' . $effectiveUrl;
@@ -211,70 +233,88 @@ class TransferMovieToHetzner implements ShouldQueue
             throw new \RuntimeException("Cannot open temp file for writing: {$tmpFile}");
         }
 
-        $lastProgressUpdate = 0;
-        $startTime          = microtime(true);
+        $url        = $this->sanitizeUrl($transfer->source_url);
+        $strategies = $this->headerStrategies($url);
 
-        $url = $this->sanitizeUrl($transfer->source_url);
-        $ch  = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_FILE           => $fh,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 10,
-            CURLOPT_TIMEOUT        => 7200,
-            CURLOPT_CONNECTTIMEOUT => 30,
-            CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; KatogoTransfer/1.0)',
-            CURLOPT_BUFFERSIZE     => 128 * 1024,
-            CURLOPT_NOPROGRESS     => false,
-            CURLOPT_PROGRESSFUNCTION => function (
-                $_handle,
-                int $downloadTotal,
-                int $downloadedBytes,
-                int $_uploadTotal,
-                int $_uploadedBytes
-            ) use ($transfer, &$lastProgressUpdate, $startTime) {
-                // Update progress every 5 MB to avoid excessive DB writes
-                if ($downloadedBytes - $lastProgressUpdate < 5 * 1024 * 1024) {
-                    return 0; // returning non-zero aborts the transfer
-                }
-                $lastProgressUpdate = $downloadedBytes;
+        $httpCode  = 0;
+        $curlError = '';
+        $succeeded = false;
 
-                $elapsed  = max(0.1, microtime(true) - $startTime);
-                $speedBps = $downloadedBytes / $elapsed;
-                $speedMbps = round($speedBps / 1_048_576, 2);
+        foreach ($strategies as $idx => $headers) {
+            // Skip strategies we already know failed at verify time
+            if ($idx < $this->winningStrategy) {
+                continue;
+            }
 
-                $pct = ($downloadTotal > 0)
-                    ? min(95, (int)(($downloadedBytes / $downloadTotal) * 95))
-                    : 0;
+            // Reset the file so each retry starts clean
+            ftruncate($fh, 0);
+            rewind($fh);
 
-                $eta = ($speedBps > 0 && $downloadTotal > $downloadedBytes)
-                    ? (int)(($downloadTotal - $downloadedBytes) / $speedBps)
-                    : null;
+            $lastProgressUpdate = 0;
+            $startTime          = microtime(true);
 
-                $transfer->update([
-                    'bytes_transferred'   => $downloadedBytes,
-                    'progress_pct'        => $pct,
-                    'transfer_speed_mbps' => $speedMbps,
-                    'eta_seconds'         => $eta,
-                ]);
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_FILE             => $fh,
+                CURLOPT_FOLLOWLOCATION   => true,
+                CURLOPT_MAXREDIRS        => 10,
+                CURLOPT_TIMEOUT          => 7200,
+                CURLOPT_CONNECTTIMEOUT   => 30,
+                CURLOPT_HTTPHEADER       => $headers,
+                CURLOPT_BUFFERSIZE       => 128 * 1024,
+                CURLOPT_NOPROGRESS       => false,
+                CURLOPT_PROGRESSFUNCTION => function (
+                    $_handle,
+                    int $downloadTotal,
+                    int $downloadedBytes,
+                    int $_uploadTotal,
+                    int $_uploadedBytes
+                ) use ($transfer, &$lastProgressUpdate, $startTime) {
+                    if ($downloadedBytes - $lastProgressUpdate < 5 * 1024 * 1024) {
+                        return 0;
+                    }
+                    $lastProgressUpdate = $downloadedBytes;
+                    $elapsed   = max(0.1, microtime(true) - $startTime);
+                    $speedBps  = $downloadedBytes / $elapsed;
+                    $pct = ($downloadTotal > 0)
+                        ? min(95, (int)(($downloadedBytes / $downloadTotal) * 95))
+                        : 0;
+                    $eta = ($speedBps > 0 && $downloadTotal > $downloadedBytes)
+                        ? (int)(($downloadTotal - $downloadedBytes) / $speedBps)
+                        : null;
+                    $transfer->update([
+                        'bytes_transferred'   => $downloadedBytes,
+                        'progress_pct'        => $pct,
+                        'transfer_speed_mbps' => round($speedBps / 1_048_576, 2),
+                        'eta_seconds'         => $eta,
+                    ]);
+                    return 0;
+                },
+            ] + $this->curlSslOptions($url));
 
-                return 0; // must return 0 to continue
-            },
-        ] + $this->curlSslOptions($url));
+            $result    = curl_exec($ch);
+            $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
 
-        $result    = curl_exec($ch);
-        $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
-        fclose($fh);
+            if ($result !== false && !$curlError && $httpCode >= 200 && $httpCode < 400) {
+                $this->winningStrategy = $idx;
+                $succeeded = true;
+                Log::info("[TransferMovieToHetzner] #{$this->transferId} download: strategy {$idx} succeeded (HTTP {$httpCode}).");
+                break;
+            }
 
-        if ($result === false || $curlError) {
-            @unlink($tmpFile);
-            throw new \RuntimeException("cURL download failed: {$curlError}");
+            Log::warning("[TransferMovieToHetzner] #{$this->transferId} download: strategy {$idx} failed — HTTP {$httpCode}" . ($curlError ? " ({$curlError})" : '') . '. Retrying with next strategy.');
         }
 
-        if ($httpCode < 200 || $httpCode >= 400) {
+        fclose($fh);
+
+        if (!$succeeded) {
             @unlink($tmpFile);
-            throw new \RuntimeException("Source returned HTTP {$httpCode} during download");
+            if ($curlError) {
+                throw new \RuntimeException("cURL download failed after all header strategies: {$curlError}");
+            }
+            throw new \RuntimeException("Source returned HTTP {$httpCode} after all header strategies");
         }
 
         $fileSize = filesize($tmpFile);
@@ -284,8 +324,9 @@ class TransferMovieToHetzner implements ShouldQueue
         }
 
         Log::info("[TransferMovieToHetzner] #{$this->transferId} download complete.", [
-            'bytes' => $fileSize,
-            'path'  => $tmpFile,
+            'bytes'    => $fileSize,
+            'strategy' => $this->winningStrategy,
+            'path'     => $tmpFile,
         ]);
 
         return $tmpFile;
@@ -332,30 +373,111 @@ class TransferMovieToHetzner implements ShouldQueue
             'bytes_transferred' => 0,
         ]);
 
-        Log::error("[TransferMovieToHetzner] #{$this->transferId} failed (attempt {$attempt}/{$maxAttempts}).", [
-            'movie_id'   => $transfer->movie_id,
-            'error'      => $e->getMessage(),
-            'retry_in'   => $willRetry ? "{$delay} minutes" : 'no more retries',
-        ]);
+        try {
+            Log::error("[TransferMovieToHetzner] #{$this->transferId} failed (attempt {$attempt}/{$maxAttempts}).", [
+                'movie_id'   => $transfer->movie_id,
+                'error'      => $e->getMessage(),
+                'retry_in'   => $willRetry ? "{$delay} minutes" : 'no more retries',
+            ]);
+        } catch (\Throwable) {
+            // Log failure must never crash the job — status is already saved above
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Returns ordered sets of CURLOPT_HTTPHEADER arrays to try for a given source URL.
+     *
+     * Discovery (2026-06-13): most BunnyCDN zones used here (munotech, munotech3, nkuba,
+     * yuti) have munowatch.org on a BLOCKLIST — sending that Referer returns 403.
+     * Sending NO Referer returns 200 on all tested zones.
+     * munotek-vault.b-cdn.net uses an ALLOWLIST that requires munowatch.org/munowatch.com.
+     *
+     * Strategy order:
+     *   0. No Referer, minimal UA — works for all zones that have no / blocklist-only protection
+     *   1. OkHttp + no Referer — different UA profile, no hotlink header
+     *   2. munowatch.com Referer — works for munotek-vault allowlist, safe for others
+     *   3. munowatch.org Referer — for munotek-vault that specifically requires .org
+     */
+    private function headerStrategies(string $url): array
+    {
+        $lower = strtolower($url);
+
+        if (str_contains($lower, 'b-cdn.net') || str_contains($lower, 'munotek')) {
+            return [
+                // 0: No Referer — works for all zones with no protection or blocklist-only
+                [
+                    'User-Agent: Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                    'Accept: video/mp4,video/webm,video/*;q=0.9,*/*;q=0.5',
+                    'Accept-Language: en-US,en;q=0.9',
+                    'Connection: keep-alive',
+                ],
+                // 1: OkHttp UA, no Referer — different fingerprint, same approach
+                [
+                    'User-Agent: okhttp/4.12.0',
+                    'Accept-Encoding: identity',
+                    'Connection: keep-alive',
+                ],
+                // 2: munowatch.com Referer — works for munotek-vault allowlist
+                [
+                    'User-Agent: Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                    'Referer: https://munowatch.com/',
+                    'Origin: https://munowatch.com',
+                    'Accept: video/mp4,video/*;q=0.9,*/*;q=0.5',
+                    'Accept-Language: en-US,en;q=0.9',
+                    'Connection: keep-alive',
+                ],
+                // 3: munowatch.org Referer — for munotek-vault zones that require .org specifically
+                [
+                    'User-Agent: Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                    'Referer: https://munowatch.org/',
+                    'Origin: https://munowatch.org',
+                    'Accept: video/mp4,video/*;q=0.9,*/*;q=0.5',
+                    'Accept-Language: en-US,en;q=0.9',
+                    'Connection: keep-alive',
+                ],
+            ];
+        }
+
+        // Generic fallback for non-CDN / unknown sources
+        return [[
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Safari/537.36',
+            'Accept: video/mp4,video/*;q=0.9,application/octet-stream;q=0.5,*/*;q=0.1',
+            'Accept-Language: en-US,en;q=0.9',
+            'Connection: keep-alive',
+        ]];
+    }
+
     private function buildDestPath(MovieFileTransfer $transfer): string
     {
-        $safe = preg_replace('/[^a-z0-9_\-]/i', '_', $transfer->movie_title ?? 'movie');
-        $safe = strtolower(substr($safe, 0, 50));
-        $safe = trim($safe, '_');
+        // Sanitise title: lowercase, spaces → underscores, strip specials, cap at 40 chars
+        $raw  = $transfer->movie_title ?? 'movie';
+        $safe = strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', $raw), '_'));
+        $safe = substr($safe, 0, 40);
 
+        // Extract extension from source URL (mp4, mkv, avi …), default to mp4
+        $ext = 'mp4';
+        if ($transfer->source_url) {
+            $path    = parse_url($transfer->source_url, PHP_URL_PATH) ?? '';
+            $guessed = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            if ($guessed && preg_match('/^[a-z0-9]{2,5}$/', $guessed)) {
+                $ext = $guessed;
+            }
+        }
+
+        // Flat layout: movies/{transfer_id}_{YYYY}_{MM}_movie_{movie_id}_{safe_title}.ext
+        // All files in one folder — no nested year/month subdirectories.
         return sprintf(
-            'movies/%s/%s/movie_%d_%s_%d.mp4',
+            'movies/%d_%s_%s_movie_%d_%s.%s',
+            $transfer->id,
             date('Y'),
             date('m'),
             $transfer->movie_id ?? 0,
             $safe,
-            $transfer->id
+            $ext
         );
-        // e.g. movies/2026/06/movie_12345_akaboozi_mu_kibuga_99.mp4
+        // e.g. movies/99_2026_06_movie_21393_sex_tape_jr.mp4
     }
 
     /** Temp directory: prefer the attached Hetzner volume to avoid filling root disk. */

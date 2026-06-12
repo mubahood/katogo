@@ -724,7 +724,7 @@ class MovieFileTransferController extends AdminController
 
     public function processNow()
     {
-        Artisan::call('transfers:process', ['--concurrency' => 20, '--limit' => 60]);
+        Artisan::call('transfers:process', ['--concurrency' => 100, '--limit' => 300]);
         admin_toastr('Dispatch command ran — transfers have been dispatched.', 'success');
         return redirect('/movie-file-transfers/monitor');
     }
