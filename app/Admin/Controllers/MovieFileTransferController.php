@@ -25,12 +25,43 @@ class MovieFileTransferController extends AdminController
     protected function grid(): Grid
     {
         $grid = new Grid(new MovieFileTransfer());
-
         $grid->model()->orderBy('priority', 'desc')->orderBy('id', 'desc');
         $grid->disableBatchActions();
         $grid->disableCreateButton();
         $grid->paginate(30);
 
+        // ── Toolbar ───────────────────────────────────────────────────────────
+        $grid->tools(function ($tools) {
+            $tools->append('
+                <div class="btn-group" style="margin-right:4px;">
+                    <a href="/movie-file-transfers/process-now" class="btn btn-sm btn-primary"
+                       title="Run transfers:process right now — dispatches up to 6 queued jobs">
+                        <i class="fa fa-play-circle"></i> Process Now
+                    </a>
+                </div>
+                <div class="btn-group" style="margin-right:4px;">
+                    <a href="/movie-file-transfers/retry-all-failed" class="btn btn-sm btn-warning"
+                       onclick="return confirm(\'Re-queue all failed transfers?\')"
+                       title="Reset every failed record back to queued">
+                        <i class="fa fa-refresh"></i> Retry All Failed
+                    </a>
+                </div>
+                <div class="btn-group" style="margin-right:4px;">
+                    <a href="/movie-file-transfers/monitor" class="btn btn-sm btn-info"
+                       title="Real-time pipeline monitor with auto-refresh">
+                        <i class="fa fa-heartbeat"></i> Monitor
+                    </a>
+                </div>
+                <div class="btn-group">
+                    <a href="/movie-file-transfers/backfill" class="btn btn-sm btn-default"
+                       title="Queue all un-transferred active movies">
+                        <i class="fa fa-database"></i> Backfill
+                    </a>
+                </div>
+            ');
+        });
+
+        // ── Filters ───────────────────────────────────────────────────────────
         $grid->filter(function ($f) {
             $f->disableIdFilter();
             $f->equal('status', 'Status')->select([
@@ -47,225 +78,713 @@ class MovieFileTransferController extends AdminController
                 'munowatch' => 'MunoWatch',
                 'gdrive'    => 'Google Drive',
                 'firebase'  => 'Firebase',
-                'direct'    => 'Direct URL',
+                'hetzner'   => 'Hetzner',
                 'other'     => 'Other',
             ]);
             $f->like('movie_title', 'Movie Title');
-            $f->equal('movie_id', 'Movie ID');
+            $f->equal('movie_id',   'Movie ID');
             $f->between('created_at', 'Queued On')->datetime();
         });
 
-        $grid->column('id', 'ID')->sortable()->width(60);
+        // ── Columns ───────────────────────────────────────────────────────────
+
+        $grid->column('id', 'ID')->sortable()->width(55);
 
         $grid->column('movie_title', 'Movie')->display(function () {
             $poster = $this->movie_poster_url
-                ? "<img src='" . e($this->movie_poster_url) . "' style='width:32px;height:48px;object-fit:cover;border-radius:3px;margin-right:6px;vertical-align:middle;'>"
+                ? "<img src='" . e($this->movie_poster_url) . "' style='width:30px;height:45px;object-fit:cover;border-radius:3px;margin-right:6px;vertical-align:middle;'>"
                 : "<i class='fa fa-film' style='margin-right:6px;color:#aaa;'></i>";
-            $title = e($this->movie_title ?? 'Untitled');
-            $year  = $this->movie_year ? " <small class='text-muted'>({$this->movie_year})</small>" : '';
-            $id    = $this->movie_id ? " <small class='label label-default'>#{$this->movie_id}</small>" : '';
-            return "{$poster}<strong>{$title}</strong>{$year}{$id}";
-        })->width(260);
+            $title  = e($this->movie_title ?? 'Untitled');
+            $year   = $this->movie_year ? " <small class='text-muted'>({$this->movie_year})</small>" : '';
+            $mid    = $this->movie_id   ? " <small class='label label-default'>#{$this->movie_id}</small>" : '';
+            return "{$poster}<strong>{$title}</strong>{$year}{$mid}";
+        })->width(250);
 
         $grid->column('priority', 'Priority')->display(function ($v) {
-            if ($v >= 1000) return "<span class='label label-danger'><i class='fa fa-fire'></i> " . number_format($v) . "</span>";
-            if ($v >= 100)  return "<span class='label label-warning'>" . number_format($v) . "</span>";
-            if ($v > 0)     return "<span class='label label-default'>{$v}</span>";
-            return "<span class='text-muted'>—</span>";
-        })->sortable()->width(90);
+            if ($v >= 999000) return "<span class='label label-danger'><i class='fa fa-fire'></i> MAX</span>";
+            if ($v >= 10000)  return "<span class='label label-danger'><i class='fa fa-fire'></i> " . number_format($v) . "</span>";
+            if ($v >= 100)    return "<span class='label label-warning'>" . number_format($v) . "</span>";
+            if ($v > 0)       return "<span class='label label-default'>" . number_format($v) . "</span>";
+            return "<span class='text-muted'>0</span>";
+        })->sortable()->width(85);
 
-        $grid->column('source_type', 'Source')->display(function ($v) {
-            $colors = ['munowatch' => 'info','gdrive' => 'warning','firebase' => 'primary','hetzner' => 'success','direct' => 'default','other' => 'default'];
-            $c = $colors[$v] ?? 'default';
-            return "<span class='label label-{$c}'>" . strtoupper($v ?? '?') . "</span>";
-        })->width(90);
+        $grid->column('source_type', 'Src')->display(function ($v) {
+            $map = [
+                'munowatch' => ['info',    'MW'],
+                'gdrive'    => ['warning', 'GD'],
+                'firebase'  => ['primary', 'FB'],
+                'hetzner'   => ['success', 'HZ'],
+            ];
+            [$color, $lbl] = $map[$v] ?? ['default', strtoupper(substr($v ?? '?', 0, 3))];
+            return "<span class='label label-{$color}'>{$lbl}</span>";
+        })->width(55);
 
-        $grid->column('status', 'Status')->display(function () {
+        $grid->column('status', 'Status & Progress')->display(function () {
             $color = $this->status_badge_color;
-            $label = $this->status_label;
+            $lbl   = $this->status_label;
+            $icon  = match ($this->status) {
+                'queued'       => 'fa-clock-o',
+                'verifying'    => 'fa-search',
+                'transferring' => 'fa-exchange',
+                'completing'   => 'fa-check-square-o',
+                'done'         => 'fa-check-circle',
+                'failed'       => 'fa-times-circle',
+                'cancelled'    => 'fa-ban',
+                'skipped'      => 'fa-forward',
+                default        => 'fa-circle',
+            };
+
             if ($this->isActive()) {
-                $pct = $this->progress_pct;
-                $speed = $this->formatted_speed;
-                $eta   = $this->formatted_eta;
+                $pct      = $this->progress_pct ?? 0;
+                $barColor = $this->status === 'completing' ? '#f39c12' : '#00a65a';
                 return "
-                    <span class='label label-{$color}'>{$label}</span><br>
-                    <div style='width:120px;background:#eee;border-radius:3px;margin-top:3px;'>
-                      <div style='width:{$pct}%;background:#337ab7;height:6px;border-radius:3px;'></div>
+                    <span class='label label-{$color}'><i class='fa {$icon}'></i> {$lbl}</span>
+                    <div style='position:relative;margin-top:5px;background:#ddd;border-radius:4px;height:16px;overflow:hidden;'>
+                      <div style='width:" . max(3, $pct) . "%;background:{$barColor};height:16px;border-radius:4px;
+                                  background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0) 0,rgba(255,255,255,0) 10px,rgba(255,255,255,.18) 10px,rgba(255,255,255,.18) 20px);
+                                  background-size:20px 20px;'></div>
+                      <span style='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;font-weight:bold;color:#222;'>{$pct}%</span>
                     </div>
-                    <small class='text-muted'>{$pct}% &bull; {$speed} &bull; ETA {$eta}</small>
+                    <small class='text-muted' style='font-size:10px;'>{$this->formatted_speed} &bull; ETA {$this->formatted_eta}</small>
                 ";
             }
             if ($this->isFailed()) {
-                $err = e(substr($this->error_message ?? '', 0, 50));
-                return "<span class='label label-{$color}'>{$label}</span><br><small class='text-danger'>{$err}</small>";
+                $err = e(substr($this->error_message ?? '', 0, 55));
+                return "<span class='label label-{$color}'><i class='fa {$icon}'></i> {$lbl}</span>
+                        <br><small class='text-danger' style='font-size:10px;'><i class='fa fa-warning'></i> {$err}</small>";
             }
-            return "<span class='label label-{$color}'>{$label}</span>";
+            if ($this->isDone()) {
+                $extra = $this->formatted_speed !== '—'
+                    ? "<br><small class='text-muted' style='font-size:10px;'>{$this->formatted_speed} &bull; {$this->formatted_duration}</small>"
+                    : '';
+                return "<span class='label label-{$color}'><i class='fa {$icon}'></i> {$lbl}</span>{$extra}";
+            }
+            return "<span class='label label-{$color}'><i class='fa {$icon}'></i> {$lbl}</span>";
         })->width(200);
 
-        $grid->column('formatted_size', 'Size')->width(80);
-        $grid->column('formatted_duration', 'Duration')->display(function () {
-            return $this->isDone() ? $this->formatted_duration : '—';
-        })->width(80);
+        $grid->column('formatted_size', 'Size')->width(70);
 
         $grid->column('attempt_count', 'Tries')->display(function () {
             $max = $this->max_attempts ?? 3;
-            $cnt = $this->attempt_count;
-            $color = $cnt >= $max ? 'danger' : ($cnt > 0 ? 'warning' : 'default');
-            return "<span class='label label-{$color}'>{$cnt}/{$max}</span>";
-        })->width(60);
+            $cnt = $this->attempt_count ?? 0;
+            $c   = $cnt >= $max ? 'danger' : ($cnt > 0 ? 'warning' : 'default');
+            return "<span class='label label-{$c}'>{$cnt}/{$max}</span>";
+        })->width(55);
 
         $grid->column('queued_at', 'Queued')->display(function ($v) {
             return $v ? \Carbon\Carbon::parse($v)->diffForHumans() : '—';
-        })->width(110);
+        })->sortable()->width(95);
 
-        $grid->column('actions', 'Actions')->display(function () {
+        $grid->column('_actions', 'Actions')->display(function () {
             $id   = $this->id;
             $btns = [];
+
             if ($this->isDone() && $this->dest_url) {
-                $btns[] = "<a href='" . e($this->dest_url) . "' target='_blank' class='btn btn-xs btn-success' title='View on Hetzner'><i class='fa fa-external-link'></i></a>";
+                $btns[] = "<a href='" . e($this->dest_url) . "' target='_blank'
+                              class='btn btn-xs btn-success' title='View on Hetzner CDN'>
+                              <i class='fa fa-cloud'></i>
+                           </a>";
             }
             if ($this->isRetriable() || $this->isFailed()) {
-                $btns[] = "<a href='/movie-file-transfers/{$id}/retry' class='btn btn-xs btn-warning' title='Retry' onclick=\"return confirm('Retry this transfer?')\"><i class='fa fa-refresh'></i></a>";
+                $btns[] = "<a href='/movie-file-transfers/{$id}/retry'
+                              class='btn btn-xs btn-warning' title='Retry this transfer'
+                              onclick=\"return confirm('Retry transfer #{$id}?')\">
+                              <i class='fa fa-refresh'></i>
+                           </a>";
             }
-            if (!$this->isDone() && !$this->isFailed()) {
-                $btns[] = "<a href='/movie-file-transfers/{$id}/cancel' class='btn btn-xs btn-danger' title='Cancel' onclick=\"return confirm('Cancel?')\"><i class='fa fa-times'></i></a>";
+            if (!$this->isDone() && !in_array($this->status, [
+                MovieFileTransfer::STATUS_FAILED,
+                MovieFileTransfer::STATUS_CANCELLED,
+                MovieFileTransfer::STATUS_SKIPPED,
+            ])) {
+                $btns[] = "<a href='/movie-file-transfers/{$id}/cancel'
+                              class='btn btn-xs btn-danger' title='Cancel this transfer'
+                              onclick=\"return confirm('Cancel transfer #{$id}?')\">
+                              <i class='fa fa-times'></i>
+                           </a>";
             }
             if ($this->movie_id) {
-                $btns[] = "<a href='/movies-active/{$this->movie_id}/edit' class='btn btn-xs btn-default' title='Edit Movie'><i class='fa fa-pencil'></i></a>";
+                $btns[] = "<a href='/movies-active/{$this->movie_id}/edit'
+                              class='btn btn-xs btn-default' title='Edit movie record'>
+                              <i class='fa fa-pencil'></i>
+                           </a>";
             }
-            $btns[] = "<a href='/movie-file-transfers/{$id}' class='btn btn-xs btn-info' title='Details'><i class='fa fa-eye'></i></a>";
+            $btns[] = "<a href='/movie-file-transfers/{$id}'
+                          class='btn btn-xs btn-info' title='Full details'>
+                          <i class='fa fa-eye'></i>
+                       </a>";
+
             return implode(' ', $btns);
-        })->width(140);
+        })->width(145);
 
         return $grid;
     }
 
-    // ── Index with stats header ───────────────────────────────────────────────
+    // ── Index with stats header + live cards ─────────────────────────────────
 
     public function index(Content $content): Content
     {
-        $stats = $this->getStats();
+        $stats   = $this->getStats();
+        $actives = MovieFileTransfer::active()->orderBy('started_at')->get();
 
         return $content
             ->title('Movie File Transfers')
             ->description('Automated pipeline — source URLs → Hetzner Storage CDN')
+
+            // ── Stat boxes ────────────────────────────────────────────────────
             ->row(function (Row $row) use ($stats) {
-                $row->column(2, new InfoBox('Queued',      'hourglass-half', 'aqua',   '/movie-file-transfers?status=queued',       number_format($stats['queued'])));
-                $row->column(2, new InfoBox('Active',      'exchange',       'blue',   '/movie-file-transfers?status=transferring', $stats['active'] . ' / ' . TransferMovieToHetzner::MAX_CONCURRENT));
-                $row->column(2, new InfoBox('Done',        'check-circle',   'green',  '/movie-file-transfers?status=done',         number_format($stats['done'])));
-                $row->column(2, new InfoBox('Failed',      'times-circle',   'red',    '/movie-file-transfers?status=failed',       number_format($stats['failed'])));
-                $row->column(2, new InfoBox('ETA',         'clock-o',        'yellow', '/movie-file-transfers',                     $stats['eta']));
-                $row->column(2, new InfoBox('Stored',      'hdd-o',          'teal',   '/movie-file-transfers',                     $stats['stored_gb'] . ' GB'));
+                $row->column(2, new InfoBox('Queued',    'hourglass-half', 'aqua',   '/movie-file-transfers?status=queued',       number_format($stats['queued'])));
+                $row->column(2, new InfoBox('Active',    'exchange',       'blue',   '/movie-file-transfers?status=transferring', $stats['active'] . '/' . TransferMovieToHetzner::MAX_CONCURRENT));
+                $row->column(2, new InfoBox('Done',      'check-circle',   'green',  '/movie-file-transfers?status=done',         number_format($stats['done'])));
+                $row->column(2, new InfoBox('Failed',    'times-circle',   'red',    '/movie-file-transfers?status=failed',       number_format($stats['failed'])));
+                $row->column(2, new InfoBox('Avg Speed', 'tachometer',     'yellow', '#',                                         $stats['avg_speed']));
+                $row->column(2, new InfoBox('Stored',    'hdd-o',          'teal',   '#',                                         $stats['stored_gb'] . ' GB'));
             })
-            ->row(function (Row $row) use ($stats) {
-                $row->column(12, function (Column $col) use ($stats) {
+
+            // ── Alerts + Pipeline Controls ────────────────────────────────────
+            ->row(function (Row $row) use ($stats, $actives) {
+                $row->column(8, function (Column $col) use ($stats, $actives) {
                     $html = '';
+
+                    if ($actives->count() > 0) {
+                        $n    = $actives->count();
+                        $html .= "<div class='alert alert-info' style='margin-bottom:8px;padding:8px 14px;'>
+                            <i class='fa fa-spinner fa-spin'></i>
+                            <strong>{$n} transfer" . ($n > 1 ? 's' : '') . " running.</strong>
+                            Page auto-refreshes every 8 seconds.
+                            <span id='refresh-countdown' class='pull-right badge bg-light-blue'>8</span>
+                        </div>";
+                    }
+
                     if ($stats['not_queued'] > 0) {
-                        $html .= "<div class='alert alert-warning' style='margin:10px 0 0;'>
-                          <i class='fa fa-exclamation-triangle'></i>
-                          <strong>" . number_format($stats['not_queued']) . "</strong> active movies still have external video URLs and are not in the transfer queue.
-                          <a href='/movie-file-transfers/backfill' class='btn btn-xs btn-warning' style='margin-left:10px;'>
-                            <i class='fa fa-database'></i> Run Backfill
-                          </a>
+                        $html .= "<div class='alert alert-warning' style='margin-bottom:8px;'>
+                            <i class='fa fa-exclamation-triangle'></i>
+                            <strong>" . number_format($stats['not_queued']) . "</strong> active movies still have external video URLs and are not in the transfer queue.
+                            <a href='/movie-file-transfers/backfill' class='btn btn-xs btn-warning' style='margin-left:8px;'>
+                                <i class='fa fa-database'></i> Run Backfill
+                            </a>
                         </div>";
                     }
                     if ($stats['failed'] > 0) {
-                        $html .= "<div class='alert alert-danger' style='margin:8px 0 0;'>
-                          <i class='fa fa-times-circle'></i>
-                          <strong>" . number_format($stats['failed']) . "</strong> transfers have failed.
-                          <a href='/movie-file-transfers?status=failed' class='btn btn-xs btn-danger' style='margin-left:10px;'>
-                            <i class='fa fa-eye'></i> View Failed
-                          </a>
-                          <a href='/movie-file-transfers/retry-all-failed' class='btn btn-xs btn-warning' style='margin-left:5px;'
-                             onclick=\"return confirm('Retry all failed transfers?')\">
-                            <i class='fa fa-refresh'></i> Retry All Failed
-                          </a>
+                        $html .= "<div class='alert alert-danger' style='margin-bottom:8px;'>
+                            <i class='fa fa-times-circle'></i>
+                            <strong>" . number_format($stats['failed']) . "</strong> transfer(s) failed.
+                            <a href='/movie-file-transfers?status=failed' class='btn btn-xs btn-danger' style='margin-left:8px;'>
+                                <i class='fa fa-eye'></i> View Failed
+                            </a>
+                            <a href='/movie-file-transfers/retry-all-failed' class='btn btn-xs btn-warning' style='margin-left:4px;'
+                               onclick=\"return confirm('Retry all " . $stats['failed'] . " failed transfers?')\">
+                                <i class='fa fa-refresh'></i> Retry All
+                            </a>
                         </div>";
                     }
+                    if ($stats['done'] > 0 && $stats['not_queued'] === 0 && $stats['failed'] === 0 && $actives->isEmpty()) {
+                        $html .= "<div class='alert alert-success' style='margin-bottom:8px;'>
+                            <i class='fa fa-check-circle'></i>
+                            Pipeline is clear. <strong>" . number_format($stats['done']) . "</strong> movies successfully on Hetzner CDN.
+                        </div>";
+                    }
+
                     if ($html) $col->append($html);
                 });
+
+                $row->column(4, function (Column $col) use ($stats) {
+                    $fc = number_format($stats['failed']);
+                    $nq = number_format($stats['not_queued']);
+                    $col->append("
+                        <div class='box box-solid box-primary' style='margin-bottom:0;'>
+                            <div class='box-header with-border' style='padding:8px 12px;'>
+                                <h3 class='box-title' style='font-size:13px;'>
+                                    <i class='fa fa-bolt'></i> Pipeline Controls
+                                </h3>
+                            </div>
+                            <div class='box-body' style='padding:8px;'>
+                                <a href='/movie-file-transfers/process-now'
+                                   class='btn btn-block btn-primary btn-sm' style='margin-bottom:5px;'>
+                                    <i class='fa fa-play-circle'></i> Dispatch Queued Transfers
+                                </a>
+                                <a href='/movie-file-transfers/retry-all-failed'
+                                   class='btn btn-block btn-warning btn-sm' style='margin-bottom:5px;'
+                                   onclick=\"return confirm('Retry all {$fc} failed transfers?')\">
+                                    <i class='fa fa-refresh'></i> Retry All Failed ({$fc})
+                                </a>
+                                <a href='/movie-file-transfers/backfill'
+                                   class='btn btn-block btn-default btn-sm' style='margin-bottom:5px;'>
+                                    <i class='fa fa-database'></i> Queue Backfill ({$nq} pending)
+                                </a>
+                                <a href='/movie-file-transfers/monitor'
+                                   class='btn btn-block btn-info btn-sm'>
+                                    <i class='fa fa-heartbeat'></i> Open Live Monitor
+                                </a>
+                            </div>
+                        </div>
+                    ");
+                });
             })
+
+            // ── Live active transfer cards (only when transfers are running) ──
+            ->row(function (Row $row) use ($actives) {
+                if ($actives->isEmpty()) return;
+
+                $row->column(12, function (Column $col) use ($actives) {
+                    $html = "<div class='box box-success'>
+                        <div class='box-header with-border' style='padding:8px 15px;'>
+                            <h3 class='box-title'>
+                                <i class='fa fa-spinner fa-spin'></i> Active Transfers — Live Progress
+                            </h3>
+                            <div class='box-tools pull-right'>
+                                <span class='label label-success'>
+                                    <i class='fa fa-circle' style='font-size:8px;'></i> LIVE
+                                </span>
+                            </div>
+                        </div>
+                        <div class='box-body' style='padding:10px 15px;'>";
+
+                    foreach ($actives as $t) {
+                        $pct      = $t->progress_pct ?? 0;
+                        $speed    = $t->formatted_speed;
+                        $eta      = $t->formatted_eta;
+                        $size     = $t->formatted_size;
+                        $elapsed  = $t->started_at ? $t->started_at->diffForHumans() : '—';
+                        $worker   = e($t->worker_hostname ?? 'unknown');
+                        $barColor = $t->status === MovieFileTransfer::STATUS_COMPLETING ? '#f39c12' : '#00a65a';
+                        $badge    = strtoupper($t->status_label ?? '');
+
+                        $bytesHuman = '—';
+                        if (($t->bytes_transferred ?? 0) > 0) {
+                            $mb = $t->bytes_transferred / 1_048_576;
+                            $bytesHuman = $mb >= 1024
+                                ? round($mb / 1024, 1) . ' GB'
+                                : round($mb, 0) . ' MB';
+                        }
+
+                        $html .= "
+                            <div style='border:1px solid #c8e6c8;border-radius:8px;padding:14px 16px;
+                                        margin-bottom:12px;background:linear-gradient(135deg,#f6fff6,#edfaed);'>
+                                <!-- Header row -->
+                                <div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;'>
+                                    <div>
+                                        <strong style='font-size:14px;'>
+                                            <i class='fa fa-film'></i>
+                                            #" . $t->id . " &mdash; " . e($t->movie_title ?? 'Untitled') . "
+                                        </strong>
+                                        &nbsp;<span class='label label-default'>movie #" . $t->movie_id . "</span>
+                                        &nbsp;<span class='label label-" . $t->status_badge_color . "'>{$badge}</span>
+                                    </div>
+                                    <div style='display:flex;gap:6px;align-items:center;flex-shrink:0;'>
+                                        <small class='text-muted'>
+                                            <i class='fa fa-clock-o'></i> Started " . $elapsed . "
+                                        </small>
+                                        <a href='/movie-file-transfers/" . $t->id . "'
+                                           class='btn btn-xs btn-info' title='View full details'>
+                                            <i class='fa fa-eye'></i> Details
+                                        </a>
+                                        <a href='/movie-file-transfers/" . $t->id . "/cancel'
+                                           class='btn btn-xs btn-danger' title='Stop this transfer'
+                                           onclick=\"return confirm('Cancel transfer #" . $t->id . "?')\">
+                                            <i class='fa fa-stop-circle'></i> Stop
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <!-- Progress bar -->
+                                <div style='position:relative;background:#ccc;border-radius:6px;height:26px;
+                                            overflow:hidden;margin-bottom:10px;'>
+                                    <div style='width:" . max(2, $pct) . "%;background:{$barColor};height:26px;
+                                                border-radius:6px;transition:width 0.3s ease;
+                                                background-image:repeating-linear-gradient(
+                                                    45deg,rgba(255,255,255,0) 0,rgba(255,255,255,0) 10px,
+                                                    rgba(255,255,255,.18) 10px,rgba(255,255,255,.18) 20px);'>
+                                    </div>
+                                    <span style='position:absolute;left:50%;top:50%;
+                                                 transform:translate(-50%,-50%);font-size:13px;
+                                                 font-weight:bold;color:#1a1a1a;
+                                                 text-shadow:0 0 4px rgba(255,255,255,0.9);'>
+                                        {$pct}%
+                                    </span>
+                                </div>
+
+                                <!-- Stats row -->
+                                <div style='display:flex;flex-wrap:wrap;gap:18px;font-size:12px;color:#444;'>
+                                    <span title='Current speed'>
+                                        <i class='fa fa-tachometer text-blue'></i>&nbsp;
+                                        <strong>{$speed}</strong>
+                                    </span>
+                                    <span title='Bytes downloaded so far'>
+                                        <i class='fa fa-download text-green'></i>&nbsp;
+                                        {$bytesHuman} of {$size}
+                                    </span>
+                                    <span title='Estimated completion time'>
+                                        <i class='fa fa-clock-o text-orange'></i>&nbsp;
+                                        ETA: <strong>{$eta}</strong>
+                                    </span>
+                                    <span title='Worker server'>
+                                        <i class='fa fa-server text-purple'></i>&nbsp;
+                                        {$worker}
+                                    </span>
+                                    <span title='Attempt number'>
+                                        <i class='fa fa-repeat text-muted'></i>&nbsp;
+                                        Attempt " . $t->attempt_count . "/" . $t->max_attempts . "
+                                    </span>
+                                </div>
+                            </div>
+                        ";
+                    }
+
+                    $html .= "</div></div>";
+                    $col->append($html);
+
+                    // Auto-refresh countdown
+                    $col->append("
+                        <script>
+                        (function(){
+                            var n = 8, el = document.getElementById('refresh-countdown');
+                            setInterval(function(){
+                                n--;
+                                if (el) el.textContent = n;
+                                if (n <= 0) location.reload();
+                            }, 1000);
+                        })();
+                        </script>
+                    ");
+                });
+            })
+
             ->body($this->grid());
     }
 
-    // ── Monitor page ──────────────────────────────────────────────────────────
+    // ── Monitor page (real-time dashboard) ───────────────────────────────────
 
     public function monitor(Content $content): Content
     {
         $stats   = $this->getStats();
         $actives = MovieFileTransfer::active()->orderBy('started_at')->get();
-        $failed  = MovieFileTransfer::failed()->orderByDesc('updated_at')->limit(10)->get();
-
-        $activeRows = $actives->map(function ($t) {
-            $pct = $t->progress_pct;
-            $bar = "<div style='background:#eee;border-radius:3px;min-width:120px;'>
-                       <div style='width:{$pct}%;background:#337ab7;height:10px;border-radius:3px;'></div>
-                     </div><small>{$pct}%</small>";
-            return ["#{$t->id}", e($t->movie_title ?? '—'), $bar, $t->formatted_speed, $t->formatted_eta, $t->formatted_size, $t->started_at ? $t->started_at->diffForHumans() : '—'];
-        })->toArray();
-
-        $failedRows = $failed->map(function ($t) {
-            $retry = $t->isRetriable()
-                ? "<a href='/movie-file-transfers/{$t->id}/retry' class='btn btn-xs btn-warning'>Retry</a>"
-                : '<span class="label label-default">No retries left</span>';
-            return ["#{$t->id}", e($t->movie_title ?? '—'), $t->attempt_count . '/' . $t->max_attempts, e(substr($t->error_message ?? '—', 0, 80)), $t->updated_at ? $t->updated_at->diffForHumans() : '—', $retry];
-        })->toArray();
+        $failed  = MovieFileTransfer::failed()->orderByDesc('updated_at')->limit(20)->get();
+        $recent  = MovieFileTransfer::done()->orderByDesc('completed_at')->limit(8)->get();
+        $nextQ   = MovieFileTransfer::pending()
+                       ->orderByDesc('priority')->orderBy('queued_at')
+                       ->limit(10)->get();
 
         return $content
             ->title('Transfer Monitor')
-            ->description('Live pipeline status')
+            ->description('Real-time pipeline dashboard — auto-refreshes every 5 seconds when transfers are active')
+
+            // ── Stat boxes ────────────────────────────────────────────────────
             ->row(function (Row $row) use ($stats) {
-                $row->column(2, new InfoBox('Queued',    'hourglass-half', 'aqua',   '#', number_format($stats['queued'])));
-                $row->column(2, new InfoBox('Active',    'exchange',       'blue',   '#', $stats['active'] . '/' . TransferMovieToHetzner::MAX_CONCURRENT));
-                $row->column(2, new InfoBox('Done',      'check',          'green',  '#', number_format($stats['done'])));
-                $row->column(2, new InfoBox('Failed',    'times',          'red',    '#', number_format($stats['failed'])));
-                $row->column(2, new InfoBox('Avg Speed', 'tachometer',     'yellow', '#', $stats['avg_speed']));
-                $row->column(2, new InfoBox('ETA (all)', 'clock-o',        'teal',   '#', $stats['eta']));
+                $row->column(2, new InfoBox('Queued',    'hourglass-half', 'aqua',   '/movie-file-transfers?status=queued',       number_format($stats['queued'])));
+                $row->column(2, new InfoBox('Active',    'exchange',       'blue',   '/movie-file-transfers?status=transferring', $stats['active'] . '/' . TransferMovieToHetzner::MAX_CONCURRENT));
+                $row->column(2, new InfoBox('Done',      'check-circle',   'green',  '/movie-file-transfers?status=done',         number_format($stats['done'])));
+                $row->column(2, new InfoBox('Failed',    'times-circle',   'red',    '/movie-file-transfers?status=failed',       number_format($stats['failed'])));
+                $row->column(2, new InfoBox('Avg Speed', 'tachometer',     'yellow', '#',                                         $stats['avg_speed']));
+                $row->column(2, new InfoBox('Stored',    'hdd-o',          'teal',   '#',                                         $stats['stored_gb'] . ' GB'));
             })
-            ->row(function (Row $row) use ($activeRows, $failedRows) {
-                $row->column(6, function (Column $col) use ($activeRows) {
-                    if ($activeRows) {
-                        $table = new Table(['#', 'Movie', 'Progress', 'Speed', 'ETA', 'Size', 'Started'], $activeRows);
-                        $col->append('<h4><i class="fa fa-exchange text-blue"></i> Active Transfers</h4>' . $table->render());
-                    } else {
-                        $col->append('<div class="alert alert-info"><i class="fa fa-info-circle"></i> No transfers currently active — workers are idle.</div>');
-                    }
-                });
-                $row->column(6, function (Column $col) use ($failedRows) {
-                    if ($failedRows) {
-                        $table = new Table(['#', 'Movie', 'Attempts', 'Error', 'Failed', 'Action'], $failedRows);
-                        $col->append('<h4><i class="fa fa-times-circle text-red"></i> Recent Failures</h4>' . $table->render());
-                    } else {
-                        $col->append('<div class="alert alert-success"><i class="fa fa-check"></i> No recent failures.</div>');
-                    }
-                });
-            })
-            ->row(function (Row $row) {
-                $row->column(12, function (Column $col) {
-                    $col->append("
-                        <div class='box box-default'>
-                          <div class='box-header'><h3 class='box-title'><i class='fa fa-cogs'></i> Quick Actions</h3></div>
-                          <div class='box-body'>
-                            <a href='/movie-file-transfers/process-now' class='btn btn-primary'
-                               onclick=\"return confirm('Dispatch a batch now?')\">
-                               <i class='fa fa-play'></i> Process Queue Now
+
+            // ── Toolbar + auto-refresh notice ─────────────────────────────────
+            ->row(function (Row $row) use ($actives) {
+                $row->column(12, function (Column $col) use ($actives) {
+                    $statusBar = $actives->count() > 0
+                        ? "<div class='alert alert-info' style='margin-bottom:10px;padding:8px 14px;'>
+                                <i class='fa fa-spinner fa-spin'></i>
+                                <strong>" . $actives->count() . " transfer(s) in progress.</strong>
+                                Auto-refreshing every 5 seconds.
+                                <span id='monitor-countdown' class='pull-right badge bg-light-blue'>5</span>
+                           </div>"
+                        : "<div class='alert alert-default' style='margin-bottom:10px;padding:8px 14px;border:1px solid #ccc;'>
+                                <i class='fa fa-pause-circle'></i>
+                                Workers are idle — no active transfers.
+                                <a href='/movie-file-transfers/process-now' class='btn btn-xs btn-primary' style='margin-left:8px;'>
+                                    <i class='fa fa-play-circle'></i> Dispatch Now
+                                </a>
+                           </div>";
+
+                    $col->append($statusBar . "
+                        <div style='margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;'>
+                            <a href='/movie-file-transfers/process-now' class='btn btn-sm btn-primary'>
+                                <i class='fa fa-play-circle'></i> Process Queue Now
                             </a>
-                            &nbsp;
-                            <a href='/movie-file-transfers/backfill' class='btn btn-warning'>
-                               <i class='fa fa-database'></i> Queue Backfill
-                            </a>
-                            &nbsp;
-                            <a href='/movie-file-transfers/retry-all-failed' class='btn btn-danger'
+                            <a href='/movie-file-transfers/retry-all-failed' class='btn btn-sm btn-warning'
                                onclick=\"return confirm('Retry all failed transfers?')\">
-                               <i class='fa fa-refresh'></i> Retry All Failed
+                                <i class='fa fa-refresh'></i> Retry All Failed
                             </a>
-                            &nbsp;
-                            <a href='/movie-file-transfers' class='btn btn-default'>
-                               <i class='fa fa-list'></i> All Transfers
+                            <a href='/movie-file-transfers/backfill' class='btn btn-sm btn-default'>
+                                <i class='fa fa-database'></i> Queue Backfill
                             </a>
-                          </div>
+                            <a href='/movie-file-transfers' class='btn btn-sm btn-default'>
+                                <i class='fa fa-list'></i> All Transfers
+                            </a>
                         </div>
                     ");
+
+                    if ($actives->count() > 0) {
+                        $col->append("<script>
+                            (function(){
+                                var n = 5, el = document.getElementById('monitor-countdown');
+                                setInterval(function(){
+                                    n--;
+                                    if (el) el.textContent = n;
+                                    if (n <= 0) location.reload();
+                                }, 1000);
+                            })();
+                        </script>");
+                    }
+                });
+            })
+
+            // ── Active transfer cards ─────────────────────────────────────────
+            ->row(function (Row $row) use ($actives) {
+                $row->column(12, function (Column $col) use ($actives) {
+                    if ($actives->isEmpty()) {
+                        $col->append("<div class='box box-default'>
+                            <div class='box-body' style='padding:14px;'>
+                                <span class='text-muted'><i class='fa fa-pause'></i> No active transfers right now.</span>
+                            </div>
+                        </div>");
+                        return;
+                    }
+
+                    $html = "<div class='box box-success'>
+                        <div class='box-header with-border' style='padding:8px 15px;'>
+                            <h3 class='box-title'>
+                                <i class='fa fa-spinner fa-spin'></i> Active Transfers
+                            </h3>
+                            <div class='box-tools pull-right'>
+                                <span class='label label-success'><i class='fa fa-circle' style='font-size:8px;'></i> LIVE</span>
+                            </div>
+                        </div>
+                        <div class='box-body' style='padding:12px 15px;'>";
+
+                    foreach ($actives as $t) {
+                        $pct      = $t->progress_pct ?? 0;
+                        $speed    = $t->formatted_speed;
+                        $eta      = $t->formatted_eta;
+                        $size     = $t->formatted_size;
+                        $elapsed  = $t->started_at ? $t->started_at->diffForHumans() : '—';
+                        $worker   = e($t->worker_hostname ?? 'unknown');
+                        $barColor = $t->status === MovieFileTransfer::STATUS_COMPLETING ? '#f39c12' : '#00a65a';
+                        $badge    = strtoupper($t->status_label ?? '');
+
+                        $bytesHuman = '—';
+                        if (($t->bytes_transferred ?? 0) > 0) {
+                            $mb = $t->bytes_transferred / 1_048_576;
+                            $bytesHuman = $mb >= 1024
+                                ? round($mb / 1024, 1) . ' GB'
+                                : round($mb, 0) . ' MB';
+                        }
+
+                        $html .= "
+                            <div style='border:1px solid #c8e6c8;border-radius:8px;padding:14px 16px;
+                                        margin-bottom:12px;background:linear-gradient(135deg,#f6fff6,#edfaed);'>
+                                <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>
+                                    <div>
+                                        <strong style='font-size:15px;'>
+                                            <i class='fa fa-film'></i>
+                                            #" . $t->id . " &mdash; " . e($t->movie_title ?? 'Untitled') . "
+                                        </strong>
+                                        &nbsp;<span class='label label-default'>movie #" . $t->movie_id . "</span>
+                                        &nbsp;<span class='label label-" . $t->status_badge_color . "'>{$badge}</span>
+                                    </div>
+                                    <div style='display:flex;gap:6px;align-items:center;'>
+                                        <small class='text-muted'><i class='fa fa-clock-o'></i> {$elapsed}</small>
+                                        <a href='/movie-file-transfers/" . $t->id . "' class='btn btn-xs btn-info'>
+                                            <i class='fa fa-eye'></i> Details
+                                        </a>
+                                        <a href='/movie-file-transfers/" . $t->id . "/cancel'
+                                           class='btn btn-xs btn-danger'
+                                           onclick=\"return confirm('Cancel transfer #" . $t->id . "?')\">
+                                            <i class='fa fa-stop-circle'></i> Cancel
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <div style='position:relative;background:#ccc;border-radius:6px;height:28px;
+                                            overflow:hidden;margin-bottom:10px;'>
+                                    <div style='width:" . max(2, $pct) . "%;background:{$barColor};height:28px;
+                                                border-radius:6px;transition:width 0.3s ease;
+                                                background-image:repeating-linear-gradient(
+                                                    45deg,rgba(255,255,255,0) 0,rgba(255,255,255,0) 10px,
+                                                    rgba(255,255,255,.2) 10px,rgba(255,255,255,.2) 20px);'>
+                                    </div>
+                                    <span style='position:absolute;left:50%;top:50%;
+                                                 transform:translate(-50%,-50%);font-size:14px;
+                                                 font-weight:bold;color:#1a1a1a;
+                                                 text-shadow:0 0 6px rgba(255,255,255,0.9);'>
+                                        {$pct}%
+                                    </span>
+                                </div>
+
+                                <div style='display:flex;flex-wrap:wrap;gap:20px;font-size:12px;color:#444;'>
+                                    <span><i class='fa fa-tachometer text-blue'></i>&nbsp;<strong>{$speed}</strong></span>
+                                    <span><i class='fa fa-download text-green'></i>&nbsp;{$bytesHuman} of {$size}</span>
+                                    <span><i class='fa fa-clock-o text-orange'></i>&nbsp;ETA: <strong>{$eta}</strong></span>
+                                    <span><i class='fa fa-server text-purple'></i>&nbsp;{$worker}</span>
+                                    <span><i class='fa fa-repeat text-muted'></i>&nbsp;Attempt " . $t->attempt_count . "/" . $t->max_attempts . "</span>
+                                    <span><i class='fa fa-link text-aqua'></i>&nbsp;
+                                        <a href='" . e($t->source_url ?? '#') . "' target='_blank' style='font-size:11px;'>Source</a>
+                                    </span>
+                                </div>
+                            </div>
+                        ";
+                    }
+
+                    $html .= "</div></div>";
+                    $col->append($html);
+                });
+            })
+
+            // ── Failed (left) + Queue & Recent done (right) ───────────────────
+            ->row(function (Row $row) use ($failed, $nextQ, $recent) {
+
+                // Failed transfers table
+                $row->column(7, function (Column $col) use ($failed) {
+                    $retryAllBtn = "<a href='/movie-file-transfers/retry-all-failed'
+                            class='btn btn-xs btn-warning'
+                            onclick=\"return confirm('Retry all failed transfers?')\">
+                            <i class='fa fa-refresh'></i> Retry All
+                        </a>
+                        <a href='/movie-file-transfers?status=failed' class='btn btn-xs btn-default' style='margin-left:4px;'>
+                            <i class='fa fa-list'></i> View All
+                        </a>";
+
+                    $html = "<div class='box box-danger'>
+                        <div class='box-header with-border' style='padding:8px 15px;'>
+                            <h3 class='box-title'><i class='fa fa-times-circle'></i> Failed Transfers</h3>
+                            <div class='box-tools pull-right'>{$retryAllBtn}</div>
+                        </div>
+                        <div class='box-body' style='padding:0;'>";
+
+                    if ($failed->isEmpty()) {
+                        $html .= "<div class='alert alert-success' style='margin:12px;'>
+                            <i class='fa fa-check-circle'></i> No failed transfers — great!
+                        </div>";
+                    } else {
+                        $html .= "<table class='table table-condensed table-hover' style='margin:0;font-size:12px;'>
+                            <thead>
+                                <tr style='background:#fdf2f2;'>
+                                    <th style='width:40px;'>#</th>
+                                    <th>Movie</th>
+                                    <th style='width:55px;'>Tries</th>
+                                    <th>Error</th>
+                                    <th style='width:80px;'>When</th>
+                                    <th style='width:85px;'>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>";
+
+                        foreach ($failed as $t) {
+                            $retryBtn = $t->isRetriable()
+                                ? "<a href='/movie-file-transfers/{$t->id}/retry'
+                                      class='btn btn-xs btn-warning'
+                                      onclick=\"return confirm('Retry #{$t->id}?')\">
+                                      <i class='fa fa-refresh'></i>
+                                   </a>"
+                                : "<span class='label label-default' title='No retries left'>Max</span>";
+                            $detailBtn = "<a href='/movie-file-transfers/{$t->id}' class='btn btn-xs btn-info' style='margin-left:3px;' title='View details'>
+                                <i class='fa fa-eye'></i>
+                            </a>";
+                            $tries      = $t->attempt_count . '/' . $t->max_attempts;
+                            $triesColor = $t->attempt_count >= $t->max_attempts ? 'danger' : 'warning';
+                            $err        = e(substr($t->error_message ?? 'Unknown error', 0, 65));
+                            $when       = $t->updated_at ? $t->updated_at->diffForHumans() : '—';
+
+                            $html .= "<tr>
+                                <td><small>#{$t->id}</small></td>
+                                <td><small>" . e(substr($t->movie_title ?? '—', 0, 28)) . "</small></td>
+                                <td><span class='label label-{$triesColor}'>{$tries}</span></td>
+                                <td><small class='text-danger' title='" . e($t->error_message ?? '') . "'>{$err}</small></td>
+                                <td><small class='text-muted'>{$when}</small></td>
+                                <td>{$retryBtn}{$detailBtn}</td>
+                            </tr>";
+                        }
+
+                        $html .= "</tbody></table>";
+                    }
+
+                    $html .= "</div></div>";
+                    $col->append($html);
+                });
+
+                // Right column: Next in queue + Recently completed
+                $row->column(5, function (Column $col) use ($nextQ, $recent) {
+
+                    // Next in queue
+                    $qHtml = "<div class='box box-info' style='margin-bottom:10px;'>
+                        <div class='box-header with-border' style='padding:8px 15px;'>
+                            <h3 class='box-title'>
+                                <i class='fa fa-list-ol'></i> Next in Queue
+                            </h3>
+                        </div>
+                        <div class='box-body' style='padding:0;'>";
+
+                    if ($nextQ->isEmpty()) {
+                        $qHtml .= "<div style='padding:12px;color:#999;'>
+                            <i class='fa fa-check'></i> Queue is empty.
+                        </div>";
+                    } else {
+                        $qHtml .= "<table class='table table-condensed' style='margin:0;font-size:12px;'>
+                            <thead><tr style='background:#f0f8ff;'>
+                                <th>#</th><th>Movie</th><th>Priority</th><th style='width:70px;'>Actions</th>
+                            </tr></thead><tbody>";
+                        foreach ($nextQ as $t) {
+                            $pri   = number_format($t->priority ?? 0);
+                            $priC  = ($t->priority ?? 0) >= 999000 ? 'danger' : (($t->priority ?? 0) >= 100 ? 'warning' : 'default');
+                            $qHtml .= "<tr>
+                                <td><small>#{$t->id}</small></td>
+                                <td><small>" . e(substr($t->movie_title ?? '—', 0, 22)) . "</small></td>
+                                <td><span class='label label-{$priC}'>{$pri}</span></td>
+                                <td>
+                                    <a href='/movie-file-transfers/{$t->id}' class='btn btn-xs btn-info' title='Details'>
+                                        <i class='fa fa-eye'></i>
+                                    </a>
+                                    <a href='/movie-file-transfers/{$t->id}/cancel' class='btn btn-xs btn-danger' style='margin-left:2px;'
+                                       onclick=\"return confirm('Cancel #" . $t->id . "?')\">
+                                        <i class='fa fa-times'></i>
+                                    </a>
+                                </td>
+                            </tr>";
+                        }
+                        $qHtml .= "</tbody></table>";
+                    }
+                    $qHtml .= "</div></div>";
+                    $col->append($qHtml);
+
+                    // Recently completed
+                    $dHtml = "<div class='box box-success'>
+                        <div class='box-header with-border' style='padding:8px 15px;'>
+                            <h3 class='box-title'>
+                                <i class='fa fa-check-circle text-green'></i> Recently Completed
+                            </h3>
+                            <div class='box-tools pull-right'>
+                                <a href='/movie-file-transfers?status=done' class='btn btn-xs btn-default'>
+                                    <i class='fa fa-list'></i> All
+                                </a>
+                            </div>
+                        </div>
+                        <div class='box-body' style='padding:0;'>";
+
+                    if ($recent->isEmpty()) {
+                        $dHtml .= "<div style='padding:12px;color:#999;'>No completed transfers yet.</div>";
+                    } else {
+                        $dHtml .= "<table class='table table-condensed' style='margin:0;font-size:12px;'>
+                            <thead><tr style='background:#f5fff5;'>
+                                <th>#</th><th>Movie</th><th>Speed</th><th>Size</th><th>Done</th>
+                            </tr></thead><tbody>";
+                        foreach ($recent as $t) {
+                            $dHtml .= "<tr>
+                                <td>
+                                    <a href='/movie-file-transfers/{$t->id}' class='text-success' title='Details'>
+                                        #{$t->id}
+                                    </a>
+                                </td>
+                                <td><small>" . e(substr($t->movie_title ?? '—', 0, 22)) . "</small></td>
+                                <td><small class='text-success'>" . $t->formatted_speed . "</small></td>
+                                <td><small>" . $t->formatted_size . "</small></td>
+                                <td><small class='text-muted'>" . ($t->completed_at ? $t->completed_at->diffForHumans() : '—') . "</small></td>
+                            </tr>";
+                        }
+                        $dHtml .= "</tbody></table>";
+                    }
+                    $dHtml .= "</div></div>";
+                    $col->append($dHtml);
                 });
             });
     }
