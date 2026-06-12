@@ -748,7 +748,8 @@ Route::get('munowatch-movies-crawler', function (Request $request) {
 });
 
 
-Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'index']);
+// Log viewer disabled in production (dev-only package)
+// Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'index']);
 
 // Video Transfer Routes
 Route::get('transfer/process/{id}', [TransferProcessController::class, 'show'])->name('transfer.process');
