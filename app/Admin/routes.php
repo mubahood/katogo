@@ -214,6 +214,9 @@ Route::group([
     $router->get('movie-file-transfers/backfill',           'MovieFileTransferController@backfill')->name('movie-file-transfers.backfill');
     $router->post('movie-file-transfers/backfill-run',      'MovieFileTransferController@backfillRun')->name('movie-file-transfers.backfill-run');
     $router->get('movie-file-transfers/process-now',        'MovieFileTransferController@processNow')->name('movie-file-transfers.process-now');
+    $router->get('movie-file-transfers/retry-all-failed',   'MovieFileTransferController@retryAllFailed')->name('movie-file-transfers.retry-all-failed');
+    $router->post('movie-file-transfers/queue-single',      'MovieFileTransferController@queueSingle')->name('movie-file-transfers.queue-single-post');
+    $router->get('movie-file-transfers/queue-single/{movieId}', 'MovieFileTransferController@queueSingle')->where(['movieId' => '[0-9]+'])->name('movie-file-transfers.queue-single');
     $router->get('movie-file-transfers/{id}',               'MovieFileTransferController@show')->where(['id' => '[0-9]+'])->name('movie-file-transfers.show');
     $router->get('movie-file-transfers/{id}/retry',         'MovieFileTransferController@retry')->where(['id' => '[0-9]+'])->name('movie-file-transfers.retry');
     $router->get('movie-file-transfers/{id}/cancel',        'MovieFileTransferController@cancel')->where(['id' => '[0-9]+'])->name('movie-file-transfers.cancel');

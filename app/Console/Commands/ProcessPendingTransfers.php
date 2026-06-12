@@ -65,13 +65,17 @@ class ProcessPendingTransfers extends Command
         }
 
         // ── Step 3: Pick next queued records ──────────────────────────────────
-        // Priority: fresh entries (attempt_count = 0) before retries, then oldest first
+        // Priority ordering:
+        // 1. Fresh attempts (attempt_count=0) before retries
+        // 2. Higher priority score first (views*3 + downloads*5 + likes*2)
+        // 3. Oldest queued_at (FIFO as tiebreaker)
         $toDispatch = MovieFileTransfer::pending()
             ->where(function ($q) {
                 $q->whereNull('next_retry_at')
                   ->orWhere('next_retry_at', '<=', now());
             })
             ->orderByRaw('CASE WHEN attempt_count = 0 THEN 0 ELSE 1 END')
+            ->orderByDesc('priority')
             ->orderBy('queued_at')
             ->limit(min($limit, $slots))
             ->get();

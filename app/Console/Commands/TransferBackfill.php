@@ -56,17 +56,20 @@ class TransferBackfill extends Command
         $alreadyDone = 0;
 
         // Build base query: active movies with a url not on Hetzner
+        // Ordered by priority: downloads × 5 + views × 3 + likes × 2 (most engaged first)
         $query = MovieModel::where('status', 'Active')
             ->whereNotNull('url')
             ->where('url', '!=', '')
-            ->where('url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%');
+            ->where('url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%')
+            ->orderByDesc(\Illuminate\Support\Facades\DB::raw('(downloads_count * 5 + views_count * 3 + likes_count * 2)'))
+            ->orderByDesc('id');
 
         if ($source) {
             $query->where('url', 'like', "%{$source}%");
         }
 
         $total = $query->count();
-        $this->line("Found {$total} candidate movies.");
+        $this->line("Found {$total} candidate movies (ordered by engagement: downloads×5 + views×3 + likes×2).");
 
         if ($total === 0) {
             $this->info('Nothing to backfill — all active movies are already on Hetzner.');
@@ -78,8 +81,9 @@ class TransferBackfill extends Command
 
         $query->select(['id', 'title', 'url', 'status', 'year',
                         'duration', 'poster_url', 'munowatch_id', 'type',
-                        'season_number', 'episode_number', 'series_title'])
-              ->chunkById($chunk, function ($movies) use (
+                        'season_number', 'episode_number', 'series_title',
+                        'views_count', 'downloads_count', 'likes_count'])
+              ->chunk($chunk, function ($movies) use (
                   $dryRun, $limit, &$queued, &$alreadyDone, $bar
               ) {
                   foreach ($movies as $movie) {

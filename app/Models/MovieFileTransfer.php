@@ -32,6 +32,7 @@ class MovieFileTransfer extends Model
         'dest_file_id',
         'dest_size_bytes',
         'status',
+        'priority',
         'progress_pct',
         'bytes_transferred',
         'transfer_speed_mbps',
@@ -155,6 +156,14 @@ class MovieFileTransfer extends Model
             $sourceType = 'hetzner';
         }
 
+        // Priority score: downloaded movies get highest weight (user committed to it),
+        // then views (plays), then likes. Caps at 999999 to stay in INT range safely.
+        $priority = min(999999,
+            ((int)($movie->views_count     ?? 0)) * 3 +
+            ((int)($movie->downloads_count ?? 0)) * 5 +
+            ((int)($movie->likes_count     ?? 0)) * 2
+        );
+
         return static::create([
             'movie_id'           => $movie->id,
             'movie_title'        => $movie->title,
@@ -173,6 +182,7 @@ class MovieFileTransfer extends Model
             'source_type'   => $sourceType,
             'dest_type'     => 'hetzner',
             'status'        => self::STATUS_QUEUED,
+            'priority'      => $priority,
             'queued_at'     => now(),
             'initiated_by'  => $initiatedBy,
             'max_attempts'  => 3,
