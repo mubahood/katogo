@@ -12,6 +12,7 @@ use App\Models\MovieDownload;
 use App\Models\MovieModel;
 use App\Observers\ChatMessageObserver;
 use App\Observers\MovieDownloadObserver;
+use App\Observers\MovieFileTransferObserver;
 use App\Observers\MovieModelObserver;
 
 class AppServiceProvider extends ServiceProvider
@@ -57,9 +58,10 @@ class AppServiceProvider extends ServiceProvider
         // ──────────────────────────────────────────────────────────────
         // MODEL OBSERVERS (P10-11)
         // ──────────────────────────────────────────────────────────────
-        ChatMessage::observe(ChatMessageObserver::class);    // async push notifications (P10-10)
-        MovieDownload::observe(MovieDownloadObserver::class); // increment downloads_count (P10-08)
-        MovieModel::observe(MovieModelObserver::class);       // increment/decrement total_episodes (P10-09)
+        ChatMessage::observe(ChatMessageObserver::class);           // async push notifications (P10-10)
+        MovieDownload::observe(MovieDownloadObserver::class);        // increment downloads_count (P10-08)
+        MovieModel::observe(MovieModelObserver::class);              // increment/decrement total_episodes (P10-09)
+        MovieModel::observe(MovieFileTransferObserver::class);       // auto-queue Hetzner transfer on new/changed video_url
 
         // ──────────────────────────────────────────────────────────────
         // CLEANUP: Ensure all Movie-type records have null category_id

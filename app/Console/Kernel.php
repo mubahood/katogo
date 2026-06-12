@@ -72,6 +72,15 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/queue-worker.log'));
 
+        // Movie file transfer dispatcher — dispatches queued transfers every 5 minutes.
+        // withoutOverlapping prevents double-dispatching if a previous run is still processing.
+        // runInBackground keeps the scheduler heartbeat free.
+        $schedule->command('transfers:process --concurrency=2 --limit=6')
+            ->everyFiveMinutes()
+            ->withoutOverlapping(10)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/transfers-process.log'));
+
         // ──────────────────────────────────────────────────────────────────
         // DB CLEANUP JOBS — keep the database lean (P6-03/05/06/07/08/10-14)
         // ──────────────────────────────────────────────────────────────────

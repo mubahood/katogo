@@ -208,6 +208,16 @@ Route::group([
     $router->get('video-transfers/{id}/retry', 'VideoTransferController@retry')->name('video-transfers.retry');
     $router->get('video-transfers/{id}/cancel', 'VideoTransferController@cancel')->name('video-transfers.cancel');
 
+    // ── Movie File Transfer (Hetzner Storage) Routes ──────────────────
+    $router->get('movie-file-transfers',                    'MovieFileTransferController@index');
+    $router->get('movie-file-transfers/monitor',            'MovieFileTransferController@monitor')->name('movie-file-transfers.monitor');
+    $router->get('movie-file-transfers/backfill',           'MovieFileTransferController@backfill')->name('movie-file-transfers.backfill');
+    $router->post('movie-file-transfers/backfill-run',      'MovieFileTransferController@backfillRun')->name('movie-file-transfers.backfill-run');
+    $router->get('movie-file-transfers/process-now',        'MovieFileTransferController@processNow')->name('movie-file-transfers.process-now');
+    $router->get('movie-file-transfers/{id}',               'MovieFileTransferController@show')->where(['id' => '[0-9]+'])->name('movie-file-transfers.show');
+    $router->get('movie-file-transfers/{id}/retry',         'MovieFileTransferController@retry')->where(['id' => '[0-9]+'])->name('movie-file-transfers.retry');
+    $router->get('movie-file-transfers/{id}/cancel',        'MovieFileTransferController@cancel')->where(['id' => '[0-9]+'])->name('movie-file-transfers.cancel');
+
     // ============================================
     // GAME MODULE ROUTES — DISABLED (resource optimization)
     // ============================================

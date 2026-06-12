@@ -915,7 +915,7 @@ class MovieModel extends Model
 
     /**
      * Get movies that need Firebase URL testing
-     * 
+     *
      * @param int $limit
      * @return \Illuminate\Database\Eloquent\Collection
      */
@@ -926,5 +926,12 @@ class MovieModel extends Model
             ->whereNotNull('firebase_video_url')
             ->limit($limit)
             ->get();
+    }
+
+    // ── Hetzner Transfer Relationship ─────────────────────────────────────────
+
+    public function transfers(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\MovieFileTransfer::class, 'movie_id');
     }
 }
