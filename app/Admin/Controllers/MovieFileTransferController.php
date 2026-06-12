@@ -427,7 +427,7 @@ class MovieFileTransferController extends AdminController
 
     // ── Detail (show) ─────────────────────────────────────────────────────────
 
-    public function show(int $id, Content $content): Content
+    public function show($id, Content $content)
     {
         $t = MovieFileTransfer::findOrFail($id);
 
