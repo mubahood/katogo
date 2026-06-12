@@ -6,8 +6,10 @@ namespace App\Services;
  * Hetzner Storage Share (Nextcloud 32) integration.
  *
  * Uses WebDAV for file operations and the OCS API for share link management.
- * Credentials are read from .env:
- *   HETZNER_STORAGE_URL  — WebDAV base (includes username path segment)
+ * All connections are HTTPS with full certificate verification.
+ *
+ * .env keys required:
+ *   HETZNER_STORAGE_URL  — WebDAV base URL (includes username path segment)
  *   HETZNER_STORAGE_USER — Nextcloud username
  *   HETZNER_STORAGE_PASS — Nextcloud password
  *
@@ -26,16 +28,14 @@ class HetznerStorageService
         $this->user    = env('HETZNER_STORAGE_USER');
         $this->pass    = env('HETZNER_STORAGE_PASS');
 
-        // Derive the host root from the WebDAV URL
-        $parts          = parse_url($this->davBase);
-        $this->ocsBase  = $parts['scheme'] . '://' . $parts['host'];
+        $parts         = parse_url($this->davBase);
+        $this->ocsBase = $parts['scheme'] . '://' . $parts['host'];
     }
 
     // ─── File Operations ──────────────────────────────────────────────────────
 
     /**
      * Upload a local file to remote storage.
-     * Creates parent directories automatically if needed.
      */
     public function upload(string $remotePath, string $localPath): bool
     {
@@ -43,14 +43,11 @@ class HetznerStorageService
         $fp   = fopen($localPath, 'r');
         $size = filesize($localPath);
 
-        $ch = curl_init($url);
+        $ch = $this->curl($url, timeout: 7200);
         curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_PUT            => true,
-            CURLOPT_INFILE         => $fp,
-            CURLOPT_INFILESIZE     => $size,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 300,
+            CURLOPT_PUT        => true,
+            CURLOPT_INFILE     => $fp,
+            CURLOPT_INFILESIZE => $size,
         ]);
         curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -73,7 +70,7 @@ class HetznerStorageService
     }
 
     /**
-     * Upload a Laravel UploadedFile / Symfony File instance.
+     * Upload a Laravel UploadedFile instance.
      */
     public function uploadFile(string $remotePath, \Illuminate\Http\UploadedFile $file): bool
     {
@@ -85,12 +82,8 @@ class HetznerStorageService
      */
     public function delete(string $remotePath): bool
     {
-        $ch = curl_init($this->davBase . '/' . ltrim($remotePath, '/'));
-        curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_CUSTOMREQUEST  => 'DELETE',
-            CURLOPT_RETURNTRANSFER => true,
-        ]);
+        $ch = $this->curl($this->davBase . '/' . ltrim($remotePath, '/'));
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
         curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
@@ -98,20 +91,16 @@ class HetznerStorageService
     }
 
     /**
-     * Create a remote directory. Safe to call if directory already exists (returns true).
+     * Create a remote directory. Safe to call if it already exists (405 = already exists).
      */
     public function mkdir(string $remotePath): bool
     {
-        $ch = curl_init($this->davBase . '/' . ltrim($remotePath, '/') . '/');
-        curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_CUSTOMREQUEST  => 'MKCOL',
-            CURLOPT_RETURNTRANSFER => true,
-        ]);
+        $ch = $this->curl($this->davBase . '/' . ltrim($remotePath, '/') . '/');
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'MKCOL');
         curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        return in_array($code, [201, 405]); // 405 = already exists
+        return in_array($code, [201, 405]);
     }
 
     /**
@@ -119,13 +108,13 @@ class HetznerStorageService
      */
     public function copy(string $fromPath, string $toPath): bool
     {
-        $ch = curl_init($this->davBase . '/' . ltrim($fromPath, '/'));
+        $destination = $this->davBase . '/' . ltrim($toPath, '/');
+        $ch = $this->curl($this->davBase . '/' . ltrim($fromPath, '/'));
         curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_CUSTOMREQUEST  => 'COPY',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => [
-                'Destination: ' . $this->davBase . '/' . ltrim($toPath, '/'),
+            CURLOPT_CUSTOMREQUEST => 'COPY',
+            CURLOPT_HTTPHEADER    => [
+                'Destination: ' . $destination,
+                'Overwrite: T',
             ],
         ]);
         curl_exec($ch);
@@ -139,13 +128,13 @@ class HetznerStorageService
      */
     public function move(string $fromPath, string $toPath): bool
     {
-        $ch = curl_init($this->davBase . '/' . ltrim($fromPath, '/'));
+        $destination = $this->davBase . '/' . ltrim($toPath, '/');
+        $ch = $this->curl($this->davBase . '/' . ltrim($fromPath, '/'));
         curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_CUSTOMREQUEST  => 'MOVE',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => [
-                'Destination: ' . $this->davBase . '/' . ltrim($toPath, '/'),
+            CURLOPT_CUSTOMREQUEST => 'MOVE',
+            CURLOPT_HTTPHEADER    => [
+                'Destination: ' . $destination,
+                'Overwrite: T',
             ],
         ]);
         curl_exec($ch);
@@ -155,22 +144,22 @@ class HetznerStorageService
     }
 
     /**
-     * List files and folders in a remote directory.
-     * Returns array of hrefs (paths).
+     * List files and folders in a remote directory. Returns array of hrefs (paths).
      */
     public function listDirectory(string $remotePath): array
     {
-        $ch = curl_init($this->davBase . '/' . ltrim($remotePath, '/') . '/');
+        $ch = $this->curl($this->davBase . '/' . ltrim($remotePath, '/') . '/');
         curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_CUSTOMREQUEST  => 'PROPFIND',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => ['Depth: 1'],
+            CURLOPT_CUSTOMREQUEST => 'PROPFIND',
+            CURLOPT_HTTPHEADER    => [
+                'Depth: 1',
+                'OCS-APIRequest: true',
+            ],
         ]);
         $body = curl_exec($ch);
         curl_close($ch);
 
-        preg_match_all('/<d:href>([^<]+)<\/d:href>/', $body, $matches);
+        preg_match_all('/<d:href>([^<]+)<\/d:href>/', (string)$body, $matches);
         return $matches[1] ?? [];
     }
 
@@ -180,9 +169,9 @@ class HetznerStorageService
      * Create a public share and return the direct download URL.
      *
      * @param string      $remotePath  Path relative to the user root (e.g. "movies/film.mp4")
-     * @param string|null $password    Optional password to protect the link
-     * @param string|null $expireDate  Optional expiry date (YYYY-MM-DD)
-     * @return string|null             Direct URL or null on failure
+     * @param string|null $password    Optional share password
+     * @param string|null $expireDate  Optional expiry (YYYY-MM-DD)
+     * @return string|null             Direct download URL or null on failure
      */
     public function share(string $remotePath, ?string $password = null, ?string $expireDate = null): ?string
     {
@@ -194,18 +183,16 @@ class HetznerStorageService
         if ($password)   $params['password']   = $password;
         if ($expireDate) $params['expireDate']  = $expireDate;
 
-        $ch = curl_init($this->ocsBase . '/ocs/v2.php/apps/files_sharing/api/v1/shares');
+        $ch = $this->curl($this->ocsBase . '/ocs/v2.php/apps/files_sharing/api/v1/shares');
         curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query($params),
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => ['OCS-APIRequest: true', 'Accept: application/json'],
+            CURLOPT_POST       => true,
+            CURLOPT_POSTFIELDS => http_build_query($params),
+            CURLOPT_HTTPHEADER => ['OCS-APIRequest: true', 'Accept: application/json'],
         ]);
         $body = curl_exec($ch);
         curl_close($ch);
 
-        $data  = json_decode($body, true);
+        $data  = json_decode((string)$body, true);
         $token = $data['ocs']['data']['token'] ?? null;
 
         return $token ? "{$this->ocsBase}/s/{$token}/download" : null;
@@ -213,7 +200,6 @@ class HetznerStorageService
 
     /**
      * Upload a file and immediately return a public direct-download URL.
-     * This is the primary one-liner for most use cases.
      */
     public function uploadAndShare(string $remotePath, string $localPath): ?string
     {
@@ -222,7 +208,7 @@ class HetznerStorageService
     }
 
     /**
-     * Upload an UploadedFile and return a public direct-download URL.
+     * Upload a Laravel UploadedFile and return a public direct-download URL.
      */
     public function uploadFileAndShare(string $remotePath, \Illuminate\Http\UploadedFile $file): ?string
     {
@@ -234,12 +220,10 @@ class HetznerStorageService
      */
     public function deleteShare(int $shareId): bool
     {
-        $ch = curl_init($this->ocsBase . "/ocs/v2.php/apps/files_sharing/api/v1/shares/{$shareId}");
+        $ch = $this->curl($this->ocsBase . "/ocs/v2.php/apps/files_sharing/api/v1/shares/{$shareId}");
         curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_CUSTOMREQUEST  => 'DELETE',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => ['OCS-APIRequest: true'],
+            CURLOPT_CUSTOMREQUEST => 'DELETE',
+            CURLOPT_HTTPHEADER    => ['OCS-APIRequest: true'],
         ]);
         curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -252,20 +236,16 @@ class HetznerStorageService
      */
     public function listShares(): array
     {
-        $ch = curl_init($this->ocsBase . '/ocs/v2.php/apps/files_sharing/api/v1/shares');
-        curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => ['OCS-APIRequest: true', 'Accept: application/json'],
-        ]);
+        $ch = $this->curl($this->ocsBase . '/ocs/v2.php/apps/files_sharing/api/v1/shares');
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['OCS-APIRequest: true', 'Accept: application/json']);
         $body = curl_exec($ch);
         curl_close($ch);
 
-        $data = json_decode($body, true);
+        $data = json_decode((string)$body, true);
         return $data['ocs']['data'] ?? [];
     }
 
-    // ─── Quota ───────────────────────────────────────────────────────────────
+    // ─── Quota ────────────────────────────────────────────────────────────────
 
     /**
      * Returns ['used' => bytes, 'free' => bytes_or_-3_for_unlimited].
@@ -276,23 +256,52 @@ class HetznerStorageService
              . '<d:quota-available-bytes/><d:quota-used-bytes/>'
              . '</d:prop></d:propfind>';
 
-        $ch = curl_init($this->davBase . '/');
+        $ch = $this->curl($this->davBase . '/');
         curl_setopt_array($ch, [
-            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
-            CURLOPT_CUSTOMREQUEST  => 'PROPFIND',
-            CURLOPT_POSTFIELDS     => $xml,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => ['Depth: 0', 'Content-Type: application/xml'],
+            CURLOPT_CUSTOMREQUEST => 'PROPFIND',
+            CURLOPT_POSTFIELDS    => $xml,
+            CURLOPT_HTTPHEADER    => ['Depth: 0', 'Content-Type: application/xml'],
         ]);
         $body = curl_exec($ch);
         curl_close($ch);
 
-        preg_match('/<d:quota-used-bytes>(\d+)</', $body, $used);
-        preg_match('/<d:quota-available-bytes>(-?\d+)</', $body, $free);
+        preg_match('/<d:quota-used-bytes>(\d+)</', (string)$body, $used);
+        preg_match('/<d:quota-available-bytes>(-?\d+)</', (string)$body, $free);
 
         return [
             'used' => (int) ($used[1] ?? 0),
             'free' => (int) ($free[1] ?? -3),
         ];
+    }
+
+    // ─── Internal helpers ─────────────────────────────────────────────────────
+
+    /**
+     * Create a cURL handle pre-configured with auth, SSL verification, and timeout.
+     * All Hetzner Storage connections are HTTPS — peer and host verification is
+     * always enabled using the system CA bundle.
+     */
+    private function curl(string $url, int $timeout = 60): \CurlHandle
+    {
+        $ch = curl_init($url);
+
+        $opts = [
+            CURLOPT_USERPWD        => "{$this->user}:{$this->pass}",
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => $timeout,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 5,
+        ];
+
+        $caBundle = '/etc/ssl/certs/ca-certificates.crt';
+        if (file_exists($caBundle)) {
+            $opts[CURLOPT_CAINFO] = $caBundle;
+        }
+
+        curl_setopt_array($ch, $opts);
+        return $ch;
     }
 }

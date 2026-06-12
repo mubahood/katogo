@@ -164,17 +164,21 @@ class TransferMovieToHetzner implements ShouldQueue
 
     private function verifySource(MovieFileTransfer $transfer): void
     {
-        $ch = curl_init($transfer->source_url);
-        curl_setopt_array($ch, [
+        $url = $this->sanitizeUrl($transfer->source_url);
+        $ch  = curl_init($url);
+        curl_setopt_array($ch, array_merge([
             CURLOPT_NOBODY         => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 10,
             CURLOPT_TIMEOUT        => 30,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; KatogoTransfer/1.0)',
-        ]);
+        ], $this->curlSslOptions($url)));
+
         curl_exec($ch);
         $httpCode      = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $contentLength = (int) curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+        $effectiveUrl  = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
         $curlError     = curl_error($ch);
         curl_close($ch);
 
@@ -187,6 +191,11 @@ class TransferMovieToHetzner implements ShouldQueue
         $updates = ['source_verified_at' => now()];
         if ($contentLength > 0) {
             $updates['source_size_bytes'] = $contentLength;
+        }
+        // If the effective URL after redirects differs, store the sanitized version
+        if ($effectiveUrl && $effectiveUrl !== $transfer->source_url) {
+            $updates['notes'] = ($transfer->notes ? $transfer->notes . ' | ' : '')
+                . 'Effective URL after redirects: ' . $effectiveUrl;
         }
         $transfer->update($updates);
     }
@@ -205,14 +214,16 @@ class TransferMovieToHetzner implements ShouldQueue
         $lastProgressUpdate = 0;
         $startTime          = microtime(true);
 
-        $ch = curl_init($transfer->source_url);
-        curl_setopt_array($ch, [
+        $url = $this->sanitizeUrl($transfer->source_url);
+        $ch  = curl_init($url);
+        curl_setopt_array($ch, array_merge([
             CURLOPT_FILE           => $fh,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 10,
             CURLOPT_TIMEOUT        => 7200,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_CONNECTTIMEOUT => 30,
             CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; KatogoTransfer/1.0)',
-            CURLOPT_BUFFERSIZE     => 128 * 1024,  // 128 KB read buffer — minimal PHP memory
+            CURLOPT_BUFFERSIZE     => 128 * 1024,
             CURLOPT_NOPROGRESS     => false,
             CURLOPT_PROGRESSFUNCTION => function (
                 $curlHandle,
@@ -248,7 +259,7 @@ class TransferMovieToHetzner implements ShouldQueue
 
                 return 0; // must return 0 to continue
             },
-        ]);
+        ], $this->curlSslOptions($url)));
 
         $result    = curl_exec($ch);
         $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -377,5 +388,70 @@ class TransferMovieToHetzner implements ShouldQueue
         if ($current > 0) {
             Cache::put(self::SLOT_KEY, $current - 1, 7200);
         }
+    }
+
+    /**
+     * Percent-encode spaces and special characters in the path portion of a URL
+     * so cURL accepts filenames like "sex tape jr.mp4". Decodes first to avoid
+     * double-encoding URLs that are already partially encoded.
+     */
+    private function sanitizeUrl(string $url): string
+    {
+        $url   = trim($url);
+        $parts = parse_url($url);
+
+        if (!isset($parts['host'])) {
+            return $url; // unparseable — return as-is
+        }
+
+        $scheme   = ($parts['scheme'] ?? 'https') . '://';
+        $userinfo = '';
+        if (isset($parts['user'])) {
+            $userinfo = rawurlencode($parts['user']);
+            if (isset($parts['pass'])) {
+                $userinfo .= ':' . rawurlencode($parts['pass']);
+            }
+            $userinfo .= '@';
+        }
+        $host = $parts['host'];
+        $port = isset($parts['port']) ? ':' . $parts['port'] : '';
+
+        // Encode each path segment individually; decode first to avoid double-encoding
+        $path = '';
+        if (isset($parts['path'])) {
+            $path = implode('/', array_map(
+                fn($seg) => rawurlencode(rawurldecode($seg)),
+                explode('/', $parts['path'])
+            ));
+        }
+
+        $query    = isset($parts['query'])    ? '?' . $parts['query']    : '';
+        $fragment = isset($parts['fragment']) ? '#' . $parts['fragment'] : '';
+
+        return $scheme . $userinfo . $host . $port . $path . $query . $fragment;
+    }
+
+    /**
+     * Returns cURL SSL options appropriate for the URL scheme.
+     * HTTPS: verify peer and host using the system CA bundle.
+     * HTTP:  no SSL (verification flags still set to false for safety).
+     */
+    private function curlSslOptions(string $url): array
+    {
+        if (!str_starts_with($url, 'https://')) {
+            return [
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0,
+            ];
+        }
+        $opts = [
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ];
+        $caBundle = '/etc/ssl/certs/ca-certificates.crt';
+        if (file_exists($caBundle)) {
+            $opts[CURLOPT_CAINFO] = $caBundle;
+        }
+        return $opts;
     }
 }
