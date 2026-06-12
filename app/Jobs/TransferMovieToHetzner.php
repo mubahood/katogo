@@ -289,7 +289,7 @@ class TransferMovieToHetzner implements ShouldQueue
         $movie = MovieModel::find($transfer->movie_id);
         if (!$movie) return;
 
-        $movie->video_url = $newUrl;
+        $movie->url = $newUrl;
         $movie->save();
 
         $transfer->update([
@@ -297,7 +297,7 @@ class TransferMovieToHetzner implements ShouldQueue
             'old_movie_url_backed_up' => true,  // source_url holds the original
         ]);
 
-        Log::info("[TransferMovieToHetzner] Movie #{$transfer->movie_id} video_url updated to Hetzner CDN.");
+        Log::info("[TransferMovieToHetzner] Movie #{$transfer->movie_id} url updated to Hetzner CDN.");
     }
 
     // ── Failure handler ───────────────────────────────────────────────────────

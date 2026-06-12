@@ -81,9 +81,9 @@ class TransferMonitor extends Command
 
         // Movies not yet queued
         $notYetQueued = MovieModel::where('status', 'Active')
-            ->whereNotNull('video_url')
-            ->where('video_url', '!=', '')
-            ->where('video_url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%')
+            ->whereNotNull('url')
+            ->where('url', '!=', '')
+            ->where('url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%')
             ->whereDoesntHave('transfers', fn($q) => $q->whereIn('status', [
                 MovieFileTransfer::STATUS_QUEUED,
                 MovieFileTransfer::STATUS_VERIFYING,

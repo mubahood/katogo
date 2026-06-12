@@ -28,12 +28,12 @@ class MovieFileTransferObserver
 
     public function updated(MovieModel $movie): void
     {
-        // Only react if video_url actually changed
-        if (!$movie->wasChanged('video_url')) {
+        // Only react if url actually changed
+        if (!$movie->wasChanged('url')) {
             return;
         }
 
-        $newUrl = (string)($movie->video_url ?? '');
+        $newUrl = (string)($movie->attributes['url'] ?? $movie->url ?? '');
 
         // Skip if the new URL is already on Hetzner
         if (MovieFileTransfer::isAlreadyOnHetzner($newUrl)) {
@@ -48,7 +48,7 @@ class MovieFileTransferObserver
     private function maybeQueue(MovieModel $movie, string $initiatedBy): void
     {
         try {
-            $url = (string)($movie->video_url ?? '');
+            $url = (string)($movie->attributes['url'] ?? $movie->url ?? '');
 
             // Skip: no URL
             if (empty($url) || strlen($url) < 10) {

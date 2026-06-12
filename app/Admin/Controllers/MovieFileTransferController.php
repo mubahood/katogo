@@ -324,9 +324,9 @@ class MovieFileTransferController extends AdminController
     public function backfill(Content $content): Content
     {
         $notQueued = MovieModel::where('status', 'Active')
-            ->whereNotNull('video_url')
-            ->where('video_url', '!=', '')
-            ->where('video_url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%')
+            ->whereNotNull('url')
+            ->where('url', '!=', '')
+            ->where('url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%')
             ->whereDoesntHave('transfers', fn($q) => $q->whereIn('status', [
                 MovieFileTransfer::STATUS_QUEUED,
                 MovieFileTransfer::STATUS_VERIFYING,
@@ -336,7 +336,7 @@ class MovieFileTransferController extends AdminController
             ]))
             ->count();
 
-        $totalActive = MovieModel::where('status', 'Active')->whereNotNull('video_url')->count();
+        $totalActive = MovieModel::where('status', 'Active')->whereNotNull('url')->count();
         $onHetzner   = MovieFileTransfer::done()->count();
 
         return $content
@@ -524,9 +524,9 @@ class MovieFileTransferController extends AdminController
         );
 
         $notQueued = MovieModel::where('status', 'Active')
-            ->whereNotNull('video_url')
-            ->where('video_url', '!=', '')
-            ->where('video_url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%')
+            ->whereNotNull('url')
+            ->where('url', '!=', '')
+            ->where('url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%')
             ->whereDoesntHave('transfers', fn($q) => $q->whereIn('status', [
                 MovieFileTransfer::STATUS_QUEUED,
                 MovieFileTransfer::STATUS_VERIFYING,

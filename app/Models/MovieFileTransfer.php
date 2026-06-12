@@ -81,7 +81,7 @@ class MovieFileTransfer extends Model
 
     // ── Hetzner URL prefix for dedup check ───────────────────────────────────
 
-    const HETZNER_HOST = 'your-storageshare.de';
+    const HETZNER_HOST = 'nx100800.your-storageshare.de';
 
     // ── Relationship ─────────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ class MovieFileTransfer extends Model
     public static function queueForMovie(MovieModel $movie, string $initiatedBy = 'observer'): static
     {
         $sourceType = 'other';
-        $url = (string)($movie->video_url ?? '');
+        $url = (string)($movie->attributes['url'] ?? $movie->url ?? '');
 
         if (str_contains($url, 'munowatch')) {
             $sourceType = 'munowatch';

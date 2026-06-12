@@ -56,14 +56,14 @@ class TransferBackfill extends Command
         $skipped = 0;
         $alreadyDone = 0;
 
-        // Build base query: active movies with a video_url not on Hetzner
+        // Build base query: active movies with a url not on Hetzner
         $query = MovieModel::where('status', 'Active')
-            ->whereNotNull('video_url')
-            ->where('video_url', '!=', '')
-            ->where('video_url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%');
+            ->whereNotNull('url')
+            ->where('url', '!=', '')
+            ->where('url', 'not like', '%' . MovieFileTransfer::HETZNER_HOST . '%');
 
         if ($source) {
-            $query->where('video_url', 'like', "%{$source}%");
+            $query->where('url', 'like', "%{$source}%");
         }
 
         $total = $query->count();
@@ -77,7 +77,7 @@ class TransferBackfill extends Command
         $bar = $this->output->createProgressBar($total);
         $bar->start();
 
-        $query->select(['id', 'title', 'video_url', 'status', 'year', 'quality',
+        $query->select(['id', 'title', 'url', 'status', 'year', 'quality',
                         'duration', 'poster_url', 'munowatch_id', 'type',
                         'season_number', 'episode_number', 'series_title'])
               ->chunkById($chunk, function ($movies) use (
@@ -128,14 +128,14 @@ class TransferBackfill extends Command
 
     private function processSingle(MovieModel $movie, bool $dryRun): int
     {
-        $url = (string)($movie->video_url ?? '');
+        $url = (string)($movie->attributes['url'] ?? $movie->url ?? '');
 
         $this->line("Movie #{$movie->id}: {$movie->title}");
         $this->line("Status:    {$movie->status}");
         $this->line("Video URL: " . substr($url, 0, 100));
 
         if (empty($url)) {
-            $this->error('Movie has no video_url — cannot queue.');
+            $this->error('Movie has no url — cannot queue.');
             return 1;
         }
 
