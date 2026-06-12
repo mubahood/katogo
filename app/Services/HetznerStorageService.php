@@ -24,9 +24,9 @@ class HetznerStorageService
 
     public function __construct()
     {
-        $this->davBase = rtrim(env('HETZNER_STORAGE_URL'), '/');
-        $this->user    = env('HETZNER_STORAGE_USER');
-        $this->pass    = env('HETZNER_STORAGE_PASS');
+        $this->davBase = rtrim(config('services.hetzner_storage.url', ''), '/');
+        $this->user    = config('services.hetzner_storage.user', '');
+        $this->pass    = config('services.hetzner_storage.pass', '');
 
         $parts         = parse_url($this->davBase);
         $this->ocsBase = $parts['scheme'] . '://' . $parts['host'];

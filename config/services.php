@@ -31,4 +31,10 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'hetzner_storage' => [
+        'url'  => env('HETZNER_STORAGE_URL'),
+        'user' => env('HETZNER_STORAGE_USER'),
+        'pass' => env('HETZNER_STORAGE_PASS'),
+    ],
+
 ];
