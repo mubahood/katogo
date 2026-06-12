@@ -38,7 +38,7 @@ class TransferMovieToHetzner implements ShouldQueue
     public int $tries = 1;
 
     /** Max simultaneous transfers across all workers (enforced via cache lock). */
-    const MAX_CONCURRENT = 100;
+    const MAX_CONCURRENT = 20;
 
     /** Cache key prefix for the global slot counter. */
     const SLOT_KEY = 'movie_transfer_active_slots';

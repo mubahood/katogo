@@ -75,7 +75,7 @@ class Kernel extends ConsoleKernel
         // Movie file transfer dispatcher — dispatches queued transfers every 5 minutes.
         // withoutOverlapping prevents double-dispatching if a previous run is still processing.
         // runInBackground keeps the scheduler heartbeat free.
-        $schedule->command('transfers:process --concurrency=100 --limit=300')
+        $schedule->command('transfers:process --concurrency=20 --limit=60')
             ->everyFiveMinutes()
             ->withoutOverlapping(10)
             ->runInBackground()
