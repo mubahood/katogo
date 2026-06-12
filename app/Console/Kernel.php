@@ -72,6 +72,12 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/queue-worker.log'));
 
+        // Purge orphaned transfer temp files every 30 minutes.
+        // Prevents disk-full crashes when workers are killed mid-download.
+        $schedule->call(function () {
+            \App\Jobs\TransferMovieToHetzner::purgeOrphanedTmpFiles();
+        })->everyThirtyMinutes()->name('purge-transfer-tmp')->withoutOverlapping();
+
         // Movie file transfer dispatcher — dispatches queued transfers every 5 minutes.
         // withoutOverlapping prevents double-dispatching if a previous run is still processing.
         // runInBackground keeps the scheduler heartbeat free.

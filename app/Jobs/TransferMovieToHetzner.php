@@ -93,6 +93,16 @@ class TransferMovieToHetzner implements ShouldQueue
             return;
         }
 
+        // Disk-space guard: abort if root disk > 85% full to prevent 500 errors site-wide
+        $diskFree  = disk_free_space('/');
+        $diskTotal = disk_total_space('/');
+        if ($diskTotal > 0 && ($diskFree / $diskTotal) < 0.15) {
+            $this->releaseSlot();
+            Log::warning("[TransferMovieToHetzner] #{$this->transferId} aborted — root disk > 85% full. Free: " . round($diskFree / 1073741824, 1) . " GB");
+            $this->release(300); // retry in 5 min after cleanup
+            return;
+        }
+
         $tmpFile = null;
 
         try {
@@ -484,11 +494,34 @@ class TransferMovieToHetzner implements ShouldQueue
     private function getTmpDir(): string
     {
         $volumeDir = '/mnt/HC_Volume_105999006/transfer_tmp';
-        if (is_dir('/mnt/HC_Volume_105999006') && is_writable('/mnt/HC_Volume_105999006')) {
+        // Ensure the subdirectory exists with correct ownership before testing writability
+        if (!is_dir($volumeDir)) {
+            @mkdir($volumeDir, 0775, true);
+        }
+        // Test the actual subdirectory, not the parent (parent is root-owned)
+        if (is_dir($volumeDir) && is_writable($volumeDir)) {
             return $volumeDir;
         }
-        // Fallback to system temp (local dev / other environments)
+        // Fallback: local storage (dev / volume unmounted)
         return storage_path('app/transfer_tmp');
+    }
+
+    /** Purge orphaned temp files older than 2 hours from both possible tmp dirs. */
+    public static function purgeOrphanedTmpFiles(): void
+    {
+        $dirs = [
+            '/mnt/HC_Volume_105999006/transfer_tmp',
+            storage_path('app/transfer_tmp'),
+        ];
+        $cutoff = time() - 7200; // 2 hours
+        foreach ($dirs as $dir) {
+            if (!is_dir($dir)) continue;
+            foreach (glob($dir . '/mft_*') ?: [] as $file) {
+                if (filemtime($file) < $cutoff) {
+                    @unlink($file);
+                }
+            }
+        }
     }
 
     // ── Concurrency slot management (cache-based) ─────────────────────────────
