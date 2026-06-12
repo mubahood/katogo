@@ -82,7 +82,7 @@ class TransferMovieToHetzner implements ShouldQueue
 
         // Global concurrency guard
         if (!$this->acquireSlot()) {
-            Log::info("[TransferMovieToHetzner] All {$this->MAX_CONCURRENT} slots occupied. Releasing #{$this->transferId} for 60s.");
+            Log::info("[TransferMovieToHetzner] All " . self::MAX_CONCURRENT . " slots occupied. Releasing #{$this->transferId} for 60s.");
             $this->release(60);
             return;
         }
@@ -166,14 +166,14 @@ class TransferMovieToHetzner implements ShouldQueue
     {
         $url = $this->sanitizeUrl($transfer->source_url);
         $ch  = curl_init($url);
-        curl_setopt_array($ch, array_merge([
+        curl_setopt_array($ch, [
             CURLOPT_NOBODY         => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 10,
             CURLOPT_TIMEOUT        => 30,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; KatogoTransfer/1.0)',
-        ], $this->curlSslOptions($url)));
+        ] + $this->curlSslOptions($url));
 
         curl_exec($ch);
         $httpCode      = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -216,7 +216,7 @@ class TransferMovieToHetzner implements ShouldQueue
 
         $url = $this->sanitizeUrl($transfer->source_url);
         $ch  = curl_init($url);
-        curl_setopt_array($ch, array_merge([
+        curl_setopt_array($ch, [
             CURLOPT_FILE           => $fh,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 10,
@@ -226,11 +226,11 @@ class TransferMovieToHetzner implements ShouldQueue
             CURLOPT_BUFFERSIZE     => 128 * 1024,
             CURLOPT_NOPROGRESS     => false,
             CURLOPT_PROGRESSFUNCTION => function (
-                $curlHandle,
+                $_handle,
                 int $downloadTotal,
                 int $downloadedBytes,
-                int $uploadTotal,
-                int $uploadedBytes
+                int $_uploadTotal,
+                int $_uploadedBytes
             ) use ($transfer, &$lastProgressUpdate, $startTime) {
                 // Update progress every 5 MB to avoid excessive DB writes
                 if ($downloadedBytes - $lastProgressUpdate < 5 * 1024 * 1024) {
@@ -259,7 +259,7 @@ class TransferMovieToHetzner implements ShouldQueue
 
                 return 0; // must return 0 to continue
             },
-        ], $this->curlSslOptions($url)));
+        ] + $this->curlSslOptions($url));
 
         $result    = curl_exec($ch);
         $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
