@@ -71,8 +71,9 @@ class SolveFLWCaptchaJob implements ShouldQueue
             'redirect_url' => substr($this->redirectUrl, 0, 80) . '...',
         ]);
 
-        // Chromium cache is in /var/cache/puppeteer (www-data-owned).
-        // HOME=/var/www so www-data can write temp files; PUPPETEER_CACHE_DIR points to the pre-installed binary.
+        // Chromium is pre-installed at /var/cache/puppeteer (www-data-owned).
+        // XDG dirs must be writable by www-data so Chrome can write lock files and temp data.
+        $chromeTmp = '/var/www/chrome-tmp';
         $process = new Process(
             [$nodeBin, $scriptPath, $this->redirectUrl, $this->txRef],
             base_path(),
@@ -80,6 +81,9 @@ class SolveFLWCaptchaJob implements ShouldQueue
                 'HOME'                 => '/var/www',
                 'DISPLAY'              => '',
                 'PUPPETEER_CACHE_DIR'  => '/var/cache/puppeteer',
+                'XDG_CONFIG_HOME'      => $chromeTmp,
+                'XDG_CACHE_HOME'       => $chromeTmp,
+                'TMPDIR'               => $chromeTmp,
             ],
             null,
             80  // 80-second timeout (job timeout is 90)
