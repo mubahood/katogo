@@ -175,7 +175,18 @@ class MovieFileTransferController extends AdminController
             return $v ? \Carbon\Carbon::parse($v)->diffForHumans() : '—';
         })->sortable()->width(95);
 
-        $grid->column('_actions', 'Actions')->display(function () {
+        // Pre-load sync status for done transfers — avoids N+1 per row
+        $syncedIds   = \App\Models\MovieVideoURLChange::whereNotNull('transfer_id')
+            ->where('remote_status', 'applied')
+            ->pluck('transfer_id')
+            ->flip()
+            ->all();
+        $hasSyncIds  = \App\Models\MovieVideoURLChange::whereNotNull('transfer_id')
+            ->pluck('transfer_id')
+            ->flip()
+            ->all();
+
+        $grid->column('_actions', 'Actions')->display(function () use ($syncedIds, $hasSyncIds) {
             $id   = $this->id;
             $btns = [];
 
@@ -193,6 +204,19 @@ class MovieFileTransferController extends AdminController
                 $btns[] = "<a href='{$dUrl}' target='_blank' class='btn btn-xs btn-default' title='Open CDN URL'>
                                <i class='fa fa-cloud'></i>
                            </a>";
+                // URL sync button — green = synced, orange = not yet pushed
+                $synced        = isset($syncedIds[$id]);
+                $hasSyncRecord = isset($hasSyncIds[$id]);
+                if ($synced) {
+                    $btns[] = "<a href='/movie-file-transfers/{$id}/sync-url' class='btn btn-xs' "
+                             . "style='background:#27ae60;color:#fff' title='URL synced to origin ✓'>"
+                             . "<i class='fa fa-check'></i></a>";
+                } else {
+                    $syncLabel = $hasSyncRecord ? 'Re-sync URL to origin' : 'Sync URL to origin (not done yet)';
+                    $btns[] = "<a href='/movie-file-transfers/{$id}/sync-url' class='btn btn-xs btn-warning' "
+                             . "title='{$syncLabel}' onclick=\"return confirm('Push URL update to mruodel.com?')\">"
+                             . "<i class='fa fa-send'></i></a>";
+                }
             }
             if ($this->isRetriable() || $this->isFailed()) {
                 $btns[] = "<a href='/movie-file-transfers/{$id}/retry'
@@ -343,6 +367,10 @@ class MovieFileTransferController extends AdminController
                                 </a>
                                 <a href='/movie-file-transfers/backfill' class='kt-tbtn kt-tbtn-neutral'>
                                     <i class='fa fa-database'></i> Backfill ({$nq})
+                                </a>
+                                <a href='/movie-file-transfers/sync-all-urls' class='kt-tbtn kt-tbtn-info'
+                                   onclick=\"return confirm('Push all unsynced done-transfer URLs to mruodel.com? This may take a moment.')\">
+                                    <i class='fa fa-send'></i> Sync URLs
                                 </a>
                                 <a href='/movie-file-transfers/monitor' class='kt-tbtn kt-tbtn-success'>
                                     <i class='fa fa-heartbeat'></i> Monitor
@@ -506,6 +534,10 @@ class MovieFileTransferController extends AdminController
                                 </a>
                                 <a href='/movie-file-transfers/backfill' class='kt-tbtn kt-tbtn-neutral'>
                                     <i class='fa fa-database'></i> Backfill ({$nq})
+                                </a>
+                                <a href='/movie-file-transfers/sync-all-urls' class='kt-tbtn kt-tbtn-info'
+                                   onclick=\"return confirm('Push all unsynced done-transfer URLs to mruodel.com?')\">
+                                    <i class='fa fa-send'></i> Sync URLs
                                 </a>
                                 <a href='/movie-file-transfers' class='kt-tbtn kt-tbtn-neutral'>
                                     <i class='fa fa-list'></i> All Transfers
@@ -785,6 +817,102 @@ class MovieFileTransferController extends AdminController
         $t->cancel();
         admin_toastr("Transfer #{$id} cancelled.", 'success');
         return redirect('/movie-file-transfers');
+    }
+
+    /**
+     * Sync a single transfer's URL to origin server.
+     * Creates a MovieVideoURLChange record if none exists, then queues the push.
+     */
+    public function syncUrl(int $id)
+    {
+        $t = MovieFileTransfer::findOrFail($id);
+
+        if (!$t->isDone() || !$t->dest_url) {
+            admin_toastr('Transfer #' . $id . ' has no destination URL to sync.', 'error');
+            return redirect('/movie-file-transfers');
+        }
+
+        $remoteEndpoint = config('services.url_sync.origin_url')
+            ? rtrim(config('services.url_sync.origin_url'), '/') . '/api/movie-url-sync'
+            : null;
+
+        // Check for existing record
+        $existing = \App\Models\MovieVideoURLChange::where('transfer_id', $id)->latest()->first();
+
+        if ($existing && $existing->remote_status === \App\Models\MovieVideoURLChange::REMOTE_APPLIED) {
+            admin_toastr("Transfer #{$id} URL already synced to origin.", 'info');
+            return redirect('/movie-url-changes/' . $existing->id);
+        }
+
+        if ($existing) {
+            // Reset and re-queue
+            $existing->update([
+                'remote_status' => \App\Models\MovieVideoURLChange::REMOTE_PENDING,
+                'attempts'      => 0,
+                'error_message' => null,
+            ]);
+            if ($remoteEndpoint) {
+                dispatch(new \App\Jobs\PushUrlChangeToOrigin($existing->id))->onQueue('url-sync');
+            }
+            admin_toastr("Re-queued URL sync for transfer #{$id}.", 'success');
+            return redirect('/movie-url-changes/' . $existing->id);
+        }
+
+        // Create fresh record
+        $movie  = \App\Models\MovieModel::find($t->movie_id);
+        $change = \App\Models\MovieVideoURLChange::create([
+            'movie_model_id'    => $t->movie_id,
+            'movie_title'       => $t->movie_title,
+            'old_url'           => $movie?->url !== $t->dest_url ? $movie?->url : null,
+            'new_url'           => $t->dest_url,
+            'source'            => \App\Models\MovieVideoURLChange::SOURCE_HETZNER,
+            'status'            => \App\Models\MovieVideoURLChange::STATUS_APPLYING,
+            'local_status'      => ($movie && $movie->url === $t->dest_url) ? 'applied' : 'pending',
+            'remote_status'     => $remoteEndpoint
+                ? \App\Models\MovieVideoURLChange::REMOTE_PENDING
+                : \App\Models\MovieVideoURLChange::REMOTE_SKIPPED,
+            'transfer_id'       => $t->id,
+            'remote_endpoint'   => $remoteEndpoint,
+            'local_applied_at'  => ($movie && $movie->url === $t->dest_url) ? now() : null,
+        ]);
+
+        if ($change->local_status !== 'applied') {
+            $change->applyLocal();
+        } else {
+            $change->recalcStatusPublic();
+        }
+
+        if ($remoteEndpoint) {
+            dispatch(new \App\Jobs\PushUrlChangeToOrigin($change->id))->onQueue('url-sync');
+        }
+
+        admin_toastr("URL sync queued for transfer #{$id}. Change #{$change->id} created.", 'success');
+        return redirect('/movie-url-changes/' . $change->id);
+    }
+
+    /**
+     * Queue URL sync for ALL done transfers that have no applied remote sync record.
+     * Runs the backfill command via artisan in the background.
+     */
+    public function syncAllUrls()
+    {
+        $unsynced = MovieFileTransfer::where('status', MovieFileTransfer::STATUS_DONE)
+            ->whereNotNull('dest_url')
+            ->whereNotIn('id', \App\Models\MovieVideoURLChange::whereNotNull('transfer_id')->pluck('transfer_id'))
+            ->count();
+
+        if ($unsynced === 0) {
+            admin_toastr('All done transfers already have URL sync records.', 'info');
+            return redirect('/movie-url-changes/dashboard');
+        }
+
+        // Run backfill in background (non-blocking)
+        $logPath = storage_path('logs/url-sync-backfill.log');
+        $cmd = "php " . base_path('artisan') . " url-sync:backfill --limit=2000 >> {$logPath} 2>&1 &";
+        exec($cmd);
+
+        admin_toastr("Backfilling URL sync for {$unsynced} transfers. Check /movie-url-changes/dashboard for progress.", 'success');
+        return redirect('/movie-url-changes/dashboard');
     }
 
     public function retryAllFailed()
@@ -1470,6 +1598,7 @@ function ktCopyUrl(url, btn) {
 .kt-tbtn-warning{background:#d68910;color:#fff;}
 .kt-tbtn-success{background:#27ae60;color:#fff;}
 .kt-tbtn-neutral{background:#eceff1;color:#37474f;border-color:#cfd8dc;}
+.kt-tbtn-info{background:#8e44ad;color:#fff;}
 
 /* ── Section boxes ──────────────────────────────────────────── */
 .kt-live-box{background:#fff;border:1px solid #d8dde4;margin-bottom:10px;}

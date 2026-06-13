@@ -225,8 +225,10 @@ Route::group([
     $router->post('movie-file-transfers/queue-single',      'MovieFileTransferController@queueSingle')->name('movie-file-transfers.queue-single-post');
     $router->get('movie-file-transfers/queue-single/{movieId}', 'MovieFileTransferController@queueSingle')->where(['movieId' => '[0-9]+'])->name('movie-file-transfers.queue-single');
     $router->get('movie-file-transfers/{id}',               'MovieFileTransferController@show')->where(['id' => '[0-9]+'])->name('movie-file-transfers.show');
+    $router->get('movie-file-transfers/sync-all-urls',       'MovieFileTransferController@syncAllUrls')->name('movie-file-transfers.sync-all-urls');
     $router->get('movie-file-transfers/{id}/retry',         'MovieFileTransferController@retry')->where(['id' => '[0-9]+'])->name('movie-file-transfers.retry');
     $router->get('movie-file-transfers/{id}/cancel',        'MovieFileTransferController@cancel')->where(['id' => '[0-9]+'])->name('movie-file-transfers.cancel');
+    $router->get('movie-file-transfers/{id}/sync-url',      'MovieFileTransferController@syncUrl')->where(['id' => '[0-9]+'])->name('movie-file-transfers.sync-url');
 
     // ── Movie URL Change / Sync Routes ───────────────────────────────
     $router->get('movie-url-changes/dashboard',          'MovieVideoURLChangeController@dashboard')->name('movie-url-changes.dashboard');
