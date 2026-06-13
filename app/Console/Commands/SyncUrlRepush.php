@@ -54,30 +54,39 @@ class SyncUrlRepush extends Command
             return 0;
         }
 
-        $this->info("Fixing {$count} records and queueing remote pushes...");
-        $bar = $this->output->createProgressBar($count);
-        $bar->start();
+        // Collect IDs first — then bulk-update, then bulk-dispatch
+        // (avoids chunk pagination drift when updating the WHERE condition)
+        $ids = (clone $query)->pluck('id')->toArray();
+        $actual = count($ids);
 
+        $this->info("Fixing {$actual} records via bulk UPDATE + dispatching push jobs...");
+
+        // Single UPDATE — no pagination drift
+        MovieVideoURLChange::whereIn('id', $ids)->update([
+            'remote_status'   => MovieVideoURLChange::REMOTE_PENDING,
+            'remote_endpoint' => $endpoint,
+            'attempts'        => 0,
+            'status'          => MovieVideoURLChange::STATUS_APPLYING,
+        ]);
+
+        // Dispatch jobs in chunks of 100 to avoid memory issues
+        $bar = $this->output->createProgressBar($actual);
+        $bar->start();
         $fixed = 0;
-        $query->chunk(100, function ($records) use ($endpoint, $bar, &$fixed) {
-            foreach ($records as $record) {
-                $record->update([
-                    'remote_status'   => MovieVideoURLChange::REMOTE_PENDING,
-                    'remote_endpoint' => $endpoint,
-                    'attempts'        => 0,
-                    'status'          => MovieVideoURLChange::STATUS_APPLYING,
-                ]);
-                dispatch(new PushUrlChangeToOrigin($record->id))
+
+        foreach (array_chunk($ids, 100) as $chunk) {
+            foreach ($chunk as $id) {
+                dispatch(new PushUrlChangeToOrigin($id))
                     ->onQueue('url-sync')
-                    ->delay(now()->addSeconds(rand(1, 30))); // stagger over 30s
+                    ->delay(now()->addSeconds(rand(1, 60))); // stagger over 60s
                 $fixed++;
-                $bar->advance();
             }
-        });
+            $bar->advance(count($chunk));
+        }
 
         $bar->finish();
         $this->newLine();
-        $this->info("Done. Fixed and queued {$fixed} remote push jobs.");
+        $this->info("Done. Bulk-updated and queued {$fixed} remote push jobs.");
 
         return 0;
     }
