@@ -539,6 +539,77 @@ class SubscriptionFlutterwaveService
             });
     }
 
+    /**
+     * Generate a Flutterwave hosted checkout link — no phone number required.
+     * The user/admin opens this URL on FLW's own page and enters phone there.
+     * Uses POST /v3/payments (standard payment link, not direct charge).
+     */
+    public function generateHostedCheckoutLink(Subscription $subscription, ?string $callbackUrl = null): array
+    {
+        $subscription->loadMissing('user', 'plan');
+
+        $user = $subscription->user;
+        if (!$user) {
+            throw new \RuntimeException('Subscription user is missing.');
+        }
+
+        $txRef = $subscription->pesapal_merchant_reference;
+        if (empty($txRef)) {
+            throw new \RuntimeException('Subscription merchant reference is missing.');
+        }
+
+        $payload = [
+            'tx_ref'       => $txRef,
+            'amount'       => number_format((float) $subscription->amount_paid, 2, '.', ''),
+            'currency'     => $subscription->currency ?: $this->currency,
+            'redirect_url' => $callbackUrl ?: $this->defaultCallbackUrl(),
+            'payment_options' => 'mobilemoneyuganda',
+            'customer'     => [
+                'email'       => (string) ($user->email ?: ('user' . $user->id . '@example.com')),
+                'name'        => trim((string) ($user->name ?: (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))) ?: 'Subscriber',
+            ],
+            'customizations' => [
+                'title'       => 'Katogo Subscription',
+                'description' => ($subscription->plan->name ?? 'Premium') . ' plan payment',
+            ],
+            'meta' => [
+                'subscription_id' => $subscription->id,
+                'user_id'         => $subscription->user_id,
+                'plan_id'         => $subscription->plan_id,
+                'source'          => 'admin_hosted_link',
+            ],
+        ];
+
+        $response = $this->http()->post($this->baseUrl . '/v3/payments', $payload);
+
+        $body = $response->json();
+        if (!$response->successful() || !is_array($body)) {
+            $msg = is_array($body) ? ($body['message'] ?? 'Unknown Flutterwave error') : ('HTTP ' . $response->status());
+            throw new \RuntimeException('Flutterwave hosted checkout failed: ' . $msg);
+        }
+
+        $link = $body['data']['link'] ?? null;
+        if (empty($link)) {
+            throw new \RuntimeException('Flutterwave did not return a hosted checkout link.');
+        }
+
+        $subscription->payment_url    = $link;
+        $subscription->payment_method = 'flutterwave';
+        $subscription->flutterwave_reference = $txRef;
+        $subscription->flutterwave_response  = $body;
+        $subscription->save();
+
+        return [
+            'success'            => true,
+            'order_tracking_id'  => $txRef,
+            'merchant_reference' => $txRef,
+            'redirect_url'       => $link,
+            'payment_message'    => null,
+            'gateway'            => 'flutterwave',
+            'mode'               => 'hosted_checkout',
+        ];
+    }
+
     public function isValidWebhook(string $rawBody, ?string $signature): bool
     {
         $secretHash = (string) config('flutterwave.secret_hash', '');

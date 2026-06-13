@@ -1749,18 +1749,23 @@ HTML);
 
 <!-- Initiate New Payment Modal (shown on top of Fix Lab) -->
 <div class="modal fade" id="subInitPayModal" tabindex="-1" role="dialog" style="z-index:1080">
-  <div class="modal-dialog" role="document" style="max-width:440px;margin:80px auto">
+  <div class="modal-dialog" role="document" style="max-width:460px;margin:80px auto">
     <div class="modal-content" style="border-radius:4px;background:#1a1e2a;color:#c9d1d9;border:1px solid #30363d">
       <div class="modal-header" style="background:#161b22;border-bottom:1px solid #30363d;padding:12px 18px">
         <h4 class="modal-title" style="font-size:15px;font-weight:700;color:#e6edf3;margin:0"><i class="fa fa-credit-card"></i> Initiate New Payment</h4>
         <button type="button" class="close" data-dismiss="modal" style="color:#8b949e;opacity:1;font-size:22px;background:none;border:0">&times;</button>
       </div>
       <div class="modal-body" style="padding:18px 20px">
-        <p style="font-size:12px;color:#8b949e;margin-bottom:14px">A new payment order will be created for this subscription via the selected gateway. The user must open the payment link to complete the payment.</p>
+        <!-- Mode hint box -->
+        <div id="subInitPayModeHint" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#8b949e">
+          <b style="color:#58a6ff">Flutterwave + phone</b> → backend dispatches USSD push automatically (no URL to open)<br>
+          <b style="color:#58a6ff">Flutterwave, no phone</b> → generates a hosted checkout link you can share<br>
+          <b style="color:#58a6ff">Pesapal + phone</b> → standard Pesapal checkout link
+        </div>
         <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:#9fb2d9;display:block;margin-bottom:4px">Phone Number (Mobile Money)</label>
-          <input type="tel" id="subInitPayPhone" placeholder="e.g. 0772123456" style="width:100%;padding:7px 10px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;font-size:13px">
-          <div style="font-size:10px;color:#6e7681;margin-top:3px">Enter the phone number linked to the Mobile Money account</div>
+          <label style="font-size:12px;color:#9fb2d9;display:block;margin-bottom:4px">Phone Number <span style="color:#6e7681">(optional for Flutterwave)</span></label>
+          <input type="tel" id="subInitPayPhone" placeholder="e.g. 0772123456 — leave blank for payment link" style="width:100%;padding:7px 10px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;font-size:13px">
+          <div id="subInitPayPhoneHint" style="font-size:10px;color:#6e7681;margin-top:3px">With Flutterwave + phone: backend solves captcha and sends USSD push automatically</div>
         </div>
         <div style="margin-bottom:12px">
           <label style="font-size:12px;color:#9fb2d9;display:block;margin-bottom:4px">Gateway</label>
@@ -3003,7 +3008,13 @@ $(function(){
     // ─────────────────────────────────────────────────────────────────────────
     //  Admin Fix Lab: Initiate a new payment for a subscription
     //  POST api/subscriptions/debug/initiate-payment
-    //  Body: { subscription_id, phone, gateway }
+    //  Body: { subscription_id, phone?, gateway }
+    //
+    //  Modes:
+    //   - phone provided + FLW → direct charge → auto-solve captcha → USSD push
+    //                            returns auto_push:true  (no URL needed by UI)
+    //   - no phone + FLW       → hosted checkout link   returns auto_push:false + redirect_url
+    //   - pesapal (any phone)  → standard Pesapal init  returns redirect_url
     // ─────────────────────────────────────────────────────────────────────────
     public function debugInitiatePayment(Request $request)
     {
@@ -3014,11 +3025,11 @@ $(function(){
         if (!$subscriptionId) {
             return response()->json(['success' => false, 'message' => 'subscription_id is required.'], 422);
         }
-        if ($phone === '') {
-            return response()->json(['success' => false, 'message' => 'Phone number is required.'], 422);
-        }
         if (!in_array($gateway, ['pesapal', 'flutterwave'], true)) {
             return response()->json(['success' => false, 'message' => 'Gateway must be pesapal or flutterwave.'], 422);
+        }
+        if ($gateway === 'pesapal' && $phone === '') {
+            return response()->json(['success' => false, 'message' => 'Phone number is required for Pesapal.'], 422);
         }
 
         try {
@@ -3039,24 +3050,51 @@ $(function(){
                 $subscription->save();
             }
 
+            $autoPush = false;
+            $result   = [];
+
             if ($gateway === 'pesapal') {
                 $svc    = app(\App\Services\SubscriptionPesapalService::class);
                 $result = $svc->initializePayment($subscription, null, $phone);
-            } else {
+            } elseif ($phone !== '') {
+                // FLW direct charge — backend will auto-solve the math captcha via Puppeteer
                 $svc    = app(\App\Services\SubscriptionFlutterwaveService::class);
                 $result = $svc->initializePayment($subscription, null, $phone);
+
+                // If FLW returned a captcha URL, dispatch the auto-solver job
+                $captchaUrl = $result['redirect_url'] ?? '';
+                if ($captchaUrl && str_contains($captchaUrl, 'captcha/verify')) {
+                    $txRef = $result['order_tracking_id'] ?? $subscription->pesapal_merchant_reference;
+                    \App\Jobs\SolveFLWCaptchaJob::dispatch($subscription->id, $captchaUrl, $txRef);
+                    $autoPush = true;
+                    Log::info('debugInitiatePayment: dispatched SolveFLWCaptchaJob', [
+                        'subscription_id' => $subscription->id,
+                        'tx_ref'          => $txRef,
+                    ]);
+                }
+            } else {
+                // FLW with no phone → generate hosted checkout link (user enters phone on FLW page)
+                $svc    = app(\App\Services\SubscriptionFlutterwaveService::class);
+                $result = $svc->generateHostedCheckoutLink($subscription);
             }
 
             $subscription->refresh();
 
+            $message = $autoPush
+                ? 'USSD push dispatched — backend is solving captcha automatically. The customer will receive a PIN prompt.'
+                : 'Payment link generated via ' . $gateway . '. Share with the customer to complete payment.';
+
             return response()->json([
                 'success'         => true,
-                'message'         => 'Payment initiated via ' . $gateway . '. Redirect the user to the payment link.',
+                'message'         => $message,
                 'gateway'         => $gateway,
-                'redirect_url'    => $result['redirect_url']    ?? ($result['payment_message'] ?? null),
+                'auto_push'       => $autoPush,
+                'redirect_url'    => $result['redirect_url'] ?? ($result['payment_message'] ?? null),
                 'payment_message' => $result['payment_message'] ?? null,
                 'tracking_id'     => $result['order_tracking_id'] ?? null,
                 'merchant_ref'    => $result['merchant_reference'] ?? null,
+                'tx_ref'          => $result['order_tracking_id'] ?? $subscription->pesapal_merchant_reference,
+                'subscription_id' => $subscription->id,
                 'data'            => [
                     'subscription'     => $this->subBuildSubscriptionSnippet($subscription),
                     'user'             => $this->subBuildUserSnippet($subscription),
@@ -3066,7 +3104,7 @@ $(function(){
         } catch (\Throwable $e) {
             Log::error('Subscription debugInitiatePayment failed', [
                 'subscription_id' => $subscriptionId,
-                'phone'           => substr($phone, 0, 6) . '***',
+                'phone'           => $phone !== '' ? (substr($phone, 0, 6) . '***') : '(no phone)',
                 'gateway'         => $gateway,
                 'error'           => $e->getMessage(),
             ]);

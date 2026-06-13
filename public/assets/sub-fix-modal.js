@@ -491,6 +491,17 @@
                 $('#subInitPayModal').modal('show');
             });
 
+        // Update hint text when gateway changes
+        $(document)
+            .off('change.subinitgw', '#subInitPayGateway')
+            .on('change.subinitgw', '#subInitPayGateway', function () {
+                var gw = $(this).val();
+                var hint = gw === 'flutterwave'
+                    ? 'With Flutterwave + phone: backend solves captcha and sends USSD push automatically'
+                    : 'Phone required for Pesapal';
+                $('#subInitPayPhoneHint').text(hint);
+            });
+
         // Submit new payment initiation
         $(document)
             .off('click.subinitpay', '#subInitPaySubmitBtn')
@@ -500,16 +511,20 @@
                     return;
                 }
                 var phone   = String($('#subInitPayPhone').val() || '').trim();
-                var gateway = String($('#subInitPayGateway').val() || 'pesapal').trim();
+                var gateway = String($('#subInitPayGateway').val() || 'flutterwave').trim();
 
-                if (!phone) {
-                    $('#subInitPayResult').html('<span style="color:#f85149">Please enter a phone number.</span>');
+                if (gateway === 'pesapal' && !phone) {
+                    $('#subInitPayResult').html('<span style="color:#f85149">Phone number is required for Pesapal.</span>');
                     return;
                 }
 
                 var $btn = $(this);
                 $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Initiating…');
-                $('#subInitPayResult').html('<span style="color:#f8c471">Contacting ' + esc(gateway) + ' gateway…</span>');
+
+                var modeLabel = (gateway === 'flutterwave' && phone)
+                    ? 'Sending USSD push via Flutterwave…'
+                    : (gateway === 'flutterwave' ? 'Generating hosted checkout link…' : 'Contacting Pesapal…');
+                $('#subInitPayResult').html('<span style="color:#f8c471">' + modeLabel + '</span>');
 
                 $.post(initiatePaymentUrl, {
                     _token:          token,
@@ -524,24 +539,7 @@
                         return;
                     }
 
-                    var payUrl = res.redirect_url || '';
-                    var payMsg = res.payment_message || '';
-
-                    var resultHtml = '<span style="color:#7dffa1"><b>Payment initiated!</b></span> ';
-                    if (payUrl) {
-                        resultHtml += '<a href="' + esc(payUrl) + '" target="_blank" rel="noopener noreferrer"'
-                            + ' style="display:inline-block;margin-top:8px;padding:4px 12px;background:#1f6feb;color:#fff;border-radius:4px;text-decoration:none;font-size:12px">'
-                            + '<i class="fa fa-external-link"></i> Open Payment Link</a>';
-                    } else if (payMsg) {
-                        resultHtml += '<div style="margin-top:6px;font-size:11px;color:#f8c471">' + esc(payMsg) + '</div>';
-                    }
-                    resultHtml += '<div style="font-size:10px;color:#6e7681;margin-top:6px">Tracking: ' + esc(res.tracking_id || '—') + '</div>';
-                    $('#subInitPayResult').html(resultHtml);
-
-                    logLine('✅ Payment initiated via ' + esc(gateway) + ' | Tracking: ' + esc(res.tracking_id || '—'), '#7dffa1');
-                    if (payUrl) logLine('   Pay URL: ' + payUrl, '#58a6ff');
-
-                    // Refresh tx list + sub summary
+                    // Refresh tx list + sub summary immediately
                     var d = (res.data || {});
                     if (d.all_transactions) {
                         singleState.allTransactions = d.all_transactions;
@@ -549,11 +547,85 @@
                     }
                     if (d.subscription) renderSubSummary(d.subscription, d.user);
 
-                    // Close modal after short delay so user can see the link
-                    setTimeout(function () {
-                        // Only auto-close if they haven't clicked the link yet
-                        if (!payUrl) $('#subInitPayModal').modal('hide');
-                    }, 3000);
+                    if (res.auto_push) {
+                        // Backend dispatched SolveFLWCaptchaJob — show live status, poll until confirmed
+                        var subscId  = res.subscription_id || singleState.subscriptionId;
+                        var trackId  = res.tracking_id || '—';
+                        var captchaUrl = res.redirect_url || '';
+                        $('#subInitPayResult').html(
+                            '<div style="color:#7dffa1;font-size:13px;margin-bottom:8px">'
+                            + '<i class="fa fa-check-circle"></i> <b>USSD push dispatched!</b></div>'
+                            + '<div style="font-size:11px;color:#c9d1d9;margin-bottom:8px">'
+                            + 'Backend is solving the math captcha automatically.<br>'
+                            + 'The customer will receive a USSD PIN prompt on their phone.</div>'
+                            + '<div id="subInitPayStatus" style="font-size:11px;padding:6px 10px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#f8c471">'
+                            + '<i class="fa fa-spinner fa-spin"></i> Waiting for captcha solve…</div>'
+                            + '<div style="font-size:10px;color:#6e7681;margin-top:6px">Tracking: ' + esc(trackId) + '</div>'
+                        );
+                        logLine('✅ FLW USSD push dispatched via backend | Sub #' + subscId + ' | Tracking: ' + esc(trackId), '#7dffa1');
+
+                        // Poll inspect endpoint every 5s for up to ~2 minutes
+                        var pollCount    = 0;
+                        var maxPolls     = 24;
+                        var pollInterval = setInterval(function () {
+                            pollCount++;
+                            if (pollCount > maxPolls) {
+                                clearInterval(pollInterval);
+                                $('#subInitPayStatus').html('<span style="color:#f8c471">Timed out — check status manually via Re-Inspect.</span>');
+                                return;
+                            }
+                            $.get(inspectUrl, { subscription_id: subscId })
+                            .done(function (ir) {
+                                var payStatus = ((ir.data || {}).payment_status || '').toLowerCase();
+                                var subStatus = ((ir.data || {}).subscription_status || '').toLowerCase();
+                                var sub       = (ir.data || {}).subscription || {};
+                                var usr       = (ir.data || {}).user || {};
+
+                                if (subStatus === 'active' || payStatus === 'completed' || payStatus === 'active') {
+                                    clearInterval(pollInterval);
+                                    $('#subInitPayStatus').html('<span style="color:#7dffa1"><i class="fa fa-check-circle"></i> <b>Payment confirmed! Subscription is now active.</b></span>');
+                                    logLine('✅ Payment confirmed — subscription #' + subscId + ' is now active', '#7dffa1');
+                                    if (sub.id) renderSubSummary(sub, usr);
+                                } else if (payStatus === 'awaitingpin') {
+                                    $('#subInitPayStatus').html('<span style="color:#58a6ff"><i class="fa fa-mobile"></i> USSD sent — customer needs to enter PIN on their phone.</span>');
+                                } else if (payStatus === 'captchafailed') {
+                                    clearInterval(pollInterval);
+                                    var fbHtml = '<span style="color:#f85149"><i class="fa fa-exclamation-triangle"></i> Captcha auto-solve failed.</span>';
+                                    if (captchaUrl) {
+                                        fbHtml += ' <a href="' + esc(captchaUrl) + '" target="_blank" rel="noopener noreferrer"'
+                                            + ' style="display:inline-block;margin-left:6px;padding:3px 10px;background:#1f6feb;color:#fff;border-radius:4px;text-decoration:none;font-size:11px">'
+                                            + '<i class="fa fa-external-link"></i> Open Captcha Page</a>';
+                                    }
+                                    $('#subInitPayStatus').html(fbHtml);
+                                    logLine('⚠ Captcha solve failed for sub #' + subscId, '#f8c471');
+                                } else {
+                                    $('#subInitPayStatus').html('<span style="color:#f8c471"><i class="fa fa-spinner fa-spin"></i> Status: ' + esc(payStatus || 'processing') + '…</span>');
+                                }
+                            });
+                        }, 5000);
+
+                    } else {
+                        // Link mode (no-phone FLW hosted checkout, or Pesapal)
+                        var payUrl = res.redirect_url || '';
+                        var payMsg = res.payment_message || '';
+
+                        var resultHtml = '<span style="color:#7dffa1"><b>Payment link ready!</b></span>';
+                        if (payUrl) {
+                            resultHtml += '<div style="margin-top:8px">'
+                                + '<a href="' + esc(payUrl) + '" target="_blank" rel="noopener noreferrer"'
+                                + ' style="display:inline-block;padding:5px 14px;background:#1f6feb;color:#fff;border-radius:4px;text-decoration:none;font-size:12px">'
+                                + '<i class="fa fa-external-link"></i> Open Payment Link</a></div>'
+                                + '<div style="margin-top:6px;font-size:10px;color:#6e7681;word-break:break-all">'
+                                + esc(payUrl) + '</div>';
+                        } else if (payMsg) {
+                            resultHtml += '<div style="margin-top:6px;font-size:11px;color:#f8c471">' + esc(payMsg) + '</div>';
+                        }
+                        resultHtml += '<div style="font-size:10px;color:#6e7681;margin-top:6px">Tracking: ' + esc(res.tracking_id || '—') + '</div>';
+                        $('#subInitPayResult').html(resultHtml);
+
+                        logLine('✅ Payment link generated via ' + esc(gateway) + ' | Tracking: ' + esc(res.tracking_id || '—'), '#7dffa1');
+                        if (payUrl) logLine('   Pay URL: ' + payUrl, '#58a6ff');
+                    }
                 })
                 .fail(function (xhr) {
                     $btn.prop('disabled', false).html('<i class="fa fa-paper-plane"></i> Initiate Payment');
