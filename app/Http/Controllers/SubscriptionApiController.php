@@ -3101,6 +3101,9 @@ class SubscriptionApiController extends Controller
         Cache::forget("sub_pending_{$subscription->user_id}");
         Cache::forget("active_sub_{$subscription->user_id}");
         Cache::forget("v2_pay_check_{$subscription->user_id}");
+        // V1 manifest cache — must be cleared so ManifestModel immediately shows correct status
+        Cache::forget("v1_sub_info_{$subscription->user_id}");
+        Cache::forget("v1_dash_stats_{$subscription->user_id}");
 
         $cacheDir = storage_path('api_cache');
         if (!is_dir($cacheDir)) {
