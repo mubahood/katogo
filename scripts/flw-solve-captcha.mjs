@@ -29,9 +29,17 @@ if (!redirectUrl || !redirectUrl.startsWith('http')) {
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',  // essential on low-RAM servers
+        '--disable-dev-shm-usage',        // essential on low-RAM servers
         '--disable-gpu',
         '--single-process',
+        '--disable-crash-reporter',       // prevents crashpad subprocess failing on servers
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--no-first-run',
+        '--no-zygote',                    // avoids zygote process crash on some VPS configs
+        '--deterministic-fetch',
+        '--disable-features=site-per-process',
       ],
     });
 
