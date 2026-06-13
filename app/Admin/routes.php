@@ -239,6 +239,21 @@ Route::group([
     $router->get('movie-url-changes/{id}',               'MovieVideoURLChangeController@show')->where(['id' => '[0-9]+'])->name('movie-url-changes.show');
     $router->get('movie-url-changes',                    'MovieVideoURLChangeController@index')->name('movie-url-changes.index');
 
+    // ── Namz Crawler Routes ───────────────────────────────────────────────────
+    $router->get('namz-crawler',                          'NamzCrawlerController@dashboard')->name('namz-crawler.dashboard');
+    $router->get('namz-crawler/start',                    'NamzCrawlerController@startCrawl')->name('namz-crawler.start');
+    $router->get('namz-crawler/resume',                   'NamzCrawlerController@resumeCrawl')->name('namz-crawler.resume');
+    $router->get('namz-crawler/stop',                     'NamzCrawlerController@stopCrawl')->name('namz-crawler.stop');
+    $router->get('namz-crawler/test-login',               'NamzCrawlerController@testLogin')->name('namz-crawler.test-login');
+    $router->get('namz-crawler/backfill-urls',            'NamzCrawlerController@backfillOldRecords')->name('namz-crawler.backfill');
+    $router->get('namz-crawler/activate-with-url',        'NamzCrawlerController@activateMoviesWithUrl')->name('namz-crawler.activate');
+    $router->get('namz-crawler/live',                     'NamzCrawlerController@liveSessions')->name('namz-crawler.live');
+    $router->get('namz-crawler/retry/{id}',               'NamzCrawlerController@retryId')->where(['id' => '[0-9]+'])->name('namz-crawler.retry');
+    $router->get('namz-crawler/set-url/{movieId}',        'NamzCrawlerController@setUrlForm')->where(['movieId' => '[0-9]+'])->name('namz-crawler.set-url');
+    $router->post('namz-crawler/set-url/{movieId}/save',  'NamzCrawlerController@saveUrl')->where(['movieId' => '[0-9]+'])->name('namz-crawler.save-url');
+    $router->get('namz-crawler/sessions/{id}',            'NamzCrawlerController@showSession')->where(['id' => '[0-9]+'])->name('namz-crawler.session');
+    $router->get('namz-crawl-logs',                       'NamzCrawlerController@index')->name('namz-crawl-logs.index');
+
     // ============================================
     // GAME MODULE ROUTES — DISABLED (resource optimization)
     // ============================================

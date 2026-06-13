@@ -358,6 +358,37 @@ class Kernel extends ConsoleKernel
         $schedule->call(function () {
             \DB::table('cache')->where('expiration', '<', time())->delete();
         })->dailyAt('03:00')->name('prune-expired-cache')->withoutOverlapping();
+
+        // ──────────────────────────────────────────────────────────────────
+        // NAMZ CRAWLER — Nightly metadata scrape (avoids overwhelming server)
+        // Runs nightly at 01:00 AM in 50-ID batches with 800ms delay.
+        // Uses --from/--to to advance through ID space incrementally.
+        // withoutOverlapping(90) prevents stacking if it runs long.
+        // ──────────────────────────────────────────────────────────────────
+        $schedule->command('namz:crawl --from=47 --to=9200 --delay=800 --batch=50')
+            ->dailyAt('01:00')
+            ->withoutOverlapping(90)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/namz_crawl.log'))
+            ->name('namz-nightly-crawl');
+
+        // Namz post-crawl: activate any movies that now have a valid URL
+        $schedule->call(function () {
+            $count = \DB::table('movie_models')
+                ->where('platform_type', 'namz')
+                ->where('namz_url_status', 'pending')
+                ->whereNotNull('url')
+                ->where('url', '<>', '')
+                ->where('url', 'not like', '%namzentertainment%')
+                ->update([
+                    'status'          => 'Active',
+                    'namz_url_status' => 'found',
+                    'fix_status'      => null,
+                ]);
+            if ($count > 0) {
+                \Log::info("[NamzScheduler] Auto-activated {$count} movies that now have a video URL.");
+            }
+        })->dailyAt('02:00')->name('namz-auto-activate')->withoutOverlapping();
     }
 
     /**

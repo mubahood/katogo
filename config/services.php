@@ -44,6 +44,11 @@ return [
         'origin_url' => env('URL_SYNC_ORIGIN_URL', ''),
     ],
 
+    'namz' => [
+        'email'    => env('NAMZ_EMAIL', 'mubahood360@gmail.com'),
+        'password' => env('NAMZ_PASSWORD', '0783204665'),
+    ],
+
     'sync' => [
         'enabled'     => env('SYNC_ENABLED', false),
         'source_host' => env('SYNC_SOURCE_HOST', '209.74.87.69'),
