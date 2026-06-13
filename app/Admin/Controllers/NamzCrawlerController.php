@@ -7,6 +7,7 @@ use App\Models\MyCounter;
 use App\Models\NamzCrawlLog;
 use App\Models\NamzCrawlSession;
 use Encore\Admin\Controllers\AdminController;
+use Encore\Admin\Facades\Admin;
 use Encore\Admin\Grid;
 use Encore\Admin\Layout\Column;
 use Encore\Admin\Layout\Content;
@@ -27,9 +28,9 @@ class NamzCrawlerController extends AdminController
 
     private function sharedAssets(bool $isRunning = false): string
     {
-        $isRunningJs = $isRunning ? 'true' : 'false';
-        $html = <<<'HTML'
-<style>
+        $jsIsRunning = $isRunning ? 'true' : 'false';
+
+        Admin::style(<<<'CSS'
 .kt-stat-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px}
 .kt-stat{flex:1 1 160px;background:#fff;border-radius:6px;padding:14px 18px;border-left:4px solid #2980b9;box-shadow:0 1px 4px rgba(0,0,0,.08)}
 .kt-stat .val{font-size:26px;font-weight:700;color:#2c3e50}
@@ -55,14 +56,171 @@ class NamzCrawlerController extends AdminController
 .kt-badge-green{background:#27ae60}.kt-badge-orange{background:#e67e22}.kt-badge-red{background:#e74c3c}.kt-badge-blue{background:#2980b9}
 .detail-poster{width:110px;height:155px;object-fit:cover;border-radius:5px;flex-shrink:0}
 .detail-meta p{margin:4px 0;font-size:13px}
-</style>
+CSS);
 
+        $js = <<<'JSBLOCK'
+// Move overlays to document.body — escapes any parent CSS constraints
+document.querySelectorAll('body > .kt-overlay').forEach(function(el){ el.remove(); });
+document.querySelectorAll('.kt-overlay').forEach(function(el){ document.body.appendChild(el); });
+
+var _setUrlMovieId = null;
+window.playMovie = function(url, title) {
+  document.getElementById('vidTitle').textContent = title || '';
+  document.getElementById('vidSrc').src = url;
+  document.getElementById('vidPlayer').load();
+  document.getElementById('vidOverlay').classList.add('show');
+};
+window.closeVid = function() {
+  document.getElementById('vidPlayer').pause();
+  document.getElementById('vidOverlay').classList.remove('show');
+};
+window.showDetail = function(movieId) {
+  document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:30px"><i class="fa fa-spinner fa-spin fa-2x"></i></div>';
+  document.getElementById('detailOverlay').classList.add('show');
+  fetch('/namz-crawler/movie-info/' + movieId)
+    .then(r => r.json())
+    .then(window.renderDetail)
+    .catch(e => { document.getElementById('detailBody').innerHTML = '<p class="text-danger">Error: ' + e + '</p>'; });
+};
+window.renderDetail = function(m) {
+  var safeTitle = (m.title || '—').replace(/'/g, "\\'");
+  var urlRow = m.url
+    ? '<p><b>URL:</b> <a href="' + m.url + '" target="_blank" style="word-break:break-all;font-size:11px">' + m.url.substr(0,70) + (m.url.length>70?'…':'') + '</a>'
+      + ' <button onclick="window.playMovie(\'' + m.url.replace(/'/g,"\\'").replace(/"/g,'&quot;') + '\',\'' + safeTitle + '\')" class="btn btn-xs btn-success" style="margin-left:6px">&#9654; Play</button></p>'
+    : '<p><b>URL:</b> <em style="color:#e74c3c">Not found — pending</em></p>';
+  var poster = m.thumbnail
+    ? '<img src="' + m.thumbnail + '" class="detail-poster" onerror="this.style.display=\'none\'">'
+    : '<div style="width:110px;height:155px;background:#ecf0f1;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb"><i class="fa fa-film fa-2x"></i></div>';
+  var statusBadge = m.status === 'Active' ? 'kt-badge-green' : 'kt-badge-orange';
+  var urlStatusBadge = m.namz_url_status === 'found' ? 'kt-badge-green' : 'kt-badge-orange';
+  var descHtml = m.description ? '<p style="font-size:12px;color:#666;margin-top:6px">' + m.description.substr(0,240) + (m.description.length>240?'…':'') + '</p>' : '';
+  document.getElementById('detailBody').innerHTML =
+    '<div style="display:flex;gap:16px;margin-bottom:16px">'
+    + poster
+    + '<div class="detail-meta" style="flex:1;min-width:0">'
+    +   '<h4 style="margin-top:0;margin-bottom:8px">' + (m.title||'—') + '</h4>'
+    +   '<p><b>Status:</b> <span class="kt-badge ' + statusBadge + '">' + (m.status||'—') + '</span>'
+    +   ' &nbsp;<b>Type:</b> ' + (m.type||'—') + '</p>'
+    +   '<p><b>Genre:</b> ' + (m.genre||'—') + ' &nbsp;<b>Year:</b> ' + (m.year||'—') + ' &nbsp;<b>Duration:</b> ' + (m.duration?m.duration+' min':'—') + '</p>'
+    +   '<p><b>Platform:</b> ' + (m.platform_type||'—') + ' &nbsp;<b>Namz ID:</b> <a href="https://namzentertainment.com/prev.php?id=' + m.namz_id + '" target="_blank">#' + m.namz_id + ' &#8599;</a></p>'
+    +   '<p><b>URL Status:</b> <span class="kt-badge ' + urlStatusBadge + '">' + (m.namz_url_status||'—') + '</span></p>'
+    +   urlRow
+    +   descHtml
+    +   '<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">'
+    +     '<button onclick="window.openSetUrl(' + m.id + ',\'' + safeTitle + '\')" class="btn btn-xs btn-primary">&#9998; Set URL</button>'
+    +     '<button onclick="window.runProbeFor(' + m.namz_id + ')" class="btn btn-xs btn-warning">&#128269; Probe URL</button>'
+    +     '<a href="https://namzentertainment.com/prev.php?id=' + m.namz_id + '" target="_blank" class="btn btn-xs btn-default">Open on Namz &#8599;</a>'
+    +     '<a href="/movie-models/' + m.id + '/edit" target="_blank" class="btn btn-xs btn-default">Edit Movie</a>'
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+};
+window.closeDetail = function() { document.getElementById('detailOverlay').classList.remove('show'); };
+window.openSetUrl = function(movieId, title) {
+  _setUrlMovieId = movieId;
+  document.getElementById('setUrlMovieName').textContent = title || ('Movie #' + movieId);
+  document.getElementById('setUrlInput').value = '';
+  document.getElementById('setUrlMsg').textContent = '';
+  document.getElementById('setUrlOverlay').classList.add('show');
+};
+window.closeSetUrl = function() { document.getElementById('setUrlOverlay').classList.remove('show'); };
+window.saveUrlAjax = function() {
+  var url = document.getElementById('setUrlInput').value.trim();
+  if (!url) { alert('Please enter a URL'); return; }
+  var msg = document.getElementById('setUrlMsg');
+  msg.textContent = 'Saving…';
+  var token = document.querySelector('meta[name=csrf-token]') ? document.querySelector('meta[name=csrf-token]').content : '';
+  fetch('/namz-crawler/set-url-ajax/' + _setUrlMovieId, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','X-CSRF-TOKEN': token || window.getCsrfToken()},
+    body: JSON.stringify({video_url: url})
+  })
+  .then(r => r.json())
+  .then(function(data) {
+    if (data.success) {
+      msg.innerHTML = '<span style="color:#27ae60">&#10003; Saved &amp; activated!</span>';
+      setTimeout(function() { window.closeSetUrl(); location.reload(); }, 1200);
+    } else {
+      msg.innerHTML = '<span style="color:#e74c3c">Error: ' + data.message + '</span>';
+    }
+  })
+  .catch(function(e) { msg.innerHTML = '<span style="color:#e74c3c">Error: ' + e + '</span>'; });
+};
+window.getCsrfToken = function() {
+  var m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+};
+window.runProbe = function() {
+  var inp = document.getElementById('probeIdInput');
+  if (!inp || !inp.value) { alert('Enter a Namz ID'); return; }
+  window.runProbeFor(parseInt(inp.value));
+};
+window.runProbeFor = function(namzId) {
+  var out = document.getElementById('probeOut');
+  var btn = document.getElementById('probeBtn');
+  var inp = document.getElementById('probeIdInput');
+  if (inp) inp.value = namzId;
+  if (out) { out.style.display = 'block'; out.textContent = 'Probing ID ' + namzId + '…'; }
+  if (btn) btn.disabled = true;
+  fetch('/namz-crawler/probe-ajax/' + namzId)
+    .then(r => r.json())
+    .then(function(data) {
+      if (out) out.textContent = JSON.stringify(data, null, 2);
+      if (btn) btn.disabled = false;
+      var found = data.found_url;
+      if (found && data.movie_id) {
+        if (confirm('URL found: ' + found + '\n\nSave and activate this movie?')) {
+          window.openSetUrl(data.movie_id, data.title || '');
+          document.getElementById('setUrlInput').value = found;
+        }
+      }
+    })
+    .catch(function(e) { if (out) out.textContent = 'Error: ' + e; if (btn) btn.disabled = false; });
+};
+window.openMoviePlayer = function(movieId) {
+  fetch('/namz-crawler/movie-info/' + movieId)
+    .then(r => r.json())
+    .then(function(m) {
+      if (m.url) { window.playMovie(m.url, m.title || ''); }
+      else { alert('No video URL found for this movie.'); }
+    })
+    .catch(function(e) { alert('Error loading movie: ' + e); });
+};
+window.toggleActiveMovies = function() {
+  var s = document.getElementById('activeNamzSection');
+  if (s) s.style.display = s.style.display === 'none' ? 'block' : 'none';
+};
+(function() {
+  var isRunning = __ISRUNNING__;
+  if (!isRunning) return;
+  function setLive(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
+  function refresh() {
+    fetch('/namz-crawler/live').then(r => r.json()).then(function(d) {
+      if (!d.running) return;
+      setLive('liveCurrentId', d.id_current + ' / ' + d.id_to);
+      setLive('liveProgress', d.progress + '%');
+      setLive('liveProcessed', d.total_processed);
+      setLive('liveSuccess', d.total_success);
+      setLive('liveFailed', d.total_failed);
+      setLive('liveNew', d.total_new);
+      setLive('livePending', d.url_pending);
+      setLive('liveDuration', d.duration);
+      var fill = document.getElementById('liveProgressFill');
+      if (fill) fill.style.width = d.progress + '%';
+    }).catch(function(){});
+  }
+  setInterval(refresh, 12000);
+})();
+JSBLOCK;
+        Admin::script(str_replace('__ISRUNNING__', $jsIsRunning, $js));
+
+        return <<<'HTML'
 <!-- ── VIDEO PLAYER MODAL ─────────────────────────────────────── -->
-<div id="vidOverlay" class="kt-overlay" onclick="if(event.target===this)closeVid()">
+<div id="vidOverlay" class="kt-overlay" onclick="if(event.target===this)window.closeVid()">
   <div class="kt-modal kt-modal-vid">
     <div class="vid-head">
       <span id="vidTitle" style="font-weight:600"></span>
-      <button onclick="closeVid()" style="background:none;border:none;color:#ccc;font-size:22px;cursor:pointer">&times;</button>
+      <button onclick="window.closeVid()" style="background:none;border:none;color:#ccc;font-size:22px;cursor:pointer">&times;</button>
     </div>
     <video id="vidPlayer" controls autoplay>
       <source id="vidSrc" src="" type="video/mp4">
@@ -71,30 +229,30 @@ class NamzCrawlerController extends AdminController
 </div>
 
 <!-- ── MOVIE DETAIL MODAL ─────────────────────────────────────── -->
-<div id="detailOverlay" class="kt-overlay" onclick="if(event.target===this)closeDetail()">
+<div id="detailOverlay" class="kt-overlay" onclick="if(event.target===this)window.closeDetail()">
   <div class="kt-modal" style="max-width:700px">
-    <button class="kt-mclose" onclick="closeDetail()">&times;</button>
+    <button class="kt-mclose" onclick="window.closeDetail()">&times;</button>
     <div id="detailBody">Loading…</div>
   </div>
 </div>
 
 <!-- ── SET URL MODAL ──────────────────────────────────────────── -->
-<div id="setUrlOverlay" class="kt-overlay" onclick="if(event.target===this)closeSetUrl()">
+<div id="setUrlOverlay" class="kt-overlay" onclick="if(event.target===this)window.closeSetUrl()">
   <div class="kt-modal" style="max-width:540px">
-    <button class="kt-mclose" onclick="closeSetUrl()">&times;</button>
+    <button class="kt-mclose" onclick="window.closeSetUrl()">&times;</button>
     <h4 style="margin-top:0">Set Video URL</h4>
     <p id="setUrlMovieName" style="font-weight:600;margin-bottom:12px"></p>
     <p style="font-size:12px;color:#666;margin-bottom:10px">
       The video URL cannot be automatically extracted (site uses obfuscated JS).<br>
-      Open the namz page, play the video, then use browser DevTools → Network tab → filter by "mp4" or "m3u8" to find the direct URL.
+      Open the namz page, play the video, then use browser DevTools &rarr; Network tab &rarr; filter by "mp4" or "m3u8" to find the direct URL.
     </p>
     <div class="form-group">
       <label>Direct Video URL (.mp4 / .m3u8)</label>
       <input type="url" id="setUrlInput" class="form-control" placeholder="https://...">
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
-      <button onclick="saveUrlAjax()" class="btn btn-success">Save &amp; Activate</button>
-      <button onclick="closeSetUrl()" class="btn btn-default">Cancel</button>
+      <button onclick="window.saveUrlAjax()" class="btn btn-success">Save &amp; Activate</button>
+      <button onclick="window.closeSetUrl()" class="btn btn-default">Cancel</button>
       <span id="setUrlMsg" style="font-size:12px"></span>
     </div>
   </div>
@@ -128,173 +286,7 @@ class NamzCrawlerController extends AdminController
     </form>
   </div>
 </div>
-
-<script>
-// ── Video Player ───────────────────────────────────────────────
-function playMovie(url, title) {
-  document.getElementById('vidTitle').textContent = title || '';
-  document.getElementById('vidSrc').src = url;
-  document.getElementById('vidPlayer').load();
-  document.getElementById('vidOverlay').classList.add('show');
-}
-function closeVid() {
-  document.getElementById('vidPlayer').pause();
-  document.getElementById('vidOverlay').classList.remove('show');
-}
-
-// ── Detail Modal ───────────────────────────────────────────────
-function showDetail(movieId) {
-  document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:30px"><i class="fa fa-spinner fa-spin fa-2x"></i></div>';
-  document.getElementById('detailOverlay').classList.add('show');
-  fetch('/namz-crawler/movie-info/' + movieId)
-    .then(r => r.json())
-    .then(renderDetail)
-    .catch(e => { document.getElementById('detailBody').innerHTML = '<p class="text-danger">Error: ' + e + '</p>'; });
-}
-function renderDetail(m) {
-  var safeTitle = (m.title || '—').replace(/'/g, "\\'");
-  var urlRow = m.url
-    ? '<p><b>URL:</b> <a href="' + m.url + '" target="_blank" style="word-break:break-all;font-size:11px">' + m.url.substr(0,70) + (m.url.length>70?'…':'') + '</a>'
-      + ' <button onclick="playMovie(\'' + m.url.replace(/'/g,"\\'").replace(/"/g,'&quot;') + '\',\'' + safeTitle + '\')" class="btn btn-xs btn-success" style="margin-left:6px">&#9654; Play</button></p>'
-    : '<p><b>URL:</b> <em style="color:#e74c3c">Not found — pending</em></p>';
-  var poster = m.thumbnail
-    ? '<img src="' + m.thumbnail + '" class="detail-poster" onerror="this.style.display=\'none\'">'
-    : '<div style="width:110px;height:155px;background:#ecf0f1;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb"><i class="fa fa-film fa-2x"></i></div>';
-  var statusBadge = m.status === 'Active' ? 'kt-badge-green' : 'kt-badge-orange';
-  var urlStatusBadge = m.namz_url_status === 'found' ? 'kt-badge-green' : 'kt-badge-orange';
-  var descHtml = m.description ? '<p style="font-size:12px;color:#666;margin-top:6px">' + m.description.substr(0,240) + (m.description.length>240?'…':'') + '</p>' : '';
-  document.getElementById('detailBody').innerHTML =
-    '<div style="display:flex;gap:16px;margin-bottom:16px">'
-    + poster
-    + '<div class="detail-meta" style="flex:1;min-width:0">'
-    +   '<h4 style="margin-top:0;margin-bottom:8px">' + (m.title||'—') + '</h4>'
-    +   '<p><b>Status:</b> <span class="kt-badge ' + statusBadge + '">' + (m.status||'—') + '</span>'
-    +   ' &nbsp;<b>Type:</b> ' + (m.type||'—') + '</p>'
-    +   '<p><b>Genre:</b> ' + (m.genre||'—') + ' &nbsp;<b>Year:</b> ' + (m.year||'—') + ' &nbsp;<b>Duration:</b> ' + (m.duration?m.duration+' min':'—') + '</p>'
-    +   '<p><b>Platform:</b> ' + (m.platform_type||'—') + ' &nbsp;<b>Namz ID:</b> <a href="https://namzentertainment.com/prev.php?id=' + m.namz_id + '" target="_blank">#' + m.namz_id + ' &#8599;</a></p>'
-    +   '<p><b>URL Status:</b> <span class="kt-badge ' + urlStatusBadge + '">' + (m.namz_url_status||'—') + '</span></p>'
-    +   urlRow
-    +   descHtml
-    +   '<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">'
-    +     '<button onclick="openSetUrl(' + m.id + ',\'' + safeTitle + '\')" class="btn btn-xs btn-primary">&#9998; Set URL</button>'
-    +     '<button onclick="runProbeFor(' + m.namz_id + ')" class="btn btn-xs btn-warning">&#128269; Probe URL</button>'
-    +     '<a href="https://namzentertainment.com/prev.php?id=' + m.namz_id + '" target="_blank" class="btn btn-xs btn-default">Open on Namz &#8599;</a>'
-    +     '<a href="/movie-models/' + m.id + '/edit" target="_blank" class="btn btn-xs btn-default">Edit Movie</a>'
-    +   '</div>'
-    + '</div>'
-    + '</div>';
-}
-function closeDetail() { document.getElementById('detailOverlay').classList.remove('show'); }
-
-// ── Set URL Modal ──────────────────────────────────────────────
-var _setUrlMovieId = null;
-function openSetUrl(movieId, title) {
-  _setUrlMovieId = movieId;
-  document.getElementById('setUrlMovieName').textContent = title || ('Movie #' + movieId);
-  document.getElementById('setUrlInput').value = '';
-  document.getElementById('setUrlMsg').textContent = '';
-  document.getElementById('setUrlOverlay').classList.add('show');
-}
-function closeSetUrl() { document.getElementById('setUrlOverlay').classList.remove('show'); }
-function saveUrlAjax() {
-  var url = document.getElementById('setUrlInput').value.trim();
-  if (!url) { alert('Please enter a URL'); return; }
-  var msg = document.getElementById('setUrlMsg');
-  msg.textContent = 'Saving…';
-  var token = document.querySelector('meta[name=csrf-token]') ? document.querySelector('meta[name=csrf-token]').content : '';
-  fetch('/namz-crawler/set-url-ajax/' + _setUrlMovieId, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json','X-CSRF-TOKEN': token || getCsrfToken()},
-    body: JSON.stringify({video_url: url})
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.success) {
-      msg.innerHTML = '<span style="color:#27ae60">✓ Saved & activated!</span>';
-      setTimeout(() => { closeSetUrl(); location.reload(); }, 1200);
-    } else {
-      msg.innerHTML = '<span style="color:#e74c3c">Error: ' + data.message + '</span>';
-    }
-  })
-  .catch(e => { msg.innerHTML = '<span style="color:#e74c3c">Error: ' + e + '</span>'; });
-}
-function getCsrfToken() {
-  var m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
-}
-
-// ── Probe Tool ─────────────────────────────────────────────────
-function runProbe() {
-  var id = document.getElementById('probeIdInput').value;
-  if (!id) { alert('Enter a Namz ID'); return; }
-  runProbeFor(parseInt(id));
-}
-function runProbeFor(namzId) {
-  var out = document.getElementById('probeOut');
-  var btn = document.getElementById('probeBtn');
-  document.getElementById('probeIdInput').value = namzId;
-  out.style.display = 'block';
-  out.textContent = 'Probing ID ' + namzId + '…';
-  if (btn) btn.disabled = true;
-  fetch('/namz-crawler/probe-ajax/' + namzId)
-    .then(r => r.json())
-    .then(data => {
-      out.textContent = JSON.stringify(data, null, 2);
-      if (btn) btn.disabled = false;
-      // If a URL was found, offer to save it
-      var found = data.found_url;
-      if (found && data.movie_id) {
-        if (confirm('URL found: ' + found + '\n\nSave and activate this movie?')) {
-          openSetUrl(data.movie_id, data.title || '');
-          document.getElementById('setUrlInput').value = found;
-        }
-      }
-    })
-    .catch(e => { out.textContent = 'Error: ' + e; if (btn) btn.disabled = false; });
-}
-
-// ── Open movie player by movie_id (fetches URL via AJAX) ──────
-function openMoviePlayer(movieId) {
-  fetch('/namz-crawler/movie-info/' + movieId)
-    .then(r => r.json())
-    .then(function(m) {
-      if (m.url) { playMovie(m.url, m.title || ''); }
-      else { alert('No video URL found for this movie.'); }
-    })
-    .catch(function(e) { alert('Error loading movie: ' + e); });
-}
-
-// ── Toggle Active Namz Movies panel ───────────────────────────
-function toggleActiveMovies() {
-  var s = document.getElementById('activeNamzSection');
-  if (s) s.style.display = s.style.display === 'none' ? 'block' : 'none';
-}
-
-// ── Auto-refresh live session ──────────────────────────────────
-(function() {
-  var isRunning = __ISRUNNING__;
-  if (!isRunning) return;
-  function refresh() {
-    fetch('/namz-crawler/live').then(r => r.json()).then(function(d) {
-      if (!d.running) return;
-      setLive('liveCurrentId', d.id_current + ' / ' + d.id_to);
-      setLive('liveProgress', d.progress + '%');
-      setLive('liveProcessed', d.total_processed);
-      setLive('liveSuccess', d.total_success);
-      setLive('liveFailed', d.total_failed);
-      setLive('liveNew', d.total_new);
-      setLive('livePending', d.url_pending);
-      setLive('liveDuration', d.duration);
-      var fill = document.getElementById('liveProgressFill');
-      if (fill) fill.style.width = d.progress + '%';
-    }).catch(function(){});
-  }
-  function setLive(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
-  setInterval(refresh, 12000);
-})();
-</script>
 HTML;
-        return str_replace('__ISRUNNING__', $isRunningJs, $html);
     }
 
     // ── Dashboard ─────────────────────────────────────────────────────────────
