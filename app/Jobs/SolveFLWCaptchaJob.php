@@ -103,8 +103,9 @@ class SolveFLWCaptchaJob implements ShouldQueue
             ]);
 
             // Mark subscription as "awaiting PIN" so the app can show the right message
-            $subscription->where('id', $this->subscriptionId)
-                ->where('payment_status', '!=', 'Completed')
+            // Use static call (not instance) to avoid reusing scopes from the $subscription instance
+            Subscription::where('id', $this->subscriptionId)
+                ->whereNotIn('payment_status', ['Completed', 'Active'])
                 ->update([
                     'payment_status' => 'AwaitingPIN',
                     'updated_at'     => now(),
