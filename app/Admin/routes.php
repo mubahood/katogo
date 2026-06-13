@@ -208,7 +208,16 @@ Route::group([
     $router->get('video-transfers/{id}/retry', 'VideoTransferController@retry')->name('video-transfers.retry');
     $router->get('video-transfers/{id}/cancel', 'VideoTransferController@cancel')->name('video-transfers.cancel');
 
+    // ── DB Sync Dashboard (Hetzner destination only) ─────────────────
+    $router->get('sync-dashboard',         'SyncDashboardController@index');
+    $router->get('sync-dashboard/live',    'SyncDashboardController@live');
+    $router->post('sync-dashboard/trigger','SyncDashboardController@trigger');
+    $router->post('sync-dashboard/reset',  'SyncDashboardController@resetCursor');
+
     // ── Movie File Transfer (Hetzner Storage) Routes ──────────────────
+    // Note: NOT under /api/ prefix — that conflicts with Laravel's api middleware group
+    $router->get('movie-file-transfers/live-data',           'MovieFileTransferController@liveStatus');
+    $router->get('movie-file-transfers/live-data',           'MovieFileTransferController@liveStatus');
     $router->get('movie-file-transfers',                    'MovieFileTransferController@index');
     $router->get('movie-file-transfers/monitor',            'MovieFileTransferController@monitor')->name('movie-file-transfers.monitor');
     $router->get('movie-file-transfers/backfill',           'MovieFileTransferController@backfill')->name('movie-file-transfers.backfill');
