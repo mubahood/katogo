@@ -253,6 +253,23 @@ function runProbeFor(namzId) {
     .catch(e => { out.textContent = 'Error: ' + e; if (btn) btn.disabled = false; });
 }
 
+// ── Open movie player by movie_id (fetches URL via AJAX) ──────
+function openMoviePlayer(movieId) {
+  fetch('/namz-crawler/movie-info/' + movieId)
+    .then(r => r.json())
+    .then(function(m) {
+      if (m.url) { playMovie(m.url, m.title || ''); }
+      else { alert('No video URL found for this movie.'); }
+    })
+    .catch(function(e) { alert('Error loading movie: ' + e); });
+}
+
+// ── Toggle Active Namz Movies panel ───────────────────────────
+function toggleActiveMovies() {
+  var s = document.getElementById('activeNamzSection');
+  if (s) s.style.display = s.style.display === 'none' ? 'block' : 'none';
+}
+
 // ── Auto-refresh live session ──────────────────────────────────
 (function() {
   var isRunning = __ISRUNNING__;
@@ -509,7 +526,143 @@ HTML;
             });
     }
 
-    // ── Log Grid (index) ─────────────────────────────────────────────────────
+    // ── Log Grid Index Page (overridden for proper asset injection) ───────────
+
+    public function index(Content $content): Content
+    {
+        // ── Stats ───────────────────────────────────────────────────────────────
+        $totalLogs   = NamzCrawlLog::count();
+        $successLogs = NamzCrawlLog::where('status', 'success')->count();
+        $failedLogs  = NamzCrawlLog::where('status', 'failed')->count();
+        $newMovies   = NamzCrawlLog::whereIn('result', ['new_movie', 'new_series'])->count();
+        $totalNamz   = MovieModel::where('platform_type', 'namz')->count();
+        $activeNamz  = MovieModel::where('platform_type', 'namz')->where('status', 'Active')->count();
+        $urlPending  = MovieModel::where('platform_type', 'namz')->where('namz_url_status', 'pending')->count();
+        $pctActive   = $totalNamz > 0 ? round($activeNamz / $totalNamz * 100) : 0;
+
+        $assets = $this->sharedAssets();
+
+        $stats = "
+        <div class='kt-stat-row'>
+          <div class='kt-stat' style='border-color:#27ae60'>
+            <div class='val'>{$successLogs}</div><div class='lbl'>Crawl Successes</div>
+          </div>
+          <div class='kt-stat' style='border-color:#e74c3c'>
+            <div class='val'>{$failedLogs}</div><div class='lbl'>Crawl Failures</div>
+          </div>
+          <div class='kt-stat' style='border-color:#8e44ad'>
+            <div class='val'>{$newMovies}</div><div class='lbl'>New Movies Found</div>
+          </div>
+          <div class='kt-stat' style='border-color:#2980b9'>
+            <div class='val'>{$activeNamz}</div><div class='lbl'>Active Namz Movies</div>
+          </div>
+          <div class='kt-stat' style='border-color:#e67e22'>
+            <div class='val'>{$urlPending}</div><div class='lbl'>URL Still Pending</div>
+          </div>
+          <div class='kt-stat' style='border-color:#16a085'>
+            <div class='val'>{$pctActive}%</div><div class='lbl'>Activation Rate</div>
+          </div>
+        </div>
+        <div style='margin-bottom:18px'>
+          <div style='display:flex;justify-content:space-between;font-size:12px;color:#7f8c8d;margin-bottom:4px'>
+            <span>Namz Movie Activation Progress</span><span>{$activeNamz} / {$totalNamz} movies activated</span>
+          </div>
+          <div class='kt-prog'><div class='kt-prog-fill' style='width:{$pctActive}%'></div></div>
+        </div>";
+
+        $toolbar = "
+        <div style='margin-bottom:18px'>
+          <b style='font-size:13px;display:block;margin-bottom:8px'><i class='fa fa-bolt'></i> Quick Actions:</b>
+          <a href='/namz-crawler' class='kt-tbtn kt-tbtn-dark'>
+            <i class='fa fa-tachometer'></i> Crawler Dashboard
+          </a>
+          <a href='/namz-crawler/pending-movies' class='kt-tbtn kt-tbtn-orange'>
+            <i class='fa fa-clock-o'></i> Pending Movies ({$urlPending})
+          </a>
+          <a href='/namz-crawler/activate-with-url' class='kt-tbtn kt-tbtn-purple' data-pjax='0'>
+            <i class='fa fa-check'></i> Activate With URL
+          </a>
+          <a href='#' onclick='toggleActiveMovies();return false' class='kt-tbtn kt-tbtn-green'>
+            <i class='fa fa-film'></i> View Active Namz ({$activeNamz})
+          </a>
+          <a href='/namz-crawler/probe-full' class='kt-tbtn kt-tbtn-blue'>
+            <i class='fa fa-search'></i> Probe URL Tool
+          </a>
+          <a href='/namz-crawler/bulk-retry-failed' class='kt-tbtn kt-tbtn-red' onclick=\"return confirm('Re-queue all failed entries?')\">
+            <i class='fa fa-refresh'></i> Retry Failed ({$failedLogs})
+          </a>
+        </div>";
+
+        // ── Active Namz Movies card grid ─────────────────────────────────────────
+        $activeMovies = MovieModel::where('platform_type', 'namz')
+            ->where('status', 'Active')
+            ->orderByDesc('id')
+            ->limit(24)
+            ->get();
+
+        $cards = '';
+        foreach ($activeMovies as $m) {
+            $thumb = $m->thumbnail_url
+                ? '<img src="' . e($m->thumbnail_url) . '" style="width:100%;height:110px;object-fit:cover;border-radius:4px 4px 0 0;display:block" onerror="this.style.display=\'none\'">'
+                : '<div style="width:100%;height:110px;background:#ecf0f1;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;color:#bbb"><i class="fa fa-film fa-2x"></i></div>';
+            $title  = e(mb_strimwidth($m->title ?? '', 0, 40, '…'));
+            $genre  = e($m->genre ?? '—');
+            $year   = e($m->year ?? '');
+            $hasUrl = !empty($m->url);
+            $badge  = $hasUrl
+                ? '<span class="kt-badge kt-badge-green" style="font-size:10px">URL ✓</span>'
+                : '<span class="kt-badge kt-badge-orange" style="font-size:10px">No URL</span>';
+            $playBtn = $hasUrl
+                ? '<button data-url="' . e($m->url) . '" data-title="' . e($m->title ?? '') . '" onclick="playMovie(this.dataset.url,this.dataset.title)" class="btn btn-xs btn-success" title="Play video">&#9654;</button>'
+                : '';
+            $cards .= "
+            <div style='flex:1 1 180px;max-width:200px;background:#fff;border-radius:5px;border:1px solid #e5e5e5;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden'>
+              {$thumb}
+              <div style='padding:8px'>
+                <div style='font-size:12px;font-weight:600;line-height:1.3;margin-bottom:4px'>
+                  <a href='#' onclick='showDetail({$m->id});return false'>{$title}</a>
+                </div>
+                <div style='font-size:11px;color:#999;margin-bottom:6px'>{$genre} {$year}</div>
+                <div style='display:flex;gap:4px;flex-wrap:wrap;align-items:center'>
+                  {$badge} {$playBtn}
+                  <button onclick='showDetail({$m->id})' class='btn btn-xs btn-default' title='Details'>&#8505;</button>
+                </div>
+              </div>
+            </div>";
+        }
+
+        $activeSectionInner = $cards
+            ? "<div style='display:flex;flex-wrap:wrap;gap:10px'>{$cards}</div>"
+            : '<p style="color:#7f8c8d;padding:20px 0">No active namz movies yet. Use the crawler to import movies, then activate ones with a URL.</p>';
+
+        $activeSection = "
+        <div id='activeNamzSection' style='display:none;border-top:1px solid #e9e9e9;padding-top:18px;margin-top:4px'>
+          <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:14px'>
+            <h5 style='margin:0'><i class='fa fa-film'></i> Active Namz Movies
+              <span style='font-size:12px;font-weight:normal;color:#7f8c8d;margin-left:6px'>last 24 of {$activeNamz} total</span>
+            </h5>
+            <a href='#' onclick='toggleActiveMovies();return false' style='font-size:12px;color:#7f8c8d'>&#9650; Hide</a>
+          </div>
+          {$activeSectionInner}
+          <p style='font-size:12px;color:#7f8c8d;margin-top:12px'>
+            <a href='/namz-crawler/pending-movies'>View all pending →</a>
+            &nbsp;|&nbsp;
+            <a href='/namz-crawler/activate-with-url' data-pjax='0'>Activate movies with URL →</a>
+          </p>
+        </div>";
+
+        return $content
+            ->title('Namz Crawl Logs')
+            ->description($totalLogs . ' total log entries')
+            ->row(function (Row $row) use ($assets, $stats, $toolbar, $activeSection) {
+                $row->column(12, function (Column $col) use ($assets, $stats, $toolbar, $activeSection) {
+                    $col->append(new Box('Overview & Quick Actions', $assets . $stats . $toolbar . $activeSection));
+                });
+            })
+            ->body($this->grid());
+    }
+
+    // ── Log Grid ─────────────────────────────────────────────────────────────
 
     protected function grid(): Grid
     {
@@ -557,7 +710,11 @@ HTML;
             return "<span style='background:{$c};color:#fff;padding:2px 7px;border-radius:3px;font-size:11px'>" . str_replace('_', ' ', ucfirst($this->result)) . "</span>";
         });
         $grid->column('video_status', 'Video URL')->display(function () {
-            return $this->video_status_badge;
+            $badge = $this->video_status_badge;
+            if ($this->video_status === 'found' && $this->movie_id) {
+                $badge .= ' <button onclick="openMoviePlayer(' . $this->movie_id . ')" class="btn btn-xs btn-success" title="Play video" style="margin-left:4px">&#9654;</button>';
+            }
+            return $badge;
         });
         $grid->column('movie_id', 'Movie')->display(function () {
             if (!$this->movie_id && !$this->series_id) return '—';
@@ -580,22 +737,23 @@ HTML;
 
         $grid->actions(function (Grid\Displayers\Actions $actions) {
             $row = $actions->row;
-            if ($row->status === 'failed') {
-                $actions->append("<a href='/namz-crawler/retry/{$row->namz_id}' class='btn btn-xs btn-warning'>Retry</a> ");
+            if ($row->video_status === 'found' && $row->movie_id) {
+                $actions->append("<a href='#' onclick=\"openMoviePlayer({$row->movie_id});return false\" class='btn btn-xs btn-success' title='Play video'>&#9654;</a> ");
             }
             if ($row->movie_id) {
-                $actions->append("<a href='#' onclick=\"openSetUrl({$row->movie_id},'');return false\" class='btn btn-xs btn-primary'>Set URL</a> ");
-                if ($row->video_status === 'not_found') {
-                    $actions->append("<a href='#' onclick=\"runProbeFor({$row->namz_id});return false\" class='btn btn-xs btn-warning' title='Probe URL'>🔍</a> ");
-                }
+                $actions->append("<a href='#' onclick=\"showDetail({$row->movie_id});return false\" class='btn btn-xs btn-info' title='Details'>&#8505;</a> ");
+                $actions->append("<a href='#' onclick=\"openSetUrl({$row->movie_id},'');return false\" class='btn btn-xs btn-primary' title='Set URL'>&#9998;</a> ");
+            }
+            if ($row->status === 'failed') {
+                $actions->append("<a href='/namz-crawler/retry/{$row->namz_id}' class='btn btn-xs btn-warning' title='Retry crawl'>&#8635;</a> ");
+            }
+            if ($row->video_status === 'not_found' && $row->namz_id) {
+                $actions->append("<a href='#' onclick=\"runProbeFor({$row->namz_id});return false\" class='btn btn-xs btn-warning' title='Probe URL endpoints'>&#128269;</a> ");
             }
             $actions->disableDelete();
             $actions->disableEdit();
             $actions->disableView();
         });
-
-        // Inject shared assets at top so modals work in grid page too
-        $grid->header(function () { return $this->sharedAssets(); });
 
         return $grid;
     }
