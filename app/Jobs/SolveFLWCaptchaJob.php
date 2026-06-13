@@ -21,8 +21,8 @@ class SolveFLWCaptchaJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable;
 
-    public int $tries   = 2;
-    public int $timeout = 60;
+    public int $tries   = 3;
+    public int $timeout = 90;
 
     public function __construct(
         public readonly int    $subscriptionId,
@@ -30,8 +30,27 @@ class SolveFLWCaptchaJob implements ShouldQueue
         public readonly string $txRef,
     ) {}
 
+    public function backoff(): array
+    {
+        return [10, 30]; // retry after 10s, then 30s
+    }
+
     public function handle(): void
     {
+        // Idempotency: skip if subscription is already past captcha stage or completed
+        $subscription = Subscription::find($this->subscriptionId);
+        if (!$subscription) {
+            Log::warning('SolveFLWCaptchaJob: subscription not found', ['id' => $this->subscriptionId]);
+            return;
+        }
+        if (in_array($subscription->payment_status, ['Completed', 'AwaitingPIN', 'Active'], true)) {
+            Log::info('SolveFLWCaptchaJob: skipping, already ' . $subscription->payment_status, [
+                'subscription_id' => $this->subscriptionId,
+                'tx_ref' => $this->txRef,
+            ]);
+            return;
+        }
+
         $scriptPath = base_path('scripts/flw-solve-captcha.mjs');
         $nodeBin    = $this->findNode();
 
@@ -57,7 +76,7 @@ class SolveFLWCaptchaJob implements ShouldQueue
             base_path(),
             ['HOME' => '/root', 'DISPLAY' => ''],
             null,
-            55  // 55-second timeout (job timeout is 60)
+            80  // 80-second timeout (job timeout is 90)
         );
 
         $process->run();
@@ -74,7 +93,7 @@ class SolveFLWCaptchaJob implements ShouldQueue
             ]);
 
             // Mark subscription as "awaiting PIN" so the app can show the right message
-            Subscription::where('id', $this->subscriptionId)
+            $subscription->where('id', $this->subscriptionId)
                 ->where('payment_status', '!=', 'Completed')
                 ->update([
                     'payment_status' => 'AwaitingPIN',
@@ -93,6 +112,16 @@ class SolveFLWCaptchaJob implements ShouldQueue
 
     private function markFailed(string $reason): void
     {
+        // Only mark CaptchaFailed on the last attempt — earlier attempts will retry
+        if ($this->attempts() < $this->tries) {
+            Log::info('SolveFLWCaptchaJob: attempt ' . $this->attempts() . '/' . $this->tries . ' failed, will retry', [
+                'tx_ref' => $this->txRef,
+                'reason' => $reason,
+            ]);
+            $this->release($this->backoff()[$this->attempts() - 1] ?? 30);
+            return;
+        }
+
         // Mark as CaptchaFailed so app fallback flow knows to use WebView
         Subscription::where('id', $this->subscriptionId)
             ->where('payment_status', '!=', 'Completed')

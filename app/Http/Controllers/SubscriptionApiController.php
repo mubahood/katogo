@@ -337,21 +337,7 @@ class SubscriptionApiController extends Controller
                 throw new \Exception('Payment gateway did not return a payment action. Please try again.');
             }
 
-            // ── Auto-push: solve the Flutterwave math captcha on the server so the
-            // app never needs to open a browser or WebView for this step.
-            $autoPushDispatched = false;
-            if (
-                $gateway === 'flutterwave'
-                && !empty($paymentResult['redirect_url'])
-                && str_contains((string) $paymentResult['redirect_url'], 'captcha/verify')
-            ) {
-                \App\Jobs\SolveFLWCaptchaJob::dispatch(
-                    $subscription->id,
-                    $paymentResult['redirect_url'],
-                    $paymentResult['merchant_reference'] ?? $paymentResult['order_tracking_id'],
-                )->onQueue('default');
-                $autoPushDispatched = true;
-            }
+            $autoPushDispatched = $this->dispatchAutoSolveIfNeeded($subscription, $gateway, $paymentResult);
 
             Log::info('Subscription created and payment initialized', [
                 'subscription_id'    => $subscription->id,
@@ -375,10 +361,10 @@ class SubscriptionApiController extends Controller
                     'subscription_id'    => $subscription->id,
                     'order_tracking_id'  => $paymentResult['order_tracking_id'],
                     'merchant_reference' => $paymentResult['merchant_reference'],
-                    // auto_push: true means the server is solving the captcha — app shows "check your phone"
-                    // auto_push: false means the app must open redirect_url in WebView
+                    // auto_push: server solved the captcha — new apps poll silently.
+                    // Old apps still get redirect_url and open it as usual (safe fallback).
                     'auto_push'          => $autoPushDispatched,
-                    'redirect_url'       => $autoPushDispatched ? null : $paymentResult['redirect_url'],
+                    'redirect_url'       => $paymentResult['redirect_url'],
                     'payment_message'    => $paymentResult['payment_message'] ?? null,
                     'next_action_type'   => $paymentResult['next_action_type'] ?? null,
                     'payment_status'     => $paymentResult['payment_status'] ?? $subscription->payment_status,
@@ -885,26 +871,34 @@ class SubscriptionApiController extends Controller
             ] = $this->initializePaymentWithFallback($subscription, $gateway, $callbackUrl);
 
             if ($paymentResult['success']) {
+                $autoPushDispatched = $this->dispatchAutoSolveIfNeeded($subscription, $gateway, $paymentResult);
                 return response()->json([
                     'code' => 1,
                     'status' => 200,
-                    'message' => 'Payment retry initiated. Please complete payment.',
+                    'message' => $autoPushDispatched
+                        ? 'Payment request sent to your phone. Enter your PIN when prompted.'
+                        : 'Payment retry initiated. Please complete payment.',
                     'data' => [
                         'subscription_id' => $subscription->id,
                         'order_tracking_id' => $paymentResult['order_tracking_id'],
                         'merchant_reference' => $paymentResult['merchant_reference'],
+                        'auto_push'   => $autoPushDispatched,
                         'redirect_url' => $paymentResult['redirect_url'],
                         'payment_message' => $paymentResult['payment_message'] ?? null,
                         'next_action_type' => $paymentResult['next_action_type'] ?? null,
                         'payment_status' => $paymentResult['payment_status'] ?? $subscription->payment_status,
                         'payment_gateway' => $gateway,
                         'gateway_response_message' => $paymentResult['payment_message'] ?? null,
-                        'result_explanation' => !empty($paymentResult['redirect_url'])
-                            ? 'Payment page prepared successfully. Open it and complete the payment to activate your subscription.'
-                            : 'Payment retry request was sent successfully. Follow the mobile money prompt or gateway instructions to finish payment.',
-                        'next_step_explanation' => !empty($paymentResult['redirect_url'])
-                            ? 'Tap continue to open the payment page, then return here and check the payment status.'
-                            : 'Check your phone for the mobile money prompt, authorize it, then return here and check the payment status.',
+                        'result_explanation' => $autoPushDispatched
+                            ? 'Payment request sent to your phone. Enter your PIN on the USSD prompt.'
+                            : (!empty($paymentResult['redirect_url'])
+                                ? 'Payment page prepared successfully. Open it and complete the payment to activate your subscription.'
+                                : 'Payment retry request was sent successfully. Follow the mobile money prompt or gateway instructions to finish payment.'),
+                        'next_step_explanation' => $autoPushDispatched
+                            ? 'Check your phone for the MTN/Airtel USSD popup and enter your PIN.'
+                            : (!empty($paymentResult['redirect_url'])
+                                ? 'Tap continue to open the payment page, then return here and check the payment status.'
+                                : 'Check your phone for the mobile money prompt, authorize it, then return here and check the payment status.'),
                     ],
                 ]);
             }
@@ -1406,15 +1400,20 @@ class SubscriptionApiController extends Controller
                     'payment_result' => $paymentResult,
                 ] = $this->initializePaymentWithFallback($subscription, 'flutterwave', $request->callback_url);
 
+                $autoPushDispatched = $this->dispatchAutoSolveIfNeeded($subscription, $gateway, $paymentResult);
+
                 return response()->json([
                     'code' => 1,
                     'status' => 200,
-                    'message' => 'Payment initialized successfully',
+                    'message' => $autoPushDispatched
+                        ? 'Payment request sent to your phone. Enter your PIN when prompted.'
+                        : 'Payment initialized successfully',
                     'data' => [
                         'success' => true,
                         'status' => $subscription->status,
                         'payment_status' => $subscription->payment_status,
                         'payment_gateway' => $gateway,
+                        'auto_push'   => $autoPushDispatched,
                         'redirect_url' => $paymentResult['redirect_url'] ?? null,
                         'payment_message' => $paymentResult['payment_message'] ?? null,
                         'next_action_type' => $paymentResult['next_action_type'] ?? null,
@@ -1663,14 +1662,19 @@ class SubscriptionApiController extends Controller
             $this->invalidateUserPaymentCaches($subscription);
             $this->syncPaymentSupportTicketByStatus($subscription);
 
+            $autoPushDispatched = $this->dispatchAutoSolveIfNeeded($subscription, $gateway, $paymentResult);
+
             return response()->json([
                 'code' => 1,
                 'status' => 200,
-                'message' => 'A fresh payment link has been generated successfully',
+                'message' => $autoPushDispatched
+                    ? 'Payment request sent to your phone. Enter your PIN when prompted.'
+                    : 'A fresh payment link has been generated successfully',
                 'data' => [
                     'subscription_id' => $subscription->id,
                     'order_tracking_id' => $paymentResult['order_tracking_id'] ?? null,
                     'merchant_reference' => $paymentResult['merchant_reference'] ?? null,
+                    'auto_push'   => $autoPushDispatched,
                     'redirect_url' => $paymentResult['redirect_url'] ?? null,
                     'payment_message' => $paymentResult['payment_message'] ?? null,
                     'next_action_type' => $paymentResult['next_action_type'] ?? null,
@@ -2507,6 +2511,51 @@ class SubscriptionApiController extends Controller
             'order_tracking_id' => $orderTrackingId ? (string) $orderTrackingId : null,
             'merchant_reference' => $merchantReference ? (string) $merchantReference : null,
         ];
+    }
+
+    /**
+     * Dispatch SolveFLWCaptchaJob when Flutterwave returns a captcha redirect URL.
+     * Safe to call from every payment initiation path — idempotent by subscription state.
+     * Old mobile apps are unaffected: they still receive redirect_url and open it normally.
+     *
+     * @return bool true when the job was dispatched
+     */
+    private function dispatchAutoSolveIfNeeded(Subscription $subscription, string $gateway, array $paymentResult): bool
+    {
+        if (
+            $gateway !== 'flutterwave'
+            || empty($paymentResult['redirect_url'])
+            || !str_contains((string) $paymentResult['redirect_url'], 'captcha/verify')
+        ) {
+            return false;
+        }
+
+        $txRef = $paymentResult['merchant_reference'] ?? $paymentResult['order_tracking_id'] ?? null;
+        if (!$txRef) {
+            Log::warning('dispatchAutoSolveIfNeeded: no tx_ref, skipping', ['subscription_id' => $subscription->id]);
+            return false;
+        }
+
+        // Idempotency: don't dispatch if subscription is already past the captcha stage
+        if (in_array($subscription->payment_status, ['Completed', 'AwaitingPIN', 'Active'], true)) {
+            Log::info('dispatchAutoSolveIfNeeded: skipping, already in state ' . $subscription->payment_status, [
+                'subscription_id' => $subscription->id,
+            ]);
+            return false;
+        }
+
+        \App\Jobs\SolveFLWCaptchaJob::dispatch(
+            $subscription->id,
+            $paymentResult['redirect_url'],
+            $txRef,
+        )->onQueue('default');
+
+        Log::info('dispatchAutoSolveIfNeeded: SolveFLWCaptchaJob dispatched', [
+            'subscription_id' => $subscription->id,
+            'tx_ref'          => $txRef,
+        ]);
+
+        return true;
     }
 
     private function initializePaymentWithFallback(Subscription $subscription, string $gateway, ?string $callbackUrl, ?string $mobileMoneyPhone = null): array
