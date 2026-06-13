@@ -513,11 +513,6 @@
                 var phone   = String($('#subInitPayPhone').val() || '').trim();
                 var gateway = String($('#subInitPayGateway').val() || 'flutterwave').trim();
 
-                if (gateway === 'pesapal' && !phone) {
-                    $('#subInitPayResult').html('<span style="color:#f85149">Phone number is required for Pesapal.</span>');
-                    return;
-                }
-
                 var $btn = $(this);
                 $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Initiating…');
 
