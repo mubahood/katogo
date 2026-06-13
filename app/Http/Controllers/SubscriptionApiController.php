@@ -337,33 +337,55 @@ class SubscriptionApiController extends Controller
                 throw new \Exception('Payment gateway did not return a payment action. Please try again.');
             }
 
+            // ── Auto-push: solve the Flutterwave math captcha on the server so the
+            // app never needs to open a browser or WebView for this step.
+            $autoPushDispatched = false;
+            if (
+                $gateway === 'flutterwave'
+                && !empty($paymentResult['redirect_url'])
+                && str_contains((string) $paymentResult['redirect_url'], 'captcha/verify')
+            ) {
+                \App\Jobs\SolveFLWCaptchaJob::dispatch(
+                    $subscription->id,
+                    $paymentResult['redirect_url'],
+                    $paymentResult['merchant_reference'] ?? $paymentResult['order_tracking_id'],
+                )->onQueue('default');
+                $autoPushDispatched = true;
+            }
+
             Log::info('Subscription created and payment initialized', [
-                'subscription_id' => $subscription->id,
-                'user_id' => $user->id,
-                'plan_id' => $request->plan_id,
-                'tracking_id' => $paymentResult['order_tracking_id'],
+                'subscription_id'    => $subscription->id,
+                'user_id'            => $user->id,
+                'plan_id'            => $request->plan_id,
+                'tracking_id'        => $paymentResult['order_tracking_id'],
                 'redirect_url_domain' => !empty($paymentResult['redirect_url'])
                     ? parse_url($paymentResult['redirect_url'], PHP_URL_HOST)
                     : null,
-                'next_action_type' => $paymentResult['next_action_type'] ?? null,
+                'next_action_type'   => $paymentResult['next_action_type'] ?? null,
+                'auto_push'          => $autoPushDispatched,
             ]);
 
             return response()->json([
                 'code' => 1,
                 'status' => 200,
-                'message' => 'Subscription created successfully. Please complete payment.',
+                'message' => $autoPushDispatched
+                    ? 'Payment request sent to your phone. Enter your PIN when prompted.'
+                    : 'Subscription created successfully. Please complete payment.',
                 'data' => [
-                    'subscription_id' => $subscription->id,
-                    'order_tracking_id' => $paymentResult['order_tracking_id'],
+                    'subscription_id'    => $subscription->id,
+                    'order_tracking_id'  => $paymentResult['order_tracking_id'],
                     'merchant_reference' => $paymentResult['merchant_reference'],
-                    'redirect_url' => $paymentResult['redirect_url'],
-                    'payment_message' => $paymentResult['payment_message'] ?? null,
-                    'next_action_type' => $paymentResult['next_action_type'] ?? null,
-                    'payment_status' => $paymentResult['payment_status'] ?? $subscription->payment_status,
-                    'amount' => $subscription->amount_paid,
-                    'currency' => $subscription->currency,
-                    'payment_gateway' => $gateway,
-                    'accounts_merged' => $mergeMeta,
+                    // auto_push: true means the server is solving the captcha — app shows "check your phone"
+                    // auto_push: false means the app must open redirect_url in WebView
+                    'auto_push'          => $autoPushDispatched,
+                    'redirect_url'       => $autoPushDispatched ? null : $paymentResult['redirect_url'],
+                    'payment_message'    => $paymentResult['payment_message'] ?? null,
+                    'next_action_type'   => $paymentResult['next_action_type'] ?? null,
+                    'payment_status'     => $paymentResult['payment_status'] ?? $subscription->payment_status,
+                    'amount'             => $subscription->amount_paid,
+                    'currency'           => $subscription->currency,
+                    'payment_gateway'    => $gateway,
+                    'accounts_merged'    => $mergeMeta,
                 ],
             ]);
 

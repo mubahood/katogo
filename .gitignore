@@ -3,3 +3,6 @@
 public/storage/files/*transition-data/*.csv
 storage/api_cache/*
 !storage/api_cache/.gitignore
+node_modules/
+what-tp-d.md
+", )*
