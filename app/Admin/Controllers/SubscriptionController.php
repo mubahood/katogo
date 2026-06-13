@@ -276,9 +276,10 @@ HTML;
                 'os_cnt'       => [$androidCnt, $iosCnt],
                 'plans'        => ['labels'=>$plans->pluck('name'),'counts'=>$plans->pluck('count'),'revenues'=>$plans->pluck('total')],
                 'renewal'      => ['new'=>$newSubCount,'renewal'=>$renewalCount],
-                'todayRev'     => (int)$todayRev,
-                'todayCnt'     => (int)$todayCnt,
-                'yesterdayCnt' => (int)$yesterdayCnt,
+                'todayRev'       => (int)$todayRev,
+                'todayCnt'       => (int)$todayCnt,
+                'yesterdayRev'   => (int)$yesterdayRev,
+                'yesterdayCnt'   => (int)$yesterdayCnt,
             ]);
 
             // ── KPI cards ─────────────────────────────────────────────────
@@ -306,7 +307,7 @@ HTML;
 
             // Today hero panel
             $todayTrendClr  = $dodRevPct >= 0 ? '#10b981' : '#ef4444';
-            $todayTrendText = ($dodRevPct >= 0 ? '&#9650; ' : '&#9660; ') . abs($dodRevPct) . '% vs yesterday';
+            $todayTrendText = ($dodRevPct >= 0 ? '&#9650; ' : '&#9660; ') . abs($dodRevPct) . '% revenue vs yesterday';
             $todayHero  = "<div class='an-today-hero'>";
             $todayHero .= "  <div style='flex:1'>";
             $todayHero .= "    <div class='an-today-lbl'><span class='an-today-dot'></span>&nbsp;LIVE &nbsp;&middot;&nbsp; " . $now->format('l, d M Y') . " &nbsp;&middot;&nbsp; <span id='anTodayClock'>" . $now->format('H:i') . "</span></div>";
@@ -314,6 +315,7 @@ HTML;
             $todayHero .= "    <div style='font-size:11px;margin-top:6px;display:flex;align-items:center;gap:10px'>";
             $todayHero .= "      <span style='background:{$todayTrendClr};color:#fff;padding:2px 8px;font-size:10px;font-weight:800'>{$todayTrendText}</span>";
             $todayHero .= "      <span style='color:#475569'>{$todayCnt} sales today &nbsp;&middot;&nbsp; {$yesterdayCnt} yesterday</span>";
+            $todayHero .= "      <span style='color:#64748b;font-size:10px'>(UGX " . $this->fmt($todayRev) . " vs UGX " . $this->fmt($yesterdayRev) . ")</span>";
             $todayHero .= "    </div>";
             $todayHero .= "  </div>";
             $todayHero .= "  <div style='text-align:right;padding-left:24px;flex-shrink:0'>";
