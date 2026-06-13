@@ -252,6 +252,12 @@ Route::group([
     $router->get('namz-crawler/set-url/{movieId}',        'NamzCrawlerController@setUrlForm')->where(['movieId' => '[0-9]+'])->name('namz-crawler.set-url');
     $router->post('namz-crawler/set-url/{movieId}/save',  'NamzCrawlerController@saveUrl')->where(['movieId' => '[0-9]+'])->name('namz-crawler.save-url');
     $router->get('namz-crawler/sessions/{id}',            'NamzCrawlerController@showSession')->where(['id' => '[0-9]+'])->name('namz-crawler.session');
+    $router->get('namz-crawler/probe-full',               'NamzCrawlerController@probeFull')->name('namz-crawler.probe-full');
+    $router->get('namz-crawler/probe-ajax/{namzId}',      'NamzCrawlerController@probeIdAjax')->where(['namzId' => '[0-9]+'])->name('namz-crawler.probe-ajax');
+    $router->get('namz-crawler/movie-info/{movieId}',     'NamzCrawlerController@movieInfoJson')->where(['movieId' => '[0-9]+'])->name('namz-crawler.movie-info');
+    $router->post('namz-crawler/set-url-ajax/{movieId}',  'NamzCrawlerController@setUrlAjax')->where(['movieId' => '[0-9]+'])->name('namz-crawler.set-url-ajax');
+    $router->get('namz-crawler/pending-movies',           'NamzCrawlerController@pendingMovies')->name('namz-crawler.pending');
+    $router->get('namz-crawler/bulk-retry-failed',        'NamzCrawlerController@bulkRetryFailed')->name('namz-crawler.bulk-retry');
     $router->get('namz-crawl-logs',                       'NamzCrawlerController@index')->name('namz-crawl-logs.index');
 
     // ============================================
