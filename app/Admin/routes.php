@@ -215,8 +215,6 @@ Route::group([
     $router->post('sync-dashboard/reset',  'SyncDashboardController@resetCursor');
 
     // ── Movie File Transfer (Hetzner Storage) Routes ──────────────────
-    // Note: NOT under /api/ prefix — that conflicts with Laravel's api middleware group
-    $router->get('movie-file-transfers/live-data',           'MovieFileTransferController@liveStatus');
     $router->get('movie-file-transfers/live-data',           'MovieFileTransferController@liveStatus');
     $router->get('movie-file-transfers',                    'MovieFileTransferController@index');
     $router->get('movie-file-transfers/monitor',            'MovieFileTransferController@monitor')->name('movie-file-transfers.monitor');
@@ -229,6 +227,15 @@ Route::group([
     $router->get('movie-file-transfers/{id}',               'MovieFileTransferController@show')->where(['id' => '[0-9]+'])->name('movie-file-transfers.show');
     $router->get('movie-file-transfers/{id}/retry',         'MovieFileTransferController@retry')->where(['id' => '[0-9]+'])->name('movie-file-transfers.retry');
     $router->get('movie-file-transfers/{id}/cancel',        'MovieFileTransferController@cancel')->where(['id' => '[0-9]+'])->name('movie-file-transfers.cancel');
+
+    // ── Movie URL Change / Sync Routes ───────────────────────────────
+    $router->get('movie-url-changes/dashboard',          'MovieVideoURLChangeController@dashboard')->name('movie-url-changes.dashboard');
+    $router->get('movie-url-changes/push-pending',       'MovieVideoURLChangeController@pushPending')->name('movie-url-changes.push-pending');
+    $router->get('movie-url-changes/test-connection',    'MovieVideoURLChangeController@testConnection')->name('movie-url-changes.test-connection');
+    $router->get('movie-url-changes/{id}/retry-remote',  'MovieVideoURLChangeController@retryRemote')->where(['id' => '[0-9]+'])->name('movie-url-changes.retry-remote');
+    $router->get('movie-url-changes/{id}/revert',        'MovieVideoURLChangeController@revert')->where(['id' => '[0-9]+'])->name('movie-url-changes.revert');
+    $router->get('movie-url-changes/{id}',               'MovieVideoURLChangeController@show')->where(['id' => '[0-9]+'])->name('movie-url-changes.show');
+    $router->get('movie-url-changes',                    'MovieVideoURLChangeController@index')->name('movie-url-changes.index');
 
     // ============================================
     // GAME MODULE ROUTES — DISABLED (resource optimization)

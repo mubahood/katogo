@@ -470,6 +470,13 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 });
 
 // ========================================
+// MOVIE URL SYNC — server-to-server (no JWT, shared-secret auth)
+// Hetzner POSTs here after successful file transfer to update movie URLs.
+// ========================================
+Route::post('movie-url-sync',      [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'receive']);
+Route::get('movie-url-sync/ping',  [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'ping']);
+
+// ========================================
 // CATCH-ALL DYNAMIC ROUTES (MUST BE LAST!)
 // ========================================
 // These routes should be at the END to avoid intercepting specific routes above

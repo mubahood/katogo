@@ -87,6 +87,20 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/transfers-process.log'));
 
+        // Retry any stuck/failed URL sync pushes — runs every 10 minutes.
+        // Catches pushes that failed due to temporary network issues.
+        $schedule->call(function () {
+            $rows = \App\Models\MovieVideoURLChange::whereIn('remote_status', ['pending', 'failed'])
+                ->where('local_status', 'applied')
+                ->where('attempts', '<', \DB::raw('max_attempts'))
+                ->where('created_at', '<', now()->subMinutes(5))
+                ->limit(50)
+                ->get();
+            foreach ($rows as $r) {
+                dispatch(new \App\Jobs\PushUrlChangeToOrigin($r->id))->onQueue('url-sync');
+            }
+        })->everyTenMinutes()->name('retry-stuck-url-pushes')->withoutOverlapping();
+
         // Continuous DB sync from Namecheap → Hetzner.
         // Only runs when SYNC_ENABLED=true in .env (disabled on Namecheap, enabled on Hetzner).
         // withoutOverlapping(10) prevents a slow run from stacking up.

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\MovieFileTransfer;
 use App\Models\MovieModel;
+use App\Models\MovieVideoURLChange;
 use App\Services\HetznerStorageService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -347,24 +348,27 @@ class TransferMovieToHetzner implements ShouldQueue
         return $tmpFile;
     }
 
-    // ── Step 6: Update movie URL ──────────────────────────────────────────────
+    // ── Step 6: Update movie URL + sync to origin server ─────────────────────
 
     private function updateMovieUrl(MovieFileTransfer $transfer, string $newUrl): void
     {
         if (!$transfer->movie_id) return;
 
-        $movie = MovieModel::find($transfer->movie_id);
-        if (!$movie) return;
-
-        $movie->url = $newUrl;
-        $movie->save();
+        // MovieVideoURLChange handles: local DB update + queuing remote push to mruodel.com
+        try {
+            $change = MovieVideoURLChange::recordAndSync($transfer, $newUrl);
+            Log::info("[TransferMovieToHetzner] Movie #{$transfer->movie_id} URL change #{$change->id} created. Remote push queued.");
+        } catch (\Throwable $e) {
+            // Fallback: update local DB directly so the transfer never stalls
+            Log::error("[TransferMovieToHetzner] MovieVideoURLChange::recordAndSync failed for movie #{$transfer->movie_id}: " . $e->getMessage());
+            $movie = MovieModel::find($transfer->movie_id);
+            if ($movie) { $movie->url = $newUrl; $movie->save(); }
+        }
 
         $transfer->update([
             'movie_url_updated'       => true,
-            'old_movie_url_backed_up' => true,  // source_url holds the original
+            'old_movie_url_backed_up' => true,
         ]);
-
-        Log::info("[TransferMovieToHetzner] Movie #{$transfer->movie_id} url updated to Hetzner CDN.");
     }
 
     // ── Failure handler ───────────────────────────────────────────────────────
