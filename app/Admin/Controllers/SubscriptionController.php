@@ -3028,8 +3028,15 @@ $(function(){
         if (!in_array($gateway, ['pesapal', 'flutterwave'], true)) {
             return response()->json(['success' => false, 'message' => 'Gateway must be pesapal or flutterwave.'], 422);
         }
-        if ($gateway === 'pesapal' && $phone === '') {
-            return response()->json(['success' => false, 'message' => 'Phone number is required for Pesapal.'], 422);
+
+        // Pesapal is disabled for new payment initiations — all payments now go through Flutterwave.
+        // Pesapal webhooks/verification still work for existing transactions.
+        if ($gateway === 'pesapal') {
+            Log::info('debugInitiatePayment: pesapal selected — redirecting to flutterwave', [
+                'subscription_id' => $subscriptionId,
+                'phone'           => $phone !== '' ? (substr($phone, 0, 6) . '***') : '(no phone)',
+            ]);
+            $gateway = 'flutterwave';
         }
 
         try {
@@ -3044,7 +3051,7 @@ $(function(){
                 throw new \RuntimeException('Subscription has no associated plan.');
             }
 
-            // Ensure merchant reference exists (required by both gateways)
+            // Ensure merchant reference exists
             if (empty($subscription->pesapal_merchant_reference)) {
                 $subscription->pesapal_merchant_reference = 'SUB-' . $subscription->id . '-' . strtoupper(substr(hash('sha256', $subscription->id . time()), 0, 8));
                 $subscription->save();
@@ -3053,10 +3060,7 @@ $(function(){
             $autoPush = false;
             $result   = [];
 
-            if ($gateway === 'pesapal') {
-                $svc    = app(\App\Services\SubscriptionPesapalService::class);
-                $result = $svc->initializePayment($subscription, null, $phone);
-            } elseif ($phone !== '') {
+            if ($phone !== '') {
                 // FLW direct charge — backend will auto-solve the math captcha via Puppeteer
                 $svc    = app(\App\Services\SubscriptionFlutterwaveService::class);
                 $result = $svc->initializePayment($subscription, null, $phone);
