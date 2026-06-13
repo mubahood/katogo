@@ -51,7 +51,7 @@ class SubscriptionController extends AdminController
     // ─── ANALYTICS PAGE ─────────────────────────────────────────────────
     protected function buildAnalyticsPage()
     {
-        return Cache::remember('analytics_page_v3', 180, function () {
+        return Cache::remember('analytics_page_v4', 180, function () {
             $now = Carbon::now();
 
             // ── Core totals ───────────────────────────────────────────────
@@ -244,12 +244,12 @@ class SubscriptionController extends AdminController
                 : ($pct < 0 ? "<span style='color:#e74c3c;font-size:10px'>▼ " . abs($pct) . "%</span>"
                              : "<span style='color:#95a5a6;font-size:10px'>— 0%</span>");
 
-            $kpi = function ($icon, $color, $value, $label, $sub = '', $link = '') use ($trend) {
+            $kpi = function ($icon, $color, $value, $label, $sub = '', $link = '') {
                 $wrap = $link ? "href='{$link}'" : '';
                 $tag  = $link ? 'a' : 'div';
                 return <<<HTML
-<{$tag} {$wrap} class="an-kpi" style="border-top:3px solid {$color};text-decoration:none;color:inherit">
-  <div class="an-kpi-icon" style="background:{$color}22;color:{$color}"><i class="fa {$icon}"></i></div>
+<{$tag} {$wrap} class="an-kpi" style="border-left:3px solid {$color};text-decoration:none;color:inherit">
+  <div class="an-kpi-icon" style="color:{$color}"><i class="fa {$icon}"></i></div>
   <div class="an-kpi-body">
     <div class="an-kpi-val">{$value}</div>
     <div class="an-kpi-lbl">{$label}</div>
@@ -276,6 +276,9 @@ HTML;
                 'os_cnt'       => [$androidCnt, $iosCnt],
                 'plans'        => ['labels'=>$plans->pluck('name'),'counts'=>$plans->pluck('count'),'revenues'=>$plans->pluck('total')],
                 'renewal'      => ['new'=>$newSubCount,'renewal'=>$renewalCount],
+                'todayRev'     => (int)$todayRev,
+                'todayCnt'     => (int)$todayCnt,
+                'yesterdayCnt' => (int)$yesterdayCnt,
             ]);
 
             // ── KPI cards ─────────────────────────────────────────────────
@@ -286,19 +289,39 @@ HTML;
             $churnColor   = $churnRate > 40 ? '#e74c3c' : ($churnRate > 25 ? '#f39c12' : '#27ae60');
             $srColor      = $paySuccessRate < 25 ? '#e74c3c' : ($paySuccessRate < 40 ? '#f39c12' : '#27ae60');
 
-            $kpiRow1 = $kpi('fa-money', '#27ae60', $ugx($totalRevenue), 'Total Revenue (All Time)', "<div class='an-kpi-sub'>".number_format($totalCompleted)." paid subs</div>", $subsUrl.'?payment_status=Completed');
-            $kpiRow1 .= $kpi('fa-calendar-check-o', '#4a90e2', $ugx($thisMonthRev), 'This Month', "<div class='an-kpi-sub'>{$momRevTrend} vs last month · ".number_format($thisMonthCnt)." sales</div>");
-            $kpiRow1 .= $kpi('fa-sun-o', '#f39c12', $ugx($todayRev), 'Today', "<div class='an-kpi-sub'>{$dodRevTrend} vs yesterday · {$todayCnt} sales</div>");
-            $kpiRow1 .= $kpi('fa-bolt', '#e67e22', $ugx($thisWeekRev), 'This Week', "<div class='an-kpi-sub'>{$wowTrend} vs last week</div>");
-            $kpiRow1 .= $kpi('fa-check-circle', '#1abc9c', number_format($activeCount), 'Active Subscribers', "<div class='an-kpi-sub'>".number_format($uniqueSubscribers)." unique all-time</div>", $subsUrl.'?status=Active');
-            $kpiRow1 .= $kpi('fa-clock-o', '#e74c3c', number_format($pendingCount), 'Pending Payments', "<div class='an-kpi-sub'>Awaiting confirmation</div>", $subsUrl.'?payment_status=Pending');
+            // Revenue overview (no Today — that's the hero card)
+            $kpiRow1  = $kpi('fa-database',  '#059669', $ugx($totalRevenue),       'Total Revenue (All Time)', "<div class='an-kpi-sub'>".number_format($totalCompleted)." paid subs</div>", $subsUrl.'?payment_status=Completed');
+            $kpiRow1 .= $kpi('fa-calendar',  '#2563eb', $ugx($thisMonthRev),       'This Month', "<div class='an-kpi-sub'>{$momRevTrend} vs last month &middot; ".number_format($thisMonthCnt)." sales</div>");
+            $kpiRow1 .= $kpi('fa-bolt',      '#d97706', $ugx($thisWeekRev),        'This Week',  "<div class='an-kpi-sub'>{$wowTrend} vs last week</div>");
+            $kpiRow1 .= $kpi('fa-clock-o',   '#dc2626', number_format($pendingCount), 'Pending Payments', "<div class='an-kpi-sub'>Awaiting confirmation</div>", $subsUrl.'?payment_status=Pending');
 
-            $kpiRow2 = $kpi('fa-user-plus', '#8e44ad', number_format($newSubCount), 'New Subscribers (Total)', "<div class='an-kpi-sub'>{$momCntTrend} vs last month</div>");
-            $kpiRow2 .= $kpi('fa-refresh', '#16a085', number_format($renewalCount), 'Renewals (Total)', "<div class='an-kpi-sub'>".round($renewalCount / max($totalCompleted, 1) * 100, 1)."% of all paid</div>");
-            $kpiRow2 .= $kpi('fa-bar-chart', $srColor, $paySuccessRate . '%', 'Payment Success Rate', "<div class='an-kpi-sub'>{$totalCompleted} of {$totalAttempted} attempts</div>");
-            $kpiRow2 .= $kpi('fa-user-circle', '#2980b9', $ugx($arpu), 'ARPU (Avg/User)', "<div class='an-kpi-sub'>All-time per unique subscriber</div>");
-            $kpiRow2 .= $kpi('fa-exclamation-triangle', '#e74c3c', number_format($expiringToday), 'Expiring Today', "<div class='an-kpi-sub'>{$expiring7Days} within 7 days</div>");
-            $kpiRow2 .= $kpi('fa-line-chart', $churnColor, $churnRate . '%', 'Churn Rate', "<div class='an-kpi-sub'>Expired + cancelled / total</div>");
+            // Subscriber health
+            $kpiRow2  = $kpi('fa-check-circle',       '#059669', number_format($activeCount),  'Active Subscribers',  "<div class='an-kpi-sub'>".number_format($uniqueSubscribers)." unique all-time</div>", $subsUrl.'?status=Active');
+            $kpiRow2 .= $kpi('fa-user-plus',          '#7c3aed', number_format($newSubCount),  'New Subscribers',     "<div class='an-kpi-sub'>{$momCntTrend} vs last month</div>");
+            $kpiRow2 .= $kpi('fa-refresh',            '#0891b2', number_format($renewalCount), 'Renewals',            "<div class='an-kpi-sub'>".round($renewalCount / max($totalCompleted, 1) * 100, 1)."% of all paid</div>");
+            $kpiRow2 .= $kpi('fa-bar-chart',          $srColor,  $paySuccessRate.'%',          'Payment Success Rate',"<div class='an-kpi-sub'>{$totalCompleted} of {$totalAttempted} attempts</div>");
+            $kpiRow2 .= $kpi('fa-user-circle',        '#2563eb', $ugx($arpu),                  'ARPU (Avg/User)',     "<div class='an-kpi-sub'>All-time per unique subscriber</div>");
+            $kpiRow2 .= $kpi('fa-exclamation-triangle','#dc2626',number_format($expiringToday),'Expiring Today',      "<div class='an-kpi-sub'>{$expiring7Days} within 7 days</div>");
+            $kpiRow2 .= $kpi('fa-line-chart',         $churnColor,$churnRate.'%',              'Churn Rate',          "<div class='an-kpi-sub'>Expired + cancelled / total</div>");
+
+            // Today hero panel
+            $todayTrendClr  = $dodRevPct >= 0 ? '#10b981' : '#ef4444';
+            $todayTrendText = ($dodRevPct >= 0 ? '&#9650; ' : '&#9660; ') . abs($dodRevPct) . '% vs yesterday';
+            $todayHero  = "<div class='an-today-hero'>";
+            $todayHero .= "  <div style='flex:1'>";
+            $todayHero .= "    <div class='an-today-lbl'><span class='an-today-dot'></span>&nbsp;LIVE &nbsp;&middot;&nbsp; " . $now->format('l, d M Y') . " &nbsp;&middot;&nbsp; <span id='anTodayClock'>" . $now->format('H:i') . "</span></div>";
+            $todayHero .= "    <div class='an-today-num' id='anTodayRev'>UGX " . $this->fmt($todayRev) . "</div>";
+            $todayHero .= "    <div style='font-size:11px;margin-top:6px;display:flex;align-items:center;gap:10px'>";
+            $todayHero .= "      <span style='background:{$todayTrendClr};color:#fff;padding:2px 8px;font-size:10px;font-weight:800'>{$todayTrendText}</span>";
+            $todayHero .= "      <span style='color:#475569'>{$todayCnt} sales today &nbsp;&middot;&nbsp; {$yesterdayCnt} yesterday</span>";
+            $todayHero .= "    </div>";
+            $todayHero .= "  </div>";
+            $todayHero .= "  <div style='text-align:right;padding-left:24px;flex-shrink:0'>";
+            $todayHero .= "    <div class='an-today-cnt' id='anTodayCnt'>" . number_format($todayCnt) . "</div>";
+            $todayHero .= "    <div style='font-size:8px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-top:2px'>Sales Today</div>";
+            $todayHero .= "    <div style='margin-top:8px;padding-top:8px;border-top:1px solid #1e293b;font-size:11px;color:#64748b'>UGX " . number_format($yesterdayRev) . "<br><span style='font-size:9px'>Yesterday</span></div>";
+            $todayHero .= "  </div>";
+            $todayHero .= "</div>";
 
             // ── Per-app KPI row ───────────────────────────────────────────
             $appKpiRow = '';
@@ -308,12 +331,12 @@ HTML;
                 $act = (int)($appActive[$key] ?? 0);
                 $pct = $totalRevenue > 0 ? round($rev / $totalRevenue * 100, 1) : 0;
                 $appKpiRow .= <<<HTML
-<div class="an-app-card" style="border-left:4px solid {$color}">
-  <div class="an-app-head"><i class="fa {$icon}" style="color:{$color}"></i> <b>{$name}</b> <span class="an-badge" style="background:{$rgba}.15);color:{$color}">{$pct}%</span></div>
-  <div class="an-app-rev">{$ugx($rev)}</div>
+<div class="an-app-card" style="border-top-color:{$color}">
+  <div class="an-app-head"><i class="fa {$icon}" style="color:{$color}"></i> <b>{$name}</b> <span class="an-badge" style="background:{$rgba}.12);color:{$color}">{$pct}%</span></div>
+  <div class="an-app-rev" style="color:{$color}">{$ugx($rev)}</div>
   <div class="an-app-meta">
     <span><b>{$this->fmt($cnt)}</b> paid</span>
-    <span><b style="color:#27ae60">{$act}</b> active</span>
+    <span><b style="color:#059669">{$act}</b> active</span>
   </div>
 </div>
 HTML;
@@ -358,87 +381,102 @@ HTML;
             // ── HTML output ───────────────────────────────────────────────
             $html = <<<HTML
 <style>
-/* ─ Analytics page ─────────────────────────── */
-.an-wrap{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;padding:0 2px}
-.an-section-title{font-size:10px;font-weight:700;color:#7f8c8d;text-transform:uppercase;letter-spacing:.7px;margin:18px 0 8px;display:flex;align-items:center;gap:6px}
-.an-section-title::after{content:'';flex:1;height:1px;background:#ecf0f1}
+/* ─ Analytics v4 — flat, professional ──────────────────────── */
+.an-wrap{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px;color:#1e293b}
 
-/* KPI cards */
-.an-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:4px}
-.an-kpi{background:#fff;border-radius:8px;padding:14px 15px;box-shadow:0 1px 5px rgba(0,0,0,.07);display:flex;align-items:flex-start;gap:12px;transition:box-shadow .15s;cursor:default}
-a.an-kpi{cursor:pointer}
-a.an-kpi:hover{box-shadow:0 3px 14px rgba(0,0,0,.12);transform:translateY(-1px)}
-.an-kpi-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.an-kpi-icon i{font-size:17px}
+/* Section dividers */
+.an-section-title{font-size:9px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1.1px;margin:14px 0 5px;display:flex;align-items:center;gap:8px}
+.an-section-title::after{content:'';flex:1;height:1px;background:#e2e8f0}
+
+/* KPI cards — sharp, left-bordered */
+.an-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:4px;margin-bottom:4px}
+.an-kpi{background:#fff;border:1px solid #e2e8f0;border-left:3px solid #94a3b8;padding:9px 11px;display:flex;align-items:flex-start;gap:9px;cursor:default;transition:background .1s}
+a.an-kpi{cursor:pointer;text-decoration:none;color:inherit}
+a.an-kpi:hover{background:#f8fafc}
+.an-kpi-icon{width:26px;height:26px;display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:.75}
+.an-kpi-icon i{font-size:13px}
 .an-kpi-body{flex:1;min-width:0}
-.an-kpi-val{font-size:17px;font-weight:800;color:#1a1a2e;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.an-kpi-lbl{font-size:10px;color:#7f8c8d;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin:2px 0}
-.an-kpi-sub{font-size:10px;color:#95a5a6;margin-top:2px}
+.an-kpi-val{font-size:15px;font-weight:800;color:#0f172a;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.an-kpi-lbl{font-size:9px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin:2px 0 1px}
+.an-kpi-sub{font-size:10px;color:#94a3b8}
 
-/* App cards */
-.an-app-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:4px}
-.an-app-card{background:#fff;border-radius:8px;padding:14px 15px;box-shadow:0 1px 5px rgba(0,0,0,.07)}
-.an-app-head{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:13px}
-.an-app-rev{font-size:18px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
-.an-app-meta{display:flex;justify-content:space-between;font-size:11px;color:#7f8c8d}
-.an-badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:700;margin-left:auto}
+/* TODAY HERO — the one card that should shout */
+.an-today-hero{background:#0f172a;padding:14px 20px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden}
+.an-today-hero::after{content:'TODAY';position:absolute;right:-8px;top:50%;transform:translateY(-50%);font-size:72px;font-weight:900;color:rgba(245,158,11,.05);letter-spacing:-3px;pointer-events:none}
+.an-today-lbl{font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.an-today-dot{width:6px;height:6px;background:#10b981;border-radius:50%;display:inline-block;flex-shrink:0;animation:blink-pulse 1.4s ease-in-out infinite}
+@keyframes blink-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,.5)}60%{opacity:.3;box-shadow:0 0 0 4px rgba(16,185,129,0)}}
+.an-today-num{font-size:30px;font-weight:900;color:#f59e0b;letter-spacing:-1.5px;line-height:1;font-variant-numeric:tabular-nums}
+.an-today-cnt{font-size:34px;font-weight:900;color:#f1f5f9;letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums}
 
-/* Charts */
-.an-chart-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.an-chart-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
-.an-chart-grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px}
-.an-chart-grid-full{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
-.an-box{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 5px rgba(0,0,0,.07);border:1px solid #f4f6f7}
-.an-box-title{font-size:11px;font-weight:700;color:#555;margin-bottom:12px;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.4px}
-.an-box-title i{font-size:14px}
+/* App revenue cards */
+.an-app-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px;margin-bottom:4px}
+.an-app-card{background:#fff;border:1px solid #e2e8f0;border-top:3px solid #94a3b8;padding:10px 12px}
+.an-app-head{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px}
+.an-app-rev{font-size:16px;font-weight:800;margin-bottom:4px}
+.an-app-meta{display:flex;justify-content:space-between;font-size:11px;color:#64748b}
+.an-badge{display:inline-block;padding:1px 6px;font-size:9px;font-weight:800;margin-left:auto}
+
+/* Chart containers */
+.an-chart-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px}
+.an-chart-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:5px}
+.an-chart-grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;margin-bottom:5px}
+.an-chart-grid-full{display:grid;grid-template-columns:1fr;gap:5px;margin-bottom:5px}
+.an-box{background:#fff;border:1px solid #e2e8f0;padding:12px}
+.an-box-title{font-size:9px;font-weight:800;color:#475569;margin-bottom:10px;display:flex;align-items:center;gap:5px;text-transform:uppercase;letter-spacing:.5px}
+.an-box-title i{font-size:12px}
 
 /* Tables */
 .an-tbl{width:100%;border-collapse:collapse;font-size:12px}
-.an-tbl th{text-align:left;padding:7px 10px;border-bottom:2px solid #ecf0f1;font-weight:700;color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
-.an-tbl td{padding:7px 10px;border-bottom:1px solid #f8f9fa}
-.an-tbl tr:hover td{background:#fafbfc}
+.an-tbl th{text-align:left;padding:5px 8px;border-bottom:2px solid #e2e8f0;font-weight:800;color:#475569;font-size:9px;text-transform:uppercase;letter-spacing:.4px}
+.an-tbl td{padding:6px 8px;border-bottom:1px solid #f1f5f9}
+.an-tbl tr:hover td{background:#f8fafc}
 .an-tbl tr:last-child td{border-bottom:none}
 
-/* Header bar */
-.an-header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);border-radius:10px;padding:20px 24px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;color:#fff}
-.an-header .an-logo{font-size:20px;font-weight:800;letter-spacing:.5px}
-.an-header .an-meta{font-size:11px;color:#bdc3c7;margin-top:3px}
+/* Header bar — compact, flat */
+.an-header{background:#0f172a;padding:12px 16px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;color:#fff}
+.an-header .an-logo{font-size:14px;font-weight:800;color:#f8fafc;display:flex;align-items:center;gap:7px}
+.an-header .an-meta{font-size:10px;color:#475569;margin-top:2px}
 .an-header-right{text-align:right}
-.an-header-right .an-bignum{font-size:28px;font-weight:800;color:#f1c40f}
-.an-header-right .an-biglbl{font-size:10px;color:#bdc3c7;text-transform:uppercase;letter-spacing:.5px}
+.an-header-right .an-bignum{font-size:20px;font-weight:900;color:#f59e0b;letter-spacing:-.5px}
+.an-header-right .an-biglbl{font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:.5px}
 
-/* Responsive */
 @media(max-width:900px){
   .an-chart-grid-2,.an-chart-grid-3,.an-chart-grid-4{grid-template-columns:1fr}
-  .an-kpi-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .an-kpi-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+  .an-today-num{font-size:22px}.an-today-cnt{font-size:26px}
+  .an-today-hero{flex-direction:column;gap:10px}
 }
 </style>
 
 <div class="an-wrap">
 
-<!-- HEADER BANNER -->
+<!-- HEADER BAR -->
 <div class="an-header">
   <div>
-    <div class="an-logo">📊 Subscription Analytics</div>
-    <div class="an-meta">Last refreshed: {$refreshedAt} &nbsp;·&nbsp; <a href="{$analyticsUrl}" style="color:#4a90e2;font-size:11px"><i class="fa fa-refresh"></i> Refresh</a></div>
+    <div class="an-logo"><i class="fa fa-bar-chart" style="color:#f59e0b"></i> Subscription Analytics</div>
+    <div class="an-meta">Last refreshed: {$refreshedAt} &nbsp;&middot;&nbsp; <a href="{$analyticsUrl}" style="color:#64748b;font-size:10px"><i class="fa fa-refresh"></i> Refresh</a></div>
   </div>
   <div class="an-header-right">
     <div class="an-bignum">UGX {$this->fmt($totalRevenue)}</div>
     <div class="an-biglbl">Total Revenue All Time</div>
-    <div style="font-size:11px;color:#ecf0f1;margin-top:4px">{$this->fmt($totalCompleted)} paid &nbsp;·&nbsp; {$this->fmt($uniqueSubscribers)} unique users &nbsp;·&nbsp; {$this->fmt($activeCount)} active</div>
+    <div style="font-size:10px;color:#475569;margin-top:3px">{$this->fmt($totalCompleted)} paid &nbsp;&middot;&nbsp; {$this->fmt($uniqueSubscribers)} unique users &nbsp;&middot;&nbsp; {$this->fmt($activeCount)} active</div>
   </div>
 </div>
 
-<!-- KPI ROW 1: Revenue -->
-<div class="an-section-title"><i class="fa fa-money" style="color:#27ae60"></i> Revenue Overview</div>
+<!-- TODAY HERO -->
+{$todayHero}
+
+<!-- REVENUE OVERVIEW -->
+<div class="an-section-title"><i class="fa fa-money" style="color:#059669"></i> Revenue Overview</div>
 <div class="an-kpi-grid">{$kpiRow1}</div>
 
-<!-- KPI ROW 2: Subscribers -->
-<div class="an-section-title"><i class="fa fa-users" style="color:#4a90e2"></i> Subscribers & Health</div>
+<!-- SUBSCRIBER HEALTH -->
+<div class="an-section-title"><i class="fa fa-users" style="color:#2563eb"></i> Subscribers &amp; Health</div>
 <div class="an-kpi-grid">{$kpiRow2}</div>
 
-<!-- PER-APP CARDS -->
-<div class="an-section-title"><i class="fa fa-mobile" style="color:#8e44ad"></i> Revenue by App</div>
+<!-- PER-APP REVENUE -->
+<div class="an-section-title"><i class="fa fa-mobile" style="color:#7c3aed"></i> Revenue by App</div>
 <div class="an-app-grid">{$appKpiRow}</div>
 
 <!-- 12-MONTH REVENUE TREND (full width) -->
@@ -538,6 +576,27 @@ a.an-kpi:hover{box-shadow:0 3px 14px rgba(0,0,0,.12);transform:translateY(-1px)}
 (function(){
 var D = {$chartData};
 var _c=[];
+
+// Smooth count-up animation for Today hero numbers
+function countUp(id,end,pfx,sfx){
+  var el=document.getElementById(id); if(!el||!end) return;
+  var dur=900,st=Date.now();
+  var tick=function(){
+    var p=Math.min((Date.now()-st)/dur,1),e=1-Math.pow(1-p,3),v=Math.round(e*end);
+    el.textContent=(pfx||'')+(v).toLocaleString()+(sfx||'');
+    if(p<1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+countUp('anTodayRev',D.todayRev,'UGX ');
+countUp('anTodayCnt',D.todayCnt,'');
+
+// Live clock
+(function liveClock(){
+  var el=document.getElementById('anTodayClock'); if(!el) return;
+  setInterval(function(){var n=new Date();el.textContent=n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});},1000);
+})();
+
 function kill(){_c.forEach(function(x){try{x.destroy()}catch(e){}});_c=[];}
 function init(){
   kill();
