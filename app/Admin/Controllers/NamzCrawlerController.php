@@ -152,33 +152,37 @@ function showDetail(movieId) {
     .catch(e => { document.getElementById('detailBody').innerHTML = '<p class="text-danger">Error: ' + e + '</p>'; });
 }
 function renderDetail(m) {
+  var safeTitle = (m.title || '—').replace(/'/g, "\\'");
   var urlRow = m.url
-    ? `<p><b>URL:</b> <a href="${m.url}" target="_blank" style="word-break:break-all;font-size:11px">${m.url.substr(0,70)}${m.url.length>70?'…':''}</a>
-        <button onclick="playMovie('${m.url.replace(/'/g,"\\'").replace(/"/g,'&quot;')}','${(m.title||'').replace(/'/g,"\\'")}')" class="btn btn-xs btn-success" style="margin-left:6px">▶ Play</button></p>`
-    : `<p><b>URL:</b> <em style="color:#e74c3c">Not found — pending</em></p>`;
+    ? '<p><b>URL:</b> <a href="' + m.url + '" target="_blank" style="word-break:break-all;font-size:11px">' + m.url.substr(0,70) + (m.url.length>70?'…':'') + '</a>'
+      + ' <button onclick="playMovie(\'' + m.url.replace(/'/g,"\\'").replace(/"/g,'&quot;') + '\',\'' + safeTitle + '\')" class="btn btn-xs btn-success" style="margin-left:6px">&#9654; Play</button></p>'
+    : '<p><b>URL:</b> <em style="color:#e74c3c">Not found — pending</em></p>';
   var poster = m.thumbnail
-    ? `<img src="${m.thumbnail}" class="detail-poster" onerror="this.style.display='none'">`
-    : `<div style="width:110px;height:155px;background:#ecf0f1;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb"><i class="fa fa-film fa-2x"></i></div>`;
-  document.getElementById('detailBody').innerHTML = `
-    <div style="display:flex;gap:16px;margin-bottom:16px">
-      ${poster}
-      <div class="detail-meta" style="flex:1;min-width:0">
-        <h4 style="margin-top:0;margin-bottom:8px">${m.title||'—'}</h4>
-        <p><b>Status:</b> <span class="kt-badge ${m.status==='Active'?'kt-badge-green':'kt-badge-orange'}">${m.status||'—'}</span>
-           &nbsp;<b>Type:</b> ${m.type||'—'}</p>
-        <p><b>Genre:</b> ${m.genre||'—'} &nbsp;<b>Year:</b> ${m.year||'—'} &nbsp;<b>Duration:</b> ${m.duration?m.duration+' min':'—'}</p>
-        <p><b>Platform:</b> ${m.platform_type||'—'} &nbsp;<b>Namz ID:</b> <a href="https://namzentertainment.com/prev.php?id=${m.namz_id}" target="_blank">#${m.namz_id} ↗</a></p>
-        <p><b>URL Status:</b> <span class="kt-badge ${m.namz_url_status==='found'?'kt-badge-green':'kt-badge-orange'}">${m.namz_url_status||'—'}</span></p>
-        ${urlRow}
-        ${m.description?`<p style="font-size:12px;color:#666;margin-top:6px">${m.description.substr(0,240)}${m.description.length>240?'…':''}</p>`:''}
-        <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">
-          <button onclick="openSetUrl(${m.id},'${(m.title||'').replace(/'/g,"\\'")}')" class="btn btn-xs btn-primary">✎ Set URL</button>
-          <button onclick="runProbeFor(${m.namz_id})" class="btn btn-xs btn-warning">🔍 Probe URL</button>
-          <a href="https://namzentertainment.com/prev.php?id=${m.namz_id}" target="_blank" class="btn btn-xs btn-default">Open on Namz ↗</a>
-          <a href="/movie-models/${m.id}/edit" target="_blank" class="btn btn-xs btn-default">Edit Movie</a>
-        </div>
-      </div>
-    </div>`;
+    ? '<img src="' + m.thumbnail + '" class="detail-poster" onerror="this.style.display=\'none\'">'
+    : '<div style="width:110px;height:155px;background:#ecf0f1;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb"><i class="fa fa-film fa-2x"></i></div>';
+  var statusBadge = m.status === 'Active' ? 'kt-badge-green' : 'kt-badge-orange';
+  var urlStatusBadge = m.namz_url_status === 'found' ? 'kt-badge-green' : 'kt-badge-orange';
+  var descHtml = m.description ? '<p style="font-size:12px;color:#666;margin-top:6px">' + m.description.substr(0,240) + (m.description.length>240?'…':'') + '</p>' : '';
+  document.getElementById('detailBody').innerHTML =
+    '<div style="display:flex;gap:16px;margin-bottom:16px">'
+    + poster
+    + '<div class="detail-meta" style="flex:1;min-width:0">'
+    +   '<h4 style="margin-top:0;margin-bottom:8px">' + (m.title||'—') + '</h4>'
+    +   '<p><b>Status:</b> <span class="kt-badge ' + statusBadge + '">' + (m.status||'—') + '</span>'
+    +   ' &nbsp;<b>Type:</b> ' + (m.type||'—') + '</p>'
+    +   '<p><b>Genre:</b> ' + (m.genre||'—') + ' &nbsp;<b>Year:</b> ' + (m.year||'—') + ' &nbsp;<b>Duration:</b> ' + (m.duration?m.duration+' min':'—') + '</p>'
+    +   '<p><b>Platform:</b> ' + (m.platform_type||'—') + ' &nbsp;<b>Namz ID:</b> <a href="https://namzentertainment.com/prev.php?id=' + m.namz_id + '" target="_blank">#' + m.namz_id + ' &#8599;</a></p>'
+    +   '<p><b>URL Status:</b> <span class="kt-badge ' + urlStatusBadge + '">' + (m.namz_url_status||'—') + '</span></p>'
+    +   urlRow
+    +   descHtml
+    +   '<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">'
+    +     '<button onclick="openSetUrl(' + m.id + ',\'' + safeTitle + '\')" class="btn btn-xs btn-primary">&#9998; Set URL</button>'
+    +     '<button onclick="runProbeFor(' + m.namz_id + ')" class="btn btn-xs btn-warning">&#128269; Probe URL</button>'
+    +     '<a href="https://namzentertainment.com/prev.php?id=' + m.namz_id + '" target="_blank" class="btn btn-xs btn-default">Open on Namz &#8599;</a>'
+    +     '<a href="/movie-models/' + m.id + '/edit" target="_blank" class="btn btn-xs btn-default">Edit Movie</a>'
+    +   '</div>'
+    + '</div>'
+    + '</div>';
 }
 function closeDetail() { document.getElementById('detailOverlay').classList.remove('show'); }
 
@@ -381,7 +385,7 @@ HTML;
           <a href='/namz-crawler/stop' class='kt-tbtn kt-tbtn-red' style='{$stopDisabled}' onclick=\"return confirm('Send stop signal to running crawl?')\">
             <i class='fa fa-stop'></i> Stop Crawl
           </a>
-          <a href='/namz-crawler/activate-with-url' class='kt-tbtn kt-tbtn-purple'>
+          <a href='/namz-crawler/activate-with-url' class='kt-tbtn kt-tbtn-purple' data-pjax='0'>
             <i class='fa fa-check'></i> Activate Movies With URL
           </a>
           <a href='/namz-crawler/bulk-retry-failed' class='kt-tbtn kt-tbtn-orange' onclick=\"return confirm('Re-queue all failed log entries?')\">
