@@ -10,6 +10,7 @@ use App\Models\MovieView;
 use App\Models\MovieLike;
 use App\Models\MovieWishlist;
 use App\Models\User;
+use App\Models\UserActivityLog;
 use App\Models\Utils;
 use App\Traits\ApiResponser;
 use Illuminate\Http\Request;
@@ -1157,6 +1158,28 @@ class MovieController extends Controller
         // Increment views_count on "start" event only
         if ($event === 'start') {
             $movie->increment('views_count');
+        }
+
+        // Activity log
+        if ($user && in_array($event, ['start', 'stop', 'complete'], true)) {
+            try {
+                $action = match (true) {
+                    $event === 'complete' || (float) $percentage >= 90.0 => 'movie_complete',
+                    $event === 'start' => 'movie_play',
+                    default => null,
+                };
+                if ($action) {
+                    UserActivityLog::record($user->id, $action, [
+                        'entity_type' => 'movie',
+                        'entity_id'   => $movie->id,
+                        'duration_s'  => $position ?: null,
+                        'app_type'    => $request->header('X-App-Type'),
+                        'meta'        => ['percentage' => $percentage, 'event' => $event],
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("playback: activity log failed: {$e->getMessage()}");
+            }
         }
 
         return $this->success([
