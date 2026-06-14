@@ -1521,4 +1521,60 @@ class MovieController extends Controller
             return $this->error('Episode sync failed: ' . $e->getMessage(), 500);
         }
     }
+
+    // ═══════════════════════════════════════════════════════════
+    //  GET /api/v2/me/recommendations — genre-based personalised list
+    // ═══════════════════════════════════════════════════════════
+
+    public function recommendations(Request $request)
+    {
+        $user  = $this->resolveUser($request);
+        $limit = min((int) $request->input('limit', 20), 50);
+
+        $cacheKey = $user ? "reco_user_{$user->id}" : 'reco_guest';
+
+        $items = Cache::remember($cacheKey, 300, function () use ($user, $limit) {
+            $base = DB::table('movie_models')->select(self::LIST_FIELDS)->where('status', 'Active');
+
+            if ($user) {
+                // Top 3 genres from last 30 days of watch history
+                $genres = DB::table('user_activity_logs as a')
+                    ->join('movie_models as m', 'm.id', '=', 'a.entity_id')
+                    ->where('a.user_id', $user->id)
+                    ->whereIn('a.action', ['movie_play', 'movie_complete'])
+                    ->where('a.entity_type', 'movie')
+                    ->where('a.created_at', '>=', now()->subDays(30))
+                    ->whereNotNull('m.genre')
+                    ->where('m.genre', '!=', '')
+                    ->selectRaw('m.genre, COUNT(*) as cnt')
+                    ->groupBy('m.genre')
+                    ->orderByDesc('cnt')
+                    ->limit(3)
+                    ->pluck('genre')
+                    ->toArray();
+
+                if (!empty($genres)) {
+                    $watched = DB::table('movie_views')->where('user_id', $user->id)->pluck('movie_model_id');
+                    $query = (clone $base)->whereNotIn('id', $watched);
+                    $query->where(function ($q) use ($genres) {
+                        foreach ($genres as $genre) {
+                            $q->orWhere('genre', 'LIKE', '%' . $genre . '%');
+                        }
+                    });
+                    $results = $query->orderByRaw('CAST(views_count AS UNSIGNED) DESC')->limit($limit)->get();
+                    if ($results->count() >= 5) {
+                        return $results;
+                    }
+                }
+            }
+
+            // Fallback: trending movies
+            return (clone $base)->orderByRaw('CAST(views_count AS UNSIGNED) DESC')->limit($limit)->get();
+        });
+
+        return $this->success(
+            collect($items)->map(fn ($m) => $this->cleanUrlSingle((array) $m))->values()->toArray(),
+            'Recommendations loaded'
+        );
+    }
 }

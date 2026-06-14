@@ -229,6 +229,9 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         // Playback reporting
         Route::post('movies/{id}/playback', [V2MovieController::class, 'playback']);
 
+        // Personalised recommendations (genre-based, falls back to trending)
+        Route::get('me/recommendations', [V2MovieController::class, 'recommendations']);
+
         // Movie fix / debug (mobile-triggered)
         Route::post('movies/{id}/fix', [V2MovieController::class, 'fix']);
 
