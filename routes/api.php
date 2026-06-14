@@ -67,7 +67,7 @@ Route::get('random-movie', [DynamicCrudController::class, 'random_movie']);
 // ========================================
 
 // Public Subscription Routes (no authentication required)
-Route::get('subscription-plans', [SubscriptionApiController::class, 'listPlans']);
+Route::get('subscription-plans', [SubscriptionApiController::class, 'listPlans'])->middleware('cacheResponse:300');
 Route::get('subscriptions/payment-gateways', [SubscriptionApiController::class, 'paymentGateways']);
 
 // Pesapal Callback & IPN (no authentication required)
@@ -216,8 +216,8 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         // System config — called at startup by all clients (no extra auth needed)
         Route::get('system-config',       [V2SystemConfigController::class, 'index']);
 
-        // V2 Manifest — optimised, lean
-        Route::get('manifest',            [V2ManifestController::class, 'index']);
+        // V2 Manifest — optimised, lean (cached 60s; short TTL so subscription status stays fresh)
+        Route::get('manifest',            [V2ManifestController::class, 'index'])->middleware('cacheResponse:60');
 
         // NOTE: cacheResponse requires `spatie/laravel-responsecache` installed (composer update)
         Route::middleware(['etag', 'cacheResponse'])->group(function () {
