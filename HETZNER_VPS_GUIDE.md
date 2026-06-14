@@ -214,14 +214,20 @@ These are Hetzner's own DNS resolvers. They are fast and reliable.
 
 ### Firewall Status
 
-**UFW is currently INACTIVE.** Port 22 (SSH) is the only open port right now, but only because nothing else is running — there is no firewall blocking other ports. Once you install Nginx/MySQL etc., set up UFW immediately (see [Security Hardening](#9-security-hardening-guide)).
-
-### Currently Listening Ports
+UFW is **active**. Only the following ports are open to the public internet:
 
 | Port | Protocol | Service | Accessible From |
 |------|----------|---------|----------------|
 | 22 | TCP | SSH (OpenSSH) | Public internet |
+| 80 | TCP | HTTP (Nginx) | Public internet |
+| 443 | TCP | HTTPS (Nginx) | Public internet |
+| 4000 | TCP+UDP | NoMachine remote desktop | Public internet |
+| 5353 | UDP | mDNS (NoMachine dependency) | Public internet |
 | 53 | TCP/UDP | systemd-resolved | Localhost only |
+| 3306 | TCP | MySQL | Localhost only |
+| 6379 | TCP | Redis | Localhost only |
+
+> **Note on port 4000/5353:** These are opened for NoMachine (NX remote desktop), which provides graphical access to the server. If you don't need graphical access, run `ufw delete allow 4000` and `ufw delete allow 5353` to close them.
 
 ### Bandwidth
 
@@ -298,14 +304,13 @@ Infrastructure is fully set up. Only application-level steps remain.
 - [x] Laravel scheduler cron registered (`* * * * *`)
 - [x] Directory structure created with correct `www-data` ownership
 
-### Still To Do (application-level only)
+### Still To Do
 
-- [ ] **Deploy Laravel app** — clone repo, `composer install`, configure `.env`
-- [ ] **Run migrations** — `php artisan migrate --force`
-- [ ] **Point DNS** — add `A` record `91.98.42.156` for target domain
-- [ ] **Issue SSL** — `certbot --nginx -d yourdomain.com` (after DNS propagates)
-- [ ] **Verify queues** — `supervisorctl status` after deploy
-- [ ] **Move MySQL data to volume** (optional) — for persistence across server rebuilds
+- [x] **DNS pointed** — `munoapp.store` + `www.munoapp.store` → `91.98.42.156`
+- [x] **SSL issued** — Let's Encrypt certificate, expires 2026-09-10, auto-renews
+- [ ] **Configure `.env`** — fill in production values for DB, JWT, Pesapal, Flutterwave, Hetzner Storage keys
+- [ ] **Run migrations** — `php artisan migrate --force` after `.env` is configured
+- [ ] **Move MySQL data to volume** (optional but recommended) — move `/var/lib/mysql` → `/mnt/HC_Volume_105999006/mysql` so DB survives server rebuilds
 
 ---
 
@@ -475,58 +480,63 @@ crontab -e
 
 Do these in order immediately after first login.
 
-### 9.1 Disable Password Authentication (after key confirmed working)
+### 9.1 SSH Password Authentication — ALREADY DISABLED ✓
+
+Password authentication has been disabled. Only SSH key login works.
+
+Current config in `/etc/ssh/sshd_config.d/50-cloud-init.conf`:
+
+```text
+PasswordAuthentication no
+```
+
+To verify: `ssh -o PubkeyAuthentication=no root@91.98.42.156` — this will be rejected.
+
+To re-enable if needed (e.g., key is lost):
 
 ```bash
-# On the server
-sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config.d/50-cloud-init.conf
+# Use Hetzner Console (browser terminal) at console.hetzner.com/projects/14940267
+sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config.d/50-cloud-init.conf
 systemctl restart ssh
-
-# Test from a NEW terminal window (don't close current session)
-ssh hetzner-katogo   # should work via key
-ssh -o PubkeyAuthentication=no root@91.98.42.156  # should be rejected
 ```
 
-### 9.2 Enable UFW Firewall
+### 9.2 UFW Firewall — ACTIVE ✓
+
+UFW is active with these rules:
+
+```text
+22/tcp    ALLOW   Anywhere   # SSH
+80/tcp    ALLOW   Anywhere   # HTTP
+443/tcp   ALLOW   Anywhere   # HTTPS
+4000/tcp  ALLOW   Anywhere   # NoMachine remote desktop
+4000/udp  ALLOW   Anywhere   # NoMachine remote desktop
+5353/udp  ALLOW   Anywhere   # mDNS (NoMachine)
+```
+
+To check: `ufw status verbose`
+
+### 9.3 fail2ban — ACTIVE ✓
+
+fail2ban is running and protecting SSH (bans after 5 failed attempts in 10 minutes, 10-minute ban).
 
 ```bash
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp       # SSH
-ufw allow 80/tcp       # HTTP
-ufw allow 443/tcp      # HTTPS
-ufw enable
-ufw status verbose
+fail2ban-client status sshd    # see current bans
+fail2ban-client set sshd unbanip <IP>   # manually unban an IP
 ```
 
-### 9.3 Configure Automatic Security Updates
+### 9.4 Automatic Security Updates — ACTIVE ✓
 
-Already running (`unattended-upgrades.service` is active). To verify:
-```bash
-cat /etc/apt/apt.conf.d/50unattended-upgrades | grep -v "^//"
-```
+`unattended-upgrades.service` runs automatically. No action needed.
 
-### 9.4 Set Up fail2ban (brute force protection)
+### 9.5 Current SSH Configuration
 
-```bash
-apt install -y fail2ban
-systemctl enable --now fail2ban
-# Default config bans IPs after 5 failed SSH attempts
-fail2ban-client status sshd
-```
-
-### 9.5 SSH Configuration Best Practices
-
-Current `/etc/ssh/sshd_config` settings and what to change:
-
-| Setting | Current | Recommended |
-|---------|---------|-------------|
-| `PermitRootLogin` | `yes` | Keep `yes` for now (only root user exists) |
-| `PasswordAuthentication` | `yes` | Change to `no` after key confirmed |
-| `KbdInteractiveAuthentication` | `no` | Good, keep |
-| `X11Forwarding` | `yes` | Change to `no` (not needed) |
-| `UsePAM` | `yes` | Keep |
+| Setting | Value | Status |
+|---------|-------|--------|
+| `PermitRootLogin` | `yes` | OK — only root user exists |
+| `PasswordAuthentication` | `no` | Secure ✓ |
+| `KbdInteractiveAuthentication` | `no` | Secure ✓ |
+| `X11Forwarding` | `yes` | Low risk without NoMachine |
+| `UsePAM` | `yes` | Required for NoMachine |
 
 ---
 

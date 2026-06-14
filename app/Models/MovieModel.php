@@ -88,6 +88,44 @@ class MovieModel extends Model
             }
         });
         static::creating(function ($model) {
+            // ===== DEDUPLICATE BY VIDEO URL (the most unique identifier) =====
+            // The video `url` uniquely identifies a piece of content. If another
+            // record already uses this url, refresh that existing record with the
+            // freshly-detected data instead of inserting a duplicate row.
+            //
+            // Notes:
+            //  - Match on the RAW stored value (the `url` accessor normalises
+            //    http→https on read), covering both http/https variants so the
+            //    same video on either scheme is treated as one.
+            //  - Only non-empty incoming fields are copied, so curated/hosting
+            //    data already on the old record (firebase_video_url,
+            //    local_video_link, tested flags, …) is preserved.
+            //  - `url` itself is left untouched — it is the match key, so we avoid
+            //    needlessly re-triggering the video-url-change / transfer pipeline.
+            $rawUrl = $model->getAttributes()['url'] ?? null;
+            if (!empty($rawUrl)) {
+                $urlCandidates = array_values(array_unique([
+                    $rawUrl,
+                    preg_replace('/^http:\/\//i', 'https://', $rawUrl),
+                    preg_replace('/^https:\/\//i', 'http://', $rawUrl),
+                ]));
+                $existingByUrl = MovieModel::whereIn('url', $urlCandidates)->first();
+                if ($existingByUrl !== null) {
+                    foreach ($model->getAttributes() as $key => $value) {
+                        if (in_array($key, ['id', 'created_at', 'url'], true)) {
+                            continue;
+                        }
+                        if ($value === null || $value === '') {
+                            continue; // never overwrite existing data with blanks
+                        }
+                        $existingByUrl->{$key} = $value;
+                    }
+                    $existingByUrl->save();
+
+                    return false; // abort the duplicate insert; the old record was updated
+                }
+            }
+
             //check if type is series
             if ($model->type == 'Series') {
                 $series = SeriesMovie::find($model->category_id);

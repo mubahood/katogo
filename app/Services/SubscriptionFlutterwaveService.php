@@ -613,11 +613,21 @@ class SubscriptionFlutterwaveService
     public function isValidWebhook(string $rawBody, ?string $signature): bool
     {
         $secretHash = (string) config('flutterwave.secret_hash', '');
-        if (empty($secretHash) || empty($signature)) {
+
+        // FLW_SECRET_HASH not configured: allow through with a warning so live webhooks
+        // keep working while the hash is being configured in the Flutterwave dashboard.
+        if (empty($secretHash)) {
+            Log::warning('FLW webhook: FLW_SECRET_HASH not set in .env — all webhooks allowed through. Set this in Flutterwave dashboard → Settings → Webhooks → Secret Hash.');
+            return true;
+        }
+
+        if (empty($signature)) {
+            Log::warning('FLW webhook: verif-hash header missing from request');
             return false;
         }
 
-        $expected = hash_hmac('sha256', $rawBody, $secretHash);
-        return hash_equals($expected, $signature);
+        // Flutterwave sends the raw secret hash as the verif-hash header value
+        // (it is NOT an HMAC — it is a plain static string set in the dashboard).
+        return hash_equals($secretHash, $signature);
     }
 }

@@ -604,8 +604,24 @@
                         var payUrl = res.redirect_url || '';
                         var payMsg = res.payment_message || '';
 
-                        var resultHtml = '<span style="color:#7dffa1"><b>Payment link ready!</b></span>';
+                        // Auto-open link immediately (inside click handler so popup won't be blocked)
+                        var popupOpened = false;
                         if (payUrl) {
+                            try {
+                                var popup = window.open(payUrl, '_blank', 'noopener,noreferrer');
+                                popupOpened = popup !== null && popup !== undefined;
+                            } catch (e) { popupOpened = false; }
+                        }
+
+                        var resultHtml = '<span style="color:#7dffa1"><i class="fa fa-check-circle"></i> <b>Payment initiated!</b></span>';
+                        if (payUrl) {
+                            if (popupOpened) {
+                                resultHtml += '<div style="margin-top:6px;font-size:12px;color:#58a6ff">'
+                                    + '<i class="fa fa-external-link"></i> Payment page opened in new tab.</div>';
+                            } else {
+                                resultHtml += '<div style="margin-top:6px;font-size:11px;color:#f8c471">'
+                                    + '&#9888; Popup may have been blocked — click below to open manually.</div>';
+                            }
                             resultHtml += '<div style="margin-top:8px">'
                                 + '<a href="' + esc(payUrl) + '" target="_blank" rel="noopener noreferrer"'
                                 + ' style="display:inline-block;padding:5px 14px;background:#1f6feb;color:#fff;border-radius:4px;text-decoration:none;font-size:12px">'
@@ -619,7 +635,10 @@
                         $('#subInitPayResult').html(resultHtml);
 
                         logLine('✅ Payment link generated via ' + esc(gateway) + ' | Tracking: ' + esc(res.tracking_id || '—'), '#7dffa1');
-                        if (payUrl) logLine('   Pay URL: ' + payUrl, '#58a6ff');
+                        if (payUrl) {
+                            logLine('   Pay URL: ' + payUrl, '#58a6ff');
+                            logLine('   Auto-opened in new tab: ' + (popupOpened ? 'yes' : 'blocked by browser'), popupOpened ? '#7dffa1' : '#f8c471');
+                        }
                     }
                 })
                 .fail(function (xhr) {

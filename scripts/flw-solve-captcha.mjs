@@ -25,30 +25,34 @@ if (!redirectUrl || !redirectUrl.startsWith('http')) {
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
+      headless: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',        // essential on low-RAM servers
+        '--disable-seccomp-filter-sandbox',  // needed on AlmaLinux shared hosting
+        '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process',
-        '--disable-crash-reporter',       // prevents crashpad subprocess failing on servers
+        '--single-process',                  // avoids renderer subprocess crash on restricted hosts
+        '--no-zygote',
+        '--disable-crash-reporter',
         '--disable-extensions',
         '--disable-background-networking',
         '--disable-default-apps',
         '--no-first-run',
-        '--no-zygote',                    // avoids zygote process crash on some VPS configs
-        '--deterministic-fetch',
         '--disable-features=site-per-process',
+        '--memory-pressure-off',
       ],
     });
 
-    const page = await browser.newPage();
+    // Use browser.pages()[0] (the already-open blank tab) rather than newPage().
+    // On single-process/no-zygote setups, newPage() can race with renderer init.
+    const existingPages = await browser.pages();
+    const page = existingPages.length > 0 ? existingPages[0] : await browser.newPage();
 
     await page.setUserAgent(
-      'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
-    await page.setViewport({ width: 390, height: 844, isMobile: true });
+    await page.setViewport({ width: 1280, height: 800 });
 
     // Abort image/font/media requests to load faster
     await page.setRequestInterception(true);

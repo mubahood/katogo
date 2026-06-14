@@ -3065,15 +3065,28 @@ $(function(){
                 $svc    = app(\App\Services\SubscriptionFlutterwaveService::class);
                 $result = $svc->initializePayment($subscription, null, $phone);
 
-                // If FLW returned a captcha URL, dispatch the auto-solver job
-                $captchaUrl = $result['redirect_url'] ?? '';
-                if ($captchaUrl && str_contains($captchaUrl, 'captcha/verify')) {
+                // If FLW returned a captcha URL, dispatch the auto-solver job only when
+                // all prerequisites exist (Node script + Chrome/Puppeteer on this server).
+                $captchaUrl   = $result['redirect_url'] ?? '';
+                $solverScript = base_path('scripts/flw-solve-captcha.mjs');
+                $canAutoSolve = file_exists($solverScript) && (
+                    is_dir('/var/cache/puppeteer') ||          // Hetzner: Puppeteer-managed Chrome
+                    !empty(trim((string) shell_exec('which google-chrome-stable 2>/dev/null'))) ||
+                    !empty(trim((string) shell_exec('which chromium-browser 2>/dev/null')))
+                );
+
+                if ($captchaUrl && str_contains($captchaUrl, 'captcha/verify') && $canAutoSolve) {
                     $txRef = $result['order_tracking_id'] ?? $subscription->pesapal_merchant_reference;
                     \App\Jobs\SolveFLWCaptchaJob::dispatch($subscription->id, $captchaUrl, $txRef);
                     $autoPush = true;
                     Log::info('debugInitiatePayment: dispatched SolveFLWCaptchaJob', [
                         'subscription_id' => $subscription->id,
                         'tx_ref'          => $txRef,
+                    ]);
+                } elseif ($captchaUrl && str_contains($captchaUrl, 'captcha/verify') && !$canAutoSolve) {
+                    // Puppeteer not available on this server — return the captcha URL so admin can open it
+                    Log::info('debugInitiatePayment: auto-solver unavailable, returning captcha URL for manual open', [
+                        'subscription_id' => $subscription->id,
                     ]);
                 }
             } else {

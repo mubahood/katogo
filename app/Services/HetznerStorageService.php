@@ -91,7 +91,11 @@ class HetznerStorageService
     }
 
     /**
-     * Create a remote directory. Safe to call if it already exists (405 = already exists).
+     * Create a single remote directory. Safe if it already exists (405 = exists).
+     * Does NOT create intermediate parents — use mkdirRecursive() for that.
+     *
+     * Returns true on 201 (created) or 405 (already exists).
+     * Returns false on 409 (parent missing) or any other error.
      */
     public function mkdir(string $remotePath): bool
     {
@@ -101,6 +105,30 @@ class HetznerStorageService
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         return in_array($code, [201, 405]);
+    }
+
+    /**
+     * Create a directory path including all intermediate parents, like mkdir -p.
+     *
+     * WebDAV MKCOL can only create one directory at a time and requires the parent
+     * to already exist (returns 409 Conflict if it doesn't). This method walks each
+     * path segment from the root and creates each level individually.
+     *
+     * Safe to call on already-existing paths (each segment returns 405 = OK).
+     */
+    public function mkdirRecursive(string $remotePath): bool
+    {
+        $segments    = array_values(array_filter(explode('/', trim($remotePath, '/'))));
+        $accumulated = '';
+
+        foreach ($segments as $segment) {
+            $accumulated .= '/' . $segment;
+            if (!$this->mkdir(ltrim($accumulated, '/'))) {
+                return false; // unexpected error (not 201 or 405)
+            }
+        }
+
+        return true;
     }
 
     /**
