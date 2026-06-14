@@ -27,13 +27,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use function Laravel\Prompts\search;
 use App\Http\Middleware\JwtMiddleware;
-use App\Http\Controllers\MigrationController;
-
-
-
-// ── One-time migration endpoint (REMOVE after migration) ────
-Route::post('run-migration', [MigrationController::class, 'runMigration']);
-
 // ════════════════════════════════════════════
 //  iOS Review Mode — public, no auth required
 //  Simplified endpoints for App Store reviewers
@@ -109,13 +102,6 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::post('subscriptions/{id}/check-payment', [SubscriptionApiController::class, 'checkPendingPayment']);
     Route::post('subscriptions/{id}/cancel', [SubscriptionApiController::class, 'cancelPending']);
 });
-
-// FREE TRIAL TEST ROUTES (Remove in production)
-Route::get('test-free-trial/{user_id?}', [App\Http\Controllers\FreeTrialTestController::class, 'testFreeTrial']);
-Route::get('test-auto-assignment/{user_id?}', [App\Http\Controllers\FreeTrialTestController::class, 'testAutoAssignment']);
-Route::get('test-free-trial-plan', [App\Http\Controllers\FreeTrialTestController::class, 'getFreeTrialPlan']);
-Route::get('test-free-trial-stats', [App\Http\Controllers\FreeTrialTestController::class, 'getFreeTrialStats']);
-Route::delete('test-free-trial-cleanup/{user_id?}', [App\Http\Controllers\FreeTrialTestController::class, 'cleanupTestData']);
 
 Route::get('products-1', [ApiController::class, 'products_1']);
 Route::post('file-uploading', [ApiController::class, 'file_uploading']);
@@ -211,6 +197,11 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     Route::get('movies/{id}', [DynamicCrudController::class, 'movie']); // Alternative route for mobile app compatibility - must be before 'movies'
     Route::get('movies', [DynamicCrudController::class, 'movies']);
     Route::get('movie/{id}', [DynamicCrudController::class, 'movie']);
+
+    // Movie ratings
+    Route::post('movies/{id}/rate',    [\App\Http\Controllers\Api\MovieRatingController::class, 'rate']);
+    Route::delete('movies/{id}/rate',  [\App\Http\Controllers\Api\MovieRatingController::class, 'unrate']);
+    Route::get('movies/{id}/ratings',  [\App\Http\Controllers\Api\MovieRatingController::class, 'index']);
 
     // Video Progress & Watch History Routes
     Route::post('video-progress', [DynamicCrudController::class, 'save_video_progress'])->middleware('throttle:video-progress');
