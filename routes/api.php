@@ -307,25 +307,8 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 });
 
 // ========================================
-// MULTIPLAYER GAME ROUTES — DISABLED (resource optimization)
-// All game/coin/ludo endpoints return 503 maintenance response
+// MULTIPLAYER GAME ROUTES
 // ========================================
-Route::middleware([JwtMiddleware::class])->group(function () {
-    $gameDisabled = function () {
-        return response()->json([
-            'success' => false,
-            'message' => 'Online games are temporarily disabled for maintenance. Please try again later.',
-            'data' => null,
-        ], 503);
-    };
-
-    Route::match(['get','post'], 'game/{any?}', $gameDisabled)->where('any', '.*');
-    Route::match(['get','post'], 'coins/{any?}', $gameDisabled)->where('any', '.*');
-    Route::match(['get','post'], 'ludo/{any?}', $gameDisabled)->where('any', '.*');
-    Route::match(['get','post'], 'checkers/{any?}', $gameDisabled)->where('any', '.*');
-});
-
-/*  ── ORIGINAL GAME ROUTES (commented out) ──────────────────
 Route::middleware([JwtMiddleware::class, 'throttle:game'])->group(function () {
     Route::get('game/online-users', [GameController::class, 'onlineUsers']);
     Route::post('game/invite', [GameController::class, 'sendInvitation']);
@@ -348,8 +331,6 @@ Route::middleware([JwtMiddleware::class, 'throttle:game'])->group(function () {
     Route::post('ludo/session/{id}/move', [LudoController::class, 'movePiece']);
     Route::post('ludo/session/{id}/pass', [LudoController::class, 'passTurn']);
     Route::post('ludo/session/{id}/leave', [LudoController::class, 'leaveGame']);
-
-    // Checkers Game
     Route::post('checkers/invite', [CheckersController::class, 'sendInvitation']);
     Route::post('checkers/invite/{id}/accept', [CheckersController::class, 'acceptInvitation']);
     Route::post('checkers/room/create', [CheckersController::class, 'createRoom']);
@@ -360,7 +341,6 @@ Route::middleware([JwtMiddleware::class, 'throttle:game'])->group(function () {
     Route::get('checkers/session/{id}/chat', [CheckersController::class, 'getChat']);
     Route::post('checkers/session/{id}/chat', [CheckersController::class, 'sendChat']);
 });
-*/
 
 
 
