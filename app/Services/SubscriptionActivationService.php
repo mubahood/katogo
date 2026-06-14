@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Subscription;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,39 @@ class SubscriptionActivationService
     {
         $result = $this->activatePaidSubscriptionWithAudit($subscription, $source, $options);
 
+        $this->sendActivationPush($result['subscription'], $result['audit']);
+
         return $result['subscription'];
+    }
+
+    private function sendActivationPush(Subscription $subscription, array $audit): void
+    {
+        if ($audit['already_active_completed'] ?? false) {
+            return;
+        }
+
+        try {
+            $user = User::find($subscription->user_id);
+            if (!$user) {
+                return;
+            }
+
+            $planName = $subscription->plan->name ?? 'Premium';
+            $endDate = $subscription->end_date_time
+                ? Carbon::parse($subscription->end_date_time)->format('d M Y')
+                : 'N/A';
+
+            NotificationService::sendToUser($user, [
+                'title' => 'Subscription Activated!',
+                'body'  => "Your {$planName} plan is now active until {$endDate}. Enjoy unlimited movies!",
+                'data'  => ['type' => 'subscription_activated', 'subscription_id' => $subscription->id],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('SubscriptionActivationService: push notification failed', [
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
