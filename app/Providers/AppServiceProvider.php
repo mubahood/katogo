@@ -7,6 +7,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Spatie\Health\Facades\Health;
+use Spatie\Health\Checks\Checks\DatabaseCheck;
+use Spatie\Health\Checks\Checks\EnvironmentCheck;
+use Spatie\Health\Checks\Checks\UsedDiskSpaceCheck;
 use App\Models\ChatMessage;
 use App\Models\MovieDownload;
 use App\Models\MovieModel;
@@ -54,6 +58,15 @@ class AppServiceProvider extends ServiceProvider
                 app('debugbar')->disable();
             }
         }
+
+        // ──────────────────────────────────────────────────────────────
+        // HEALTH CHECKS — accessible at GET /health
+        // ──────────────────────────────────────────────────────────────
+        Health::checks([
+            DatabaseCheck::new(),
+            EnvironmentCheck::new(),
+            UsedDiskSpaceCheck::new()->warnWhenUsedSpaceIsAbovePercentage(75)->failWhenUsedSpaceIsAbovePercentage(90),
+        ]);
 
         // ──────────────────────────────────────────────────────────────
         // MODEL OBSERVERS (P10-11)
