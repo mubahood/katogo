@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Mail\SubscriptionExpiryMail;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -94,6 +95,9 @@ class SendExpiryNotifications extends Command
                     // Send email notification
                     $this->sendExpiryEmail($user, $subscription, $daysRemaining);
 
+                    // Send push notification
+                    $this->sendExpiryPush($user, $subscription, $daysRemaining);
+
                     // Mark notification as sent
                     $subscription->sendExpiryNotification();
                     $sent++;
@@ -138,17 +142,38 @@ class SendExpiryNotifications extends Command
         return 0;
     }
 
-    /**
-     * Send expiry notification email
-     * 
-     * @param User $user
-     * @param Subscription $subscription
-     * @param int $daysRemaining
-     */
     protected function sendExpiryEmail($user, $subscription, $daysRemaining)
     {
-        // Queue the email so the command does not block on SMTP delivery
         Mail::to($user->email)
             ->queue(new SubscriptionExpiryMail($user, $subscription, $daysRemaining));
+    }
+
+    protected function sendExpiryPush($user, $subscription, int $daysRemaining): void
+    {
+        try {
+            $planName = $subscription->plan->name ?? 'Premium';
+
+            if ($daysRemaining <= 1) {
+                $body = "Your {$planName} plan expires TODAY! Renew now to keep watching without interruption.";
+            } else {
+                $body = "Your {$planName} plan expires in {$daysRemaining} days. Renew early to avoid losing access.";
+            }
+
+            NotificationService::sendToUser($user, [
+                'title' => 'Subscription Expiring Soon',
+                'body'  => $body,
+                'data'  => [
+                    'type'            => 'subscription_expiry_reminder',
+                    'subscription_id' => $subscription->id,
+                    'days_remaining'  => $daysRemaining,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('SendExpiryNotifications: push failed', [
+                'subscription_id' => $subscription->id,
+                'user_id'         => $user->id,
+                'error'           => $e->getMessage(),
+            ]);
+        }
     }
 }
