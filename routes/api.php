@@ -78,9 +78,6 @@ Route::post('subscriptions/pesapal/ipn', [SubscriptionApiController::class, 'pes
 Route::get('subscriptions/flutterwave/callback', [SubscriptionApiController::class, 'flutterwaveCallback']);
 Route::post('subscriptions/flutterwave/webhook', [SubscriptionApiController::class, 'flutterwaveWebhook']);
 
-// Pesapal API Diagnostics (no auth — for admin testing)
-Route::get('subscriptions/pesapal/test', [SubscriptionApiController::class, 'pesapalTest']);
-
 // Payment Status Check (Public - but validates ownership)
 Route::get('subscriptions/payment-status/{trackingId}', [SubscriptionApiController::class, 'getPaymentStatus']);
 

@@ -2476,20 +2476,6 @@ Route::get('munowatch-series-crawler', function () {
     }
 });
 
-Route::get('my-migrate', function () {
-    // Artisan::call('migrate');
-    //do run laravel migration command
-    Artisan::call('migrate', ['--force' => true]);
-    //returning the output
-    return Artisan::output();
-});
-Route::get('migrate', function () {
-    // Artisan::call('migrate');
-    //do run laravel migration command
-    Artisan::call('migrate', ['--force' => true]);
-    //returning the output
-    return Artisan::output();
-});
 
 }); // End of processing.auth middleware group
 
@@ -2895,42 +2881,6 @@ Route::get('/account', function () {
     return view('account');
 })->middleware('auth')->name('account.index');
 
-// Temporary test routes for account system
-Route::get('/test-account-apis', function () {
-    $user = \App\Models\User::first();
-    if (!$user) {
-        $user = \App\Models\User::create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'password' => bcrypt('password123'),
-        ]);
-    }
-
-    auth()->login($user);
-    $controller = new \App\Http\Controllers\DynamicCrudController();
-
-    try {
-        $request = new \Illuminate\Http\Request();
-        $dashboardResponse = $controller->get_account_dashboard($request);
-        $dashboard = json_decode($dashboardResponse->getContent(), true);
-
-        return response()->json([
-            'message' => 'Account API Test Results',
-            'dashboard_status' => $dashboard['success'] ? 'PASS' : 'FAIL',
-            'user' => $user->only(['id', 'name', 'email']),
-            'timestamp' => now()->toISOString()
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'API Test Failed',
-            'error' => $e->getMessage()
-        ], 500);
-    }
-});
-
-Route::get('/test-frontend', function () {
-    return view('account');
-});
 
 /*
 |--------------------------------------------------------------------------
