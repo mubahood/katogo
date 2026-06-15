@@ -400,7 +400,8 @@ class MovieFileTransferController extends AdminController
                                 </div>
                             </div>
                         </div>
-                    " . $this->renderLiveJs($max));
+                    ");
+                    \Encore\Admin\Facades\Admin::script($this->renderLiveJs($max));
                 });
             })
 
@@ -654,7 +655,8 @@ class MovieFileTransferController extends AdminController
                                 </table>
                             </div>
                         </div>
-                    " . $this->renderMonitorJs($max));
+                    ");
+                    \Encore\Admin\Facades\Admin::script($this->renderMonitorJs($max));
                 });
             });
     }
@@ -1046,7 +1048,9 @@ class MovieFileTransferController extends AdminController
         $srcShort= e(substr($t->source_url ?? '', 0, 90));
         $destUrl = $t->dest_url;
 
-        $liveJs = $t->isActive() ? $this->renderShowLiveJs($t->id) : '';
+        if ($t->isActive()) {
+            \Encore\Admin\Facades\Admin::script($this->renderShowLiveJs($t->id));
+        }
 
         $html = "
 <style>
@@ -1254,7 +1258,6 @@ class MovieFileTransferController extends AdminController
 </div>
 </div>
 
-{$liveJs}
 </div>";
 
         return $content
@@ -1299,15 +1302,14 @@ class MovieFileTransferController extends AdminController
                        <strong>{$ext}</strong> may not play in all browsers — if the player stays black, use Download or Open in Tab.
                    </div>"
                 : '';
-            return "
-<script>
-function ktCopyUrl(url, btn) {
+            \Encore\Admin\Facades\Admin::script("
+window.ktCopyUrl = function(url, btn) {
     navigator.clipboard.writeText(url).then(function() {
         btn.innerHTML = '<i class=\"fa fa-check\"></i> Copied!';
         setTimeout(function() { btn.innerHTML = '<i class=\"fa fa-copy\"></i> Copy URL'; }, 2000);
     }).catch(function() { prompt('Copy this URL:', url); });
-}
-</script>
+};");
+            return "
 <div class='kt-card-section' id='kt-player-section'>
     <div class='kt-sec-hdr' style='background:linear-gradient(135deg,#0d1b2a,#1b3a5c);color:#fff;border-bottom:none;padding:13px 18px;'>
         <i class='fa fa-play-circle' style='color:#00e676;font-size:17px;'></i>
@@ -1373,8 +1375,7 @@ function ktCopyUrl(url, btn) {
 
     private function renderShowLiveJs(int $transferId): string
     {
-        return "<script>
-(function() {
+        return "(function() {
     var tid = {$transferId};
     var poll = function() {
         fetch('/movie-file-transfers/live-data', {headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}})
@@ -1400,8 +1401,7 @@ function ktCopyUrl(url, btn) {
         .catch(function(){ setTimeout(poll, 8000); });
     };
     setTimeout(poll, 3000);
-})();
-</script>";
+})();";
     }
 
     // ── JSON API: live transfer status ───────────────────────────────────────
@@ -1734,8 +1734,7 @@ function ktCopyUrl(url, btn) {
 
     private function renderLiveJs(int $maxConcurrent): string
     {
-        return '<script>
-(function() {
+        return '(function() {
     var MAX_CON  = ' . $maxConcurrent . ';
     var POLL     = 3000;
     var IDLE_POLL = 10000;
@@ -1943,16 +1942,14 @@ function ktCopyUrl(url, btn) {
     }
 
     poll();
-})();
-</script>';
+})();';
     }
 
     // ── Monitor JS (monitor page — same core + table updates) ────────────────
 
     private function renderMonitorJs(int $maxConcurrent): string
     {
-        return '<script>
-(function() {
+        return '(function() {
     var MAX_CON   = ' . $maxConcurrent . ';
     var POLL      = 3000;
     var IDLE_POLL = 10000;
@@ -2234,8 +2231,7 @@ function ktCopyUrl(url, btn) {
     }
 
     poll();
-})();
-</script>';
+})();';
     }
 
     // ── Stats helper ──────────────────────────────────────────────────────────

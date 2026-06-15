@@ -172,6 +172,69 @@ class HetznerStorageService
     }
 
     /**
+     * Check whether a remote file exists and return its size in bytes.
+     * Returns null if the file does not exist (404) or on any error.
+     * Returns 0 if it exists but size is unknown.
+     */
+    public function fileInfo(string $remotePath): ?array
+    {
+        $xml = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop>'
+             . '<d:getcontentlength/><d:getlastmodified/>'
+             . '</d:prop></d:propfind>';
+
+        $ch = $this->curl($this->davBase . '/' . ltrim($remotePath, '/'), timeout: 15);
+        curl_setopt_array($ch, [
+            CURLOPT_CUSTOMREQUEST => 'PROPFIND',
+            CURLOPT_POSTFIELDS    => $xml,
+            CURLOPT_HTTPHEADER    => ['Depth: 0', 'Content-Type: application/xml'],
+        ]);
+        $body = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($code === 404 || $code === 0) {
+            return null;
+        }
+
+        preg_match('/<d:getcontentlength>(\d+)<\/d:getcontentlength>/', (string) $body, $sizeMatch);
+
+        return [
+            'exists' => true,
+            'size'   => (int) ($sizeMatch[1] ?? 0),
+        ];
+    }
+
+    /**
+     * Find an existing public share for a path, or create one if none exists.
+     * Returns the direct download URL, or null on failure.
+     */
+    public function findOrCreateShare(string $remotePath): ?string
+    {
+        $path = '/' . ltrim($remotePath, '/');
+
+        // Try to find an existing share for this path
+        $ch = $this->curl(
+            $this->ocsBase . '/ocs/v2.php/apps/files_sharing/api/v1/shares?path=' . urlencode($path) . '&reshares=false'
+        );
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['OCS-APIRequest: true', 'Accept: application/json']);
+        $body = curl_exec($ch);
+        curl_close($ch);
+
+        $data = json_decode((string) $body, true);
+        $shares = $data['ocs']['data'] ?? [];
+
+        foreach ($shares as $share) {
+            // shareType 3 = public link
+            if (($share['share_type'] ?? -1) === 3 && !empty($share['token'])) {
+                return "{$this->ocsBase}/s/{$share['token']}/download";
+            }
+        }
+
+        // No existing share — create one
+        return $this->share($remotePath);
+    }
+
+    /**
      * List files and folders in a remote directory. Returns array of hrefs (paths).
      */
     public function listDirectory(string $remotePath): array

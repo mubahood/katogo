@@ -620,7 +620,7 @@ For every task above, before marking `[x]`:
 2. **Create 50+ test records** for any feature that involves data:
    ```sql
    -- Example: 50 test users
-   INSERT INTO admin_users (name, username, email, password, app_type, created_at)
+   INSERT INTO admin_users (name, username, email, password, app_type created_at)
    SELECT
      CONCAT('TEST_User_', n),
      CONCAT('TEST_user_', n),

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CoinTransaction;
 use App\Models\Subscription;
 use App\Models\User;
 use Carbon\Carbon;
@@ -24,6 +25,7 @@ class SubscriptionActivationService
         $result = $this->activatePaidSubscriptionWithAudit($subscription, $source, $options);
 
         $this->sendActivationPush($result['subscription'], $result['audit']);
+        $this->awardSubscriptionCoins($result['subscription'], $result['audit']);
 
         return $result['subscription'];
     }
@@ -52,6 +54,31 @@ class SubscriptionActivationService
             ]);
         } catch (\Throwable $e) {
             Log::warning('SubscriptionActivationService: push notification failed', [
+                'subscription_id' => $subscription->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function awardSubscriptionCoins(Subscription $subscription, array $audit): void
+    {
+        if ($audit['already_active_completed'] ?? false) {
+            return;
+        }
+
+        try {
+            // 100 coins per subscription activation as a welcome reward
+            CoinTransaction::award(
+                $subscription->user_id,
+                100,
+                CoinTransaction::TYPE_REWARD,
+                'Subscription activated — welcome bonus coins!',
+                null,
+                null,
+                ['source' => 'subscription_activation', 'subscription_id' => $subscription->id]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('SubscriptionActivationService: coin reward failed', [
                 'subscription_id' => $subscription->id,
                 'error' => $e->getMessage(),
             ]);

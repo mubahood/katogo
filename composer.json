@@ -24,6 +24,7 @@
         "spatie/laravel-health": "^1.34",
         "spatie/laravel-query-builder": "^5.8",
         "spatie/laravel-responsecache": "^7.5",
+        "stevebauman/location": "^7.6",
         "tymon/jwt-auth": "^2.2"
     },
     "require-dev": {

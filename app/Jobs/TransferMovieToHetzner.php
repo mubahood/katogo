@@ -43,7 +43,7 @@ class TransferMovieToHetzner implements ShouldQueue
     public int $tries = 50;
 
     /** Max simultaneous transfers across all workers (enforced via cache lock). */
-    const MAX_CONCURRENT = 20;
+    const MAX_CONCURRENT = 30;
 
     /** Cache key prefix for the global slot counter. */
     const SLOT_KEY = 'movie_transfer_active_slots';
@@ -120,22 +120,55 @@ class TransferMovieToHetzner implements ShouldQueue
                 'last_attempted_at'  => now(),
             ]);
 
-            // Step 1: Verify source URL is reachable
+            // Step 1: Build destination path and check if already uploaded
+            $hetzner  = new HetznerStorageService();
+            $destPath = $this->buildDestPath($transfer);
+            $existing = $hetzner->fileInfo($destPath);
+
+            if ($existing !== null && $existing['size'] > 1024) {
+                // File already on Hetzner Storage — skip download/upload entirely
+                Log::info("[TransferMovieToHetzner] #{$this->transferId} file already exists on Hetzner ({$existing['size']} bytes) — skipping transfer.", [
+                    'dest_path' => $destPath,
+                ]);
+
+                $transfer->update(['status' => MovieFileTransfer::STATUS_COMPLETING]);
+                $publicUrl = $hetzner->findOrCreateShare($destPath);
+
+                if (!$publicUrl) {
+                    throw new \RuntimeException("File exists on Hetzner but share link generation failed for: {$destPath}");
+                }
+
+                $this->updateMovieUrl($transfer, $publicUrl);
+
+                $transfer->update([
+                    'status'           => MovieFileTransfer::STATUS_DONE,
+                    'dest_url'         => $publicUrl,
+                    'dest_path'        => $destPath,
+                    'dest_size_bytes'  => $existing['size'],
+                    'completed_at'     => now(),
+                    'duration_seconds' => 0,
+                    'progress_pct'     => 100,
+                    'eta_seconds'      => 0,
+                    'notes'            => ($transfer->notes ? $transfer->notes . ' | ' : '') . 'Skipped: file already on Hetzner.',
+                ]);
+
+                return; // done — finally{} will releaseSlot()
+            }
+
+            // Step 2: Verify source URL is reachable
             $this->verifySource($transfer);
 
-            // Step 2: Ensure temp directory exists
+            // Step 3: Ensure temp directory exists
             $tmpDir = $this->getTmpDir();
             if (!is_dir($tmpDir)) {
                 mkdir($tmpDir, 0755, true);
             }
 
-            // Step 3: Stream download from source to temp file
+            // Step 4: Stream download from source to temp file
             $transfer->update(['status' => MovieFileTransfer::STATUS_TRANSFERRING]);
             $tmpFile = $this->streamDownload($transfer, $tmpDir);
 
-            // Step 4: Upload temp file to Hetzner Storage
-            $hetzner  = new HetznerStorageService();
-            $destPath = $this->buildDestPath($transfer);
+            // Step 5 (was 4): Upload temp file to Hetzner Storage
             $hetzner->mkdir('movies'); // single-level — 201 if new, 405 if exists, both OK
             $uploaded = $hetzner->upload($destPath, $tmpFile);
 

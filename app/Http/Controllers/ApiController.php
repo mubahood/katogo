@@ -33,6 +33,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use OpenApi\Annotations as OA;
 use Illuminate\Support\Facades\Schema;
+use Stevebauman\Location\Facades\Location;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Traits\ApiResponser;
 
@@ -2039,6 +2040,51 @@ class ApiController extends BaseController
         ], 'Profile completed successfully.');
     }
 
+    public function geo_detect(Request $r)
+    {
+        $ugandaDistricts = [
+            'Abim','Adjumani','Agago','Alebtong','Amolatar','Amudat','Amuria','Amuru',
+            'Apac','Arua','Budaka','Bududa','Bugiri','Buhweju','Buikwe','Bukedea',
+            'Bukomansimbi','Bukwa','Bulambuli','Buliisa','Bundibugyo','Bunyangabu',
+            'Bushenyi','Busia','Butaleja','Butebo','Buvuma','Buyende','Dokolo',
+            'Gomba','Gulu','Hoima','Ibanda','Iganga','Isingiro','Jinja','Kaabong',
+            'Kabale','Kabarole','Kaberamaido','Kagadi','Kakumiro','Kalaki','Kalangala',
+            'Kaliro','Kalungu','Kampala','Kamuli','Kamwenge','Kanungu','Kapchorwa',
+            'Karenga','Kasanda','Kasese','Katakwi','Kayunga','Kazo','Kibaale',
+            'Kiboga','Kibuku','Kikuube','Kiruhura','Kiryandongo','Kisoro','Kitagwenda',
+            'Kitgum','Koboko','Kole','Kotido','Kumi','Kwania','Kween','Kyankwanzi',
+            'Kyegegwa','Kyenjojo','Kyotera','Lamwo','Lira','Luuka','Luwero',
+            'Lwengo','Lyantonde','Madi-Okollo','Manafwa','Maracha','Masaka',
+            'Masindi','Mayuge','Mbale','Mbarara','Mitooma','Mityana','Moroto',
+            'Moyo','Mpigi','Mubende','Mukono','Nabilatuk','Nakapiripirit','Nakaseke',
+            'Nakasongola','Namayingo','Namisindwa','Namutumba','Napak','Nebbi',
+            'Ngora','Ntoroko','Ntungamo','Nwoya','Obongi','Omoro','Otuke','Oyam',
+            'Pader','Pakwach','Pallisa','Rakai','Rubanda','Rubirizi','Rukiga',
+            'Rukungiri','Rwampara','Sembabule','Serere','Sheema','Sironko','Soroti',
+            'Tororo','Wakiso','Yumbe','Zombo',
+        ];
+
+        $detected = null;
+        try {
+            $position = Location::get($r->ip());
+            if ($position && strtolower((string)$position->countryCode) === 'ug') {
+                $detected = [
+                    'country'      => 'Uganda',
+                    'country_code' => 'UG',
+                    'region'       => $position->regionName ?? null,
+                    'city'         => $position->cityName ?? null,
+                ];
+            }
+        } catch (\Throwable $e) {
+            // IP detection fails silently — client uses manual selection
+        }
+
+        return $this->success([
+            'detected'         => $detected,
+            'uganda_districts' => $ugandaDistricts,
+        ], 'Geo info loaded.', 200);
+    }
+
     public function profile_wizard_state(Request $r)
     {
         $u = $this->resolveProfileWizardUser($r);
@@ -2373,6 +2419,20 @@ class ApiController extends BaseController
         $u->first_name = $names[0] ?? $name;
         $u->last_name = count($names) > 1 ? implode(' ', array_slice($names, 1)) : '';
         $u->sex = $sex;
+
+        // Professional profile fields (optional)
+        $occupation = trim((string) $r->input('occupation', ''));
+        $jobTitle   = trim((string) $r->input('job_title', ''));
+        $bio        = trim((string) $r->input('bio', ''));
+        if ($occupation !== '' && Schema::hasColumn('admin_users', 'occupation')) {
+            $u->occupation = $occupation;
+        }
+        if ($jobTitle !== '' && Schema::hasColumn('admin_users', 'job_title')) {
+            $u->job_title = $jobTitle;
+        }
+        if ($bio !== '' && Schema::hasColumn('admin_users', 'bio')) {
+            $u->bio = substr($bio, 0, 500);
+        }
 
         $this->syncProfileWizardProgress($u);
         if ($this->profileWizardHasColumn('profile_completion_step')) {

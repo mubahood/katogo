@@ -159,6 +159,7 @@ Route::group([
     $router->resource('movie-likes', MovieLikeController::class);
     $router->resource('movie-searches', MovieSearchController::class);
     $router->resource('movie-requests', MovieRequestController::class);
+    $router->resource('subtitle-files', SubtitleFileController::class);
 
     $router->resource('my-counters', MyCounterController::class);
     $router->resource('movie-downloads', MovieDownloadController::class);

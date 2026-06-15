@@ -133,6 +133,9 @@ Route::middleware([JwtMiddleware::class])->group(function () {
     // Account Layout & User Management Routes
     Route::get('account/dashboard', [DynamicCrudController::class, 'get_account_dashboard']);
 
+    // Geo: IP-based location detection + Uganda districts list
+    Route::get('geo/detect', [ApiController::class, 'geo_detect']);
+
     // Profile completion (for auto-created accounts upgrading to registered)
     Route::post('auth/complete-profile', [ApiController::class, 'complete_profile']);
     Route::get('auth/profile-wizard/state', [ApiController::class, 'profile_wizard_state']);
