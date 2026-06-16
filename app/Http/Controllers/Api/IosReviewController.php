@@ -70,7 +70,7 @@ class IosReviewController extends Controller
         $genre   = trim($request->input('genre', ''));
 
         $query = MovieModel::where('status', 'Active')
-            ->whereIn('platform_type', ['ios', 'all'])
+            ->where('platform_type', 'ios')
             ->whereNotNull('url')
             ->where('url', '!=', '')
             ->whereNotNull('thumbnail_url')
