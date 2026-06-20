@@ -667,7 +667,9 @@ class SubscriptionTransactionController extends AdminController
             ->display(function () {
                 $ref = trim((string) ($this->pesapal_tracking_id ?: $this->merchant_reference ?: ''));
                 $gateway = strtolower((string) ($this->payment_method ?? ''));
-                $hint = str_contains($gateway, 'flutter') ? 'flutterwave' : 'pesapal';
+                $subGw  = strtolower((string) ($this->subscription?->payment_gateway ?? ''));
+                $hint = (str_contains($gateway, 'flutter') || str_starts_with($gateway, 'mobilemoney') || str_contains($subGw, 'flutter'))
+                    ? 'flutterwave' : 'pesapal';
                 $safeRef = htmlspecialchars($ref, ENT_QUOTES, 'UTF-8');
                 $safeGateway = htmlspecialchars($hint, ENT_QUOTES, 'UTF-8');
 
@@ -1470,7 +1472,7 @@ HTML);
         }
 
         $txMethod = strtolower((string) ($transaction?->payment_method ?: ''));
-        if (str_contains($txMethod, 'flutter')) {
+        if (str_contains($txMethod, 'flutter') || str_starts_with($txMethod, 'mobilemoney')) {
             return 'flutterwave';
         }
 
