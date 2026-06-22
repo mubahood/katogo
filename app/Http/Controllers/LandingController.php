@@ -30,17 +30,30 @@ class LandingController extends Controller
             ->limit(12)
             ->get();
 
+        $totalMovies = MovieModel::where('status', 'Active')->where('type', 'Movie')->count();
+        $totalSeries = MovieModel::where('status', 'Active')->where('type', 'Series')->count();
+        $totalUsers  = DB::table('admin_users')->where('id', '>', 1)->count();
+        $totalVJs    = MovieModel::where('status', 'Active')
+                           ->whereNotNull('vj')->where('vj', '!=', '')
+                           ->distinct()->count('vj');
+        $totalViews  = (int) MovieModel::where('status', 'Active')->sum('views_count');
+
         return view('landing.index', [
-            'siteName' => env('APP_NAME', 'LugaFlix - Luganda Translated Movies'),
-            'companyName' => env('LANDING_COMPANY_NAME', 'UGFlix Ltd'),
-            'appStoreUrl' => env('LANDING_APP_STORE_URL', 'https://apps.apple.com/ug/app/hambren/id6475098479'),
+            'siteName'     => env('APP_NAME', 'LugaFlix'),
+            'companyName'  => env('LANDING_COMPANY_NAME', 'LugaFlix'),
+            'appStoreUrl'  => env('LANDING_APP_STORE_URL', 'https://apps.apple.com/app/lugaflix/id6777522770'),
             'playStoreUrl' => env('PLAYSTORE_LINK', 'https://play.google.com/store/apps/details?id=lugaflix.movies'),
-            'facebookUrl' => env('LANDING_FACEBOOK_URL', 'https://facebook.com/ugflix'),
-            'twitterUrl' => env('LANDING_TWITTER_URL', 'https://twitter.com/ugflix'),
-            'instagramUrl' => env('LANDING_INSTAGRAM_URL', 'https://instagram.com/ugflix'),
-            'youtubeUrl' => env('LANDING_YOUTUBE_URL', 'https://youtube.com/@ugflix'),
+            'facebookUrl'  => env('LANDING_FACEBOOK_URL', 'https://facebook.com/lugaflix'),
+            'twitterUrl'   => env('LANDING_TWITTER_URL', 'https://twitter.com/lugaflix'),
+            'instagramUrl' => env('LANDING_INSTAGRAM_URL', 'https://instagram.com/lugaflix'),
+            'youtubeUrl'   => env('LANDING_YOUTUBE_URL', 'https://youtube.com/@lugaflix'),
             'featuredMovies' => $featuredMovies,
             'featuredSeries' => $featuredSeries,
+            'totalMovies'  => $totalMovies,
+            'totalSeries'  => $totalSeries,
+            'totalUsers'   => $totalUsers,
+            'totalVJs'     => $totalVJs,
+            'totalViews'   => $totalViews,
         ]);
     }
 

@@ -372,6 +372,19 @@ class Kernel extends ConsoleKernel
             ->appendOutputTo(storage_path('logs/namz_crawl.log'))
             ->name('namz-nightly-crawl');
 
+        // ──────────────────────────────────────────────────────────────────
+        // MUNOWATCH CRAWLER — Nightly category discovery + preview fetch
+        // Runs at 02:00 AM daily, 600ms delay, 30-page batches.
+        // Phase 1 refreshes dashboard categories; Phase 2 processes pending pages.
+        // withoutOverlapping(120) prevents stacking if it runs long.
+        // ──────────────────────────────────────────────────────────────────
+        $schedule->command('munowatch:crawl --delay=600 --batch=30 --refresh-every=100 --limit=500')
+            ->dailyAt('02:00')
+            ->withoutOverlapping(120)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/munowatch_crawl.log'))
+            ->name('munowatch-nightly-crawl');
+
         // Namz post-crawl: activate any movies that now have a valid URL
         $schedule->call(function () {
             $count = \DB::table('movie_models')

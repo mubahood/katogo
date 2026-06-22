@@ -1833,7 +1833,7 @@ HTML);
         ]);
 
         Admin::script("window.SubFixConfig = {$fixConfigJs};");
-        Admin::js('/assets/sub-fix-modal.js');
+        Admin::js('/assets/sub-fix-modal.js?v=2');
         Admin::js('/assets/sub-details-quick-fix.js');
 
         return $grid;
@@ -2533,7 +2533,9 @@ $(function(){
                     }
                     if ($gateway === 'auto') {
                         $gwHint  = strtolower((string) ($tx->payment_method ?? ''));
-                        $gateway = str_contains($gwHint, 'flutter') ? 'flutterwave' : 'pesapal';
+                        $subGw   = strtolower((string) ($tx->subscription?->payment_gateway ?? ''));
+                        $gateway = (str_contains($gwHint, 'flutter') || str_starts_with($gwHint, 'mobilemoney') || str_contains($subGw, 'flutter'))
+                            ? 'flutterwave' : 'pesapal';
                     }
                     if (!$subscriptionId) {
                         $subscriptionId = $tx->subscription_id;
@@ -2599,7 +2601,9 @@ $(function(){
                 }
                 if ($gateway === 'auto') {
                     $gwHint  = strtolower((string) ($txRow->payment_method ?? ''));
-                    $gateway = str_contains($gwHint, 'flutter') ? 'flutterwave' : 'pesapal';
+                    $subGw   = strtolower((string) ($txRow->subscription?->payment_gateway ?? ''));
+                    $gateway = (str_contains($gwHint, 'flutter') || str_starts_with($gwHint, 'mobilemoney') || str_contains($subGw, 'flutter'))
+                        ? 'flutterwave' : 'pesapal';
                 }
                 if (!$subscriptionId) {
                     $subscriptionId = $txRow->subscription_id;

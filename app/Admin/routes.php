@@ -13,6 +13,12 @@ Route::group([
 
     $router->get('dashboard', 'HomeController@index')->name('home');
 
+    // ── Developer Project Requests ────────────────────────────────────────
+    $router->get('project-requests', 'ProjectRequestAdminController@index');
+    $router->get('project-requests/{id}', 'ProjectRequestAdminController@show');
+    $router->get('project-requests/{id}/edit', 'ProjectRequestAdminController@edit');
+    $router->put('project-requests/{id}', 'ProjectRequestAdminController@update');
+
     // App Download Landing Page Analytics
     $router->get('app-download-analytics', 'AppDownloadAnalyticsController@index');
     $router->get('auto-created-accounts', 'AutoCreatedAccountController@index');

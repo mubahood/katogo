@@ -75,23 +75,16 @@ class User extends Administrator implements JWTSubject
 
 
         static::updating(function ($model) {
-            $name = "";
-            if ($model->first_name != null && strlen($model->first_name) > 0) {
-                $name = $model->first_name;
-            }
-            if ($model->last_name != null && strlen($model->last_name) > 0) {
-                $name .= " " . $model->last_name;
-            }
-            $name = trim($name);
-
-            if ($name != null && strlen($name) > 0) {
-                $model->name = $name;
+            // Only auto-compute name when first_name/last_name changed and name was NOT explicitly set
+            if (($model->isDirty('first_name') || $model->isDirty('last_name')) && !$model->isDirty('name')) {
+                $name = trim(($model->first_name ?? '') . ' ' . ($model->last_name ?? ''));
+                if ($name) {
+                    $model->name = $name;
+                }
             }
 
-            // Uniqueness enforced at DB level — old query-based checks had
-            // inverted conditions (== null) and never fired. Removed (P4-12).
-
-            if ($model->email != null && strlen((string) $model->email) > 0) {
+            // Only sync username to email when email itself changed (not on every save)
+            if ($model->isDirty('email') && $model->email != null && strlen((string) $model->email) > 0) {
                 $model->username = $model->email;
             }
             return $model;
@@ -139,14 +132,7 @@ class User extends Administrator implements JWTSubject
      *
      * @var array<int, string>
      */
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
-        'google_id',
-        'avatar',
-        'preferred_payment_gateway',
-    ];
+    protected $guarded = [];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -447,15 +433,17 @@ class User extends Administrator implements JWTSubject
         // Cache per user for 2 minutes to avoid repeated DB hits on same request
         // or across multiple quick successive requests (P5-02)
         return Cache::remember("active_sub_{$this->id}", 120, function () {
-            // CRITICAL: Get ALL Active subscriptions and check properly
-            // Don't filter by end_date_time here - let isActive() handle it with grace period
+            // CRITICAL: status='Active' is the authoritative field. Do NOT filter by
+            // payment_status here — subscriptions activated manually by admins, via
+            // free trial, or when the IPN webhook fires without updating payment_status
+            // (a common race condition) will have status='Active' but payment_status
+            // still 'Processing'. Requiring 'Completed' silently hides valid subscriptions.
             $subscriptions = $this->subscriptions()
                 ->where('status', 'Active')
-                ->where('payment_status', 'Completed') // Only completed payments
                 ->orderBy('end_date_time', 'desc')
                 ->get();
 
-            // CRITICAL: Check each subscription with grace period included
+            // Check each subscription with grace period included
             foreach ($subscriptions as $subscription) {
                 if ($subscription->isActive(true)) { // Include grace period
                     return $subscription;
@@ -607,9 +595,10 @@ class User extends Administrator implements JWTSubject
      */
     public function subscriptionHistory($limit = 10)
     {
+        // Do not filter by payment_status — Active subscriptions with payment_status
+        // still 'Processing' (IPN delay) must still appear in history.
         return $this->subscriptions()
             ->whereIn('status', ['Active', 'Expired', 'Cancelled'])
-            ->where('payment_status', 'Completed')
             ->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get();
@@ -703,7 +692,7 @@ class User extends Administrator implements JWTSubject
         }
 
 
-        if ($activeSubscription && $activeSubscription->end_date_time > now()) {
+        if ($activeSubscription && !empty($activeSubscription->end_date_time) && $activeSubscription->end_date_time > now()) {
             // EXTEND: Add days to existing subscription
             // NOTE: start/end dates are calculated AFTER payment succeeds
             // The updateSubscriptionStatus() method sets these when payment is confirmed
@@ -760,10 +749,11 @@ class User extends Administrator implements JWTSubject
      */
     public function isEligibleForFreeTrial()
     {
-        // Check if user already has any subscription (active or expired)
+        // Check if user already has any real subscription (active or expired).
+        // Do NOT filter by payment_status — users with Active status but payment_status
+        // still 'Processing' (IPN delay) must not receive a double free trial.
         $hasAnySubscription = $this->subscriptions()
             ->whereIn('status', ['Active', 'Expired', 'Completed'])
-            ->whereIn('payment_status', ['Completed', 'Free'])
             ->exists();
 
         return !$hasAnySubscription;

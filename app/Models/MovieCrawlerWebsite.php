@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\MunowatchAuthService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -59,14 +60,25 @@ class MovieCrawlerWebsite extends Model
         $this->get_next_page_link();
         try {
             if ($this->slug == self::MUNOWATCH) {
-                // Use the correct headers format for munowatch API (same as Flutter app)
-                $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
+                $session = MunowatchAuthService::getActiveSession();
                 $headers = [
-                    'Authorization' => 'Bearer ' . $baseToken,
-                    'X-Api-Key' => $baseToken,
-                    'User-Agent' => 'okhttp/4.9.0'
+                    'Authorization' => 'Bearer ' . $session['app_jwt'],
+                    'X-Api-Key'     => $session['app_jwt'],
+                    'X-Session-Id'  => $session['session_id'],
+                    'User-Agent'    => 'okhttp/4.9.0',
                 ];
                 $my_html = Utils::get_url_with_auth($this->last_page_url, $headers);
+
+                // Auto-refresh session and retry once on auth failure
+                if (!empty($my_html) && MunowatchAuthService::isAuthFailure($my_html)) {
+                    Log::warning("[CrawlerWebsite] Auth failure on list fetch — refreshing session");
+                    MunowatchAuthService::invalidateSession();
+                    $session = MunowatchAuthService::refreshSession();
+                    $headers['Authorization'] = 'Bearer ' . $session['app_jwt'];
+                    $headers['X-Api-Key']     = $session['app_jwt'];
+                    $headers['X-Session-Id']  = $session['session_id'];
+                    $my_html = Utils::get_url_with_auth($this->last_page_url, $headers);
+                }
             } else {
                 $my_html = Utils::get_url($this->last_page_url);
             }
@@ -185,8 +197,14 @@ class MovieCrawlerWebsite extends Model
 
         if (!$category) {
             Log::warning('No munowatch categories available for fetching movies');
-            // Fallback to dashboard endpoint (safe and always works)
-            return 'https://munowatch.org/api/dashboard/v2/169464';
+            // Fallback to dashboard endpoint — use active session user_id, not hardcoded stale ID
+            try {
+                $session = MunowatchAuthService::getActiveSession();
+                $uid = $session['user_id'];
+            } catch (\Throwable $e) {
+                $uid = 1062074; // known-good fallback; MunowatchAuthService logs the failure
+            }
+            return "https://munowatch.org/api/dashboard/v2/{$uid}";
         }
 
         // Mark category as being fetched
@@ -371,6 +389,15 @@ class MovieCrawlerWebsite extends Model
      */
     private function processMunowatchPages(&$jobLinksNew)
     {
+        // Resolve the active user_id once for all URL construction in this batch.
+        // This avoids embedding the stale /169464/ user ID in crawler page URLs.
+        try {
+            $activeUserId = MunowatchAuthService::getActiveSession()['user_id'];
+        } catch (\Throwable $e) {
+            $activeUserId = 1062074;
+            Log::warning('[CrawlerWebsite] Could not get active session user_id, using fallback: ' . $e->getMessage());
+        }
+
         $jsonObject = null;
         try {
             $jsonObject = json_decode($this->response_data, true);
@@ -417,13 +444,32 @@ class MovieCrawlerWebsite extends Model
                     continue;
                 }
 
-                // Create URL based on munowatch API structure - preview endpoint for details
-                $userId = '169464'; // Default user ID used by the API
-                $url = "https://munowatch.org/api/preview/v2/{$movieId}/{$userId}";
+                // Build the preview URL using the active session user_id.
+                // We resolve it once outside the loop; see below.
+                $url = "https://munowatch.org/api/preview/v2/{$movieId}/{$activeUserId}";
 
-                // Check if page already exists
-                $existingPage = MovieCrawlerPage::where('url', $url)->first();
+                // Duplicate check: by munowatch_id (slug) first — most reliable.
+                // URL-only check misses pages created with a different user_id in the path.
+                $existingPage = MovieCrawlerPage::where('slug', (string) $movieId)
+                    ->where('movie_crawler_website_id', $this->id)
+                    ->first();
                 if ($existingPage !== null) {
+                    // If it exists but still has the stale user_id in the URL, update it
+                    if (str_contains($existingPage->url, '/169464')) {
+                        $existingPage->url = $url;
+                        $existingPage->save();
+                    }
+                    continue;
+                }
+
+                // Secondary URL check (handles any edge cases where slug isn't set)
+                $existingPage = MovieCrawlerPage::where('url', $url)->first()
+                    ?? MovieCrawlerPage::where('url', "https://munowatch.org/api/preview/v2/{$movieId}/169464")->first();
+                if ($existingPage !== null) {
+                    if (str_contains($existingPage->url, '/169464')) {
+                        $existingPage->url = $url;
+                        $existingPage->save();
+                    }
                     continue;
                 }
 

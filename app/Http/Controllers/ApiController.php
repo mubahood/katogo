@@ -853,52 +853,54 @@ class ApiController extends BaseController
 
     public function manifest(Request $r)
     {
+        // Raise memory limit — V1 manifest loads many movie sections concurrently
+        @ini_set('memory_limit', '2G');
+
         $u = Utils::get_user($r);
         if ($u == null) {
             return $this->error('User not found.');
         }
 
         // Throttled payment check: only once per 5 minutes per user (avoids blocking manifest with external Pesapal API calls)
-        $paymentCacheKey = "v1_pay_check_{$u->id}";
-        if (!Cache::has($paymentCacheKey)) {
-            Cache::put($paymentCacheKey, true, 300); // 5 min throttle
-            try {
-                $pendingPayments = SubscriptionTransaction::whereNotIn('status', ['Completed'])
-                    ->where('created_at', '>=', Carbon::now()->subHours(72))
-                    ->where('user_id', $u->id)
-                    ->orderBy('id', 'desc')
-                    ->limit(3)
-                    ->get();
-                foreach ($pendingPayments as $pay) {
-                    if ($pay->status == 'Completed') {
-                        continue;
+        try {
+            $paymentCacheKey = "v1_pay_check_{$u->id}";
+            if (!Cache::has($paymentCacheKey)) {
+                Cache::put($paymentCacheKey, true, 300); // 5 min throttle
+                try {
+                    $pendingPayments = SubscriptionTransaction::whereNotIn('status', ['Completed'])
+                        ->where('created_at', '>=', Carbon::now()->subHours(72))
+                        ->where('user_id', $u->id)
+                        ->orderBy('id', 'desc')
+                        ->limit(3)
+                        ->get();
+                    foreach ($pendingPayments as $pay) {
+                        if ($pay->status == 'Completed') {
+                            continue;
+                        }
+                        $number_of_times_checked = (int) $pay->number_of_times_checked;
+                        if ($number_of_times_checked > 20) {
+                            $pay->status = 'Failed';
+                            $pay->refund_reason = 'Payment not completed after multiple checks.';
+                            $pay->save();
+                            continue;
+                        }
+                        try {
+                            $pay->check_payment_status();
+                        } catch (\Throwable $th) {
+                        }
                     }
-                    $number_of_times_checked = (int) $pay->number_of_times_checked;
-                    if ($number_of_times_checked > 20) {
-                        $pay->status = 'Failed';
-                        $pay->refund_reason = 'Payment not completed after multiple checks.';
-                        $pay->save();
-                        continue;
-                    }
-                    try {
-                        $pay->check_payment_status();
-                    } catch (\Throwable $th) {
-                    }
+                } catch (\Throwable $th) {
                 }
-            } catch (\Throwable $th) {
             }
+        } catch (\Throwable $th) {
+            \Log::warning('v1_manifest: payment cache check failed', ['error' => $th->getMessage()]);
         }
         // $u->autoAssignFreeTrial();
 
         $APP_VERSION = 20;
-        $UPDATE_NOTES = "- Fixed download disappearance bug
-        - Added subscription management with free trial
-        - Google Sign-In now available
-        - Dashboard statistics for watchlist and favorites
-        - Improved movie recommendatiobut i asked youns
-        - Fixed profile photo upload issues";
+        $UPDATE_NOTES = "- Fixed download disappearance bug\n- Added subscription management with free trial\n- Google Sign-In now available\n- Dashboard statistics for watchlist and favorites\n- Improved movie recommendations\n- Fixed profile photo upload issues";
         $WHATSAPP_CONTAT_NUMBER = "+256706638494";
-        $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description',   'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
+        $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description', 'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
         $date = Carbon::parse('2020-01-01 00:00:00');
 
 
@@ -906,6 +908,8 @@ class ApiController extends BaseController
         //  DAILY ROTATION — movies cycle based on last_listing_date
         //  Cached for 10 min to avoid repeated heavy queries
         // ═══════════════════════════════════════════════════════════
+        $oldest_listed_movies = collect();
+        try {
         $oldest_listed_movies = Cache::remember('v1_rotation_movies', 600, function () use ($take_only) {
             $today_6am = Carbon::today()->addHours(6);
             if (Carbon::now()->hour < 6) {
@@ -936,7 +940,7 @@ class ApiController extends BaseController
                     ->whereNotIn('id', $already_listed_ids)
                     ->orderBy('created_at', 'desc')
                     ->limit($needed)
-                    ->get();
+                    ->get($take_only);
 
                 if ($to_stamp->count() < $needed) {
                     $exclude_ids = array_merge($already_listed_ids, $to_stamp->pluck('id')->toArray());
@@ -949,7 +953,7 @@ class ApiController extends BaseController
                         ->whereNotIn('id', $exclude_ids)
                         ->orderBy('last_listing_date', 'asc')
                         ->limit($still_needed)
-                        ->get();
+                        ->get($take_only);
                     $to_stamp = $to_stamp->merge($extra);
                 }
 
@@ -994,6 +998,15 @@ class ApiController extends BaseController
 
             return $result;
         });
+        } catch (\Throwable $th) {
+            \Log::warning('v1_manifest: rotation movies cache failed — falling back to simple query', ['error' => $th->getMessage()]);
+            try {
+                $oldest_listed_movies = MovieModel::where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
+                    ->orderBy('created_at', 'desc')->limit(50)->get($take_only);
+            } catch (\Throwable $e) {
+                $oldest_listed_movies = collect();
+            }
+        }
 
 
         $now = Carbon::now();
@@ -1016,14 +1029,18 @@ class ApiController extends BaseController
         //add latest movies list
         $my_list = [];
         $my_list['title'] = "Latest Movies";
-        $my_list['movies'] = Cache::remember('v1_latest_movies', 300, function () use ($take_only) {
-            return MovieModel::where('status', 'Active')
-                ->where('type', 'Movie')
-                ->where('is_muno', 'Yes')
-                ->orderBy('created_at', 'desc')
-                ->limit(20)
-                ->get($take_only);
-        });
+        try {
+            $my_list['movies'] = Cache::remember('v1_latest_movies', 300, function () use ($take_only) {
+                return MovieModel::where('status', 'Active')
+                    ->where('type', 'Movie')
+                    ->where('is_muno', 'Yes')
+                    ->orderBy('created_at', 'desc')
+                    ->limit(20)
+                    ->get($take_only);
+            });
+        } catch (\Throwable $th) {
+            $my_list['movies'] = collect();
+        }
         $lists[] = $my_list;
 
 
@@ -1033,21 +1050,25 @@ class ApiController extends BaseController
         $my_list['title'] = "Continue Watching";
 
         if ($u && $u->id) {
-            $my_list['movies'] = Cache::remember("v1_watching_{$u->id}", 120, function () use ($u, $take_only) {
-                $watched_movies = MovieView::where('user_id', $u->id)
-                    ->orderBy('updated_at', 'desc')
-                    ->limit(50)
-                    ->get();
+            try {
+                $my_list['movies'] = Cache::remember("v1_watching_{$u->id}", 120, function () use ($u, $take_only) {
+                    $watched_movies = MovieView::where('user_id', $u->id)
+                        ->orderBy('updated_at', 'desc')
+                        ->limit(50)
+                        ->get();
 
-                if ($watched_movies->count() > 0) {
-                    $watchedIds = $watched_movies->pluck('movie_model_id')->unique()->toArray();
-                    $watchedMoviesMap = MovieModel::whereIn('id', $watchedIds)->get($take_only)->keyBy('id');
-                    return $watched_movies->map(function ($view) use ($watchedMoviesMap) {
-                        return $watchedMoviesMap->get($view->movie_model_id);
-                    })->filter()->values();
-                }
-                return collect();
-            });
+                    if ($watched_movies->count() > 0) {
+                        $watchedIds = $watched_movies->pluck('movie_model_id')->unique()->toArray();
+                        $watchedMoviesMap = MovieModel::whereIn('id', $watchedIds)->get($take_only)->keyBy('id');
+                        return $watched_movies->map(function ($view) use ($watchedMoviesMap) {
+                            return $watchedMoviesMap->get($view->movie_model_id);
+                        })->filter()->values();
+                    }
+                    return collect();
+                });
+            } catch (\Throwable $th) {
+                $my_list['movies'] = collect();
+            }
         } else {
             $my_list['movies'] = [];
         }
@@ -1056,20 +1077,23 @@ class ApiController extends BaseController
 
         //top movies - cached globally for 5 min
         if (count($movies) > 10) {
-            $top_movies = Cache::remember('v1_top_movies', 300, function () use ($take_only) {
-                return MovieModel::where('status', 'Active')
-                    ->where('type', 'Movie')
-                    ->where('is_muno', 'Yes')
-                    ->orderBy('views_time_count', 'desc')
-                    ->limit(20)
-                    ->get($take_only);
-            });
+            try {
+                $top_movies = Cache::remember('v1_top_movies', 300, function () use ($take_only) {
+                    return MovieModel::where('status', 'Active')
+                        ->where('type', 'Movie')
+                        ->where('is_muno', 'Yes')
+                        ->orderBy('views_time_count', 'desc')
+                        ->limit(20)
+                        ->get($take_only);
+                });
 
-            if ($top_movies->count() > 0) {
-                $my_list = [];
-                $my_list['title'] = "Top Movies";
-                $my_list['movies'] = $top_movies;
-                $lists[] = $my_list;
+                if ($top_movies->count() > 0) {
+                    $my_list = [];
+                    $my_list['title'] = "Top Movies";
+                    $my_list['movies'] = $top_movies;
+                    $lists[] = $my_list;
+                }
+            } catch (\Throwable $th) {
             }
         }
 
@@ -1077,20 +1101,23 @@ class ApiController extends BaseController
 
         //trending movies - cached globally for 5 min
         if (count($movies) > 20) {
-            $trending_movies = Cache::remember('v1_trending_movies', 300, function () use ($take_only) {
-                return MovieModel::where('status', 'Active')
-                    ->where('type', 'Movie')
-                    ->where('is_muno', 'Yes')
-                    ->orderBy('downloads_count', 'desc')
-                    ->limit(30)
-                    ->get($take_only);
-            })->shuffle();
+            try {
+                $trending_movies = Cache::remember('v1_trending_movies', 300, function () use ($take_only) {
+                    return MovieModel::where('status', 'Active')
+                        ->where('type', 'Movie')
+                        ->where('is_muno', 'Yes')
+                        ->orderBy('downloads_count', 'desc')
+                        ->limit(30)
+                        ->get($take_only);
+                })->shuffle();
 
-            if ($trending_movies->count() > 0) {
-                $my_list = [];
-                $my_list['title'] = "Trending Movies";
-                $my_list['movies'] = $trending_movies;
-                $lists[] = $my_list;
+                if ($trending_movies->count() > 0) {
+                    $my_list = [];
+                    $my_list['title'] = "Trending Movies";
+                    $my_list['movies'] = $trending_movies;
+                    $lists[] = $my_list;
+                }
+            } catch (\Throwable $th) {
             }
         }
 
@@ -1108,109 +1135,128 @@ class ApiController extends BaseController
         $genre_sections = ['Drama', 'Action', 'Comedy', 'Romance', 'Thriller'];
         $dayOfYear = Carbon::today()->dayOfYear;
         foreach ($genre_sections as $genre_name) {
-            $genre_movies = Cache::remember("v1_genre_{$genre_name}_{$dayOfYear}", 600, function () use ($genre_name, $dayOfYear, $take_only) {
-                $genre_query = MovieModel::where('status', 'Active')
-                    ->where('type', 'Movie')
-                    ->where('is_muno', 'Yes')
-                    ->where('genre', 'LIKE', "%{$genre_name}%");
+            try {
+                $genre_movies = Cache::remember("v1_genre_{$genre_name}_{$dayOfYear}", 600, function () use ($genre_name, $dayOfYear, $take_only) {
+                    $genre_query = MovieModel::where('status', 'Active')
+                        ->where('type', 'Movie')
+                        ->where('is_muno', 'Yes')
+                        ->where('genre', 'LIKE', "%{$genre_name}%");
 
-                $genre_total = $genre_query->count();
-                if ($genre_total < 3) return collect();
+                    $genre_total = $genre_query->count();
+                    if ($genre_total < 3) return collect();
 
-                $genre_pages = max(1, (int) ceil($genre_total / 20));
-                $genre_page  = $dayOfYear % $genre_pages;
-                $result = (clone $genre_query)
-                    ->orderByRaw('RAND(' . crc32($genre_name) . ')')
-                    ->offset($genre_page * 20)
-                    ->limit(20)
-                    ->get($take_only);
-
-                if ($result->count() < 3) {
+                    $genre_pages = max(1, (int) ceil($genre_total / 20));
+                    $genre_page  = $dayOfYear % $genre_pages;
                     $result = (clone $genre_query)
                         ->orderByRaw('RAND(' . crc32($genre_name) . ')')
+                        ->offset($genre_page * 20)
                         ->limit(20)
                         ->get($take_only);
+
+                    if ($result->count() < 3) {
+                        $result = (clone $genre_query)
+                            ->orderByRaw('RAND(' . crc32($genre_name) . ')')
+                            ->limit(20)
+                            ->get($take_only);
+                    }
+
+                    return $result;
+                });
+
+                if ($genre_movies->count() >= 3) {
+                    $my_list = [];
+                    $my_list['title'] = "{$genre_name} Movies";
+                    $my_list['movies'] = $genre_movies;
+                    $lists[] = $my_list;
                 }
-
-                return $result;
-            });
-
-            if ($genre_movies->count() >= 3) {
-                $my_list = [];
-                $my_list['title'] = "{$genre_name} Movies";
-                $my_list['movies'] = $genre_movies;
-                $lists[] = $my_list;
+            } catch (\Throwable $th) {
             }
         }
 
 
 
 
-        $unique_genres = Cache::remember('v1_manifest_genres', 600, function () {
+        $unique_genres = [];
+        try {
+            $unique_genres = Cache::remember('v1_manifest_genres', 600, function () {
+                $unique_genres = [];
+                try {
+                    $sql = "SELECT DISTINCT genre FROM movie_models WHERE genre IS NOT NULL AND genre != ''";
+                    $genres = DB::select($sql);
+                    foreach ($genres as $key => $genre) {
+                        if (isset($genre->genre) && !empty($genre->genre)) {
+                            $slilts = explode(",", $genre->genre);
+                            foreach ($slilts as $key => $slit) {
+                                $slit = trim($slit);
+                                if (strlen($slit) > 0 && !in_array($slit, $unique_genres)) {
+                                    $unique_genres[] = $slit;
+                                }
+                            }
+                        }
+                    }
+
+                    $temp_genres = $unique_genres;
+                    $unique_genres = [];
+                    //slits using /
+                    foreach ($temp_genres as $key => $genre) {
+                        if (!empty($genre)) {
+                            $slilts = explode("/", $genre);
+                            foreach ($slilts as $key => $slit) {
+                                $slit = trim($slit);
+                                if (strlen($slit) >= 2 && !in_array($slit, $unique_genres)) {
+                                    $unique_genres[] = $slit;
+                                }
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $unique_genres = [];
+                }
+                return $unique_genres;
+            });
+        } catch (\Throwable $th) {
             $unique_genres = [];
-            try {
-                $sql = "SELECT DISTINCT genre FROM movie_models WHERE genre IS NOT NULL AND genre != ''";
-                $genres = DB::select($sql);
-                foreach ($genres as $key => $genre) {
-                    if (isset($genre->genre) && !empty($genre->genre)) {
-                        $slilts = explode(",", $genre->genre);
-                        foreach ($slilts as $key => $slit) {
-                            $slit = trim($slit);
-                            if (strlen($slit) > 0 && !in_array($slit, $unique_genres)) {
-                                $unique_genres[] = $slit;
-                            }
-                        }
-                    }
-                }
+        }
 
-                $temp_genres = $unique_genres;
-                $unique_genres = [];
-                //slits using /
-                foreach ($temp_genres as $key => $genre) {
-                    if (!empty($genre)) {
-                        $slilts = explode("/", $genre);
-                        foreach ($slilts as $key => $slit) {
-                            $slit = trim($slit);
-                            if (strlen($slit) >= 2 && !in_array($slit, $unique_genres)) {
-                                $unique_genres[] = $slit;
-                            }
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                $unique_genres = [];
-            }
-            return $unique_genres;
-        });
-
-        $unique_vj = Cache::remember('v1_manifest_vjs', 600, function () {
-            $unique_vj = [];
-            try {
-                $sql = "SELECT DISTINCT vj FROM movie_models WHERE vj IS NOT NULL AND vj != ''";
-                $vjs = DB::select($sql);
-                foreach ($vjs as $key => $vj) {
-                    if (isset($vj->vj) && !empty($vj->vj)) {
-                        $slilts = explode(",", $vj->vj);
-                        foreach ($slilts as $key => $slit) {
-                            $slit = trim($slit);
-                            $slit = str_replace(["vj", "VJ", "Vj"], "", $slit);
-                            $slit = str_replace([" ", "-"], "", $slit);
-                            if (strlen($slit) > 0 && !in_array($slit, $unique_vj)) {
-                                $unique_vj[] = $slit;
-                            }
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
+        $unique_vj = [];
+        try {
+            $unique_vj = Cache::remember('v1_manifest_vjs', 600, function () {
                 $unique_vj = [];
-            }
-            return $unique_vj;
-        });
+                try {
+                    $sql = "SELECT DISTINCT vj FROM movie_models WHERE vj IS NOT NULL AND vj != ''";
+                    $vjs = DB::select($sql);
+                    foreach ($vjs as $key => $vj) {
+                        if (isset($vj->vj) && !empty($vj->vj)) {
+                            $slilts = explode(",", $vj->vj);
+                            foreach ($slilts as $key => $slit) {
+                                $slit = trim($slit);
+                                $slit = str_replace(["vj", "VJ", "Vj"], "", $slit);
+                                $slit = str_replace([" ", "-"], "", $slit);
+                                if (strlen($slit) > 0 && !in_array($slit, $unique_vj)) {
+                                    $unique_vj[] = $slit;
+                                }
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $unique_vj = [];
+                }
+                return $unique_vj;
+            });
+        } catch (\Throwable $th) {
+            $unique_vj = [];
+        }
 
         $platform_type = Utils::get_platform();
-        $iosMovies = ($platform_type == 'ios') ? Cache::remember('v1_ios_movies', 600, function () {
-            return MovieModel::where(['platform_type' => 'ios'])->limit(100)->get();
-        }) : collect();
+        $iosMovies = collect();
+        if ($platform_type == 'ios') {
+            try {
+                $iosMovies = Cache::remember('v1_ios_movies', 600, function () use ($take_only) {
+                    return MovieModel::where(['platform_type' => 'ios'])->limit(100)->get($take_only);
+                });
+            } catch (\Throwable $th) {
+            }
+        }
 
         if ($platform_type == 'ios' && $iosMovies->count() > 0) {
             $lists = [];
@@ -1711,10 +1757,6 @@ class ApiController extends BaseController
         }
 
         $user = User::where('email', $r->email)->first();
-        if ($user == null) {
-            Utils::error("Account not found.");
-        }
-
 
         if ($user == null) {
             $user = User::where('username', $r->email)->first();
@@ -1723,6 +1765,7 @@ class ApiController extends BaseController
         if ($user == null) {
             $user = User::where('phone_number', $r->email)->first();
         }
+
         if ($user == null) {
             Utils::error("Account not found.");
         }

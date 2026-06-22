@@ -8,6 +8,7 @@ use App\Models\MovieModel;
 use App\Models\SeriesMovie;
 use App\Models\Utils;
 use App\Models\VideoPlaybackFailure;
+use App\Services\MunowatchAuthService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -32,9 +33,10 @@ use Illuminate\Support\Facades\Log;
 class MovieFixerService
 {
     /**
-     * Munowatch user ID for preview API calls (matches mobile app).
+     * Munowatch user ID for preview API calls.
+     * This must be a real, active account — the old ID 169464 is flagged as "Unusual activity".
      */
-    protected const MUNOWATCH_USER_ID = 169464;
+    protected const MUNOWATCH_USER_ID = 1062074;
 
     /**
      * Munowatch website ID in movie_crawler_websites table.
@@ -242,12 +244,17 @@ class MovieFixerService
             $movie->muno_message   = $freshData['raw_response'] ?? json_encode($preview);
             $movie->error_message  = null;
 
-            // Ensure page_source_url and external_url store the API URL used
+            // Ensure page_source_url and external_url store the API URL with the active user ID.
+            // Also corrects stale user IDs (e.g. /169464/ baked in during original crawl).
             if (!empty($freshData['api_url'])) {
-                if (empty($movie->page_source_url) || !str_contains($movie->page_source_url, 'munowatch.org/api/')) {
+                $needsUpdate = fn(?string $stored) =>
+                    empty($stored)
+                    || !str_contains($stored, 'munowatch.org/api/')
+                    || !str_contains($stored, '/' . self::MUNOWATCH_USER_ID);
+                if ($needsUpdate($movie->page_source_url)) {
                     $movie->page_source_url = $freshData['api_url'];
                 }
-                if (empty($movie->external_url) || !str_contains($movie->external_url, 'munowatch.org/api/')) {
+                if ($needsUpdate($movie->external_url)) {
                     $movie->external_url = $freshData['api_url'];
                 }
             }
@@ -368,18 +375,57 @@ class MovieFixerService
     /**
      * Fetch fresh movie data from Munowatch API.
      *
-     * The API URL is typically already stored on the movie record in page_source_url
-     * or external_url (e.g. https://munowatch.org/api/preview/v2/{videoId}/{userId}).
-     * We use that URL directly — same as the mobile app does.
-     *
-     * Fallback: construct the URL from munowatch_id or external_id.
+     * Auth is handled by MunowatchAuthService — credentials come from DB, session is
+     * cached, and if the API returns 429/401/403 the service auto-logins and retries once.
      */
     protected function fetchFromMunowatch(MovieModel $movie): array
     {
+        // Get (or auto-refresh) the active Munowatch session.
+        try {
+            $session = MunowatchAuthService::getActiveSession();
+        } catch (\Throwable $e) {
+            return $this->munowatchError('Could not obtain Munowatch session: ' . $e->getMessage());
+        }
+
+        $apiUrl = $this->resolveMunowatchUrl($movie, $session['user_id']);
+
+        if (empty($apiUrl)) {
+            return $this->munowatchError(
+                'Could not find Munowatch API URL. No page_source_url, external_url, munowatch_id, or crawler page found.'
+            );
+        }
+
+        // First attempt with current session
+        $result = $this->callMunowatchApi($apiUrl, $session, $movie->id);
+
+        // If auth failure, force-refresh the session and retry exactly once
+        if (!$result['success'] && ($result['auth_failure'] ?? false)) {
+            Log::warning("[MovieFixer] #{$movie->id}: Auth failure (429/401/403) — refreshing session and retrying");
+
+            try {
+                MunowatchAuthService::invalidateSession();
+                $session = MunowatchAuthService::refreshSession();
+            } catch (\Throwable $e) {
+                return $this->munowatchError('Session refresh failed after auth error: ' . $e->getMessage());
+            }
+
+            // Rebuild URL with fresh user_id (account may differ after re-login)
+            $apiUrl = $this->resolveMunowatchUrl($movie, $session['user_id']);
+            $result = $this->callMunowatchApi($apiUrl, $session, $movie->id);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Resolve the Munowatch preview API URL for a movie.
+     * Uses stored URLs first (with stale user-ID rewriting), then constructs from IDs.
+     */
+    private function resolveMunowatchUrl(MovieModel $movie, int $userId): ?string
+    {
         $apiUrl = null;
 
-        // Strategy 1 (PRIMARY): Use page_source_url or external_url from the movie record.
-        // These already contain the full API URL with the correct user ID.
+        // Strategy 1: stored page_source_url or external_url
         foreach (['page_source_url', 'external_url'] as $field) {
             $url = trim($movie->$field ?? '');
             if (!empty($url) && str_contains($url, 'munowatch.org/api/')) {
@@ -389,19 +435,19 @@ class MovieFixerService
             }
         }
 
-        // Strategy 2: Construct URL from munowatch_id
+        // Strategy 2: construct from munowatch_id
         if (empty($apiUrl) && !empty($movie->munowatch_id) && is_numeric($movie->munowatch_id)) {
-            $apiUrl = self::MUNOWATCH_API_BASE . '/preview/v2/' . $movie->munowatch_id . '/' . self::MUNOWATCH_USER_ID;
+            $apiUrl = self::MUNOWATCH_API_BASE . '/preview/v2/' . $movie->munowatch_id . '/' . $userId;
             Log::info("[MovieFixer] #{$movie->id}: Constructed from munowatch_id={$movie->munowatch_id} → {$apiUrl}");
         }
 
-        // Strategy 3: Construct URL from external_id
+        // Strategy 3: construct from external_id
         if (empty($apiUrl) && !empty($movie->external_id) && is_numeric($movie->external_id)) {
-            $apiUrl = self::MUNOWATCH_API_BASE . '/preview/v2/' . $movie->external_id . '/' . self::MUNOWATCH_USER_ID;
+            $apiUrl = self::MUNOWATCH_API_BASE . '/preview/v2/' . $movie->external_id . '/' . $userId;
             Log::info("[MovieFixer] #{$movie->id}: Constructed from external_id={$movie->external_id} → {$apiUrl}");
         }
 
-        // Strategy 4 (last resort): Look up the associated MovieCrawlerPage
+        // Strategy 4: crawler page URL
         if (empty($apiUrl)) {
             $crawler = $this->findCrawlerPage($movie);
             if ($crawler && str_contains($crawler->url ?? '', 'munowatch.org/api/')) {
@@ -411,55 +457,60 @@ class MovieFixerService
         }
 
         if (empty($apiUrl)) {
-            return [
-                'success' => false,
-                'error'   => 'Could not find Munowatch API URL. No page_source_url, external_url, munowatch_id, or crawler page found.',
-                'preview' => null,
-                'raw_response' => null,
-            ];
+            return null;
         }
 
-        // Make the authenticated API call (matching mobile app headers exactly)
+        // Rewrite any stale user ID in the path to the active one.
+        // 51K+ movies have an old user ID baked in from the original crawl.
+        return preg_replace(
+            '#(/api/preview/v2/\d+)/\d+$#',
+            '$1/' . $userId,
+            $apiUrl
+        );
+    }
+
+    /**
+     * Make one authenticated call to the Munowatch preview API.
+     * Returns ['success', 'preview', 'raw_response', 'api_url', 'error', 'auth_failure'].
+     */
+    private function callMunowatchApi(string $apiUrl, array $session, int $movieId): array
+    {
         try {
             $headers = [
                 'Content-Type'  => 'application/x-www-form-urlencoded',
                 'User-Agent'    => 'okhttp/4.9.0',
-                'Authorization' => 'Bearer ' . self::MUNOWATCH_JWT,
-                'X-Api-Key'     => self::MUNOWATCH_JWT,
+                'Authorization' => 'Bearer ' . $session['app_jwt'],
+                'X-Api-Key'     => $session['app_jwt'],
+                'X-Session-Id'  => $session['session_id'],
             ];
 
             $rawResponse = Utils::get_url_with_auth($apiUrl, $headers);
 
             if (empty($rawResponse)) {
-                return [
-                    'success'      => false,
-                    'error'        => 'Munowatch API returned empty response from: ' . $apiUrl,
-                    'preview'      => null,
-                    'raw_response' => null,
-                ];
+                return $this->munowatchError('Empty response from: ' . $apiUrl);
             }
 
-            // Parse JSON
+            // Detect auth failures in the body (e.g. {"error":"Unusual activity"})
+            if (MunowatchAuthService::isAuthFailure($rawResponse)) {
+                Log::warning("[MovieFixer] #{$movieId}: Auth failure in response body — {$rawResponse}");
+                return array_merge($this->munowatchError('Auth failure: ' . substr($rawResponse, 0, 150)), ['auth_failure' => true]);
+            }
+
             $jsonData = json_decode($rawResponse, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
-                return [
-                    'success'      => false,
-                    'error'        => 'Failed to parse Munowatch JSON: ' . json_last_error_msg() . '. Response starts with: ' . substr($rawResponse, 0, 200),
-                    'preview'      => null,
-                    'raw_response' => $rawResponse,
-                ];
+                return $this->munowatchError(
+                    'Invalid JSON: ' . json_last_error_msg() . ' | starts with: ' . substr($rawResponse, 0, 200),
+                    $rawResponse
+                );
             }
 
-            // Extract preview data using the same logic as MovieCrawlerPage
             $preview = $this->extractPreviewData($jsonData);
 
             if (empty($preview)) {
-                return [
-                    'success'      => false,
-                    'error'        => 'Munowatch response parsed OK but no preview/movie/data found. Keys: ' . implode(', ', array_keys($jsonData)),
-                    'preview'      => null,
-                    'raw_response' => $rawResponse,
-                ];
+                return $this->munowatchError(
+                    'No preview data in response. Keys: ' . implode(', ', array_keys($jsonData)),
+                    $rawResponse
+                );
             }
 
             return [
@@ -468,16 +519,32 @@ class MovieFixerService
                 'raw_response' => $rawResponse,
                 'error'        => null,
                 'api_url'      => $apiUrl,
+                'auth_failure' => false,
             ];
 
         } catch (\Throwable $e) {
-            return [
-                'success'      => false,
-                'error'        => 'Munowatch API request failed: ' . $e->getMessage(),
-                'preview'      => null,
-                'raw_response' => null,
-            ];
+            $msg = $e->getMessage();
+            // Guzzle throws on 4xx — check if it's an auth-related status
+            $isAuth = MunowatchAuthService::isAuthFailure($msg) ||
+                      str_contains($msg, '429') || str_contains($msg, '401') || str_contains($msg, '403');
+            if ($isAuth) {
+                Log::warning("[MovieFixer] #{$movieId}: Auth failure via exception — {$msg}");
+                return array_merge($this->munowatchError('Munowatch API request failed: ' . $msg), ['auth_failure' => true]);
+            }
+            return $this->munowatchError('Munowatch API request failed: ' . $msg);
         }
+    }
+
+    /** Build a standard error return for fetchFromMunowatch */
+    private function munowatchError(string $error, ?string $rawResponse = null): array
+    {
+        return [
+            'success'      => false,
+            'error'        => $error,
+            'preview'      => null,
+            'raw_response' => $rawResponse,
+            'auth_failure' => false,
+        ];
     }
 
     /**

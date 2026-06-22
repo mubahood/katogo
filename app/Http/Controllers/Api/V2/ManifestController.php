@@ -71,10 +71,15 @@ class ManifestController extends Controller
             $app_type = 'ugflix';
         }
 
-        $u->app_type = $app_type;
-        $platform = Utils::get_platform_from_request($request);
-        if ($platform) {
-            $u->platform = $platform;
+        try {
+            $u->app_type = $app_type;
+            $platform = Utils::get_platform_from_request($request);
+            if ($platform) {
+                $u->platform = $platform;
+            }
+            $u->save();
+        } catch (\Throwable $e) {
+            // Non-fatal: bookkeeping update failed; continue serving manifest
         }
 
         // ── 2. Throttled payment check ─────────────────────
@@ -98,8 +103,11 @@ class ManifestController extends Controller
         // Rotation seed — content cycles every 6 hours (4 times per day)
         $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
 
-        // Featured movie (cached 15 min, rotates every 6 hours)
-        $featured = Cache::remember("v2_manifest_featured_{$rotationSlot}", 1800, function () {
+        // Featured movie: rotate every 6 hours but re-score against real recent plays.
+        // TTL = 30 min so if plays surge on a movie the hero updates within the hour.
+        $today         = Carbon::now()->format('Y-m-d');
+        $featuredKey   = "v2_featured_{$today}_{$rotationSlot}";
+        $featured = Cache::remember($featuredKey, 1800, function () {
             return $this->getFeaturedMovie();
         });
 
@@ -116,7 +124,7 @@ class ManifestController extends Controller
                 $fresh = $this->pickNextFeaturedMovie($inactiveId);
                 if ($fresh) {
                     $featured = $fresh;
-                    Cache::put("v2_manifest_featured_{$rotationSlot}", $featured, 900);
+                    Cache::put($featuredKey, $featured, 900);
                     Log::info('V2 Manifest: cached featured movie was inactive, replaced with next active', [
                         'inactive_id' => $inactiveId,
                         'new_id'      => $featured['id'],
@@ -212,35 +220,82 @@ class ManifestController extends Controller
 
     /**
      * Get featured / trending movie (single slim object or null).
+     *
+     * Priority:
+     *  1. Movies with real recent plays (last 30 days) — scored by unique viewers + total watch time
+     *  2. Rotates within top-40 recently-played candidates so the hero always reflects live activity
+     *  3. Falls back to all-time views_time_count if no recent plays data exists
      */
-    private function getFeaturedMovie(): ?array
+    private function getFeaturedMovie(?int $excludeId = null): ?array
     {
         $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
+        $recentWindow = Carbon::now()->subDays(30);
+        $topN         = 40; // rotate within top-40 recently trending movies
 
         try {
-            // Count ALL eligible movies so every movie cycles before repeating
-            $totalCandidates = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')->count();
+            // Step 1: find movies with actual recent plays, scored by engagement
+            $recentlyPlayed = DB::table('movie_views as mv')
+                ->join('movie_models as m', 'm.id', '=', 'mv.movie_model_id')
+                ->where('mv.created_at', '>=', $recentWindow)
+                ->where('m.status', 'Active')
+                ->where('m.type', 'Movie')
+                ->where('m.is_muno', 'Yes')
+                ->when($excludeId, fn ($q) => $q->where('m.id', '!=', $excludeId))
+                ->selectRaw('mv.movie_model_id, COUNT(DISTINCT mv.user_id) as unique_viewers, COUNT(*) as play_count, SUM(mv.progress) as total_watch_secs')
+                ->groupBy('mv.movie_model_id')
+                ->having('play_count', '>=', 2)
+                ->orderByRaw('(COUNT(DISTINCT mv.user_id) * 5 + COUNT(*) * 2 + SUM(mv.progress) / 3600) DESC')
+                ->limit($topN)
+                ->pluck('mv.movie_model_id')
+                ->toArray();
 
-            if ($totalCandidates > 0) {
-                // Rotate through the full catalogue — with N movies, it takes
-                // N × 6 hours before any movie repeats as featured.
-                $index = $rotationSlot % $totalCandidates;
-                $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
-                    ->orderByRaw('(COALESCE(downloads_count, 0) + COALESCE(views_time_count, 0)) DESC')
-                    ->offset($index)
-                    ->limit(1)
+            if (!empty($recentlyPlayed)) {
+                $index   = $rotationSlot % count($recentlyPlayed);
+                $movieId = $recentlyPlayed[$index];
+                $movie   = DB::table('movie_models')
+                    ->where('id', $movieId)
+                    ->where('status', 'Active')
                     ->select(self::SLIM_FIELDS)->first();
 
                 if ($movie) {
+                    Log::info('V2 Manifest: featured movie from recent plays', [
+                        'id'             => $movie->id,
+                        'title'          => $movie->title,
+                        'pool_size'      => count($recentlyPlayed),
+                        'rotation_index' => $index,
+                    ]);
                     return $this->slimMovie($movie);
                 }
+            }
+
+            // Step 2: no recent play data — fall back to all-time views, still rotating
+            Log::info('V2 Manifest: no recent plays found, falling back to all-time views_time_count');
+            $totalCandidates = DB::table('movie_models')
+                ->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
+                ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+                ->where('views_time_count', '>', 0)
+                ->count();
+
+            if ($totalCandidates > 0) {
+                $index = $rotationSlot % min($totalCandidates, $topN);
+                $movie = DB::table('movie_models')
+                    ->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
+                    ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+                    ->where('views_time_count', '>', 0)
+                    ->orderBy('views_time_count', 'desc')
+                    ->offset($index)->limit(1)
+                    ->select(self::SLIM_FIELDS)->first();
+
+                if ($movie) return $this->slimMovie($movie);
             }
         } catch (\Throwable $e) {
             Log::warning('V2 Manifest: featured movie error', ['error' => $e->getMessage()]);
         }
 
-        // Fallback: latest active movie
-        $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
+        // Final fallback: most recent active movie
+        $movie = DB::table('movie_models')
+            ->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
+            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
             ->orderBy('created_at', 'desc')
             ->select(self::SLIM_FIELDS)->first();
 
@@ -253,37 +308,7 @@ class ManifestController extends Controller
      */
     private function pickNextFeaturedMovie(int $excludeId): ?array
     {
-        $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
-
-        try {
-            $totalCandidates = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
-                ->where('id', '!=', $excludeId)
-                ->count();
-
-            if ($totalCandidates > 0) {
-                $index = $rotationSlot % $totalCandidates;
-                $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
-                    ->where('id', '!=', $excludeId)
-                    ->orderByRaw('(COALESCE(downloads_count, 0) + COALESCE(views_time_count, 0)) DESC')
-                    ->offset($index)
-                    ->limit(1)
-                    ->select(self::SLIM_FIELDS)->first();
-
-                if ($movie) {
-                    return $this->slimMovie($movie);
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::warning('V2 Manifest: pickNextFeaturedMovie error', ['error' => $e->getMessage()]);
-        }
-
-        // Fallback: most recently added active movie (excluding inactive one)
-        $movie = DB::table('movie_models')->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
-            ->where('id', '!=', $excludeId)
-            ->orderBy('created_at', 'desc')
-            ->select(self::SLIM_FIELDS)->first();
-
-        return $movie ? $this->slimMovie($movie) : null;
+        return $this->getFeaturedMovie($excludeId);
     }
 
     /**
@@ -396,23 +421,52 @@ class ManifestController extends Controller
         $addSection('latest', 'Latest Movies', 'clock', $latest, ['sort' => 'latest']);
 
         // ═══════════════════════════════════════════════════
-        // 2. TRENDING NOW — by downloads, page-cycled
-        //    Full cycle: e.g. 200 movies / 20 = 10 days
+        // 2. TRENDING NOW — movies with most real plays in last 30 days
+        //    Falls back to all-time downloads if play data is sparse
         // ═══════════════════════════════════════════════════
-        $trendingOffset = $cycledOffset($totalMovies, $limit);
-        $trending = $activeMovies()
-            ->whereNotIn('id', $prevSectionIds)
-            ->orderBy('downloads_count', 'desc')
-            ->offset($trendingOffset)
-            ->limit($limit)
-            ->select(self::SLIM_FIELDS)->get();
-        // If offset overshoots (near end of catalogue), wrap to top
-        if ($trending->count() < 3) {
+        $recentWindow = Carbon::now()->subDays(30);
+        $trendingIds = DB::table('movie_views as mv')
+            ->join('movie_models as m', 'm.id', '=', 'mv.movie_model_id')
+            ->where('mv.created_at', '>=', $recentWindow)
+            ->where('m.status', 'Active')
+            ->where('m.type', 'Movie')
+            ->where('m.is_muno', 'Yes')
+            ->whereNotIn('mv.movie_model_id', $prevSectionIds)
+            ->selectRaw('mv.movie_model_id, COUNT(DISTINCT mv.user_id) as unique_viewers, COUNT(*) as play_count')
+            ->groupBy('mv.movie_model_id')
+            ->orderByRaw('(COUNT(DISTINCT mv.user_id) * 5 + COUNT(*) * 2) DESC')
+            ->limit($limit * 3)
+            ->pluck('mv.movie_model_id')
+            ->toArray();
+
+        $trending = null;
+        if (count($trendingIds) >= 3) {
+            // Rotate within trending pool so different movies surface each slot
+            $trendPool  = count($trendingIds);
+            $trendPage  = $rotationSlot % max(1, (int) ceil($trendPool / $limit));
+            $trendSlice = array_slice($trendingIds, $trendPage * $limit, $limit) ?: array_slice($trendingIds, 0, $limit);
+            $trending = $activeMovies()
+                ->whereIn('id', $trendSlice)
+                ->orderByRaw('FIELD(id,' . implode(',', $trendSlice) . ')')
+                ->select(self::SLIM_FIELDS)->get();
+        }
+
+        if (!$trending || $trending->count() < 3) {
+            // Fallback: all-time downloads with page cycling
+            $trendingOffset = $cycledOffset($totalMovies, $limit);
             $trending = $activeMovies()
                 ->whereNotIn('id', $prevSectionIds)
                 ->orderBy('downloads_count', 'desc')
+                ->offset($trendingOffset)
                 ->limit($limit)
                 ->select(self::SLIM_FIELDS)->get();
+            if ($trending->count() < 3) {
+                $trending = $activeMovies()
+                    ->whereNotIn('id', $prevSectionIds)
+                    ->orderBy('downloads_count', 'desc')
+                    ->limit($limit)
+                    ->select(self::SLIM_FIELDS)->get();
+            }
         }
         $addSection('trending', 'Trending Now', 'trending-up', $trending, ['sort' => 'popular']);
 

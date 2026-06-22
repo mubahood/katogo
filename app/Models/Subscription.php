@@ -556,9 +556,9 @@ class Subscription extends Model
             'start_date' => $this->start_date_time?->toISOString(),
             'end_date' => $this->end_date_time?->toISOString(),
             'grace_period_end' => $this->grace_period_end?->toISOString(),
-            'days_remaining' => $this->daysRemaining(),
+            'days_remaining' => $this->daysRemaining(false),
             'hours_remaining' => $this->hoursRemaining(),
-            'is_active' => $this->isActive(),
+            'is_active' => $this->isActive(true), // include grace period — consistent with manifest
             'is_in_grace_period' => $this->isInGracePeriod(),
             'is_expired' => $this->isExpired(),
             'amount_paid' => $this->amount_paid,

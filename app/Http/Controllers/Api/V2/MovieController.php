@@ -1024,8 +1024,12 @@ class MovieController extends Controller
     {
         $u = Utils::get_user($request);
         if ($u) {
-            $u->last_online_at = now();
-            $u->save();
+            try {
+                $u->last_online_at = now();
+                $u->save();
+            } catch (\Throwable $e) {
+                // Non-fatal: best-effort last_online_at update; don't let it crash the request
+            }
         }
         return $u;
     }
@@ -1213,7 +1217,7 @@ class MovieController extends Controller
             return $this->error('Movie not found.', 404);
         }
 
-        $action = $request->input('action', 'diagnose');
+        $action = $request->input('action', 'fix');
 
         Log::info("V2 Fix [{$action}] movie={$id} user=" . ($user->id ?? 'guest'));
 
@@ -1537,34 +1541,38 @@ class MovieController extends Controller
             $base = DB::table('movie_models')->select(self::LIST_FIELDS)->where('status', 'Active');
 
             if ($user) {
-                // Top 3 genres from last 30 days of watch history
-                $genres = DB::table('user_activity_logs as a')
-                    ->join('movie_models as m', 'm.id', '=', 'a.entity_id')
-                    ->where('a.user_id', $user->id)
-                    ->whereIn('a.action', ['movie_play', 'movie_complete'])
-                    ->where('a.entity_type', 'movie')
-                    ->where('a.created_at', '>=', now()->subDays(30))
-                    ->whereNotNull('m.genre')
-                    ->where('m.genre', '!=', '')
-                    ->selectRaw('m.genre, COUNT(*) as cnt')
-                    ->groupBy('m.genre')
-                    ->orderByDesc('cnt')
-                    ->limit(3)
-                    ->pluck('genre')
-                    ->toArray();
+                try {
+                    // Top 3 genres from last 30 days of watch history
+                    $genres = DB::table('user_activity_logs as a')
+                        ->join('movie_models as m', 'm.id', '=', 'a.entity_id')
+                        ->where('a.user_id', $user->id)
+                        ->whereIn('a.action', ['movie_play', 'movie_complete'])
+                        ->where('a.entity_type', 'movie')
+                        ->where('a.created_at', '>=', now()->subDays(30))
+                        ->whereNotNull('m.genre')
+                        ->where('m.genre', '!=', '')
+                        ->selectRaw('m.genre, COUNT(*) as cnt')
+                        ->groupBy('m.genre')
+                        ->orderByDesc('cnt')
+                        ->limit(3)
+                        ->pluck('genre')
+                        ->toArray();
 
-                if (!empty($genres)) {
-                    $watched = DB::table('movie_views')->where('user_id', $user->id)->pluck('movie_model_id');
-                    $query = (clone $base)->whereNotIn('id', $watched);
-                    $query->where(function ($q) use ($genres) {
-                        foreach ($genres as $genre) {
-                            $q->orWhere('genre', 'LIKE', '%' . $genre . '%');
+                    if (!empty($genres)) {
+                        $watched = DB::table('movie_views')->where('user_id', $user->id)->pluck('movie_model_id');
+                        $query = (clone $base)->whereNotIn('id', $watched);
+                        $query->where(function ($q) use ($genres) {
+                            foreach ($genres as $genre) {
+                                $q->orWhere('genre', 'LIKE', '%' . $genre . '%');
+                            }
+                        });
+                        $results = $query->orderByRaw('CAST(views_count AS UNSIGNED) DESC')->limit($limit)->get();
+                        if ($results->count() >= 5) {
+                            return $results;
                         }
-                    });
-                    $results = $query->orderByRaw('CAST(views_count AS UNSIGNED) DESC')->limit($limit)->get();
-                    if ($results->count() >= 5) {
-                        return $results;
                     }
+                } catch (\Throwable $e) {
+                    Log::warning('recommendations: activity log query failed, using fallback — ' . $e->getMessage());
                 }
             }
 

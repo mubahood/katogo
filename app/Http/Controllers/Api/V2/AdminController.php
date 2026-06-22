@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
 use App\Models\Subscription;
+use App\Models\SubscriptionPlan;
 use App\Models\SystemConfig;
 use App\Models\User;
 use App\Models\Utils;
@@ -231,6 +232,111 @@ class AdminController extends Controller
                 }
                 return $arr;
             }),
+        ]);
+    }
+
+    /**
+     * GET /api/v2/admin/plans
+     * List all active subscription plans for admin UI.
+     */
+    public function listPlans(Request $request): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $plans = SubscriptionPlan::where('status', 'Active')
+            ->orderBy('sort_order')
+            ->orderBy('price')
+            ->get(['id', 'name', 'price', 'discount_percentage', 'duration_days', 'currency', 'is_featured', 'is_popular', 'is_trial']);
+
+        return response()->json([
+            'code'    => 1,
+            'message' => 'ok',
+            'data'    => $plans->map(fn($p) => [
+                'id'           => $p->id,
+                'name'         => $p->name,
+                'duration_days'=> $p->duration_days,
+                'currency'     => $p->currency ?? 'UGX',
+                'price'        => (float) $p->price,
+                'actual_price' => (float) $p->getActualPrice(),
+                'is_featured'  => (bool) $p->is_featured,
+                'is_popular'   => (bool) $p->is_popular,
+                'is_trial'     => (bool) $p->is_trial,
+            ]),
+        ]);
+    }
+
+    /**
+     * POST /api/v2/admin/users/{userId}/subscriptions/create
+     * Create a new subscription for a user.
+     *
+     * Body:
+     *   plan_id      int     required
+     *   is_paid      bool    optional (default false) — if true, activates immediately
+     *   payment_method string optional (default "cash")
+     *   notes        string  optional
+     */
+    public function createUserSubscription(Request $request, int $userId): JsonResponse
+    {
+        if ($err = $this->checkAdmin($request)) return $err;
+
+        $user = User::find($userId);
+        if (!$user) {
+            return response()->json(['code' => 0, 'message' => 'User not found'], 404);
+        }
+
+        $planId = (int) $request->input('plan_id', 0);
+        if ($planId <= 0) {
+            return response()->json(['code' => 0, 'message' => 'plan_id is required'], 422);
+        }
+
+        $plan = SubscriptionPlan::find($planId);
+        if (!$plan || $plan->status !== 'Active') {
+            return response()->json(['code' => 0, 'message' => 'Plan not found or inactive'], 404);
+        }
+
+        $isPaid        = filter_var($request->input('is_paid', false), FILTER_VALIDATE_BOOLEAN);
+        $paymentMethod = trim((string) $request->input('payment_method', 'cash')) ?: 'cash';
+        $notes         = trim((string) $request->input('notes', ''));
+        $actualPrice   = $plan->getActualPrice();
+        $days          = (int) $plan->duration_days;
+
+        $sub = DB::transaction(function () use ($user, $plan, $isPaid, $paymentMethod, $notes, $actualPrice, $days) {
+            $start = now();
+            $end   = $start->copy()->addDays($days);
+
+            $sub = new Subscription();
+            $sub->user_id           = $user->id;
+            $sub->plan_id           = $plan->id;
+            $sub->days              = $days;
+            $sub->currency          = $plan->currency ?? 'UGX';
+            $sub->amount_paid       = $actualPrice;
+            $sub->payment_method    = $paymentMethod;
+            $sub->payment_gateway   = 'admin';
+            $sub->source            = 'admin_panel';
+            $sub->notes             = $notes ?: null;
+
+            if ($isPaid) {
+                $sub->status               = 'Active';
+                $sub->payment_status       = 'Completed';
+                $sub->start_date_time      = $start;
+                $sub->end_date_time        = $end;
+                $sub->grace_period_end     = $end->copy()->addDays(3);
+                $sub->payment_confirmed_at = now();
+            } else {
+                $sub->status         = 'Pending';
+                $sub->payment_status = 'Pending';
+            }
+
+            $sub->save();
+            return $sub;
+        });
+
+        return response()->json([
+            'code'    => 1,
+            'message' => $isPaid
+                ? "Subscription created and activated for {$user->name}."
+                : "Subscription created (pending payment) for {$user->name}.",
+            'data'    => $this->formatSubscription($sub->fresh()->load('plan')),
         ]);
     }
 

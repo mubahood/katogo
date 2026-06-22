@@ -29,247 +29,184 @@ class TrendingNotification extends Model
     ];
 
     /**
-     * Get trending movie for current time period with improved duplicate prevention
+     * Get the truly trending movie for the current time period.
+     *
+     * Selection priority:
+     *  1. Real recent plays (last 30 days) — ranked by unique viewers × 5 + play count × 2
+     *  2. All-time views_time_count for movies not recently notified
+     *  3. Any active movie (last resort if all have been notified recently)
+     *
+     * A notification is queued for unsent trending entries before returning.
      */
     public static function getTrendingMovie()
     {
+        // Notification sending is expensive (iterates 87k+ users) — do NOT call from
+        // a manifest HTTP request. The scheduled cron handles this instead.
+        // self::sendTrendingNotification();
 
+        $now      = Carbon::now();
+        $hour     = (int) $now->format('H');
+        $day_time = match (true) {
+            $hour >= 5  && $hour < 12 => 'morning',
+            $hour >= 12 && $hour < 17 => 'afternoon',
+            $hour >= 17 && $hour < 21 => 'evening',
+            default                   => 'night',
+        };
 
-        self::sendTrendingNotification();
-
-        $now = Carbon::now();
-        //time of day
-        $hour = (int) $now->format('H');
-        $day_time = '';
-        if ($hour >= 5 && $hour < 12) {
-            $day_time = 'morning';
-        } elseif ($hour >= 12 && $hour < 17) {
-            $day_time = 'afternoon';
-        } elseif ($hour >= 17 && $hour < 21) {
-            $day_time = 'evening';
-        } else {
-            $day_time = 'night';
-        }
-
-        $movie = null;
+        // Return today's already-picked movie for this time slot (avoid churn)
+        $movie   = null;
         $midnight = Carbon::now()->startOfDay();
-        $trending = TrendingNotification::where([
-            'day_time' => $day_time,
-            ['created_at', '>=', $midnight]
-        ])
+        $existing = TrendingNotification::where('day_time', $day_time)
+            ->where('created_at', '>=', $midnight)
+            ->orderBy('id', 'desc')
             ->first();
-        if ($trending != null) {
-            $movie = MovieModel::find($trending->movie_model_id);
+        if ($existing) {
+            $movie = MovieModel::where('id', $existing->movie_model_id)->where('status', 'Active')->first();
         }
 
-        $ninty_days_ago = Carbon::now()->subDays(90);
+        if ($movie) {
+            return $movie;
+        }
 
-        if ($movie == null) {
+        // IDs notified in the last 5 days — avoid repeating the same movie too soon
+        $recentlyNotified = TrendingNotification::where('created_at', '>=', Carbon::now()->subDays(5))
+            ->where('is_sent', 'Yes')
+            ->pluck('movie_model_id')
+            ->unique()
+            ->toArray();
 
-            // FIXED: Get IDs of movies that have been sent as trending notifications in the last 7 days
-            // This prevents the same movie from being sent repeatedly
-            $recently_notified_movie_ids = TrendingNotification::where('created_at', '>=', Carbon::now()->subDays(7))
-                ->where('is_sent', 'Yes')
-                ->pluck('movie_model_id')
-                ->unique()
-                ->toArray();
+        // ── Primary: movies with real recent plays ───────────────────────────
+        $recentWindow = Carbon::now()->subDays(30);
+        $candidates = DB::table('movie_views as mv')
+            ->join('movie_models as m', 'm.id', '=', 'mv.movie_model_id')
+            ->where('mv.created_at', '>=', $recentWindow)
+            ->where('m.status', 'Active')
+            ->where('m.type', 'Movie')
+            ->when(!empty($recentlyNotified), fn ($q) => $q->whereNotIn('mv.movie_model_id', $recentlyNotified))
+            ->selectRaw('mv.movie_model_id, COUNT(DISTINCT mv.user_id) as unique_viewers, COUNT(*) as play_count, SUM(mv.progress) as total_secs')
+            ->groupBy('mv.movie_model_id')
+            ->having('play_count', '>=', 2)
+            ->orderByRaw('(COUNT(DISTINCT mv.user_id) * 5 + COUNT(*) * 2 + SUM(mv.progress) / 3600) DESC')
+            ->limit(20)
+            ->get();
 
-            Log::info('Recently notified movies in last 7 days: ' . count($recently_notified_movie_ids));
-
-            // Get movies that are currently trending (from last 90 days)
-            $ids_of_trendings = MovieModel::where('created_at', '>=', $ninty_days_ago)
-                ->where('status', 'Active')
-                ->where('type', 'Movie')
-                ->where('is_trending', 'Yes')
-                ->pluck('id')
-                ->toArray();
-
-            //update movies that have not trended in last 90 days to not trending
-            $sql = DB::table('movie_models')
-                ->where('created_at', '>=', $ninty_days_ago)
-                ->where('status', 'Active')
-                ->where('type', 'Movie')
-                ->where('is_trending', 'Yes');
-
-            if (count($ids_of_trendings) > 0) {
-                $sql->whereNotIn('id', $ids_of_trendings);
-            }
-            $sql->update(['is_trending' => 'No']);
-
-
-            // FIXED: Exclude recently notified movies from trending selection
-            $recent_movie_views = MovieView::where('created_at', '>=', $ninty_days_ago)
-                ->selectRaw('movie_model_id, SUM(progress) as total_watch_time')
-                ->groupBy('movie_model_id')
-                ->orderByDesc('total_watch_time')
-                ->pluck('movie_model_id')
-                ->toArray();
-            
-            foreach ($recent_movie_views as $recent_movie_view) {
-                // FIXED: Skip movies that have been notified recently (last 7 days)
-                if (in_array($recent_movie_view, $recently_notified_movie_ids)) {
-                    Log::info("Skipping recently notified movie ID: {$recent_movie_view}");
-                    continue;
-                }
-
-                $movie = MovieModel::find($recent_movie_view);
-                if ($movie == null) {
-                    continue;
-                }
-                if ($movie->type != 'Movie') {
-                    continue;
-                }
-                if ($movie->status != 'Active') {
-                    continue;
-                }
-
-                Log::info("Creating trending notification for movie: {$movie->title} (ID: {$movie->id})");
-
-                $trending = new TrendingNotification();
-                $trending->day_time = $day_time;
-                $trending->movie_model_id = $movie->id;
-                $trending->is_sent = 'No';
-                $trending->title = $movie->title;
-                $trending->type = $movie->type;
-                $trending->image_url = $movie->thumbnail_url;
-                $trending->description = $day_time . ' trending movie is ' . $movie->title . "! Watch now!";
-                $trending->views_count = $movie->views_count;
-                $trending->views_time = $movie->views_time_count;
-                $trending->trending_time = Carbon::now();
-                $trending->save();
-                $movie->is_trending = 'Yes';
-                $movie->trending_time = Carbon::now();
-                $movie->trending_id = $trending->id;
-                $movie->save();
+        foreach ($candidates as $row) {
+            $candidate = MovieModel::where('id', $row->movie_model_id)
+                ->where('status', 'Active')->where('type', 'Movie')->first();
+            if ($candidate) {
+                $movie = $candidate;
+                Log::info("Trending: picked from recent plays — {$movie->title} (plays={$row->play_count}, viewers={$row->unique_viewers})");
                 break;
             }
         }
 
-        // FIXED: If still no movie found, get one that hasn't been notified in last 7 days
-        if ($movie == null) {
-            $recently_notified_movie_ids = TrendingNotification::where('created_at', '>=', Carbon::now()->subDays(7))
-                ->where('is_sent', 'Yes')
-                ->pluck('movie_model_id')
-                ->unique()
-                ->toArray();
-
-            $minViewTime = 30 * 60; // 30 minutes minimum watch time
-            
+        // ── Fallback: all-time views_time_count, not recently notified ────────
+        if (!$movie) {
             $query = MovieModel::where('type', 'Movie')
                 ->where('status', 'Active')
-                ->where('views_time_count', '>=', $minViewTime);
-            
-            if (count($recently_notified_movie_ids) > 0) {
-                $query->whereNotIn('id', $recently_notified_movie_ids);
+                ->where('views_time_count', '>=', 1800); // min 30 min total watch time
+            if (!empty($recentlyNotified)) {
+                $query->whereNotIn('id', $recentlyNotified);
             }
-            
             $movie = $query->orderBy('views_time_count', 'desc')->first();
-            
             if ($movie) {
-                Log::info("Found fallback movie (not recently notified): {$movie->title} (ID: {$movie->id})");
+                Log::info("Trending: fallback to all-time views — {$movie->title}");
             }
         }
-        
-        // FIXED: Second fallback - any active movie not notified recently
-        if ($movie == null) {
-            $recently_notified_movie_ids = TrendingNotification::where('created_at', '>=', Carbon::now()->subDays(7))
-                ->where('is_sent', 'Yes')
-                ->pluck('movie_model_id')
-                ->unique()
-                ->toArray();
 
-            $minViewTime = 30 * 60; // 30 minutes minimum watch time
-            
-            $query = MovieModel::where('type', 'Movie')
-                ->where('status', 'Active')
-                ->where('views_time_count', '>=', $minViewTime);
-            
-            if (count($recently_notified_movie_ids) > 0) {
-                $query->whereNotIn('id', $recently_notified_movie_ids);
+        // ── Last resort: any active movie at all ─────────────────────────────
+        if (!$movie) {
+            $movie = MovieModel::where('type', 'Movie')->where('status', 'Active')
+                ->orderBy('views_time_count', 'desc')->first();
+            if ($movie) {
+                Log::warning("Trending: last-resort pick (all recently notified) — {$movie->title}");
             }
-            
-            $movie = $query->orderBy('views_time_count', 'desc')->first();
-        }
-        
-        // FIXED: Final fallback - any active movie at all (if all have been notified)
-        if ($movie == null) {
-            Log::warning("All movies have been notified recently, selecting based on view time only");
-            $movie = MovieModel::where('type', 'Movie')
-                ->where('status', 'Active')
-                ->orderBy('views_time_count', 'desc')
-                ->first();
         }
 
-        if ($movie) {
-            Log::info("Returning trending movie: {$movie->title} (ID: {$movie->id})");
-        } else {
-            Log::error("No trending movie found!");
+        if (!$movie) {
+            Log::error('Trending: no active movie found at all.');
+            return null;
         }
+
+        // Queue a trending notification entry for this time slot
+        $trending                   = new TrendingNotification();
+        $trending->day_time         = $day_time;
+        $trending->movie_model_id   = $movie->id;
+        $trending->is_sent          = 'No';
+        $trending->title            = $movie->title;
+        $trending->type             = $movie->type;
+        $trending->image_url        = $movie->thumbnail_url;
+        $trending->description      = self::buildNotificationBody($movie->title, $day_time);
+        $trending->views_count      = $movie->views_count ?? 0;
+        $trending->views_time       = $movie->views_time_count ?? 0;
+        $trending->trending_time    = Carbon::now();
+        $trending->save();
+
+        $movie->is_trending    = 'Yes';
+        $movie->trending_time  = Carbon::now();
+        $movie->trending_id    = $trending->id;
+        $movie->save();
 
         return $movie;
     }
 
     /**
-     * Send trending notification using the new NotificationService
+     * Build a concise, professional push notification body for a trending movie.
      */
-    private static function sendTrendingNotification()
+    private static function buildNotificationBody(string $title, string $dayTime): string
     {
-        //created today
-        $today = Carbon::now()->startOfDay();
-        $getLatestNoteSent = TrendingNotification::where('is_sent', 'No')
+        $greetings = [
+            'morning'   => ['Start your morning with', 'Good morning! People are watching'],
+            'afternoon' => ['Trending this afternoon:', 'Top pick right now:'],
+            'evening'   => ['Perfect for tonight:', 'Good evening! Viewers are loving'],
+            'night'     => ['Late-night favourite:', 'People are watching right now:'],
+        ];
+        $openers = $greetings[$dayTime] ?? ['Now trending:'];
+        $opener  = $openers[array_rand($openers)];
+        return "{$opener} \"{$title}\" — watch it now on LugaFlix.";
+    }
+
+    /**
+     * Send the pending trending notification to eligible users (respects per-user limits).
+     * Does NOT blast to all — uses NotificationService rate limiting.
+     */
+    private static function sendTrendingNotification(): void
+    {
+        $today             = Carbon::now()->startOfDay();
+        $pending           = TrendingNotification::where('is_sent', 'No')
             ->where('created_at', '>=', $today)
             ->orderBy('created_at', 'desc')
             ->first();
-        if ($getLatestNoteSent == null) {
-            return null;
+
+        if (!$pending) {
+            return;
         }
+
+        $hour     = (int) Carbon::now()->format('H');
+        $day_time = match (true) {
+            $hour >= 5  && $hour < 12 => 'morning',
+            $hour >= 12 && $hour < 17 => 'afternoon',
+            $hour >= 17 && $hour < 21 => 'evening',
+            default                   => 'night',
+        };
 
         try {
-            NotificationService::sendToAll([
-                'title' => $getLatestNoteSent->title,
-                'body' => $getLatestNoteSent->description,
-                'image' => $getLatestNoteSent->image_url,
-                'data' => [
-                    'movie_id' => $getLatestNoteSent->movie_model_id,
-                    'type' => $getLatestNoteSent->type,
+            NotificationService::sendTrendingNotificationToEligibleUsers([
+                'title' => '🎬 ' . $pending->title . ' is Trending',
+                'body'  => $pending->description,
+                'image' => $pending->image_url,
+                'data'  => [
+                    'movie_id'          => $pending->movie_model_id,
+                    'type'              => $pending->type,
                     'notification_type' => 'trending_notification',
                 ],
-            ]);
-            $getLatestNoteSent->is_sent = 'Yes';
-            $getLatestNoteSent->sent_time = Carbon::now();
-            $getLatestNoteSent->save();
-            return $getLatestNoteSent;
-        } catch (\Throwable $th) {
-            Log::error('Error sending trending notification: ' . $th->getMessage());
-            throw $th;
-        } catch (\Exception $e) {
-            Log::error('Exception while sending trending notification: ' . $e->getMessage());
-            return null;
-        }
-    }
+            ], $day_time);
 
-    /**
-     * Find a suitable trending movie
-     */
-    private static function findTrendingMovie()
-    {
-        //return getTrendingMovie
-        return self::getTrendingMovie();
-    }
-
-    /**
-     * Get current day time period
-     */
-    private static function getCurrentDayTime(Carbon $now): string
-    {
-        if ($now->hour >= 6 && $now->hour < 12) {
-            return 'morning';
-        } elseif ($now->hour >= 12 && $now->hour < 18) {
-            return 'afternoon';
-        } elseif ($now->hour >= 18 && $now->hour < 24) {
-            return 'evening';
-        } else {
-            return 'night';
+            $pending->is_sent    = 'Yes';
+            $pending->sent_time  = Carbon::now();
+            $pending->save();
+        } catch (\Throwable $e) {
+            Log::error('TrendingNotification: send failed — ' . $e->getMessage());
         }
     }
 

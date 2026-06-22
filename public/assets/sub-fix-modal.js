@@ -250,7 +250,8 @@
 
             // Resolve reference and gateway from this tx
             var txRef = tx.pesapal_tracking_id || tx.merchant_reference || '';
-            var txGw  = String(tx.payment_method || '').toLowerCase().indexOf('flutter') >= 0 ? 'flutterwave' : 'pesapal';
+            var _pm   = String(tx.payment_method || '').toLowerCase();
+            var txGw  = (_pm.indexOf('flutter') >= 0 || _pm.indexOf('mobilemoney') === 0) ? 'flutterwave' : 'pesapal';
 
             $('#subFixLabRef').val(txRef);
             $('#subFixLabGateway').val(txGw);

@@ -1,99 +1,136 @@
-now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (ugflix - /Users/mac/Desktop/github/luganda-translated-movies-mobo) - only mobile version, not tv.
+================================================================================
+  AAB BUILD PROMPTS — 5 APPS
+  Each prompt is self-contained. Copy ONE and paste it as a new chat message.
+  Current versions as of 2026-06-18 are shown next to each app name.
+================================================================================
 
-now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. now work on (Muno App - /Users/mac/Desktop/github/muno-app-free-luganda-movies)
+────────────────────────────────────────────────────────────────────────────────
+APP 1 — LugaFlix  (current: 6.0.56+657)
+Path: /Users/mac/Desktop/github/lugaflix
+────────────────────────────────────────────────────────────────────────────────
 
-now we need to update the app version to playstore, in yaml file, increase the app version by 1, then geneat a new .aab file and open its folder. let us start with lugaflix app (/Users/mac/Desktop/github/lugaflix)
+Build a new release AAB for the LugaFlix app.
 
-i want you to document each and everything new that has been added into "/Users/mac/Desktop/github/lugaflix" ..
+Steps to follow IN ORDER:
+1. Open /Users/mac/Desktop/github/lugaflix/pubspec.yaml
+2. Find the line that starts with "version:" (e.g. version: 6.0.56+657)
+3. Increment BOTH the semantic version and the build number by 1
+   — example: 6.0.56+657  →  6.0.57+658
+4. Save pubspec.yaml
+5. cd into /Users/mac/Desktop/github/lugaflix
+6. Run: flutter build appbundle --release
+7. Wait for the build to complete successfully (do NOT proceed on error)
+8. The output file will be at:
+   /Users/mac/Desktop/github/lugaflix/build/app/outputs/bundle/release/app-release.aab
+9. Open that folder in Finder so the AAB file is ready to upload to Play Console
 
-following our core principles alreaducmentation how we implment changes to rest of the apps so all apps can be in sync in terms of featueres but ideintifred and branded as 3 different apsps,
-i want you yo carefully sycng all cghanges in lugaflix in rest of the apps i.e, (ugflix - /Users/mac/Desktop/github/luganda-translated-movies-mobo) and (Muno App - /Users/mac/Desktop/github/muno-app-free-luganda-movies).
-make sure you do eeverything so rest of those 2 remaining apps are fully in synch with lugaflix in terms of featues.
-you can start by pnnaing everything into an md file so you can follow the tasks step by step without skiping any. test everything ensure no any room for any error
-
-<en-US>
-- Fix the error of logging in every time
-- Fixed the error of black screen deadlock after logging in
-- Introduce a series player where episodes will show in the player and you can choose the one you want to play next.
-- Introdcued next & previous button in player
-- Improved app user-interface
-</en-US>
-
-
-I want to make marketing video for this app, the video should knock on each and every feature in the app.
-compose for me a perfect marketing scription for the marketing video
-
-.- home page (simple to use)
-.- Landing page top movies (starts on fly)
-.- Ability to resume movies
-.- resume movies
-.- get latest uganda local news
-.- Latest movies
-.- VJ Junior moivies and other categories
-.- Series movies (Parts ovies, Mini series, Epidodes and Core movies)
-.- Pefect movie details page
-.- Download movie for offline watching (to App or to Galery)
-.- Powerful Movie player with great controls
-    - can resume
-    - view next episodes
-    - can popup (do other things while watching)
-.- Extra modules such as;-
-    - Games (Play Ludo and Matatu)
-    - Play games offline of with other friends online
-.- CONNECT module to chat with firends online 
-.- Help and Support 
-- finalize with a closing message focused on movies
-- request users to down and install the app now.
+Do NOT build the TV variant. This is the standard mobile build only.
+Report the new version number and confirm the AAB file path when done.
 
 
-.
+────────────────────────────────────────────────────────────────────────────────
+APP 2 — UGFlix / Mobo  (current: 6.0.36+636)
+Path: /Users/mac/Desktop/github/luganda-translated-movies-mobo
+────────────────────────────────────────────────────────────────────────────────
 
-now I want use to focus on /Applications/MAMP/htdocs/about.u-lits.com/wp-content/plugins/muhindo-police plugin.
+Build a new release AAB for the UGFlix (Mobo) app.
 
-I want you to make very very agressive when it comes to security
-- ensure it does not accept any kind of http request leaving the system
-- enable captture checkcekr
-- enable throttle check for ips which make so many requests to the webiste
-- dont allow any comment to the post, block any ip that trys to comment, because we dont suppot comments
-- delete all posts comments , immediately and delete all comments in the site already
-- only and only one user should be in the syusterm, the first user that was created the user with username "admin", the rest users should be deleted and psost and comments that they posted.
-- any ip that try to create any user, should be blocked and logs should be kept
-- ability to have action on vulnarable files or suscpecious files. be well versed about the workdpress files stucture, abiulity to scan the system files, detect those that are out of wordpress steructure and give ability to delete them, as well as suspecuous plugins.
-- have a pwoerful tracker on polugins, disable autmatically sucespscious oplugins , unless the admin whiltelist them
-- come up with more security features to make the plugin very agrresinve in terms of security
+Steps to follow IN ORDER:
+1. Open /Users/mac/Desktop/github/luganda-translated-movies-mobo/pubspec.yaml
+2. Find the line that starts with "version:" (e.g. version: 6.0.36+636)
+3. Increment BOTH the semantic version and the build number by 1
+   — example: 6.0.36+636  →  6.0.37+637
+4. Save pubspec.yaml
+5. cd into /Users/mac/Desktop/github/luganda-translated-movies-mobo
+6. Run: flutter build appbundle --release
+   — IMPORTANT: use the default main.dart entry point (lib/main.dart)
+   — Do NOT use --target=lib/tv/... or any TV entry point
+7. Wait for the build to complete successfully (do NOT proceed on error)
+8. The output file will be at:
+   /Users/mac/Desktop/github/luganda-translated-movies-mobo/build/app/outputs/bundle/release/app-release.aab
+9. Open that folder in Finder so the AAB file is ready to upload to Play Console
 
-.
+This app has a /lib/tv/ folder — ignore it completely. Mobile build only.
+Report the new version number and confirm the AAB file path when done.
+ope folder where you have put the new .aab file
 
-now, just like the way we have platform types, like muno, ugflix and luaflix, the web i want it to be identified as its own type of platform as well. we should call it "WEB".
-i WANT YOU to analyze this whole anology of platform types both front and backend.
-these types help us to understand all stats and sources of traffic including the payments.
-i want you yo carefully under how this is implmented both in app and backend. 
-then carefully introduce this web prlatoform keyword.
-introduce it across everything including in payment prefix, and everything including in stats of graphs n dashboard, and all pages .
-ensure perfection and no room for any error.
-.
+────────────────────────────────────────────────────────────────────────────────
+APP 3 — Muno (Free Luganda Movies)  (current: 1.0.26+31)
+Path: /Users/mac/Desktop/github/muno-app-free-luganda-movies
+────────────────────────────────────────────────────────────────────────────────
 
-now I want us to debug things step by set here.
+Build a new release AAB for the Muno free app.
 
-under 
-/subscription-transactions add a button on record called fix, this should have modal that is like that of /series-movies
+Steps to follow IN ORDER:
+1. Open /Users/mac/Desktop/github/muno-app-free-luganda-movies/pubspec.yaml
+2. Find the line that starts with "version:" (e.g. version: 1.0.26+31)
+3. Increment BOTH the semantic version and the build number by 1
+   — example: 1.0.26+31  →  1.0.27+32
+4. Save pubspec.yaml
+5. cd into /Users/mac/Desktop/github/muno-app-free-luganda-movies
+6. Run: flutter build appbundle --release
+7. Wait for the build to complete successfully (do NOT proceed on error)
+8. The output file will be at:
+   /Users/mac/Desktop/github/muno-app-free-luganda-movies/build/app/outputs/bundle/release/app-release.aab
+9. Open that folder in Finder so the AAB file is ready to upload to Play Console
 
-/series-movies has p werful modal and jaascrapt used for fixing, please be inspred by the same aporach
+Report the new version number and confirm the AAB file path when done.
 
-create a special indipend php backend powered , and bootstap front end and ajax jquest with javescript that we shall use for debging subscrptions.
-if we enter subscrtion payment reference.. it should be able to go to flutter wave or pesa pal using our centralized functions, then show is wellrogansied raw resonse from the paynment get way.
-then we shall have tools to trigger different fixees.
 
-you can
+────────────────────────────────────────────────────────────────────────────────
+APP 4 — Katogo App  (current: 6.0.55+655)
+Path: /Users/mac/Desktop/github/katogo-app
+────────────────────────────────────────────────────────────────────────────────
 
-just like how we did payment debug things on 
-https://movies.mruodel.com/subscription-transactions ,
+Build a new release AAB for the Katogo app.
 
-i want you to implement similar deug things on 
-https://movies.mruodel.com/subscriptions 
-should give full control to dedebug /subscriptions but relevant to /subscriptions but achieve exacly smilar payment things as it is  in /subscription-transactions
+Steps to follow IN ORDER:
+1. Open /Users/mac/Desktop/github/katogo-app/pubspec.yaml
+2. Find the line that starts with "version:" (e.g. version: 6.0.55+655)
+3. Increment BOTH the semantic version and the build number by 1
+   — example: 6.0.55+655  →  6.0.56+656
+4. Save pubspec.yaml
+5. cd into /Users/mac/Desktop/github/katogo-app
+6. Run: flutter build appbundle --release
+7. Wait for the build to complete successfully (do NOT proceed on error)
+8. The output file will be at:
+   /Users/mac/Desktop/github/katogo-app/build/app/outputs/bundle/release/app-release.aab
+9. Open that folder in Finder so the AAB file is ready to upload to Play Console
 
-make sure you do it very carefuvely and perfectly 
+Report the new version number and confirm the AAB file path when done.
 
-.
 
+────────────────────────────────────────────────────────────────────────────────
+APP 5 — VJ Junior App  (current: 6.0.55+655)
+Path: /Users/mac/Desktop/github/VJJuniorApp
+────────────────────────────────────────────────────────────────────────────────
+
+Build a new release AAB for the VJ Junior app.
+
+Steps to follow IN ORDER:
+1. Open /Users/mac/Desktop/github/VJJuniorApp/pubspec.yaml
+2. Find the line that starts with "version:" (e.g. version: 6.0.55+655)
+3. Increment BOTH the semantic version and the build number by 1
+   — example: 6.0.55+655  →  6.0.56+656
+4. Save pubspec.yaml
+5. cd into /Users/mac/Desktop/github/VJJuniorApp
+6. Run: flutter build appbundle --release
+7. Wait for the build to complete successfully (do NOT proceed on error)
+8. The output file will be at:
+   /Users/mac/Desktop/github/VJJuniorApp/build/app/outputs/bundle/release/app-release.aab
+9. Open that folder in Finder so the AAB file is ready to upload to Play Console
+
+Report the new version number and confirm the AAB file path when done.
+
+
+================================================================================
+  NOTES
+  - Each prompt is independent — no need to run them in order
+  - Always update pubspec.yaml BEFORE building or Play Console will reject the upload
+  - Build numbers must always increase; never reuse a build number
+  - The AAB goes to the same relative path in every Flutter project:
+      build/app/outputs/bundle/release/app-release.aab
+  - If flutter is not on PATH, prepend the full path, e.g.:
+      /Users/mac/flutter/bin/flutter build appbundle --release
+================================================================================
+https://www.freeprivacypolicy.com/live/c105a489-2303-4e2f-9660-1f559c0602ec

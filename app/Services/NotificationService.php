@@ -47,25 +47,24 @@ class NotificationService
             $user->last_trending_notification_date = $today->format('Y-m-d');
         }
         
-        // Check if user has reached daily limit (default is 4)
-        $maxDaily = $user->max_trending_notifications_per_day ?? 4;
-        if ($user->trending_notifications_today >= $maxDaily) {
+        // Max 2 trending notifications per user per day — stay meaningful, avoid spam
+        $maxDaily = min((int) ($user->max_trending_notifications_per_day ?? 2), 2);
+        if ((int) $user->trending_notifications_today >= $maxDaily) {
             return false;
         }
-        
-        // Check if user already received notification for this time period today
-        if ($user->last_trending_notification_period === $dayTime && 
-            $user->last_trending_notification_date && 
+
+        // One notification per time period per day (morning / afternoon / evening / night)
+        if ($user->last_trending_notification_period === $dayTime &&
+            $user->last_trending_notification_date &&
             Carbon::parse($user->last_trending_notification_date)->isSameDay($today)) {
             return false;
         }
-        
-        // Check minimum time gap (at least 3 hours between notifications)
+
+        // Minimum 4-hour gap between any two notifications to the same user
         if ($user->last_trending_notification_sent) {
-            $lastNotificationTime = Carbon::parse($user->last_trending_notification_sent);
-            $minimumGapHours = 3;
-            
-            if ($lastNotificationTime->diffInHours(Carbon::now()) < $minimumGapHours) {
+            $lastSent        = Carbon::parse($user->last_trending_notification_sent);
+            $minimumGapHours = 4;
+            if ($lastSent->diffInHours(Carbon::now()) < $minimumGapHours) {
                 return false;
             }
         }
@@ -92,10 +91,17 @@ class NotificationService
         ];
         
         try {
-            // Get all active users
+            // Fetch only columns needed for notification eligibility checks — avoids loading
+            // all 87k+ user rows with avatar blobs and other heavy fields into memory
+            $notifColumns = [
+                'id', 'email', 'push_notifications', 'notification_preferences',
+                'last_trending_notification_date', 'trending_notifications_today',
+                'max_trending_notifications_per_day', 'last_trending_notification_period',
+                'last_trending_notification_sent',
+            ];
             $users = User::where('status', 'Active')
                 ->orWhereNull('status')
-                ->get();
+                ->get($notifColumns);
             
             $results['total_users'] = $users->count();
             
@@ -206,7 +212,7 @@ class NotificationService
         
         if ($user->last_trending_notification_sent) {
             $lastNotificationTime = Carbon::parse($user->last_trending_notification_sent);
-            if ($lastNotificationTime->diffInHours(Carbon::now()) < 3) {
+            if ($lastNotificationTime->diffInHours(Carbon::now()) < 4) {
                 return 'minimum_time_gap_not_met';
             }
         }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Utils;
+use App\Services\MunowatchAuthService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -113,23 +114,31 @@ class MunowatchMovieCategory extends Model
      * This method calls the dashboard/v2/{userId} endpoint to get dynamic categories
      * and updates the database with current category information.
      */
-    public static function fetchCategoriesFromDashboard($userId = '169464')
+    public static function fetchCategoriesFromDashboard($userId = null)
     {
         try {
-            Log::info('Fetching munowatch categories from dashboard API', [
-                'user_id' => $userId
-            ]);
+            // Always use the active session user_id — never the hardcoded stale ID
+            if (empty($userId)) {
+                $session  = MunowatchAuthService::getActiveSession();
+                $userId   = $session['user_id'];
+                $jwtToken = $session['app_jwt'];
+                $sessionId = $session['session_id'];
+            } else {
+                $session  = MunowatchAuthService::getActiveSession();
+                $jwtToken = $session['app_jwt'];
+                $sessionId = $session['session_id'];
+            }
 
-            // Call the dashboard API endpoint
+            Log::info('Fetching munowatch categories from dashboard API', ['user_id' => $userId]);
+
             $dashboardUrl = "https://munowatch.org/api/dashboard/v2/{$userId}";
-            $jwtToken = config('munowatch.jwt_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0');
-            
-            $response = Utils::call_munowatch_api(
-                $dashboardUrl,
-                $jwtToken, // Bearer token
-                $jwtToken, // API key (same as bearer for munowatch)
-                'GET'
-            );
+
+            $response = Utils::get_url_with_auth($dashboardUrl, [
+                'Authorization' => 'Bearer ' . $jwtToken,
+                'X-Api-Key'     => $jwtToken,
+                'X-Session-Id'  => $sessionId,
+                'User-Agent'    => 'okhttp/4.9.0',
+            ]);
 
             $dashboardData = json_decode($response, true);
             
@@ -223,22 +232,25 @@ class MunowatchMovieCategory extends Model
      * - Category 5 (TV Shows): uses shows endpoint 
      * - All other categories: use movies from dashboard data (no separate API call needed)
      */
-    public function getMoviesFetchURL($page = 1, $userId = '169464')
+    public function getMoviesFetchURL($page = 1, $userId = null)
     {
+        if (empty($userId)) {
+            try {
+                $userId = MunowatchAuthService::getActiveSession()['user_id'];
+            } catch (\Throwable) {
+                $userId = 1062074;
+            }
+        }
+
         $baseUrl = 'https://munowatch.org/api/';
-        
+
         switch ($this->api_endpoint_type) {
             case self::ENDPOINT_SHOWS:
-                $lastId = ($page - 1) * 20; // Use lastId for pagination like Flutter app
+                $lastId = ($page - 1) * 20;
                 return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $lastId], $this->pagination_endpoint);
-                
+
             case self::ENDPOINT_DASHBOARD:
-                // Dashboard categories don't need separate API calls
-                // Movies are already available from dashboard fetch
-                return $baseUrl . "dashboard/v2/{$userId}";
-                
             default:
-                // Fallback to dashboard
                 return $baseUrl . "dashboard/v2/{$userId}";
         }
     }
@@ -249,10 +261,15 @@ class MunowatchMovieCategory extends Model
      * - For dashboard categories: returns the movies from the latest dashboard fetch
      * - For TV shows category: makes API call to shows endpoint
      */
-    public function fetchMovies($page = 1, $userId = '169464')
+    public function fetchMovies($page = 1, $userId = null)
     {
         try {
-            $jwtToken = config('munowatch.jwt_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0');
+            $session   = MunowatchAuthService::getActiveSession();
+            $jwtToken  = $session['app_jwt'];
+            $sessionId = $session['session_id'];
+            if (empty($userId)) {
+                $userId = $session['user_id'];
+            }
             
             Log::info('Fetching movies for category', [
                 'category_id' => $this->munowatch_category_id,
@@ -284,13 +301,13 @@ class MunowatchMovieCategory extends Model
             } else {
                 // For TV shows and other special endpoints, make API call
                 $url = $this->getMoviesFetchURL($page, $userId);
-                
-                $response = Utils::call_munowatch_api(
-                    $url,
-                    $jwtToken, // Bearer token
-                    $jwtToken, // API key (same for munowatch)
-                    'GET'
-                );
+
+                $response = Utils::get_url_with_auth($url, [
+                    'Authorization' => 'Bearer ' . $jwtToken,
+                    'X-Api-Key'     => $jwtToken,
+                    'X-Session-Id'  => $sessionId,
+                    'User-Agent'    => 'okhttp/4.9.0',
+                ]);
 
                 $moviesData = json_decode($response, true);
                 

@@ -5,6 +5,30 @@ use App\Models\Utils;
 
 Encore\Admin\Form::forget(['map', 'editor']);
 
+// On admin user edit pages: pre-fill both password fields with a safe default
+// so the form submits cleanly without browser auto-fill mismatches.
+Encore\Admin\Admin::script('
+(function () {
+    var path = window.location.pathname;
+    if (!/\/auth\/users\/\d+\/edit/.test(path)) return;
+    var DEFAULT_PWD = "Admin@2026";
+    function fillPasswords() {
+        var pwd  = document.querySelector("input[name=password]");
+        var conf = document.querySelector("input[name=password_confirmation]");
+        if (!pwd || !conf) return;
+        if (!pwd.value)  { pwd.value  = DEFAULT_PWD; }
+        if (!conf.value) { conf.value = DEFAULT_PWD; }
+        // Keep confirmation in sync when admin types a new password
+        pwd.addEventListener("input", function () { conf.value = pwd.value; });
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", fillPasswords);
+    } else {
+        fillPasswords();
+    }
+})();
+');
+
 // UGFlix Debug Video Player — mimics mobile app playback logic for admin testing
 // Cache-bust: append version timestamp to force browser to reload updated JS
 Encore\Admin\Admin::js('/vendor/ugflix-debug-player/ugflix-debug-player.js?v=' . filemtime(public_path('vendor/ugflix-debug-player/ugflix-debug-player.js')));

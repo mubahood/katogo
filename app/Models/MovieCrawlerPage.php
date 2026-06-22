@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\MunowatchAuthService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
@@ -34,19 +35,24 @@ class MovieCrawlerPage extends Model
         try {
             // Check if this is a munowatch API URL that needs authentication
             if (strpos($this->url, 'munowatch.org/api/') !== false) {
-                // Get the munowatch website to access its token
-                $munowatchWebsite = $this->movie_crawler_website;
-                if ($munowatchWebsite && $munowatchWebsite->slug == 'munowatch') {
-                    // Use the same authentication headers as the main crawler (both Authorization and X-Api-Key)
-                    $baseToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0';
-                    $headers = [
-                        'Authorization' => 'Bearer ' . $baseToken,
-                        'X-Api-Key' => $baseToken,
-                        'User-Agent' => 'okhttp/4.9.0'
-                    ];
+                $session = MunowatchAuthService::getActiveSession();
+                $headers = [
+                    'Authorization' => 'Bearer ' . $session['app_jwt'],
+                    'X-Api-Key'     => $session['app_jwt'],
+                    'X-Session-Id'  => $session['session_id'],
+                    'User-Agent'    => 'okhttp/4.9.0',
+                ];
+                $data = Utils::get_url_with_auth($this->url, $headers);
+
+                // If auth failure, refresh session and retry once
+                if (!empty($data) && MunowatchAuthService::isAuthFailure($data)) {
+                    Log::warning("[CrawlerPage] Auth failure on {$this->url} — refreshing session");
+                    MunowatchAuthService::invalidateSession();
+                    $session = MunowatchAuthService::refreshSession();
+                    $headers['Authorization'] = 'Bearer ' . $session['app_jwt'];
+                    $headers['X-Api-Key']     = $session['app_jwt'];
+                    $headers['X-Session-Id']  = $session['session_id'];
                     $data = Utils::get_url_with_auth($this->url, $headers);
-                } else {
-                    throw new \Exception('Munowatch authentication token not found');
                 }
             } else {
                 // Regular URL fetching for non-munowatch URLs

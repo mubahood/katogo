@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V2\TriviaController as V2TriviaController;
 use App\Http\Controllers\Api\V2\GameStatsController as V2GameStatsController;
 use App\Http\Controllers\Api\V2\SystemConfigController as V2SystemConfigController;
 use App\Http\Controllers\Api\V2\AdminController as V2AdminController;
+use App\Http\Controllers\Api\V2\ProjectRequestController;
 use App\Http\Controllers\Api\IosReviewController;
 use App\Models\StockItem;
 use App\Models\StockSubCategory;
@@ -291,6 +292,8 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::get('admin/stats',                                    [V2AdminController::class, 'stats']);
         Route::get('admin/users/search',                             [V2AdminController::class, 'searchUsers']);
         Route::get('admin/users/{userId}/subscriptions',             [V2AdminController::class, 'getUserSubscriptions']);
+        Route::post('admin/users/{userId}/subscriptions/create',     [V2AdminController::class, 'createUserSubscription']);
+        Route::get('admin/plans',                                    [V2AdminController::class, 'listPlans']);
         Route::post('admin/subscriptions/{subId}/activate',          [V2AdminController::class, 'activateSubscription']);
         Route::post('admin/subscriptions/{subId}/cancel',            [V2AdminController::class, 'cancelSubscription']);
         Route::get('admin/recent-subscriptions',                     [V2AdminController::class, 'recentSubscriptions']);
@@ -449,6 +452,19 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 // ========================================
 Route::post('movie-url-sync',      [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'receive']);
 Route::get('movie-url-sync/ping',  [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'ping']);
+
+// ========================================
+// DEVELOPER PORTFOLIO & PROJECT REQUESTS
+// ========================================
+Route::get('v2/developer/portfolio', [ProjectRequestController::class, 'portfolio']);
+Route::post('v2/developer/request',  [ProjectRequestController::class, 'store']);
+
+// Admin project requests (JWT protected)
+Route::middleware([\App\Http\Middleware\JwtMiddleware::class])->group(function () {
+    Route::get('v2/admin/project-requests',             [ProjectRequestController::class, 'adminList']);
+    Route::get('v2/admin/project-requests/{id}',        [ProjectRequestController::class, 'adminShow']);
+    Route::post('v2/admin/project-requests/{id}/status',[ProjectRequestController::class, 'adminUpdateStatus']);
+});
 
 // ========================================
 // CATCH-ALL DYNAMIC ROUTES (MUST BE LAST!)
