@@ -51,7 +51,7 @@ class SubscriptionController extends AdminController
     // ─── ANALYTICS PAGE ─────────────────────────────────────────────────
     protected function buildAnalyticsPage()
     {
-        return Cache::remember('analytics_page_v4', 180, function () {
+        return Cache::remember('analytics_page_v5', 180, function () {
             $now = Carbon::now();
 
             // ── Core totals ───────────────────────────────────────────────
@@ -612,7 +612,9 @@ function init(){
     muno:    {b:'#e74c3c',bg:'rgba(231,76,60,.15)'},
     lg:      {b:'#4a90e2',bg:'rgba(74,144,226,.15)'},
     ug:      {b:'#27ae60',bg:'rgba(39,174,96,.15)'},
-    web:     {b:'#9b59b6',bg:'rgba(155,89,182,.15)'}
+    web:     {b:'#9b59b6',bg:'rgba(155,89,182,.15)'},
+    vj:      {b:'#f39c12',bg:'rgba(243,156,18,.15)'},
+    kg:      {b:'#1abc9c',bg:'rgba(26,188,156,.15)'}
   };
   var gc='rgba(0,0,0,.04)';
 
@@ -647,6 +649,8 @@ function init(){
       {label:'LugaFlix',data:D.m12.lg,backgroundColor:'rgba(74,144,226,.8)',stack:'s'},
       {label:'UGFlix',data:D.m12.ug,backgroundColor:'rgba(39,174,96,.8)',stack:'s'},
       {label:'Web',data:D.m12.web,backgroundColor:'rgba(155,89,182,.8)',stack:'s'},
+      {label:'VJ Junior',data:D.m12.vj,backgroundColor:'rgba(243,156,18,.8)',stack:'s'},
+      {label:'Katogo',data:D.m12.kg,backgroundColor:'rgba(26,188,156,.8)',stack:'s'},
       {label:'Total',data:D.m12.total,type:'line',borderColor:'#f39c12',backgroundColor:'transparent',
        pointBackgroundColor:'#f39c12',pointRadius:4,pointHoverRadius:7,borderWidth:2,lineTension:.3,fill:false}
     ]},
@@ -658,7 +662,7 @@ function init(){
 
   // 2. 30-day revenue area
   _c.push(new Chart(document.getElementById('anD30Rev'),{type:'line',
-    data:{labels:D.d30.labels,datasets:[ds('Muno',D.d30.muno,'muno',1),ds('LugaFlix',D.d30.lg,'lg',1),ds('UGFlix',D.d30.ug,'ug',1),ds('Web',D.d30.web,'web',1)]},
+    data:{labels:D.d30.labels,datasets:[ds('Muno',D.d30.muno,'muno',1),ds('LugaFlix',D.d30.lg,'lg',1),ds('UGFlix',D.d30.ug,'ug',1),ds('Web',D.d30.web,'web',1),ds('VJ Junior',D.d30.vj,'vj',1),ds('Katogo',D.d30.kg,'kg',1)]},
     options:base()
   }));
 
@@ -725,8 +729,8 @@ function init(){
 
   // 6. App revenue doughnut
   _c.push(new Chart(document.getElementById('anAppPie'),{type:'doughnut',
-    data:{labels:['Muno','LugaFlix','UGFlix','Web'],
-      datasets:[{data:D.platform_rev,backgroundColor:['rgba(231,76,60,.85)','rgba(74,144,226,.85)','rgba(39,174,96,.85)','rgba(155,89,182,.85)'],borderWidth:2,borderColor:'#fff'}]},
+    data:{labels:['Muno','LugaFlix','UGFlix','Web','VJ Junior','Katogo'],
+      datasets:[{data:D.platform_rev,backgroundColor:['rgba(231,76,60,.85)','rgba(74,144,226,.85)','rgba(39,174,96,.85)','rgba(155,89,182,.85)','rgba(243,156,18,.85)','rgba(26,188,156,.85)'],borderWidth:2,borderColor:'#fff'}]},
     options:JSON.parse(JSON.stringify(doBase))
   }));
 
