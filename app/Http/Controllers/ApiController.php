@@ -3519,9 +3519,9 @@ class ApiController extends BaseController
         $new_user->company_id = 1;
         $new_user->status = "Active";
 
-        // Set app_type and platform from request (web, ugflix, lugaflix, muno_app)
+        // Set app_type and platform from request
         $reg_app_type = Utils::get_app_type($r);
-        $valid_app_types = ['ugflix', 'lugaflix', 'muno_app', 'web'];
+        $valid_app_types = ['ugflix', 'lugaflix', 'muno_app', 'web', 'vjjunior', 'katogo'];
         $new_user->app_type = in_array($reg_app_type, $valid_app_types) ? $reg_app_type : 'ugflix';
         $reg_platform = Utils::get_platform_from_request($r);
         $new_user->platform = $reg_platform ?: 'android';

@@ -86,24 +86,19 @@ class Subscription extends Model
                 throw new \Exception("User with ID {$subscription->user_id} not found for Subscription creation");
             }
 
-            $sub = 'SUB-';
-            switch (strtolower($user->app_type ?? '')) {
-                case 'lugaflix':
-                    $sub = 'LUG-';
-                    $subscription->app_type = 'lugaflix';
-                    break;
-                case 'muno_app':
-                    $sub = 'MUN-';
-                    $subscription->app_type = 'muno_app';
-                    break;
-                case 'web':
-                    $sub = 'WEB-';
-                    $subscription->app_type = 'web';
-                    break;
-                default:
-                    $sub = 'SUB-';
-                    $subscription->app_type = 'ugflix';
-                    break;
+            $appTypePrefixes = [
+                'lugaflix'  => ['LUG-', 'lugaflix'],
+                'muno_app'  => ['MUN-', 'muno_app'],
+                'web'       => ['WEB-', 'web'],
+                'vjjunior'  => ['VJJ-', 'vjjunior'],
+                'katogo'    => ['KTG-', 'katogo'],
+            ];
+            $userAppType = strtolower($user->app_type ?? '');
+            if (isset($appTypePrefixes[$userAppType])) {
+                [$sub, $subscription->app_type] = $appTypePrefixes[$userAppType];
+            } else {
+                $sub = 'SUB-';
+                $subscription->app_type = 'ugflix';
             }
 
             // Generate merchant reference if not provided

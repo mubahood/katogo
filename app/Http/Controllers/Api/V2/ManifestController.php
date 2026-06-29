@@ -66,7 +66,7 @@ class ManifestController extends Controller
         }
 
         $app_type = Utils::get_app_type($request);
-        $validTypes = ['ugflix', 'lugaflix', 'muno_app', 'web'];
+        $validTypes = ['ugflix', 'lugaflix', 'muno_app', 'web', 'vjjunior', 'katogo'];
         if (!in_array($app_type, $validTypes)) {
             $app_type = 'ugflix';
         }

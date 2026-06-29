@@ -227,7 +227,9 @@ class SubscriptionFlutterwaveService
             $preferredPhone = $this->resolvePreferredPhone($subscription, $user);
         }
         if ($preferredPhone === '') {
-            throw new \RuntimeException('Mobile Money payment requires a valid Ugandan phone number. Please update your phone number and try again.');
+            // No phone available — fall back to Flutterwave hosted checkout.
+            // The hosted page lets the user enter their phone or pay by card.
+            return $this->generateHostedCheckoutLink($subscription, $callbackUrl);
         }
 
         $payload = [

@@ -684,12 +684,10 @@ class User extends Administrator implements JWTSubject
     {
         $activeSubscription = $this->activeSubscription();
  
-        $app_type = 'ugflix';
-        if (strtolower($this->app_type) == 'lugaflix') { 
-            $app_type = 'lugaflix';
-        } elseif (strtolower($this->app_type) == 'muno_app') {
-            $app_type = 'muno_app';
-        }
+        $known = ['lugaflix', 'muno_app', 'web', 'vjjunior', 'katogo'];
+        $app_type = in_array(strtolower((string) $this->app_type), $known)
+            ? strtolower((string) $this->app_type)
+            : 'ugflix';
 
 
         if ($activeSubscription && !empty($activeSubscription->end_date_time) && $activeSubscription->end_date_time > now()) {

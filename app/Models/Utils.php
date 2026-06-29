@@ -466,10 +466,12 @@ class Utils
             $request = request();
         }
 
+        $knownTypes = ['ugflix', 'lugaflix', 'muno_app', 'web', 'vjjunior', 'katogo'];
+
         // Check X-App-Type header first (sent by web client on every request)
         if ($request->hasHeader('X-App-Type')) {
             $val = strtolower(trim($request->header('X-App-Type')));
-            if (in_array($val, ['ugflix', 'lugaflix', 'muno_app', 'web'])) {
+            if (in_array($val, $knownTypes)) {
                 return $val;
             }
         }
@@ -477,7 +479,7 @@ class Utils
         // Check body/query parameter
         if ($request->has('app_type')) {
             $val = strtolower(trim($request->get('app_type')));
-            if (in_array($val, ['ugflix', 'lugaflix', 'muno_app', 'web'])) {
+            if (in_array($val, $knownTypes)) {
                 return $val;
             }
         }

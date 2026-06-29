@@ -2947,7 +2947,7 @@ class SubscriptionApiController extends Controller
             if ($platformType === 'muno') {
                 $platformType = 'muno_app';
             }
-            if (!in_array($platformType, ['lugaflix', 'ugflix', 'muno_app'], true)) {
+            if (!in_array($platformType, ['lugaflix', 'ugflix', 'muno_app', 'web', 'vjjunior', 'katogo'], true)) {
                 $platformType = 'lugaflix';
             }
 
@@ -3040,6 +3040,10 @@ class SubscriptionApiController extends Controller
                 $keywordType = 'lugaflix';
             } elseif (str_starts_with($reference, 'WEB-')) {
                 $keywordType = 'web';
+            } elseif (str_starts_with($reference, 'VJJ-')) {
+                $keywordType = 'vjjunior';
+            } elseif (str_starts_with($reference, 'KTG-')) {
+                $keywordType = 'katogo';
             } elseif (str_starts_with($reference, 'SUB-')) {
                 $keywordType = 'ugflix';
             }
@@ -3057,6 +3061,8 @@ class SubscriptionApiController extends Controller
             'lugaflix' => 'lugaflix',
             'muno', 'muno_app' => 'muno_app',
             'web', 'website' => 'web',
+            'vjjunior' => 'vjjunior',
+            'katogo' => 'katogo',
             default => 'ugflix',
         };
 
@@ -3085,6 +3091,22 @@ class SubscriptionApiController extends Controller
                 'is_web' => true,
                 'open_url' => rtrim(config('app.url', 'https://katogo.schooldynamics.ug'), '/'),
             ],
+            'vjjunior' => [
+                'name' => 'VJ Junior',
+                'package' => 'com.vjjunior.app',
+                'scheme' => 'vjjunior',
+                'color' => '#f39c12',
+                'is_web' => false,
+                'open_url' => null,
+            ],
+            'katogo' => [
+                'name' => 'Katogo App',
+                'package' => 'com.katogo.app',
+                'scheme' => 'katogo',
+                'color' => '#1abc9c',
+                'is_web' => false,
+                'open_url' => null,
+            ],
             default => [
                 'name' => 'UG Flix',
                 'package' => 'ugflix.com',
@@ -3110,7 +3132,7 @@ class SubscriptionApiController extends Controller
             return;
         }
 
-        foreach (['ugflix', 'lugaflix', 'muno_app', 'web'] as $type) {
+        foreach (['ugflix', 'lugaflix', 'muno_app', 'web', 'vjjunior', 'katogo'] as $type) {
             $pbcKey = 'u_' . md5('/api/v2/manifest' . $subscription->user_id . $type);
             $cachePath = "{$cacheDir}/{$pbcKey}";
             if (is_file($cachePath)) {
