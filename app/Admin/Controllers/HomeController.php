@@ -44,6 +44,8 @@ class HomeController extends Controller
         $lugaflixUsers = User::where('app_type', 'lugaflix')->count();
         $munoUsers     = User::where('app_type', 'muno_app')->count();
         $webUsers      = User::where('app_type', 'web')->count();
+        $vjjuniorUsers = User::where('app_type', 'vjjunior')->count();
+        $katogoUsers   = User::where('app_type', 'katogo')->count();
         $androidUsers  = User::where('platform', 'android')->count();
         $iosUsers      = User::where('platform', 'ios')->count();
         $guestUsers    = User::where('is_guest', 'Yes')->count();
@@ -139,42 +141,50 @@ class HomeController extends Controller
 
         // Build daily arrays for charts
         $labels30 = [];
-        $signupsMuno = []; $signupsLugaflix = []; $signupsUgflix = []; $signupsWeb = []; $signupsTotal = [];
-        $viewsMuno = []; $viewsLugaflix = []; $viewsUgflix = []; $viewsWeb = []; $viewsTotal = [];
+        $signupsMuno = []; $signupsLugaflix = []; $signupsUgflix = []; $signupsWeb = []; $signupsVjjunior = []; $signupsKatogo = []; $signupsTotal = [];
+        $viewsMuno = []; $viewsLugaflix = []; $viewsUgflix = []; $viewsWeb = []; $viewsVjjunior = []; $viewsKatogo = []; $viewsTotal = [];
         $downloadsDly = [];
-        $revMuno = []; $revLugaflix = []; $revUgflix = []; $revWeb = []; $revTotal = [];
+        $revMuno = []; $revLugaflix = []; $revUgflix = []; $revWeb = []; $revVjjunior = []; $revKatogo = []; $revTotal = [];
 
         for ($i = 29; $i >= 0; $i--) {
             $d = Carbon::today()->subDays($i);
             $dk = $d->format('Y-m-d');
             $labels30[] = $d->format('d M');
 
-            $signupsMuno[] = $signupsMap[$dk]['muno_app'] ?? 0;
-            $signupsLugaflix[] = $signupsMap[$dk]['lugaflix'] ?? 0;
-            $signupsUgflix[] = $signupsMap[$dk]['ugflix'] ?? 0;
-            $signupsWeb[] = $signupsMap[$dk]['web'] ?? 0;
-            $signupsTotal[] = isset($signupsMap[$dk]) ? array_sum($signupsMap[$dk]) : 0;
+            $signupsMuno[]     = $signupsMap[$dk]['muno_app']  ?? 0;
+            $signupsLugaflix[] = $signupsMap[$dk]['lugaflix']  ?? 0;
+            $signupsUgflix[]   = $signupsMap[$dk]['ugflix']    ?? 0;
+            $signupsWeb[]      = $signupsMap[$dk]['web']       ?? 0;
+            $signupsVjjunior[] = $signupsMap[$dk]['vjjunior']  ?? 0;
+            $signupsKatogo[]   = $signupsMap[$dk]['katogo']    ?? 0;
+            $signupsTotal[]    = isset($signupsMap[$dk]) ? array_sum($signupsMap[$dk]) : 0;
 
-            $viewsMuno[] = $viewsMap[$dk]['muno_app'] ?? 0;
+            $viewsMuno[]     = $viewsMap[$dk]['muno_app'] ?? 0;
             $viewsLugaflix[] = $viewsMap[$dk]['lugaflix'] ?? 0;
-            $viewsUgflix[] = $viewsMap[$dk]['ugflix'] ?? 0;
-            $viewsWeb[] = $viewsMap[$dk]['web'] ?? 0;
-            $viewsTotal[] = isset($viewsMap[$dk]) ? array_sum($viewsMap[$dk]) : 0;
+            $viewsUgflix[]   = $viewsMap[$dk]['ugflix']   ?? 0;
+            $viewsWeb[]      = $viewsMap[$dk]['web']      ?? 0;
+            $viewsVjjunior[] = $viewsMap[$dk]['vjjunior'] ?? 0;
+            $viewsKatogo[]   = $viewsMap[$dk]['katogo']   ?? 0;
+            $viewsTotal[]    = isset($viewsMap[$dk]) ? array_sum($viewsMap[$dk]) : 0;
 
             $downloadsDly[] = $downloadsMap[$dk] ?? 0;
 
-            $revMuno[] = $revenueMap[$dk]['muno_app'] ?? 0;
+            $revMuno[]     = $revenueMap[$dk]['muno_app'] ?? 0;
             $revLugaflix[] = $revenueMap[$dk]['lugaflix'] ?? 0;
-            $revUgflix[] = $revenueMap[$dk]['ugflix'] ?? 0;
-            $revWeb[] = $revenueMap[$dk]['web'] ?? 0;
-            $revTotal[] = isset($revenueMap[$dk]) ? array_sum($revenueMap[$dk]) : 0;
+            $revUgflix[]   = $revenueMap[$dk]['ugflix']   ?? 0;
+            $revWeb[]      = $revenueMap[$dk]['web']      ?? 0;
+            $revVjjunior[] = $revenueMap[$dk]['vjjunior'] ?? 0;
+            $revKatogo[]   = $revenueMap[$dk]['katogo']   ?? 0;
+            $revTotal[]    = isset($revenueMap[$dk]) ? array_sum($revenueMap[$dk]) : 0;
         }
 
         // Platform view totals (for comparison table)
-        $munoViews    = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'muno_app')->count();
-        $lugaflixViews = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'lugaflix')->count();
-        $ugflixViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'ugflix')->count();
-        $webViews     = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'web')->count();
+        $munoViews      = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'muno_app')->count();
+        $lugaflixViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'lugaflix')->count();
+        $ugflixViews    = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'ugflix')->count();
+        $webViews       = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'web')->count();
+        $vjjuniorViews  = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'vjjunior')->count();
+        $katogoViews    = DB::table('movie_views')->join('admin_users', 'admin_users.id', '=', 'movie_views.user_id')->where('admin_users.app_type', 'katogo')->count();
 
         // Last 30 days subscriptions — daily aggregates (completed payments only, excludes withdrawals)
         $dailySubsRaw = DB::table('subscription_transactions')
@@ -189,11 +199,13 @@ class HomeController extends Controller
         $subsAmount30 = $dailySubsRaw->sum('total');
 
         // User distribution percentages
-        $uT = max($totalUsers, 1);
-        $ugPct = round(($ugflixUsers / $uT) * 100);
+        $uT   = max($totalUsers, 1);
+        $ugPct = round(($ugflixUsers   / $uT) * 100);
         $lgPct = round(($lugaflixUsers / $uT) * 100);
-        $mnPct = round(($munoUsers / $uT) * 100);
-        $wbPct = round(($webUsers / $uT) * 100);
+        $mnPct = round(($munoUsers     / $uT) * 100);
+        $wbPct = round(($webUsers      / $uT) * 100);
+        $vjPct = round(($vjjuniorUsers / $uT) * 100);
+        $kgPct = round(($katogoUsers   / $uT) * 100);
 
         // ═══════════ HTML ═══════════
         $html = '<style>
@@ -275,7 +287,14 @@ class HomeController extends Controller
         $html .= '<thead><tr><th style="text-align:left">Platform</th><th style="text-align:right">Revenue</th><th style="text-align:right" class="hpb-hide-sm">Pesapal (3.5%)</th><th style="text-align:right">After Fees</th><th style="text-align:right">Withdrawn</th><th style="text-align:right">Balance</th></tr></thead>';
         $html .= '<tbody>';
 
-        $platDefs = ['lugaflix' => ['LugaFlix', '#3498db', 'fa-play-circle-o'], 'muno_app' => ['Muno App', '#e74c3c', 'fa-fire'], 'ugflix' => ['UgFlix', '#2ecc71', 'fa-bolt'], 'web' => ['Web (Katogo)', '#9b59b6', 'fa-globe']];
+        $platDefs = [
+            'lugaflix'  => ['LugaFlix',    '#3498db', 'fa-play-circle-o'],
+            'muno_app'  => ['Muno App',    '#e74c3c', 'fa-fire'],
+            'ugflix'    => ['UgFlix',      '#2ecc71', 'fa-bolt'],
+            'web'       => ['Web (Katogo)','#9b59b6', 'fa-globe'],
+            'vjjunior'  => ['VJ Junior',   '#f39c12', 'fa-music'],
+            'katogo'    => ['Katogo App',  '#1abc9c', 'fa-star'],
+        ];
         $gRev = 0; $gPesa = 0; $gWith = 0; $gBal = 0;
         $allPlatData = [];
 
@@ -358,6 +377,8 @@ class HomeController extends Controller
             ['Lugaflix', number_format($lugaflixUsers), '#3498db', 'fa-play-circle-o', '#'],
             ['Muno', number_format($munoUsers), '#e74c3c', 'fa-fire', '#'],
             ['Web', number_format($webUsers), '#9b59b6', 'fa-globe', '#'],
+            ['VJ Junior', number_format($vjjuniorUsers), '#f39c12', 'fa-music', '#'],
+            ['Katogo App', number_format($katogoUsers), '#1abc9c', 'fa-star', '#'],
             ['Guests', number_format($guestUsers), '#95a5a6', 'fa-user-secret', '#'],
         ];
         foreach ($userCards as [$l, $v, $c, $i, $lnk]) {
@@ -387,22 +408,28 @@ class HomeController extends Controller
 
         // Prepare JSON data
         $jLabels = json_encode($labels30);
-        $jSignupsMuno = json_encode($signupsMuno);
+        $jSignupsMuno     = json_encode($signupsMuno);
         $jSignupsLugaflix = json_encode($signupsLugaflix);
-        $jSignupsUgflix = json_encode($signupsUgflix);
-        $jSignupsWeb = json_encode($signupsWeb);
-        $jSignupsTotal = json_encode($signupsTotal);
-        $jViewsMuno = json_encode($viewsMuno);
+        $jSignupsUgflix   = json_encode($signupsUgflix);
+        $jSignupsWeb      = json_encode($signupsWeb);
+        $jSignupsVjjunior = json_encode($signupsVjjunior);
+        $jSignupsKatogo   = json_encode($signupsKatogo);
+        $jSignupsTotal    = json_encode($signupsTotal);
+        $jViewsMuno     = json_encode($viewsMuno);
         $jViewsLugaflix = json_encode($viewsLugaflix);
-        $jViewsUgflix = json_encode($viewsUgflix);
-        $jViewsWeb = json_encode($viewsWeb);
-        $jViewsTotal = json_encode($viewsTotal);
-        $jDownloads = json_encode($downloadsDly);
-        $jRevMuno = json_encode($revMuno);
+        $jViewsUgflix   = json_encode($viewsUgflix);
+        $jViewsWeb      = json_encode($viewsWeb);
+        $jViewsVjjunior = json_encode($viewsVjjunior);
+        $jViewsKatogo   = json_encode($viewsKatogo);
+        $jViewsTotal    = json_encode($viewsTotal);
+        $jDownloads     = json_encode($downloadsDly);
+        $jRevMuno     = json_encode($revMuno);
         $jRevLugaflix = json_encode($revLugaflix);
-        $jRevUgflix = json_encode($revUgflix);
-        $jRevWeb = json_encode($revWeb);
-        $jRevTotal = json_encode($revTotal);
+        $jRevUgflix   = json_encode($revUgflix);
+        $jRevWeb      = json_encode($revWeb);
+        $jRevVjjunior = json_encode($revVjjunior);
+        $jRevKatogo   = json_encode($revKatogo);
+        $jRevTotal    = json_encode($revTotal);
 
         // ── CHART ROW 1: User Registrations + Views & Downloads ──
         $html .= '<div class="db-row">';
@@ -488,10 +515,12 @@ class HomeController extends Controller
         $html .= '<table class="db-tbl">';
         $html .= '<tr><th>Platform</th><th>Users</th><th>Total Views</th><th style="text-align:center">Avg</th></tr>';
         $platformCompare = [
-            ['Muno', $munoUsers, $munoViews, '#e74c3c', 'fa-fire'],
-            ['LugaFlix', $lugaflixUsers, $lugaflixViews, '#3498db', 'fa-star'],
-            ['UG Flix', $ugflixUsers, $ugflixViews, '#2ecc71', 'fa-bolt'],
-            ['Web', $webUsers, $webViews, '#9b59b6', 'fa-globe'],
+            ['Muno',       $munoUsers,      $munoViews,     '#e74c3c', 'fa-fire'],
+            ['LugaFlix',   $lugaflixUsers,  $lugaflixViews, '#3498db', 'fa-play-circle-o'],
+            ['UG Flix',    $ugflixUsers,    $ugflixViews,   '#2ecc71', 'fa-bolt'],
+            ['Web',        $webUsers,       $webViews,      '#9b59b6', 'fa-globe'],
+            ['VJ Junior',  $vjjuniorUsers,  $vjjuniorViews, '#f39c12', 'fa-music'],
+            ['Katogo App', $katogoUsers,    $katogoViews,   '#1abc9c', 'fa-star'],
         ];
         foreach ($platformCompare as [$pName, $pUsers, $pViews, $pColor, $pIcon]) {
             $avgViews = $pUsers > 0 ? round($pViews / $pUsers, 1) : 0;
@@ -537,7 +566,7 @@ class HomeController extends Controller
         $html .= '</div>';
 
         // ════════ Chart.js 2.x Scripts (bundled with Laravel Admin) ════════
-        $otherUsers = max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers - $webUsers, 0);
+        $otherUsers = max($totalUsers - $ugflixUsers - $lugaflixUsers - $munoUsers - $webUsers - $vjjuniorUsers - $katogoUsers, 0);
         $html .= '<script>
 document.addEventListener("DOMContentLoaded", function() {
     var labels = ' . $jLabels . ';
@@ -575,11 +604,13 @@ document.addEventListener("DOMContentLoaded", function() {
         data: {
             labels: labels,
             datasets: [
-                makeLine("Total", ' . $jSignupsTotal . ', "rgba(0,0,0,0.7)", 3, []),
-                makeLine("Muno", ' . $jSignupsMuno . ', "rgb(231,76,60)", 2, []),
+                makeLine("Total",     ' . $jSignupsTotal    . ', "rgba(0,0,0,0.7)", 3, []),
+                makeLine("Muno",     ' . $jSignupsMuno     . ', "rgb(231,76,60)",  2, []),
                 makeLine("LugaFlix", ' . $jSignupsLugaflix . ', "rgb(52,152,219)", 2, []),
-                makeLine("UG Flix", ' . $jSignupsUgflix . ', "rgb(46,204,113)", 2, []),
-                makeLine("Web", ' . $jSignupsWeb . ', "rgb(155,89,182)", 2, [])
+                makeLine("UG Flix",  ' . $jSignupsUgflix   . ', "rgb(46,204,113)", 2, []),
+                makeLine("Web",      ' . $jSignupsWeb      . ', "rgb(155,89,182)", 2, []),
+                makeLine("VJ Junior",' . $jSignupsVjjunior . ', "rgb(243,156,18)", 2, []),
+                makeLine("Katogo",   ' . $jSignupsKatogo   . ', "rgb(26,188,156)", 2, [])
             ]
         },
         options: cloneOpts(defaultOpts)
@@ -591,12 +622,14 @@ document.addEventListener("DOMContentLoaded", function() {
         data: {
             labels: labels,
             datasets: [
-                makeLine("Total Views", ' . $jViewsTotal . ', "rgba(0,0,0,0.7)", 3, []),
-                makeLine("Muno Views", ' . $jViewsMuno . ', "rgb(231,76,60)", 2, []),
-                makeLine("LugaFlix Views", ' . $jViewsLugaflix . ', "rgb(52,152,219)", 2, []),
-                makeLine("UG Flix Views", ' . $jViewsUgflix . ', "rgb(46,204,113)", 2, []),
-                makeLine("Web Views", ' . $jViewsWeb . ', "rgb(155,89,182)", 2, []),
-                makeLine("Downloads", ' . $jDownloads . ', "rgb(243,156,18)", 2, [5,3])
+                makeLine("Total Views",    ' . $jViewsTotal    . ', "rgba(0,0,0,0.7)", 3, []),
+                makeLine("Muno Views",    ' . $jViewsMuno     . ', "rgb(231,76,60)",  2, []),
+                makeLine("LugaFlix Views",' . $jViewsLugaflix . ', "rgb(52,152,219)", 2, []),
+                makeLine("UG Flix Views", ' . $jViewsUgflix   . ', "rgb(46,204,113)", 2, []),
+                makeLine("Web Views",     ' . $jViewsWeb      . ', "rgb(155,89,182)", 2, []),
+                makeLine("VJ Junior Views",' . $jViewsVjjunior . ', "rgb(243,156,18)",2, []),
+                makeLine("Katogo Views",  ' . $jViewsKatogo   . ', "rgb(26,188,156)", 2, []),
+                makeLine("Downloads",     ' . $jDownloads     . ', "rgb(108,117,125)",2, [5,3])
             ]
         },
         options: cloneOpts(defaultOpts)
@@ -614,11 +647,13 @@ document.addEventListener("DOMContentLoaded", function() {
         data: {
             labels: labels,
             datasets: [
-                makeLine("Total", ' . $jRevTotal . ', "rgba(243,156,18,1)", 3, []),
-                makeLine("Muno", ' . $jRevMuno . ', "rgb(231,76,60)", 2, []),
-                makeLine("LugaFlix", ' . $jRevLugaflix . ', "rgb(52,152,219)", 2, []),
-                makeLine("UG Flix", ' . $jRevUgflix . ', "rgb(46,204,113)", 2, []),
-                makeLine("Web", ' . $jRevWeb . ', "rgb(155,89,182)", 2, [])
+                makeLine("Total",     ' . $jRevTotal    . ', "rgba(243,156,18,1)", 3, []),
+                makeLine("Muno",     ' . $jRevMuno     . ', "rgb(231,76,60)",    2, []),
+                makeLine("LugaFlix", ' . $jRevLugaflix . ', "rgb(52,152,219)",   2, []),
+                makeLine("UG Flix",  ' . $jRevUgflix   . ', "rgb(46,204,113)",   2, []),
+                makeLine("Web",      ' . $jRevWeb      . ', "rgb(155,89,182)",   2, []),
+                makeLine("VJ Junior",' . $jRevVjjunior . ', "rgb(243,156,18)",   2, []),
+                makeLine("Katogo",   ' . $jRevKatogo   . ', "rgb(26,188,156)",   2, [])
             ]
         },
         options: revOpts
@@ -632,9 +667,9 @@ document.addEventListener("DOMContentLoaded", function() {
     new Chart(document.getElementById("usersPieChart"), {
         type: "doughnut",
         data: {
-            labels: ["Muno (' . $mnPct . '%)", "LugaFlix (' . $lgPct . '%)", "UG Flix (' . $ugPct . '%)", "Web (' . $wbPct . '%)", "Other"],
-            datasets: [{ data: [' . $munoUsers . ', ' . $lugaflixUsers . ', ' . $ugflixUsers . ', ' . $webUsers . ', ' . $otherUsers . '],
-                backgroundColor: ["rgba(231,76,60,0.8)", "rgba(52,152,219,0.8)", "rgba(46,204,113,0.8)", "rgba(155,89,182,0.8)", "rgba(189,195,199,0.6)"],
+            labels: ["Muno (' . $mnPct . '%)", "LugaFlix (' . $lgPct . '%)", "UG Flix (' . $ugPct . '%)", "Web (' . $wbPct . '%)", "VJ Junior (' . $vjPct . '%)", "Katogo (' . $kgPct . '%)", "Other"],
+            datasets: [{ data: [' . $munoUsers . ', ' . $lugaflixUsers . ', ' . $ugflixUsers . ', ' . $webUsers . ', ' . $vjjuniorUsers . ', ' . $katogoUsers . ', ' . $otherUsers . '],
+                backgroundColor: ["rgba(231,76,60,0.8)", "rgba(52,152,219,0.8)", "rgba(46,204,113,0.8)", "rgba(155,89,182,0.8)", "rgba(243,156,18,0.8)", "rgba(26,188,156,0.8)", "rgba(189,195,199,0.6)"],
                 borderWidth: 2, borderColor: "#fff" }]
         },
         options: JSON.parse(JSON.stringify(donutOpts))

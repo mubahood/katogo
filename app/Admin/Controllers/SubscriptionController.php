@@ -105,10 +105,12 @@ class SubscriptionController extends AdminController
                 ->selectRaw("app_type, COUNT(*) as cnt")->groupBy('app_type')->pluck('cnt', 'app_type');
 
             $appConfigs = [
-                'lugaflix'  => ['LugaFlix', '#4a90e2', 'fa-film', 'rgba(74,144,226,'],
-                'ugflix'    => ['UGFlix',   '#27ae60', 'fa-play-circle', 'rgba(39,174,96,'],
-                'muno_app'  => ['Muno',     '#e74c3c', 'fa-television', 'rgba(231,76,60,'],
-                'web'       => ['Web',      '#9b59b6', 'fa-globe', 'rgba(155,89,182,'],
+                'lugaflix'  => ['LugaFlix',   '#4a90e2', 'fa-play-circle-o', 'rgba(74,144,226,'],
+                'ugflix'    => ['UGFlix',     '#27ae60', 'fa-play-circle',   'rgba(39,174,96,'],
+                'muno_app'  => ['Muno',       '#e74c3c', 'fa-fire',          'rgba(231,76,60,'],
+                'web'       => ['Web',        '#9b59b6', 'fa-globe',         'rgba(155,89,182,'],
+                'vjjunior'  => ['VJ Junior',  '#f39c12', 'fa-music',         'rgba(243,156,18,'],
+                'katogo'    => ['Katogo App', '#1abc9c', 'fa-star',          'rgba(26,188,156,'],
             ];
 
             // ── Payment gateway split ─────────────────────────────────────
@@ -164,7 +166,7 @@ class SubscriptionController extends AdminController
                 $ms = $now->copy()->subMonths($i)->startOfMonth();
                 $ym = $ms->format('Y-m');
                 $monthly12Labels[] = $ms->format("M 'y");
-                $monthly12Map[$ym] = ['muno_app' => 0, 'lugaflix' => 0, 'ugflix' => 0, 'web' => 0, 'total' => 0, 'cnt' => 0];
+                $monthly12Map[$ym] = ['muno_app' => 0, 'lugaflix' => 0, 'ugflix' => 0, 'web' => 0, 'vjjunior' => 0, 'katogo' => 0, 'total' => 0, 'cnt' => 0];
             }
             foreach ($monthly12Raw as $row) {
                 if (isset($monthly12Map[$row->ym])) {
@@ -174,10 +176,11 @@ class SubscriptionController extends AdminController
                     $monthly12Map[$row->ym]['cnt']   += (int)$row->cnt;
                 }
             }
-            $m12Muno = []; $m12Lg = []; $m12Ug = []; $m12Web = []; $m12Total = []; $m12Cnt = [];
+            $m12Muno = []; $m12Lg = []; $m12Ug = []; $m12Web = []; $m12Vj = []; $m12Kg = []; $m12Total = []; $m12Cnt = [];
             foreach ($monthly12Map as $v) {
                 $m12Muno[] = $v['muno_app']; $m12Lg[] = $v['lugaflix']; $m12Ug[] = $v['ugflix'];
-                $m12Web[] = $v['web']; $m12Total[] = $v['total']; $m12Cnt[] = $v['cnt'];
+                $m12Web[] = $v['web']; $m12Vj[] = $v['vjjunior']; $m12Kg[] = $v['katogo'];
+                $m12Total[] = $v['total']; $m12Cnt[] = $v['cnt'];
             }
 
             // ── 30-day daily ──────────────────────────────────────────────
@@ -190,7 +193,7 @@ class SubscriptionController extends AdminController
             for ($i = 29; $i >= 0; $i--) {
                 $d = $now->copy()->subDays($i)->format('Y-m-d');
                 $d30Labels[] = Carbon::parse($d)->format('d M');
-                $d30Map[$d] = ['muno_app' => 0, 'lugaflix' => 0, 'ugflix' => 0, 'web' => 0, 'total' => 0, 'cnt' => 0];
+                $d30Map[$d] = ['muno_app' => 0, 'lugaflix' => 0, 'ugflix' => 0, 'web' => 0, 'vjjunior' => 0, 'katogo' => 0, 'total' => 0, 'cnt' => 0];
             }
             foreach ($dailyRaw as $row) {
                 if (isset($d30Map[$row->d])) {
@@ -199,9 +202,10 @@ class SubscriptionController extends AdminController
                     $d30Map[$row->d]['total'] += (float)$row->rev; $d30Map[$row->d]['cnt'] += (int)$row->cnt;
                 }
             }
-            $d30Muno=[]; $d30Lg=[]; $d30Ug=[]; $d30Web=[]; $d30Total=[]; $d30Cnt=[];
+            $d30Muno=[]; $d30Lg=[]; $d30Ug=[]; $d30Web=[]; $d30Vj=[]; $d30Kg=[]; $d30Total=[]; $d30Cnt=[];
             foreach ($d30Map as $v) {
                 $d30Muno[]=$v['muno_app']; $d30Lg[]=$v['lugaflix']; $d30Ug[]=$v['ugflix']; $d30Web[]=$v['web'];
+                $d30Vj[]=$v['vjjunior']; $d30Kg[]=$v['katogo'];
                 $d30Total[]=$v['total']; $d30Cnt[]=$v['cnt'];
             }
 
@@ -263,8 +267,8 @@ HTML;
 
             // ── Build chart JSON ──────────────────────────────────────────
             $chartData = json_encode([
-                'd30' => ['labels'=>$d30Labels,'muno'=>$d30Muno,'lg'=>$d30Lg,'ug'=>$d30Ug,'web'=>$d30Web,'total'=>$d30Total,'cnt'=>$d30Cnt],
-                'm12' => ['labels'=>$monthly12Labels,'muno'=>$m12Muno,'lg'=>$m12Lg,'ug'=>$m12Ug,'web'=>$m12Web,'total'=>$m12Total,'cnt'=>$m12Cnt],
+                'd30' => ['labels'=>$d30Labels,'muno'=>$d30Muno,'lg'=>$d30Lg,'ug'=>$d30Ug,'web'=>$d30Web,'vj'=>$d30Vj,'kg'=>$d30Kg,'total'=>$d30Total,'cnt'=>$d30Cnt],
+                'm12' => ['labels'=>$monthly12Labels,'muno'=>$m12Muno,'lg'=>$m12Lg,'ug'=>$m12Ug,'web'=>$m12Web,'vj'=>$m12Vj,'kg'=>$m12Kg,'total'=>$m12Total,'cnt'=>$m12Cnt],
                 'hourly' => ['labels'=>$hourlyLabels,'cnt'=>$hourlyCnt,'rev'=>$hourlyRev],
                 'dow'    => ['labels'=>$dowLabels,'cnt'=>$dowCnt,'rev'=>$dowRev],
                 'payment'=> ['completed'=>$payBreakdown['Completed']??0,'pending'=>$payBreakdown['Pending']??0,'processing'=>$payBreakdown['Processing']??0,'failed'=>$payBreakdown['Failed']??0],
