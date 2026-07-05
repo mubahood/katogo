@@ -463,10 +463,14 @@ class SearchController extends Controller
         $yearFilter  = trim($request->get('year', ''));
         $sort        = strtolower(trim($request->get('sort', 'relevance')));
 
-        $ignoreWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'for', 'and', 'that', 'with', 'to', 'is', 'are', 'was', 'were'];
+        $ignoreWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'for', 'and', 'that', 'with', 'to', 'is', 'are', 'was', 'were', 'vj'];
         $scores      = [];      // id => score
         $itemTypes   = [];      // id => 'movie' | 'series'
         $seriesInfo  = [];      // id => ['series_name'=>..., 'episode_count'=>..., 'series_type'=>...]
+
+        // Pre-compute words and significant words for use across all phases
+        $words    = array_filter(explode(' ', $searchTerm), fn($w) => $w !== '');
+        $sigWords = array_values(array_filter($words, fn($w) => !in_array(strtolower($w), $ignoreWords) && mb_strlen($w) >= 3));
 
         // ── Phase 1: Exact title match → Movies (1000 pts) ──
         if ($typeFilter !== 'series') {
@@ -528,21 +532,38 @@ class SearchController extends Controller
             }
         }
 
-        // ── Phase 3: VJ name match (800 pts) ──
-        $vjMatchIds = MovieModel::where('status', 'Active')
+        // ── Phase 3: VJ name match ──
+        // Pass A: full search term in vj field (900 pts — exact VJ name typed)
+        $vjFullIds = MovieModel::where('status', 'Active')
             ->where('vj', 'LIKE', '%' . $searchTerm . '%')
             ->whereNotIn('id', array_keys($scores))
             ->pluck('id')->toArray();
 
-        foreach ($vjMatchIds as $id) {
-            $scores[$id] = ($scores[$id] ?? 0) + 800;
-            if (!isset($itemTypes[$id])) {
-                $itemTypes[$id] = 'movie'; // will be corrected later when fetched
+        foreach ($vjFullIds as $id) {
+            $scores[$id] = ($scores[$id] ?? 0) + 900;
+            if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
+        }
+
+        // Pass B: each significant word in vj field (750 pts per word match)
+        // Catches "vj junior mechanic" → finds Vj Junior movies even when movie title is separate
+        if (!empty($sigWords)) {
+            $vjWordIds = MovieModel::where('status', 'Active')
+                ->where(function ($q) use ($sigWords) {
+                    foreach ($sigWords as $w) {
+                        $q->orWhere('vj', 'LIKE', '%' . $w . '%');
+                    }
+                })
+                ->whereNotIn('id', array_keys($scores))
+                ->limit(150)
+                ->pluck('id')->toArray();
+
+            foreach ($vjWordIds as $id) {
+                $scores[$id] = ($scores[$id] ?? 0) + 750;
+                if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
             }
         }
 
         // ── Phase 4: Progressive word removal (700→500 pts) ──
-        $words = explode(' ', $searchTerm);
         if (count($words) > 1) {
             // Remove from end
             $temp = $words;
@@ -581,10 +602,23 @@ class SearchController extends Controller
         }
 
         // ── Phase 5: Genre match (400 pts) ──
+        // Always search the full term. If it has commas (genre suggestion clicked), also
+        // search each comma-part individually so "Biography, Drama" finds Drama movies too.
+        $genreTerms = [$searchTerm];
+        if (strpos($searchTerm, ',') !== false) {
+            foreach (array_map('trim', explode(',', $searchTerm)) as $part) {
+                if (mb_strlen($part) >= 2) $genreTerms[] = $part;
+            }
+            $genreTerms = array_values(array_unique($genreTerms));
+        }
         $genreHit = MovieModel::where('status', 'Active')
-            ->where('genre', 'LIKE', '%' . $searchTerm . '%')
+            ->where(function ($q) use ($genreTerms) {
+                foreach ($genreTerms as $term) {
+                    $q->orWhere('genre', 'LIKE', '%' . $term . '%');
+                }
+            })
             ->whereNotIn('id', array_keys($scores))
-            ->limit(60)
+            ->limit(80)
             ->pluck('id')->toArray();
 
         foreach ($genreHit as $id) {
@@ -592,9 +626,9 @@ class SearchController extends Controller
             if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
         }
 
-        // ── Phase 6: Individual significant words (200 pts) ──
-        $sigWords = array_filter($words, fn($w) => !in_array(strtolower($w), $ignoreWords) && mb_strlen($w) >= 3);
+        // ── Phase 6: Individual significant words (200 pts title, 150 pts description) ──
         if (!empty($sigWords)) {
+            // Title word matches
             $wordHits = MovieModel::where('status', 'Active')
                 ->where(function ($q) use ($sigWords) {
                     foreach ($sigWords as $w) {
@@ -607,6 +641,22 @@ class SearchController extends Controller
 
             foreach ($wordHits as $id) {
                 $scores[$id] = ($scores[$id] ?? 0) + 200;
+                if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
+            }
+
+            // Description word matches (150 pts — broader contextual matching)
+            $descHits = MovieModel::where('status', 'Active')
+                ->where(function ($q) use ($sigWords) {
+                    foreach ($sigWords as $w) {
+                        $q->orWhere('description', 'LIKE', '%' . $w . '%');
+                    }
+                })
+                ->whereNotIn('id', array_keys($scores))
+                ->limit(80)
+                ->pluck('id')->toArray();
+
+            foreach ($descHits as $id) {
+                $scores[$id] = ($scores[$id] ?? 0) + 150;
                 if (!isset($itemTypes[$id])) $itemTypes[$id] = 'movie';
             }
         }
@@ -852,16 +902,29 @@ class SearchController extends Controller
             ->map(fn($v) => ['text' => $v, 'type' => 'vj'])
             ->toArray();
 
-        // Genre suggestions
-        $genres = MovieModel::where('status', 'Active')
+        // Genre suggestions — parse individual genre values from potentially comma-separated fields
+        $rawGenreStrings = MovieModel::where('status', 'Active')
             ->where('genre', 'LIKE', '%' . $q . '%')
             ->whereNotNull('genre')
             ->where('genre', '!=', '')
             ->selectRaw('DISTINCT genre')
-            ->limit($limit)
+            ->limit($limit * 4)
             ->pluck('genre')
-            ->map(fn($g) => ['text' => $g, 'type' => 'genre'])
             ->toArray();
+
+        $genres = [];
+        $seenGenres = [];
+        foreach ($rawGenreStrings as $genreValue) {
+            foreach (array_map('trim', explode(',', $genreValue)) as $singleGenre) {
+                if (empty($singleGenre)) continue;
+                $lowerGenre = strtolower($singleGenre);
+                if (stripos($singleGenre, $q) !== false && !isset($seenGenres[$lowerGenre])) {
+                    $seenGenres[$lowerGenre] = true;
+                    $genres[] = ['text' => $singleGenre, 'type' => 'genre'];
+                    if (count($genres) >= $limit) break 2;
+                }
+            }
+        }
 
         // Popular past searches matching the query
         $popularSearches = MovieSearch::where('search_term', 'LIKE', '%' . $q . '%')
