@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\Log;
 
 class SendTrendingNotifications extends Command
 {
-    protected $signature   = 'trending:send-notifications {--force : Send even if already sent today}';
-    protected $description = 'Broadcast trending push notification to all subscribed users';
+    protected $signature   = 'trending:send-notifications {--force : Re-send even if this period was already sent today}';
+    protected $description = 'Broadcast the trending push notification to all subscribed users';
 
     public function handle(): int
     {
@@ -23,17 +23,33 @@ class SendTrendingNotifications extends Command
             $hour >= 17 && $hour < 21 => 'evening',
             default                   => 'night',
         };
+        $force = $this->option('force');
 
-        $this->info("Trending notifications — period: {$dayTime}");
+        $this->info("Trending notifications — period: {$dayTime}" . ($force ? ' [--force]' : ''));
 
-        // Find unsent record for today, or create one via getTrendingMovie()
+        // Guard: don't send the same time-period twice in one day unless --force.
+        // Prevents duplicate blasts when the command is run manually alongside the cron.
+        if (!$force) {
+            $alreadySent = TrendingNotification::where('is_sent', 'Yes')
+                ->where('day_time', $dayTime)
+                ->where('created_at', '>=', Carbon::now()->startOfDay())
+                ->exists();
+
+            if ($alreadySent) {
+                $this->info("Already sent for '{$dayTime}' today — skipping. Use --force to override.");
+                return self::SUCCESS;
+            }
+        }
+
+        // Pick up the most-recent unsent record created today.
+        // If none exists yet, getTrendingMovie() picks a movie and queues one.
         $pending = TrendingNotification::where('is_sent', 'No')
             ->where('created_at', '>=', Carbon::now()->startOfDay())
             ->orderBy('created_at', 'desc')
             ->first();
 
         if (!$pending) {
-            $this->info('No pending record today — triggering getTrendingMovie().');
+            $this->info('No pending record for today — calling getTrendingMovie().');
             TrendingNotification::getTrendingMovie();
             $pending = TrendingNotification::where('is_sent', 'No')
                 ->where('created_at', '>=', Carbon::now()->startOfDay())
@@ -41,52 +57,71 @@ class SendTrendingNotifications extends Command
                 ->first();
         }
 
+        // When --force is set, also accept an already-sent record from today
+        // so we can re-broadcast without needing a fresh pending entry.
+        if (!$pending && $force) {
+            $pending = TrendingNotification::where('created_at', '>=', Carbon::now()->startOfDay())
+                ->orderBy('created_at', 'desc')
+                ->first();
+        }
+
         if (!$pending) {
-            $this->warn('No active movie found. Aborting.');
+            $this->error('No trending record found for today and no active movie available.');
             return self::FAILURE;
         }
 
-        $this->info("Sending: \"{$pending->title}\" (id={$pending->id})");
+        // Validate content before hitting the API
+        if (empty($pending->title)) {
+            $this->error('Trending record has no title — aborting.');
+            Log::error('trending:send-notifications: pending record missing title', ['id' => $pending->id]);
+            return self::FAILURE;
+        }
+        if (empty($pending->description)) {
+            $this->error('Trending record has no description — aborting.');
+            Log::error('trending:send-notifications: pending record missing description', ['id' => $pending->id]);
+            return self::FAILURE;
+        }
 
-        // Mark sent BEFORE the API call so a crash/timeout doesn't leave it as is_sent=No
-        $pending->is_sent   = 'Yes';
-        $pending->sent_time = Carbon::now();
-        $pending->save();
+        $this->info("Sending: \"{$pending->title}\" (record id={$pending->id}, movie_id={$pending->movie_model_id})");
 
         try {
-            // Broadcast to all subscribed OneSignal devices via segment.
-            // Per-user external-ID sends no longer work because the OneSignal Flutter SDK v5+
-            // dropped setExternalUserId() in favour of a new aliases model — old external IDs
-            // are all "unsubscribed" from the legacy player API perspective.
-            NotificationService::sendToAll([
+            $onesignalId = NotificationService::sendToAll([
                 'title' => '🎬 ' . $pending->title . ' is Trending',
                 'body'  => $pending->description,
-                'image' => $pending->image_url,
+                'image' => $pending->image_url ?: null,
                 'data'  => [
-                    'movie_id'          => $pending->movie_model_id,
-                    'type'              => $pending->type,
+                    'movie_id'          => (string) $pending->movie_model_id,
+                    'type'              => $pending->type ?? 'Movie',
                     'notification_type' => 'trending_notification',
                 ],
             ]);
 
-            $this->info('Broadcast sent successfully.');
+            // Mark as sent only after the API confirms acceptance with a notification ID.
+            $pending->is_sent   = 'Yes';
+            $pending->sent_time = Carbon::now();
+            $pending->save();
 
-            Log::info('trending:send-notifications broadcast sent', [
-                'day_time'    => $dayTime,
-                'movie_id'    => $pending->movie_model_id,
-                'movie_title' => $pending->title,
-                'notif_id'    => $pending->id,
+            $this->info("Broadcast confirmed — OneSignal ID: {$onesignalId}");
+
+            Log::info('trending:send-notifications: broadcast sent', [
+                'day_time'     => $dayTime,
+                'movie_id'     => $pending->movie_model_id,
+                'movie_title'  => $pending->title,
+                'record_id'    => $pending->id,
+                'onesignal_id' => $onesignalId,
             ]);
 
             return self::SUCCESS;
 
         } catch (\Throwable $e) {
-            $this->error('Send failed: ' . $e->getMessage());
-            Log::error('trending:send-notifications failed', [
-                'error'    => $e->getMessage(),
-                'day_time' => $dayTime,
-                'notif_id' => $pending->id,
+            $this->error('Broadcast failed: ' . $e->getMessage());
+            Log::error('trending:send-notifications: broadcast failed', [
+                'error'       => $e->getMessage(),
+                'day_time'    => $dayTime,
+                'record_id'   => $pending->id,
+                'movie_title' => $pending->title,
             ]);
+            // Leave is_sent=No so the next scheduled run retries automatically.
             return self::FAILURE;
         }
     }

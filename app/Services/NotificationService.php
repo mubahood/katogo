@@ -311,35 +311,56 @@ class NotificationService
     /**
      * Broadcast a OneSignal push notification to all subscribed users.
      *
-     * @param  array{title?:string, body:string, image?:string, data?:array, buttons?:array, schedule?:string}  $params
+     * Returns the OneSignal notification ID on success.
+     * Throws on any failure — including HTTP 200 responses that contain errors
+     * (e.g. "no subscribers found") rather than a valid notification id.
+     *
+     * @param  array{title?:string, body:string, image?:string, data?:array}  $params
+     * @return string  OneSignal notification ID
+     * @throws \Exception
      */
-    public static function sendToAll(array $params): void
+    public static function sendToAll(array $params): string
     {
-        $body     = $params['body']     ?? null;
-        $title    = $params['title']    ?? null;
-        $img      = $params['image']    ?? null;
-        $data     = $params['data']     ?? [];
-        $buttons  = $params['buttons']  ?? [];
-        $schedule = $params['schedule'] ?? null;
+        $body  = $params['body']  ?? null;
+        $title = $params['title'] ?? null;
+        $img   = $params['image'] ?? null;
+        $data  = $params['data']  ?? [];
 
-        if ($body === null) {
+        if (empty($body)) {
             throw new \Exception('Notification body is required.');
         }
 
-        OneSignalFacade::addParams([
-            'android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b',
-            'large_icon'         => $img,
-            'big_picture'        => $img,
-            'chrome_big_picture' => $img,
-            'chrome_web_image'   => $img,
-            'small_icon'         => 'logo',
-        ])->sendNotificationToAll(
+        // Only include image params when a URL is actually present — sending null
+        // values for large_icon / big_picture confuses some OneSignal SDK versions.
+        $extra = ['android_channel_id' => '63c01a80-0acd-467b-bdc7-7a1107141a8b', 'small_icon' => 'logo'];
+        if (!empty($img)) {
+            $extra['large_icon']         = $img;
+            $extra['big_picture']        = $img;
+            $extra['chrome_big_picture'] = $img;
+            $extra['chrome_web_image']   = $img;
+        }
+
+        // sendNotificationToAll returns the raw Guzzle PSR-7 response.
+        // Guzzle throws ClientException on 4xx and ServerException on 5xx,
+        // so we only need to handle the 200-but-error case ourselves.
+        $response = OneSignalFacade::addParams($extra)->sendNotificationToAll(
             $body,
-            null,
+            null,   // url
             $data,
-            $buttons,
-            $schedule,
+            null,   // buttons — null avoids sending buttons:[] in the payload
+            null,   // schedule
             $title,
         );
+
+        $decoded = json_decode((string) $response->getBody(), true);
+
+        if (empty($decoded['id'])) {
+            $errors = isset($decoded['errors'])
+                ? implode('; ', (array) $decoded['errors'])
+                : (string) $response->getBody();
+            throw new \Exception("OneSignal rejected the notification: {$errors}");
+        }
+
+        return $decoded['id'];
     }
 }
