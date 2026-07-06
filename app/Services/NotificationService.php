@@ -3,8 +3,6 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Models\TrendingNotification;
-use App\Models\Utils;
 use Berkayk\OneSignal\OneSignalFacade;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -340,17 +338,18 @@ class NotificationService
             $extra['chrome_web_image']   = $img;
         }
 
-        // sendNotificationToAll returns the raw Guzzle PSR-7 response.
-        // Guzzle throws ClientException on 4xx and ServerException on 5xx,
-        // so we only need to handle the 200-but-error case ourselves.
-        $response = OneSignalFacade::addParams($extra)->sendNotificationToAll(
-            $body,
-            null,   // url
-            $data,
-            null,   // buttons — null avoids sending buttons:[] in the payload
-            null,   // schedule
-            $title,
-        );
+        // sendNotificationToAll() in the Berkayk package omits `return`, so it gives us null.
+        // Call sendNotificationCustom() directly — it DOES return the Guzzle PSR-7 response.
+        // Guzzle throws ClientException on 4xx / ServerException on 5xx automatically.
+        $params = array_merge($extra, [
+            'app_id'             => config('onesignal.app_id'),
+            'contents'           => ['en' => $body],
+            'headings'           => ['en' => $title],
+            'included_segments'  => ['All'],
+            'data'               => $data,
+        ]);
+
+        $response = OneSignalFacade::sendNotificationCustom($params);
 
         $decoded = json_decode((string) $response->getBody(), true);
 
