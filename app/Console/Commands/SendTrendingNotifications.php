@@ -50,6 +50,12 @@ class SendTrendingNotifications extends Command
 
         $this->info("Sending: \"{$pending->title}\" (id={$pending->id})");
 
+        // Mark sent optimistically before the loop so a timeout/kill doesn't leave it
+        // as is_sent=No, causing every subsequent cron run to re-process all users.
+        $pending->is_sent   = 'Yes';
+        $pending->sent_time = Carbon::now();
+        $pending->save();
+
         try {
             $results = NotificationService::sendTrendingNotificationToEligibleUsers([
                 'title' => '🎬 ' . $pending->title . ' is Trending',
@@ -61,10 +67,6 @@ class SendTrendingNotifications extends Command
                     'notification_type' => 'trending_notification',
                 ],
             ], $dayTime);
-
-            $pending->is_sent   = 'Yes';
-            $pending->sent_time = Carbon::now();
-            $pending->save();
 
             $sent    = $results['notifications_sent'] ?? 0;
             $skipped = $results['skipped_users']      ?? 0;
