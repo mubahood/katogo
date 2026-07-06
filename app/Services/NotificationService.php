@@ -297,9 +297,9 @@ class NotificationService
             'chrome_big_picture' => $img,
             'chrome_web_image'   => $img,
             'small_icon'         => 'logo',
-        ])->sendNotificationToUser(
-            'my-id-' . $user->id,
+        ])->sendNotificationToExternalUser(
             $body,
+            'my-id-' . $user->id,
             null,
             $data,
             null,
