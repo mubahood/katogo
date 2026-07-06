@@ -190,6 +190,12 @@ class Kernel extends ConsoleKernel
                 ->delete();
         })->dailyAt('02:40')->name('purge-old-checkers-sessions')->withoutOverlapping();
 
+        // Send trending push notifications 4× per day (morning / afternoon / evening / night)
+        $schedule->command('trending:send-notifications')->dailyAt('07:00')->name('trending-notif-morning')->withoutOverlapping();
+        $schedule->command('trending:send-notifications')->dailyAt('13:00')->name('trending-notif-afternoon')->withoutOverlapping();
+        $schedule->command('trending:send-notifications')->dailyAt('18:30')->name('trending-notif-evening')->withoutOverlapping();
+        $schedule->command('trending:send-notifications')->dailyAt('21:30')->name('trending-notif-night')->withoutOverlapping();
+
         // Weekly: Purge trending_notifications older than 30 days (P6-14)
         $schedule->call(function () {
             \DB::table('trending_notifications')
@@ -373,17 +379,52 @@ class Kernel extends ConsoleKernel
             ->name('namz-nightly-crawl');
 
         // ──────────────────────────────────────────────────────────────────
-        // MUNOWATCH CRAWLER — Nightly category discovery + preview fetch
-        // Runs at 02:00 AM daily, 600ms delay, 30-page batches.
-        // Phase 1 refreshes dashboard categories; Phase 2 processes pending pages.
-        // withoutOverlapping(120) prevents stacking if it runs long.
+        // MUNOWATCH CRAWLER — Multi-tier schedule for continuous discovery
+        //
+        // TIER 1 — Deep nightly crawl at 02:00 AM:
+        //   Full category discovery + process up to 500 pages.
+        //   Catches everything, rebuilds category state.
+        //
+        // TIER 2 — Light discovery every 6 hours (08:00, 14:00, 20:00):
+        //   Quick pass through categories (limit=80) to pick up movies
+        //   added since the last deep crawl. Fast — 300ms delay, small batch.
+        //
+        // TIER 3 — Pending page processor every 3 hours:
+        //   Skips discovery, just processes whatever crawler pages are already
+        //   queued (discovered but not yet turned into movie records).
+        //   Keeps the pipeline flowing between discovery runs.
         // ──────────────────────────────────────────────────────────────────
+
+        // Tier 1: deep nightly crawl
         $schedule->command('munowatch:crawl --delay=600 --batch=30 --refresh-every=100 --limit=500')
             ->dailyAt('02:00')
             ->withoutOverlapping(120)
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/munowatch_crawl.log'))
             ->name('munowatch-nightly-crawl');
+
+        // Tier 2: light discovery 3× per day (skips 02:00 since Tier 1 covers it)
+        $schedule->command('munowatch:crawl --delay=300 --batch=20 --limit=80')
+            ->twiceDaily(8, 14)
+            ->withoutOverlapping(30)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/munowatch_crawl.log'))
+            ->name('munowatch-daytime-crawl');
+
+        $schedule->command('munowatch:crawl --delay=300 --batch=20 --limit=80')
+            ->dailyAt('20:00')
+            ->withoutOverlapping(30)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/munowatch_crawl.log'))
+            ->name('munowatch-evening-crawl');
+
+        // Tier 3: process pending pages every 3 hours (no new discovery)
+        $schedule->command('munowatch:crawl --skip-discovery --delay=200 --batch=30 --limit=150')
+            ->cron('0 */3 * * *')
+            ->withoutOverlapping(20)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/munowatch_crawl.log'))
+            ->name('munowatch-process-pending');
 
         // Namz post-crawl: activate any movies that now have a valid URL
         $schedule->call(function () {
