@@ -99,6 +99,7 @@
         .dl-btn:nth-child(1){animation-delay:.1s}
         .dl-btn:nth-child(2){animation-delay:.25s}
         .dl-btn:nth-child(3){animation-delay:.4s}
+        .dl-btn:nth-child(4){animation-delay:.55s}
 
         /* ====== FEATURES STRIP ====== */
         .strip{
@@ -139,8 +140,8 @@
 
         /* ====== DESKTOP ====== */
         @media(min-width:600px){
-            .hero-actions{flex-direction:row;max-width:600px;gap:16px}
-            .dl-btn{flex:1;flex-direction:column;text-align:center;padding:24px 16px;gap:10px}
+            .hero-actions{flex-direction:row;flex-wrap:wrap;max-width:700px;gap:14px;justify-content:center}
+            .dl-btn{flex:1;min-width:140px;flex-direction:column;text-align:center;padding:24px 14px;gap:10px}
             .dl-btn .dl-info{text-align:center}
             .qr-inner{gap:32px}
         }
@@ -170,10 +171,10 @@
         </a>
 
         <!-- iOS -->
-        <a href="https://lugaflix.store" class="dl-btn" target="_blank" rel="noopener">
+        <a href="https://apps.apple.com/us/app/lugaflix-luganda-movies-tra/id6777522770" class="dl-btn" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
             <div class="dl-info">
-                <div class="dl-label">Open for</div>
+                <div class="dl-label">Download on</div>
                 <div class="dl-name">iPhone &amp; iPad</div>
             </div>
         </a>
@@ -184,6 +185,15 @@
             <div class="dl-info">
                 <div class="dl-label">Watch on</div>
                 <div class="dl-name">Web / Computer</div>
+            </div>
+        </a>
+
+        <!-- Muno App -->
+        <a href="https://munoapp.store/app" class="dl-btn" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+            <div class="dl-info">
+                <div class="dl-label">Also on</div>
+                <div class="dl-name">Muno App</div>
             </div>
         </a>
     </div>
@@ -243,7 +253,7 @@
 
     // Track button clicks
     document.querySelectorAll('.dl-btn').forEach(function(btn, i){
-        var types = ['android','ios','web'];
+        var types = ['android','ios','web','muno'];
         btn.addEventListener('click', function(){
             navigator.sendBeacon('/api/track-event', new Blob([JSON.stringify({
                 session_id: sid,
