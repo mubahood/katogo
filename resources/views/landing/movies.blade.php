@@ -1,13 +1,13 @@
 @extends('layouts.landing')
 
-@section('title', 'Luganda Translated Movies - Watch Hollywood Movies in Luganda | ' . $siteName)
-@section('description', 'Browse our extensive collection of Hollywood movies professionally translated into Luganda. Stream HD quality Luganda dubbed movies on ' . $siteName . '. Page ' . $currentPage . ' of ' . ceil($totalMovies / 24))
-@section('keywords', 'Luganda movies, Hollywood movies in Luganda, Luganda dubbed movies, watch movies Uganda, stream Luganda movies, Luganda action movies, Luganda comedy movies, Luganda drama movies')
+@section('title', 'Luganda Translated Movies - Stream Movies in Luganda | ' . $siteName)
+@section('description', 'Browse our collection of movies professionally translated into Luganda. Stream HD quality Luganda movies on ' . $siteName . '. Page ' . $currentPage . ' of ' . ceil($totalMovies / 24))
+@section('keywords', 'Luganda movies, Luganda translated movies, watch movies Uganda, stream Luganda movies, Luganda action movies, Luganda comedy movies, Luganda drama movies')
 
 @push('meta')
 <meta property="og:type" content="website">
 <meta property="og:title" content="Luganda Translated Movies - {{ $siteName }}">
-<meta property="og:description" content="Browse {{ $totalMovies }}+ Hollywood movies translated into Luganda. Professional dubbing, HD quality.">
+<meta property="og:description" content="Browse {{ $totalMovies }}+ movies translated into Luganda. Professional translation, HD quality.">
 <meta property="og:url" content="{{ url('/movies') }}">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="{{ url('/movies') }}">
@@ -28,7 +28,7 @@
                 <i class="bi bi-film text-primary"></i> Luganda Movies
             </h1>
             <p class="text-white-50 mb-2" style="font-size: 0.85rem;">
-                {{ number_format($totalMovies) }} Hollywood movies in Luganda
+                {{ number_format($totalMovies) }} movies translated to Luganda
             </p>
             <a href="{{ $playStoreUrl }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm px-3 py-1" style="font-size: 0.8rem;">
                 <i class="bi bi-google-play me-1"></i>Download App
@@ -133,10 +133,10 @@
         <article class="text-white-50" style="font-size: 0.8rem;">
             <h2 class="h6 h5-md text-white mb-2">Luganda Translated Movies Online</h2>
             <p class="mb-2" style="line-height: 1.5;">
-                Welcome to Uganda's largest collection of Luganda translated movies. Professional dubbing, HD quality, and thousands of Hollywood films in Luganda. Action, comedy, drama, thriller, and more available on {{ $siteName }}.
+                Welcome to Uganda's largest collection of Luganda translated movies. Professional translation, HD quality, and thousands of films translated to Luganda. Action, comedy, drama, thriller, and more available on {{ $siteName }}.
             </p>
             <ul class="list-unstyled mb-2" style="font-size: 0.75rem;">
-                <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Professional Luganda dubbing</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Professional Luganda translation</li>
                 <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>HD streaming optimized for Uganda</li>
                 <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Offline downloads available</li>
                 <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>New movies added weekly</li>

@@ -1,13 +1,13 @@
 @extends('layouts.landing')
 
 @section('title', 'Luganda Translated TV Series - Watch Series in Luganda | ' . $siteName)
-@section('description', 'Stream TV series and shows professionally translated into Luganda. Watch episodes with Luganda dubbing in HD quality on ' . $siteName . '. Page ' . $currentPage . ' of ' . ceil($totalSeries / 24))
-@section('keywords', 'Luganda series, TV shows in Luganda, Luganda dubbed series, watch series Uganda, stream Luganda shows, Luganda TV series, episode in Luganda')
+@section('description', 'Stream TV series and shows professionally translated into Luganda. Watch episodes with Luganda translation in HD quality on ' . $siteName . '. Page ' . $currentPage . ' of ' . ceil($totalSeries / 24))
+@section('keywords', 'Luganda series, TV shows in Luganda, Luganda translated series, watch series Uganda, stream Luganda shows, Luganda TV series, episode in Luganda')
 
 @push('meta')
 <meta property="og:type" content="website">
 <meta property="og:title" content="Luganda Translated TV Series - {{ $siteName }}">
-<meta property="og:description" content="Browse {{ $totalSeries }}+ TV series translated into Luganda. Professional dubbing, all episodes available.">
+<meta property="og:description" content="Browse {{ $totalSeries }}+ TV series translated into Luganda. Professional translation, all episodes available.">
 <meta property="og:url" content="{{ url('/series') }}">
 <link rel="canonical" href="{{ url('/series') }}">
 @if($currentPage > 1)
@@ -140,7 +140,7 @@
                 <article class="text-white-50">
                     <h2 class="h4 text-white mb-4">Stream Luganda Translated TV Series</h2>
                     <p class="mb-3">
-                        Discover Uganda's largest collection of TV series and shows professionally translated into Luganda. From binge-worthy dramas to hilarious comedies, thrilling crime series to captivating documentaries – every episode is available with authentic Luganda dubbing that captures the essence of the original content while making it culturally relevant for Ugandan audiences.
+                        Discover Uganda's largest collection of TV series and shows professionally translated into Luganda. From binge-worthy dramas to hilarious comedies, thrilling crime series to captivating documentaries – every episode is available with authentic Luganda translation that captures the essence of the original content while making it culturally relevant for Ugandan audiences.
                     </p>
                     <p class="mb-3">
                         Each series in our collection includes all episodes with high-quality Luganda translation by expert voice actors. Whether you're catching up on the latest season of your favorite show or discovering a classic series for the first time, {{ $siteName }} makes it easy to enjoy premium TV content in your mother tongue.
@@ -166,7 +166,7 @@
                     </div>
                     <h3 class="h5 text-white mb-3 mt-4">Popular Luganda Series Categories</h3>
                     <p class="mb-3">
-                        Explore drama series in Luganda, comedy shows translated to Luganda, action-packed series with Luganda dubbing, reality TV in Luganda, crime and mystery series, sci-fi and fantasy shows, romantic series, and documentary series – all professionally translated for your viewing pleasure.
+                        Explore drama series in Luganda, comedy shows translated to Luganda, action-packed series with Luganda translation, reality TV in Luganda, crime and mystery series, sci-fi and fantasy shows, romantic series, and documentary series – all professionally translated for your viewing pleasure.
                     </p>
                     <p class="mb-3">
                         Download the {{ $siteName }} app to start streaming Luganda translated TV series today. With our easy-to-use interface, you can browse by genre, search for specific shows, track your watching progress, and discover new series based on your preferences. Every episode features first-class Luganda translation that respects cultural context while delivering entertainment that resonates with Ugandan viewers.

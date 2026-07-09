@@ -201,6 +201,7 @@ Route::group([
     $router->delete('moderation/blocks/{id}', 'ModerationAdminController@deleteBlock')->name('moderation.blocks.delete');
 
 
+    $router->get('movie-crawler-websites/trigger-crawl', 'MovieCrawlerWebsiteController@triggerCrawl')->name('movie-crawler-websites.trigger');
     $router->resource('movie-crawler-websites', MovieCrawlerWebsiteController::class);
     $router->resource('movie-crawler-pages', MovieCrawlerPageController::class);
     

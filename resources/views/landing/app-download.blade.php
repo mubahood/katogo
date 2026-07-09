@@ -99,7 +99,6 @@
         .dl-btn:nth-child(1){animation-delay:.1s}
         .dl-btn:nth-child(2){animation-delay:.25s}
         .dl-btn:nth-child(3){animation-delay:.4s}
-        .dl-btn:nth-child(4){animation-delay:.55s}
 
         /* ====== FEATURES STRIP ====== */
         .strip{
@@ -140,7 +139,7 @@
 
         /* ====== DESKTOP ====== */
         @media(min-width:600px){
-            .hero-actions{flex-direction:row;flex-wrap:wrap;max-width:700px;gap:14px;justify-content:center}
+            .hero-actions{flex-direction:row;max-width:600px;gap:16px}
             .dl-btn{flex:1;min-width:140px;flex-direction:column;text-align:center;padding:24px 14px;gap:10px}
             .dl-btn .dl-info{text-align:center}
             .qr-inner{gap:32px}
@@ -185,15 +184,6 @@
             <div class="dl-info">
                 <div class="dl-label">Watch on</div>
                 <div class="dl-name">Web / Computer</div>
-            </div>
-        </a>
-
-        <!-- Muno App -->
-        <a href="https://munoapp.store/app" class="dl-btn" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
-            <div class="dl-info">
-                <div class="dl-label">Also on</div>
-                <div class="dl-name">Muno App</div>
             </div>
         </a>
     </div>
@@ -253,7 +243,7 @@
 
     // Track button clicks
     document.querySelectorAll('.dl-btn').forEach(function(btn, i){
-        var types = ['android','ios','web','muno'];
+        var types = ['android','ios','web'];
         btn.addEventListener('click', function(){
             navigator.sendBeacon('/api/track-event', new Blob([JSON.stringify({
                 session_id: sid,

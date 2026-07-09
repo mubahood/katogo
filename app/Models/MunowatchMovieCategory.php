@@ -208,19 +208,12 @@ class MunowatchMovieCategory extends Model
     public function determineBestAPIEndpoint()
     {
         $categoryId = $this->munowatch_category_id;
-        
-        if ($categoryId == 5) {
-            // TV Shows/Action category uses shows endpoint (confirmed working)
-            $this->api_endpoint_type = self::ENDPOINT_SHOWS;
-            $this->pagination_endpoint = "shows/g/{$categoryId}/{uid}/{lid}";
-            $this->has_pagination = true;
-        } else {
-            // All other categories use dashboard data only - no separate endpoint needed
-            // The Flutter app gets movies for all categories from the dashboard API
-            $this->api_endpoint_type = self::ENDPOINT_DASHBOARD;
-            $this->pagination_endpoint = null; // Not needed for dashboard
-            $this->has_pagination = false; // Dashboard gives fixed 15 movies per category
-        }
+
+        // All categories use the paginated shows/g endpoint — this is the only
+        // endpoint that returns more than the 5 sample movies from the dashboard.
+        $this->api_endpoint_type = self::ENDPOINT_SHOWS;
+        $this->pagination_endpoint = "shows/g/{$categoryId}/{uid}/{lid}";
+        $this->has_pagination = true;
 
         $this->save();
     }

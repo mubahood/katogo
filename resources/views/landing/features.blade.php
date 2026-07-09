@@ -175,7 +175,7 @@
                         </div>
                         <h5 class="card-title">Audio Options</h5>
                         <p class="card-text text-muted-custom">
-                            Choose between original audio with Luganda subtitles or full Luganda dubbing where available. Adjust audio quality to your preference.
+                            Choose between original audio with Luganda subtitles or full Luganda translation where available. Adjust audio quality to your preference.
                         </p>
                     </div>
                 </div>

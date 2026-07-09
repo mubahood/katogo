@@ -148,49 +148,60 @@ class MunoCrawl extends Command
             $this->line("  → [{$category->munowatch_category_id}] {$category->category_name}");
 
             try {
-                $session = MunowatchAuthService::getActiveSession();
-                $movies  = $category->fetchMovies(1, $session['user_id']);
-
-                if (empty($movies)) {
-                    $this->line("    (no movies returned)");
-                    continue;
-                }
-
+                $session  = MunowatchAuthService::getActiveSession();
                 $newPages = 0;
-                foreach ($movies as $movie) {
-                    $movieId = $movie['vid'] ?? $movie['id'] ?? null;
-                    if (empty($movieId)) continue;
+                $totalMoviesSeen = 0;
+                $page = 1;
+                $maxPages = 100; // safety cap: 100 pages × 20 movies = 2,000 movies per category
 
-                    // Check by slug (munowatch_id) first — avoids URL-based duplicates
-                    $exists = MovieCrawlerPage::where('slug', (string) $movieId)
-                        ->where('movie_crawler_website_id', $website->id)
-                        ->exists();
-                    if ($exists) continue;
+                do {
+                    $movies = $category->fetchMovies($page, $session['user_id']);
 
-                    $url = "https://munowatch.org/api/preview/v2/{$movieId}/{$session['user_id']}";
+                    if (empty($movies)) {
+                        break; // no more pages
+                    }
 
-                    // Secondary URL check
-                    if (MovieCrawlerPage::where('url', $url)->exists()) continue;
+                    $totalMoviesSeen += count($movies);
 
-                    $cp                           = new MovieCrawlerPage();
-                    $cp->movie_crawler_website_id = $website->id;
-                    $cp->url                      = $url;
-                    $cp->title                    = $movie['title'] ?? 'Unknown';
-                    $cp->status                   = 'pending';
-                    $cp->slug                     = (string) $movieId;
-                    $cp->is_muno                  = 'Yes';
-                    $cp->muno_processed           = 'No';
-                    $cp->munowatch_id             = $movieId;
-                    $cp->vj                       = 'Munowatch API';
-                    $cp->save();
-                    $newPages++;
-                }
+                    foreach ($movies as $movie) {
+                        $movieId = $movie['vid'] ?? $movie['id'] ?? null;
+                        if (empty($movieId)) continue;
 
-                $this->line("    ✓ {$newPages} new pages queued (total in category: " . count($movies) . ')');
+                        // Check by slug (munowatch_id) first — avoids URL-based duplicates
+                        $exists = MovieCrawlerPage::where('slug', (string) $movieId)
+                            ->where('movie_crawler_website_id', $website->id)
+                            ->exists();
+                        if ($exists) continue;
+
+                        $url = "https://munowatch.org/api/preview/v2/{$movieId}/{$session['user_id']}";
+
+                        // Secondary URL check
+                        if (MovieCrawlerPage::where('url', $url)->exists()) continue;
+
+                        $cp                           = new MovieCrawlerPage();
+                        $cp->movie_crawler_website_id = $website->id;
+                        $cp->url                      = $url;
+                        $cp->title                    = $movie['title'] ?? 'Unknown';
+                        $cp->status                   = 'pending';
+                        $cp->slug                     = (string) $movieId;
+                        $cp->is_muno                  = 'Yes';
+                        $cp->muno_processed           = 'No';
+                        $cp->munowatch_id             = $movieId;
+                        $cp->vj                       = 'Munowatch API';
+                        $cp->save();
+                        $newPages++;
+                    }
+
+                    $page++;
+
+                    // Stop paginating if we got fewer than 20 movies (last page)
+                } while (count($movies) >= 20 && $page <= $maxPages);
+
+                $this->line("    ✓ {$newPages} new pages queued (scanned {$totalMoviesSeen} movies across " . ($page - 1) . ' pages)');
                 $this->session->increment('movies_discovered', $newPages);
-                $this->session->increment('pages_fetched');
+                $this->session->increment('pages_fetched', $page - 1);
 
-                $category->completeFetching(count($movies));
+                $category->completeFetching($totalMoviesSeen);
 
             } catch (\Throwable $e) {
                 $this->warn("    ✗ Failed: " . $e->getMessage());

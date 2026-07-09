@@ -117,7 +117,9 @@ class MovieController extends Controller
         // Build base query based on requested type
         $type = $request->get('type', 'Movie');
         $query = DB::table('movie_models')->select(self::LIST_FIELDS)
-            ->where('status', 'Active');
+            ->where(function ($q) {
+                $q->whereNull('fix_status')->orWhere('fix_status', '!=', 'error');
+            });
 
         if ($type === 'Series') {
             // Series tab: only first episodes of series
@@ -218,7 +220,6 @@ class MovieController extends Controller
             ->select($selectCols)
             ->where('movie_models.type', 'Series')
             ->where('movie_models.is_first_episode', 'yes')
-            ->where('movie_models.status', 'Active')
             ->where('series_movies.total_episodes', '>', 0);  // never send 0-ep series
 
         // ── Optional filters ──
@@ -299,7 +300,6 @@ class MovieController extends Controller
             ->select($selectCols)
             ->where('movie_models.type', 'Series')
             ->where('movie_models.is_first_episode', 'yes')
-            ->where('movie_models.status', 'Active')
             ->where('series_movies.total_episodes', '>', 0);
 
         // ── 1. Popular: top 15 by view count ──
@@ -373,7 +373,6 @@ class MovieController extends Controller
             ->join('series_movies', 'movie_models.category_id', '=', 'series_movies.id')
             ->where('movie_models.type', 'Series')
             ->where('movie_models.is_first_episode', 'yes')
-            ->where('movie_models.status', 'Active')
             ->where('series_movies.total_episodes', '>', 0);
 
         // Genres: split comma-separated genre strings and collect unique values
@@ -461,7 +460,6 @@ class MovieController extends Controller
         $fullMatchIds = DB::table('movie_models')
             ->select('id')
             ->where('type', 'Movie')
-            ->where('status', 'Active')
             ->where('title', 'LIKE', '%' . $searchTerm . '%')
             ->pluck('id')
             ->toArray();
@@ -510,7 +508,6 @@ class MovieController extends Controller
                 $matches = DB::table('movie_models')
                     ->select('id')
                     ->where('type', 'Movie')
-                    ->where('status', 'Active')
                     ->where('title', 'LIKE', '%' . $phrase . '%')
                     ->whereNotIn('id', array_keys($movieScores))
                     ->pluck('id')
@@ -557,7 +554,6 @@ class MovieController extends Controller
                 $matches = DB::table('movie_models')
                     ->select('id')
                     ->where('type', 'Movie')
-                    ->where('status', 'Active')
                     ->where('title', 'LIKE', '%' . $phrase . '%')
                     ->whereNotIn('id', array_keys($movieScores))
                     ->pluck('id')
@@ -598,7 +594,6 @@ class MovieController extends Controller
             // Active movies matching individual words
             $wordMatchIds = DB::table('movie_models')
                 ->select('id')
-                ->where('status', 'Active')
                 ->where('type', 'Movie')
                 ->where(function ($q) use ($sigWords) {
                     foreach ($sigWords as $w) {
@@ -821,7 +816,6 @@ class MovieController extends Controller
             $genreQuery = DB::table('movie_models')
                 ->select('id')
                 ->where('genre', $movie->genre)
-                ->where('status', 'Active')
                 ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
             if ($isSeries) {
                 $genreQuery->where(function ($q) {
@@ -840,7 +834,6 @@ class MovieController extends Controller
             $vjQuery = DB::table('movie_models')
                 ->select('id')
                 ->where('vj', 'LIKE', '%' . $movie->vj . '%')
-                ->where('status', 'Active')
                 ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
             if ($isSeries) {
                 $vjQuery->where(function ($q) {
@@ -861,7 +854,6 @@ class MovieController extends Controller
             $titleQuery = DB::table('movie_models')
                 ->select('id')
                 ->where('title', 'LIKE', '%' . $phrase . '%')
-                ->where('status', 'Active')
                 ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
             if ($isSeries) {
                 $titleQuery->where(function ($q) {
@@ -880,7 +872,6 @@ class MovieController extends Controller
             $yearQuery = DB::table('movie_models')
                 ->select('id')
                 ->where('year', $movie->year)
-                ->where('status', 'Active')
                 ->whereNotIn('id', array_merge(array_keys($scored), $excludeIds));
             if ($isSeries) {
                 $yearQuery->where(function ($q) {
@@ -1538,7 +1529,7 @@ class MovieController extends Controller
         $cacheKey = $user ? "reco_user_{$user->id}" : 'reco_guest';
 
         $items = Cache::remember($cacheKey, 300, function () use ($user, $limit) {
-            $base = DB::table('movie_models')->select(self::LIST_FIELDS)->where('status', 'Active');
+            $base = DB::table('movie_models')->select(self::LIST_FIELDS);
 
             if ($user) {
                 try {

@@ -1,20 +1,20 @@
 @extends('layouts.landing')
 
 @section('title', $siteName . ' — Uganda\'s Largest Luganda Streaming Platform')
-@section('description', 'Stream ' . number_format($totalMovies + $totalSeries) . '+ Luganda-translated movies and series on ' . $siteName . '. Professionally dubbed by Uganda\'s top VJs. Available on Android & iOS.')
-@section('keywords', 'Luganda movies, Luganda translated movies, Uganda streaming, LugaFlix, Luganda dubbed movies, watch movies in Luganda, Ugandan VJ movies, African cinema Luganda, stream Uganda movies online')
+@section('description', 'Stream ' . number_format($totalMovies + $totalSeries) . '+ Luganda-translated movies and series on ' . $siteName . '. Professionally translated into Luganda by local voice artists. Available on Android & iOS.')
+@section('keywords', 'Luganda movies, Luganda translated movies, Uganda streaming, LugaFlix, Luganda translated movies, watch movies in Luganda, Ugandan VJ movies, African cinema Luganda, stream Uganda movies online')
 
 @push('meta')
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{ $siteName }} — Uganda's Largest Luganda Streaming Platform">
-<meta property="og:description" content="{{ number_format($totalMovies + $totalSeries) }}+ titles dubbed in Luganda by {{ $totalVJs }}+ professional VJs. Download the app and start watching.">
+<meta property="og:description" content="{{ number_format($totalMovies + $totalSeries) }}+ titles translated to Luganda by {{ $totalVJs }}+ professional VJs. Download the app and start watching.">
 <meta property="og:image" content="{{ url('assets/images/logo.png') }}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:url" content="{{ url('/') }}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ $siteName }} — Uganda's Largest Luganda Streaming Platform">
-<meta name="twitter:description" content="{{ number_format($totalMovies + $totalSeries) }}+ Luganda-dubbed titles. Download free on Android & iOS.">
+<meta name="twitter:description" content="{{ number_format($totalMovies + $totalSeries) }}+ Luganda-translated titles. Download free on Android & iOS.">
 <meta name="twitter:image" content="{{ url('assets/images/logo.png') }}">
 <link rel="canonical" href="{{ url('/') }}">
 @endpush
@@ -35,7 +35,7 @@
                     Watch Movies in <br><span style="color: #FF7B00;">Your Language</span>
                 </h1>
                 <p class="mb-4" style="color: rgba(255,255,255,0.65); font-size: clamp(0.95rem, 2vw, 1.15rem); line-height: 1.7; max-width: 540px;">
-                    {{ $siteName }} is Uganda's largest Luganda-dubbed streaming service —
+                    {{ $siteName }} is Uganda's largest Luganda-translated streaming service —
                     <strong style="color: #fff;">{{ number_format($totalMovies + $totalSeries) }}+ titles</strong>,
                     <strong style="color: #fff;">{{ number_format($totalUsers) }}+ registered users</strong>,
                     and <strong style="color: #fff;">{{ $totalVJs }}+ professional VJs</strong> delivering
@@ -88,7 +88,7 @@
 <section style="background: #FF7B00; padding: 0.75rem 0;">
     <div class="container">
         <div class="d-flex flex-wrap justify-content-center align-items-center gap-3 gap-md-5 text-black" style="font-size: 0.8rem; font-weight: 700;">
-            <span><i class="bi bi-shield-fill-check me-1"></i>100% Original Dubbed Content</span>
+            <span><i class="bi bi-shield-fill-check me-1"></i>100% Original Translated Content</span>
             <span><i class="bi bi-cloud-check-fill me-1"></i>Cloud-Hosted on Dedicated Servers</span>
             <span><i class="bi bi-phone-fill me-1"></i>Android & iOS Apps</span>
             <span><i class="bi bi-arrow-repeat me-1"></i>New Titles Added Daily</span>
@@ -116,7 +116,7 @@
                     <div class="movie-card" style="position: relative; overflow: hidden; border-radius: 8px;">
                         @if($movie->thumbnail_url)
                         <img src="{{ $movie->thumbnail_url }}"
-                             alt="{{ $movie->title }} — Luganda Dubbed"
+                             alt="{{ $movie->title }} — Luganda Translated"
                              class="img-fluid w-100"
                              style="aspect-ratio: 2/3; object-fit: cover;"
                              loading="lazy">
@@ -202,7 +202,7 @@
                 <div class="text-center p-3" style="background: rgba(255,123,0,0.06); border: 1px solid rgba(255,123,0,0.15); border-radius: 12px; height: 100%;">
                     <i class="bi bi-film" style="font-size: 2.2rem; color: #FF7B00;"></i>
                     <div class="fw-bold text-white mt-2" style="font-size: 1.4rem;">{{ number_format($totalMovies) }}+</div>
-                    <div style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">Movies Dubbed</div>
+                    <div style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">Movies Translated</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
@@ -242,8 +242,8 @@
                 <div class="p-3 d-flex gap-3" style="background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.07);">
                     <i class="bi bi-translate flex-shrink-0 mt-1" style="color: #FF7B00; font-size: 1.3rem;"></i>
                     <div>
-                        <div class="text-white fw-bold" style="font-size: 0.9rem;">Original Luganda Dubbing</div>
-                        <div style="color: rgba(255,255,255,0.45); font-size: 0.78rem; line-height: 1.5;">Every title is dubbed in-house by Uganda's professional VJ voice actors — original creative works owned by LugaFlix.</div>
+                        <div class="text-white fw-bold" style="font-size: 0.9rem;">Original Luganda Translation</div>
+                        <div style="color: rgba(255,255,255,0.45); font-size: 0.78rem; line-height: 1.5;">Every title is translated in-house by Uganda's professional VJ voice actors — original creative works owned by LugaFlix.</div>
                     </div>
                 </div>
             </div>
@@ -288,9 +288,9 @@
         <article style="color: rgba(255,255,255,0.45); font-size: 0.82rem; max-width: 800px;">
             <h2 class="text-white mb-2" style="font-size: clamp(1rem, 3vw, 1.25rem);">About {{ $siteName }}</h2>
             <p style="line-height: 1.7;">
-                {{ $siteName }} is Uganda's largest and most active Luganda-dubbed streaming service, founded and operated from Kampala, Uganda.
+                {{ $siteName }} is Uganda's largest and most active Luganda-translated streaming service, founded and operated from Kampala, Uganda.
                 Since launching in 2023, the platform has grown to over <strong style="color: #fff;">{{ number_format($totalMovies + $totalSeries) }} titles</strong> spanning movies, series, documentaries, and lifestyle content —
-                all professionally dubbed into Luganda by a team of <strong style="color: #fff;">{{ $totalVJs }}+ voice artists</strong> (locally known as VJs).
+                all professionally translated into Luganda by a team of <strong style="color: #fff;">{{ $totalVJs }}+ voice artists</strong> (locally known as VJs).
                 The service is entirely self-hosted on dedicated cloud infrastructure and does not rely on YouTube, Netflix, or any third-party streaming provider.
             </p>
             <p style="line-height: 1.7;">
@@ -299,7 +299,7 @@
                 New content is processed and published daily. Users can stream in HD or download titles for offline viewing.
             </p>
             <ul class="list-unstyled mb-0 mt-3 row g-1" style="font-size: 0.78rem;">
-                <li class="col-12 col-sm-6"><i class="bi bi-check-circle-fill me-2" style="color: #FF7B00;"></i>{{ number_format($totalMovies) }}+ Luganda-dubbed movies</li>
+                <li class="col-12 col-sm-6"><i class="bi bi-check-circle-fill me-2" style="color: #FF7B00;"></i>{{ number_format($totalMovies) }}+ Luganda-translated movies</li>
                 <li class="col-12 col-sm-6"><i class="bi bi-check-circle-fill me-2" style="color: #FF7B00;"></i>{{ number_format($totalSeries) }}+ series episodes</li>
                 <li class="col-12 col-sm-6"><i class="bi bi-check-circle-fill me-2" style="color: #FF7B00;"></i>{{ $totalVJs }}+ professional Ugandan VJs</li>
                 <li class="col-12 col-sm-6"><i class="bi bi-check-circle-fill me-2" style="color: #FF7B00;"></i>{{ number_format($totalUsers) }}+ registered users</li>

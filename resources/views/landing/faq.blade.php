@@ -40,7 +40,7 @@
                             </h2>
                             <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
                                 <div class="accordion-body text-muted-custom">
-                                    {{ $siteName }} is a streaming platform that offers movies and TV series with authentic Luganda translation and subtitles. We provide entertainment content that speaks to your heart in your mother tongue, making it easier for Luganda speakers to enjoy international movies.
+                                    {{ $siteName }} is a streaming platform that offers movies and TV series with authentic Luganda translation and subtitles. We provide entertainment content that speaks to your heart in your mother tongue, making it easier for Luganda speakers to enjoy quality entertainment in their mother tongue.
                                 </div>
                             </div>
                         </div>

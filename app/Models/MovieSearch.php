@@ -116,9 +116,12 @@ class MovieSearch extends Model
                 return $recentSearch;
             }
             
-            // If it's the same length or shorter, just update the count and timestamp
+            // Same length or shorter — update count, timestamp, AND results so stale
+            // has_results=true records get corrected when the content changes status.
             $recentSearch->search_count += 1;
             $recentSearch->last_searched_at = now();
+            $recentSearch->results_count = $resultsCount;
+            $recentSearch->has_results = $resultsCount > 0;
             $recentSearch->save();
             
             return $recentSearch;

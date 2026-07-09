@@ -475,7 +475,6 @@ class SearchController extends Controller
         // ── Phase 1: Exact title match → Movies (1000 pts) ──
         if ($typeFilter !== 'series') {
             $movieExactIds = MovieModel::where('type', 'Movie')
-                ->where('status', 'Active')
                 ->where('title', 'LIKE', '%' . $searchTerm . '%')
                 ->pluck('id')->toArray();
 
@@ -534,8 +533,7 @@ class SearchController extends Controller
 
         // ── Phase 3: VJ name match ──
         // Pass A: full search term in vj field (900 pts — exact VJ name typed)
-        $vjFullIds = MovieModel::where('status', 'Active')
-            ->where('vj', 'LIKE', '%' . $searchTerm . '%')
+        $vjFullIds = MovieModel::where('vj', 'LIKE', '%' . $searchTerm . '%')
             ->whereNotIn('id', array_keys($scores))
             ->pluck('id')->toArray();
 
@@ -547,8 +545,7 @@ class SearchController extends Controller
         // Pass B: each significant word in vj field (750 pts per word match)
         // Catches "vj junior mechanic" → finds Vj Junior movies even when movie title is separate
         if (!empty($sigWords)) {
-            $vjWordIds = MovieModel::where('status', 'Active')
-                ->where(function ($q) use ($sigWords) {
+            $vjWordIds = MovieModel::where(function ($q) use ($sigWords) {
                     foreach ($sigWords as $w) {
                         $q->orWhere('vj', 'LIKE', '%' . $w . '%');
                     }
@@ -572,8 +569,7 @@ class SearchController extends Controller
                 $validWords = array_filter($temp, fn($w) => !in_array(strtolower($w), $ignoreWords));
                 if (empty($validWords)) break;
                 $phrase = implode(' ', $temp);
-                $matches = MovieModel::where('status', 'Active')
-                    ->where('title', 'LIKE', '%' . $phrase . '%')
+                $matches = MovieModel::where('title', 'LIKE', '%' . $phrase . '%')
                     ->whereNotIn('id', array_keys($scores))
                     ->pluck('id')->toArray();
                 $pts = 700 / count($words);
@@ -589,8 +585,7 @@ class SearchController extends Controller
                 $validWords = array_filter($temp, fn($w) => !in_array(strtolower($w), $ignoreWords));
                 if (empty($validWords)) break;
                 $phrase = implode(' ', $temp);
-                $matches = MovieModel::where('status', 'Active')
-                    ->where('title', 'LIKE', '%' . $phrase . '%')
+                $matches = MovieModel::where('title', 'LIKE', '%' . $phrase . '%')
                     ->whereNotIn('id', array_keys($scores))
                     ->pluck('id')->toArray();
                 $pts = 500 / count($words);
@@ -611,8 +606,7 @@ class SearchController extends Controller
             }
             $genreTerms = array_values(array_unique($genreTerms));
         }
-        $genreHit = MovieModel::where('status', 'Active')
-            ->where(function ($q) use ($genreTerms) {
+        $genreHit = MovieModel::where(function ($q) use ($genreTerms) {
                 foreach ($genreTerms as $term) {
                     $q->orWhere('genre', 'LIKE', '%' . $term . '%');
                 }
@@ -629,8 +623,7 @@ class SearchController extends Controller
         // ── Phase 6: Individual significant words (200 pts title, 150 pts description) ──
         if (!empty($sigWords)) {
             // Title word matches
-            $wordHits = MovieModel::where('status', 'Active')
-                ->where(function ($q) use ($sigWords) {
+            $wordHits = MovieModel::where(function ($q) use ($sigWords) {
                     foreach ($sigWords as $w) {
                         $q->orWhere('title', 'LIKE', '%' . $w . '%');
                     }
@@ -645,8 +638,7 @@ class SearchController extends Controller
             }
 
             // Description word matches (150 pts — broader contextual matching)
-            $descHits = MovieModel::where('status', 'Active')
-                ->where(function ($q) use ($sigWords) {
+            $descHits = MovieModel::where(function ($q) use ($sigWords) {
                     foreach ($sigWords as $w) {
                         $q->orWhere('description', 'LIKE', '%' . $w . '%');
                     }
@@ -663,17 +655,8 @@ class SearchController extends Controller
 
         // ── Apply filters ──
         if (!empty($scores)) {
-            // Collect IDs that came from active series (Phase 2) - these don't need status='Active'
-            $seriesPhase2Ids = array_keys(array_filter($itemTypes, fn($t) => $t === 'series'));
-
             $filteredQuery = MovieModel::select('id', 'type', 'category_id')
-                ->whereIn('id', array_keys($scores))
-                ->where(function ($q) use ($seriesPhase2Ids) {
-                    $q->where('status', 'Active');
-                    if (!empty($seriesPhase2Ids)) {
-                        $q->orWhereIn('id', $seriesPhase2Ids);
-                    }
-                });
+                ->whereIn('id', array_keys($scores));
 
             if ($typeFilter === 'movie') {
                 $filteredQuery->where('type', 'Movie');
@@ -771,7 +754,15 @@ class SearchController extends Controller
             $elapsed = round((microtime(true) - $startTime) * 1000);
             Log::info("[V2:searchAll] q='{$searchTerm}' results=0 ms={$elapsed}");
 
-            // Log the search
+            // Self-heal stale suggestions: mark ALL historical records for this term as
+            // has_results=false so they stop surfacing in auto-complete. Happens when
+            // content that previously returned results is later deactivated.
+            $normalizedTerm = strtolower($searchTerm);
+            MovieSearch::where('search_term_normalized', $normalizedTerm)
+                ->where('has_results', true)
+                ->update(['has_results' => false, 'results_count' => 0]);
+
+            // Log the search (creates a new record if none exists for this user/session)
             MovieSearch::logSearch($searchTerm, 0, [], $user->id, $request);
 
             return $this->success([

@@ -111,13 +111,9 @@ class ManifestController extends Controller
             return $this->getFeaturedMovie();
         });
 
-        // Guard: verify cached featured movie is still Active.
-        // A movie can be deactivated (auto-fix failure, admin action) during the 5-min TTL.
-        // One cheap EXISTS query per request; the full re-pick only fires on the rare deactivation.
+        // Guard: verify cached featured movie still exists (id valid).
         if ($featured && isset($featured['id'])) {
-            $stillActive = DB::table('movie_models')->where('id', $featured['id'])
-                ->where('status', 'Active')
-                ->exists();
+            $stillActive = DB::table('movie_models')->where('id', $featured['id'])->exists();
 
             if (!$stillActive) {
                 $inactiveId = $featured['id'];
@@ -331,7 +327,6 @@ class ManifestController extends Controller
         $movies = DB::table('movie_models')
             ->select(array_merge(self::SLIM_FIELDS, ['id']))
             ->whereIn('id', $movieIds)
-            ->where('status', 'Active')
             ->get();
         $moviesMap = $movies->keyBy('id');
 

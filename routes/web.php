@@ -2866,6 +2866,12 @@ Route::post('/contact', [LandingController::class, 'contactSubmit'])->name('land
 Route::get('/privacy-policy', [LandingController::class, 'privacyPolicy'])->name('landing.privacy-policy');
 Route::get('/terms-of-service', [LandingController::class, 'termsOfService'])->name('landing.terms-of-service');
 Route::get('/eula', [LandingController::class, 'eula'])->name('landing.eula');
+Route::get('/copyright-policy', function () {
+    return view('landing.copyright-policy', [
+        'siteName' => env('LANDING_SITE_NAME', 'LugaFlix'),
+        'companyName' => env('LANDING_COMPANY_NAME', 'LugaFlix'),
+    ]);
+})->name('landing.copyright-policy');
 
 // App Download Landing Page
 Route::get('/app', function () {

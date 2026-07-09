@@ -196,6 +196,19 @@ class Kernel extends ConsoleKernel
         $schedule->command('trending:send-notifications')->dailyAt('18:30')->name('trending-notif-evening')->withoutOverlapping();
         $schedule->command('trending:send-notifications')->dailyAt('21:30')->name('trending-notif-night')->withoutOverlapping();
 
+        // ──────────────────────────────────────────────────────────────────
+        // MOVIE STATUS SYNC — keeps status consistent with fix_status:
+        //   fix_status='fixed' + status='Inactive' → status='Active'
+        //   fix_status='error' + status='Active'   → status='Inactive'
+        // Runs every 30 minutes so newly fixed/failed movies propagate quickly.
+        // ──────────────────────────────────────────────────────────────────
+        $schedule->command('movies:sync-status')
+            ->everyThirtyMinutes()
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/movies-sync-status.log'))
+            ->name('movies-sync-status');
+
         // Weekly: Purge trending_notifications older than 30 days (P6-14)
         $schedule->call(function () {
             \DB::table('trending_notifications')

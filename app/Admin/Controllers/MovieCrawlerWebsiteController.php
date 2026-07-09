@@ -27,6 +27,16 @@ class MovieCrawlerWebsiteController extends AdminController
         $grid = new Grid(new MovieCrawlerWebsite());
         $grid->model()->orderBy('id', 'desc');
 
+        $grid->tools(function ($tools) {
+            $tools->append(
+                '<a href="' . admin_url('movie-crawler-websites/trigger-crawl') . '"'
+                . ' class="btn btn-sm btn-success"'
+                . ' onclick="return confirm(\'Start MunoWatch crawl now? This runs in background.\')">'
+                . '<i class="fa fa-refresh"></i> Trigger Crawl'
+                . '</a>'
+            );
+        });
+
         $grid->column('id', __('Id'))->sortable()->hide();
         $grid->column('name', __('Name'))->sortable();
         $grid->column('url', __('Url'))->hide();
@@ -47,6 +57,16 @@ class MovieCrawlerWebsiteController extends AdminController
         $grid->column('max_page', __('Max page'))->hide();
         $grid->column('error_message', __('Error message'))->sortable();
         return $grid;
+    }
+
+    public function triggerCrawl()
+    {
+        $log = storage_path('logs/munowatch_crawl.log');
+        $cmd = 'php ' . base_path('artisan') . ' munowatch:crawl --delay=300 --batch=20 --limit=200 >> ' . $log . ' 2>&1 &';
+        exec($cmd);
+
+        admin_success('Crawl triggered', 'MunoWatch crawl is running in background. Check logs/munowatch_crawl.log for progress.');
+        return redirect(admin_url('movie-crawler-websites'));
     }
 
     /**

@@ -256,10 +256,10 @@
                 <article class="text-white-50" style="font-size: 0.8rem;">
                     <h2 class="h6 h5-md text-white mb-2">Watch {{ $movie->title }} in Luganda</h2>
                     <p class="mb-2" style="line-height: 1.5;">
-                        Experience {{ $movie->title }} with professional Luganda translation. This {{ $movie->type === 'Series' ? 'series' : 'movie' }} features expert dubbing by Luganda voice actors. Download {{ $siteName }} app to stream {{ $movie->title }} and thousands of titles in HD quality.
+                        Experience {{ $movie->title }} with professional Luganda translation. This {{ $movie->type === 'Series' ? 'series' : 'movie' }} features expert translation by Luganda voice actors. Download {{ $siteName }} app to stream {{ $movie->title }} and thousands of titles in HD quality.
                     </p>
                     <ul class="list-unstyled mb-0" style="font-size: 0.75rem;">
-                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Professional Luganda dubbing</li>
+                        <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Professional Luganda translation</li>
                         <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>HD streaming optimized for Uganda</li>
                         <li class="mb-1"><i class="bi bi-check-circle-fill text-primary me-1"></i>Offline download available</li>
                     </ul>

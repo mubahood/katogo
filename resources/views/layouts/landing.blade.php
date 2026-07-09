@@ -513,6 +513,7 @@
                         <div class="mb-2"><a href="{{ route('landing.privacy-policy') }}">Privacy Policy</a></div>
                         <div class="mb-2"><a href="{{ route('landing.terms-of-service') }}">Terms of Service</a></div>
                         <div class="mb-2"><a href="{{ route('landing.eula') }}">EULA</a></div>
+                        <div class="mb-2"><a href="{{ route('landing.copyright-policy') }}">Copyright &amp; Takedown</a></div>
                     </div>
                 </div>
                 
