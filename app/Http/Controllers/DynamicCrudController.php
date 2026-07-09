@@ -2481,19 +2481,19 @@ class DynamicCrudController extends Controller
                 ->count();
 
             $flutterwaveSubscriptions = (clone $subscriptionsQuery)
-                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['flutterwave'])
+                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['flutterwave'])
                 ->count();
             $pesapalSubscriptions = (clone $subscriptionsQuery)
-                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['pesapal'])
+                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['pesapal'])
                 ->count();
 
             $flutterwaveCompletedPayments = (clone $subscriptionsQuery)
                 ->where('payment_status', 'Completed')
-                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['flutterwave'])
+                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['flutterwave'])
                 ->count();
             $pesapalCompletedPayments = (clone $subscriptionsQuery)
                 ->where('payment_status', 'Completed')
-                ->whereRaw("LOWER(COALESCE(payment_gateway, payment_method, '')) = ?", ['pesapal'])
+                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['pesapal'])
                 ->count();
 
             // Get recent activity

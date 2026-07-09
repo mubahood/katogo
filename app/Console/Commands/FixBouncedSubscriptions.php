@@ -68,14 +68,14 @@ class FixBouncedSubscriptions extends Command
 
         if ($gateway === 'flutterwave') {
             $query->where(function ($q) {
-                $q->whereRaw('LOWER(COALESCE(payment_gateway, "")) = ?', ['flutterwave'])
-                    ->orWhereRaw('LOWER(COALESCE(payment_method, "")) = ?', ['flutterwave'])
+                $q->whereRaw('LOWER(CONVERT(COALESCE(payment_gateway, "") USING utf8mb4)) = ?', ['flutterwave'])
+                    ->orWhereRaw('LOWER(CONVERT(COALESCE(payment_method, "") USING utf8mb4)) = ?', ['flutterwave'])
                     ->orWhereNotNull('flutterwave_reference');
             });
         } else {
             $query->where(function ($q) {
-                $q->whereRaw('LOWER(COALESCE(payment_gateway, "")) = ?', ['pesapal'])
-                    ->orWhereRaw('LOWER(COALESCE(payment_method, "")) = ?', ['pesapal'])
+                $q->whereRaw('LOWER(CONVERT(COALESCE(payment_gateway, "") USING utf8mb4)) = ?', ['pesapal'])
+                    ->orWhereRaw('LOWER(CONVERT(COALESCE(payment_method, "") USING utf8mb4)) = ?', ['pesapal'])
                     ->orWhereNotNull('pesapal_tracking_id');
             });
         }
