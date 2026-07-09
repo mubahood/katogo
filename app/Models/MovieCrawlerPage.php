@@ -566,11 +566,6 @@ class MovieCrawlerPage extends Model
     {
 
         try {
-            // Check if movie already exists to avoid duplicates
-            $existing_post = MovieModel::where('external_url', $this->url)->first();
-
-
-
             // Parse JSON response from munowatch API
             $jsonData = json_decode($this->page_content, true);
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -603,12 +598,19 @@ class MovieCrawlerPage extends Model
                 // throw new \Exception('Extracted video URL is not valid: ' . $playingUrl);
             }
 
-            //check by page source url
+            // Check munowatch_id first — indexed and most specific, avoids 9 wasteful full-table queries
+            $videoId = $preview['id'] ?? '';
+            $existing_post = null;
+            if (!empty($videoId)) {
+                $existing_post = MovieModel::where('munowatch_id', $videoId)->first();
+            }
+
+            //check by external_url
             if ($existing_post == null) {
                 $existing_post = MovieModel::where('external_url', $this->url)->first();
             }
 
-            //check by url
+            //check by playing url
             if ($existing_post == null) {
                 $existing_post = MovieModel::where('url', $playingUrl)
                     ->first();
@@ -705,15 +707,15 @@ class MovieCrawlerPage extends Model
                 $primaryVideoUrl = $openloadUrl;
             }
 
-            // ===== CHECK FOR EXISTING MOVIE TO AVOID DUPLICATES =====
+            // ===== ADDITIONAL DUPLICATE CHECKS (fallback if munowatch_id/external_url/url missed) =====
 
             if ($existing_post == null) {
                 $existing_post = MovieModel::where('title', $title)
                     ->first();
             }
 
-            //check by url using primaryVideoUrl
-            if ($existing_post == null) {
+            //check by url using primaryVideoUrl (covers embed/openload fallbacks)
+            if ($existing_post == null && $primaryVideoUrl !== $playingUrl) {
                 $existing_post = MovieModel::where('url', $primaryVideoUrl)
                     ->first();
             }
@@ -731,12 +733,6 @@ class MovieCrawlerPage extends Model
             //check by page_source_url
             if ($existing_post == null) {
                 $existing_post = MovieModel::where('page_source_url', $this->url)
-                    ->first();
-            }
-
-            //use munowatch id to check
-            if ($existing_post == null) {
-                $existing_post = MovieModel::where('munowatch_id', $videoId)
                     ->first();
             }
 
@@ -1001,23 +997,28 @@ class MovieCrawlerPage extends Model
             }
 
             // ── Step 3: Delegate episode syncing to SeriesFixerService ──
-            // This uses the robust range API + chain traversal (nxt_eps_id).
-            try {
-                $syncResult = $fixer->syncAllEpisodes((int) $seriesMovie->id);
-                $created = $syncResult['created'] ?? 0;
-                $updated = $syncResult['updated'] ?? 0;
-                $syncMsg = $syncResult['message'] ?? '';
-                Log::info("[CrawlerSeries] Sync for series #{$seriesMovie->id}: {$syncMsg}");
-            } catch (\Throwable $th) {
-                Log::warning("[CrawlerSeries] Sync failed for series #{$seriesMovie->id}: " . $th->getMessage());
-                // Continue — we still created the series even if sync failed
-            }
+            // Skip if series already has episodes — avoids re-syncing all 100+ episodes
+            // per episode page, which costs 45+ seconds per page.
+            $existingEpisodeCount = MovieModel::where('category_id', $seriesMovie->id)->count();
+            if ($existingEpisodeCount === 0) {
+                try {
+                    $syncResult = $fixer->syncAllEpisodes((int) $seriesMovie->id);
+                    $created = $syncResult['created'] ?? 0;
+                    $updated = $syncResult['updated'] ?? 0;
+                    $syncMsg = $syncResult['message'] ?? '';
+                    Log::info("[CrawlerSeries] Sync for series #{$seriesMovie->id}: {$syncMsg}");
+                } catch (\Throwable $th) {
+                    Log::warning("[CrawlerSeries] Sync failed for series #{$seriesMovie->id}: " . $th->getMessage());
+                }
 
-            // ── Step 4: Activate series if it has episodes ──
-            try {
-                $fixer->checkAndActivateSeries((int) $seriesMovie->id);
-            } catch (\Throwable $th) {
-                Log::warning("[CrawlerSeries] Activation check failed: " . $th->getMessage());
+                // ── Step 4: Activate series if it has episodes ──
+                try {
+                    $fixer->checkAndActivateSeries((int) $seriesMovie->id);
+                } catch (\Throwable $th) {
+                    Log::warning("[CrawlerSeries] Activation check failed: " . $th->getMessage());
+                }
+            } else {
+                Log::info("[CrawlerSeries] Series #{$seriesMovie->id} already has {$existingEpisodeCount} episodes — skipping sync");
             }
 
             // ── Step 5: Update this crawler page and related crawler pages ──
@@ -1029,7 +1030,9 @@ class MovieCrawlerPage extends Model
             $this->error_message = null;
             $this->save();
 
-            // Mark related crawler pages (same series_code) as processed
+            // Mark related pending crawler pages by series_code (fast, avoids page_content scan)
+            $this->markRelatedCrawlerPagesBySeriesCode($series_code, $seriesMovie->id);
+            // Also mark by page_content for already-fetched pages
             $this->markRelatedCrawlerPages($series_code, $seriesMovie->id);
 
         } catch (\Throwable $th) {
@@ -1077,6 +1080,31 @@ class MovieCrawlerPage extends Model
         }
 
         return null;
+    }
+
+    /**
+     * Mark pending crawler pages that have the series_code column set — fast indexed query.
+     * Called before markRelatedCrawlerPages to avoid processing episode pages individually.
+     */
+    protected function markRelatedCrawlerPagesBySeriesCode(string $seriesCode, int $seriesId): void
+    {
+        try {
+            $count = MovieCrawlerPage::where('series_code', $seriesCode)
+                ->where('id', '!=', $this->id)
+                ->where('status', 'pending')
+                ->update([
+                    'series_id'             => $seriesId,
+                    'muno_series_processed' => 'Yes',
+                    'muno_series_success'   => 'Yes',
+                    'status'                => 'success',
+                    'muno_processed'        => 'Yes',
+                ]);
+            if ($count > 0) {
+                Log::info("[CrawlerSeries] Fast-marked {$count} pending pages for series #{$seriesId} via series_code");
+            }
+        } catch (\Throwable $th) {
+            Log::warning("[CrawlerSeries] Fast-mark by series_code failed: " . $th->getMessage());
+        }
     }
 
     /**
