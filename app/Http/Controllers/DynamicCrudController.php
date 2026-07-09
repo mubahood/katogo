@@ -2481,19 +2481,19 @@ class DynamicCrudController extends Controller
                 ->count();
 
             $flutterwaveSubscriptions = (clone $subscriptionsQuery)
-                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['flutterwave'])
+                ->where(function ($q) { $q->where('payment_gateway', 'flutterwave')->orWhere('payment_method', 'flutterwave'); })
                 ->count();
             $pesapalSubscriptions = (clone $subscriptionsQuery)
-                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['pesapal'])
+                ->where(function ($q) { $q->where('payment_gateway', 'pesapal')->orWhere('payment_method', 'pesapal'); })
                 ->count();
 
             $flutterwaveCompletedPayments = (clone $subscriptionsQuery)
                 ->where('payment_status', 'Completed')
-                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['flutterwave'])
+                ->where(function ($q) { $q->where('payment_gateway', 'flutterwave')->orWhere('payment_method', 'flutterwave'); })
                 ->count();
             $pesapalCompletedPayments = (clone $subscriptionsQuery)
                 ->where('payment_status', 'Completed')
-                ->whereRaw("LOWER(CONVERT(COALESCE(payment_gateway, payment_method, '') USING utf8mb4)) = ?", ['pesapal'])
+                ->where(function ($q) { $q->where('payment_gateway', 'pesapal')->orWhere('payment_method', 'pesapal'); })
                 ->count();
 
             // Get recent activity

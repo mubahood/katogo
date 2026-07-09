@@ -1,5 +1,6 @@
 .env
 .server-credentials
+.vps-credentials
 public/storage/files/*transition-data/*.csv
 storage/api_cache/*
 !storage/api_cache/.gitignore

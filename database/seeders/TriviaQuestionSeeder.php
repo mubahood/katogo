@@ -30,12 +30,12 @@ class TriviaQuestionSeeder extends Seeder
 
         // Set version meta
         DB::table('trivia_meta')->updateOrInsert(
-            ['meta_key' => 'current_version'],
-            ['meta_value' => '1']
+            ['key' => 'current_version'],
+            ['value' => '1']
         );
         DB::table('trivia_meta')->updateOrInsert(
-            ['meta_key' => 'total_count'],
-            ['meta_value' => (string) $total]
+            ['key' => 'total_count'],
+            ['value' => (string) $total]
         );
 
         $this->command->info("✅ Seeded {$total} trivia questions.");

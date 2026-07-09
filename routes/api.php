@@ -309,6 +309,19 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         // Game Stats — offline-first sync
         Route::get('game-stats',        [V2GameStatsController::class, 'index']);
         Route::post('game-stats/sync',  [V2GameStatsController::class, 'sync']);
+
+        // Support Tickets — v2 aliases (mirror of /api/support/tickets)
+        Route::post('support/tickets',                 [\App\Http\Controllers\Api\SupportTicketController::class, 'createTicket']);
+        Route::get('support/tickets',                  [\App\Http\Controllers\Api\SupportTicketController::class, 'listTickets']);
+        Route::get('support/tickets/{id}',             [\App\Http\Controllers\Api\SupportTicketController::class, 'getTicket']);
+        Route::post('support/tickets/{id}/records',    [\App\Http\Controllers\Api\SupportTicketController::class, 'addReply']);
+        Route::patch('support/tickets/{id}/status',    [\App\Http\Controllers\Api\SupportTicketController::class, 'updateStatus']);
+        Route::post('support/tickets/{id}/assign',     [\App\Http\Controllers\Api\SupportTicketController::class, 'assignTicket']);
+        Route::get('support/team',                     [\App\Http\Controllers\Api\SupportTicketController::class, 'listSupportTeam']);
+        Route::post('support/movie-requests',              [\App\Http\Controllers\Api\MovieRequestController::class, 'create']);
+        Route::get('support/movie-requests',               [\App\Http\Controllers\Api\MovieRequestController::class, 'index']);
+        Route::get('support/movie-requests/{id}',          [\App\Http\Controllers\Api\MovieRequestController::class, 'show']);
+        Route::patch('support/movie-requests/{id}/status', [\App\Http\Controllers\Api\MovieRequestController::class, 'updateStatus']);
     });
 });
 
