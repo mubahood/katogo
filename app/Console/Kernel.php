@@ -66,7 +66,8 @@ class Kernel extends ConsoleKernel
         })->dailyAt('02:15')->name('purge-expired-game-invitations')->withoutOverlapping();
 
         // Queue worker — runs every minute, processes pending jobs then exits (P7-02)
-        $schedule->command('queue:work database --sleep=3 --tries=3 --stop-when-empty')
+        // Uses 'redis' connection to match QUEUE_CONNECTION=redis in .env
+        $schedule->command('queue:work redis --sleep=3 --tries=3 --stop-when-empty')
             ->everyMinute()
             ->withoutOverlapping(5)
             ->runInBackground()
