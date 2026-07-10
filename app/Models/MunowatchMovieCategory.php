@@ -225,7 +225,7 @@ class MunowatchMovieCategory extends Model
      * - Category 5 (TV Shows): uses shows endpoint 
      * - All other categories: use movies from dashboard data (no separate API call needed)
      */
-    public function getMoviesFetchURL($page = 1, $userId = null)
+    public function getMoviesFetchURL($page = 1, $userId = null, int $lastId = 0)
     {
         if (empty($userId)) {
             try {
@@ -239,7 +239,7 @@ class MunowatchMovieCategory extends Model
 
         switch ($this->api_endpoint_type) {
             case self::ENDPOINT_SHOWS:
-                $lastId = ($page - 1) * 20;
+                // Cursor-based: lid = 0 means start from newest; lid = X means get movies with ID < X
                 return $baseUrl . str_replace(['{uid}', '{lid}'], [$userId, $lastId], $this->pagination_endpoint);
 
             case self::ENDPOINT_DASHBOARD:
@@ -254,7 +254,7 @@ class MunowatchMovieCategory extends Model
      * - For dashboard categories: returns the movies from the latest dashboard fetch
      * - For TV shows category: makes API call to shows endpoint
      */
-    public function fetchMovies($page = 1, $userId = null)
+    public function fetchMovies($page = 1, $userId = null, int $lastId = 0)
     {
         try {
             $session   = MunowatchAuthService::getActiveSession();
@@ -263,24 +263,25 @@ class MunowatchMovieCategory extends Model
             if (empty($userId)) {
                 $userId = $session['user_id'];
             }
-            
+
             Log::info('Fetching movies for category', [
                 'category_id' => $this->munowatch_category_id,
                 'category_name' => $this->category_name,
                 'page' => $page,
+                'last_id' => $lastId,
                 'endpoint_type' => $this->api_endpoint_type
             ]);
 
             if ($this->api_endpoint_type === self::ENDPOINT_DASHBOARD) {
                 // For dashboard categories, return the movies from sample_movies
                 $movies = $this->sample_movies ?? [];
-                
+
                 Log::info('Returning dashboard movies for category', [
                     'category_id' => $this->munowatch_category_id,
                     'category_name' => $this->category_name,
                     'movies_count' => count($movies)
                 ]);
-                
+
                 // Update fetch statistics
                 $this->update([
                     'last_movies_fetched_at' => Carbon::now(),
@@ -288,12 +289,12 @@ class MunowatchMovieCategory extends Model
                     'status' => self::STATUS_ACTIVE,
                     'last_error_message' => null
                 ]);
-                
+
                 return $movies; // Return array directly like Flutter app
-                
+
             } else {
-                // For TV shows and other special endpoints, make API call
-                $url = $this->getMoviesFetchURL($page, $userId);
+                // For TV shows and other special endpoints, make API call (cursor-based pagination)
+                $url = $this->getMoviesFetchURL($page, $userId, $lastId);
 
                 $response = Utils::get_url_with_auth($url, [
                     'Authorization' => 'Bearer ' . $jwtToken,

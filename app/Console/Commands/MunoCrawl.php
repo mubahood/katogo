@@ -125,6 +125,14 @@ class MunoCrawl extends Command
             return;
         }
 
+        // Always refresh the dashboard first so sample_movies reflects current uploads
+        try {
+            $refreshed = MunowatchMovieCategory::fetchCategoriesFromDashboard();
+            $this->line("  ✓ Dashboard refreshed — {$refreshed} categories updated");
+        } catch (\Throwable $e) {
+            $this->warn("  ✗ Dashboard refresh failed: " . $e->getMessage() . ' — continuing with cached data');
+        }
+
         $categoryFilter = $this->option('category') ? (int) $this->option('category') : null;
 
         $categories = MunowatchMovieCategory::active()
@@ -152,20 +160,24 @@ class MunoCrawl extends Command
                 $newPages = 0;
                 $totalMoviesSeen = 0;
                 $page = 1;
-                $maxPages = 100; // safety cap: 100 pages × 20 movies = 2,000 movies per category
+                $lastId = 0; // cursor: 0 = start from newest
+                $maxPages = 100; // safety cap
 
                 do {
-                    $movies = $category->fetchMovies($page, $session['user_id']);
+                    $movies = $category->fetchMovies($page, $session['user_id'], $lastId);
 
                     if (empty($movies)) {
-                        break; // no more pages
+                        break;
                     }
 
                     $totalMoviesSeen += count($movies);
+                    $minIdThisBatch = PHP_INT_MAX;
 
                     foreach ($movies as $movie) {
                         $movieId = $movie['vid'] ?? $movie['id'] ?? null;
                         if (empty($movieId)) continue;
+
+                        $minIdThisBatch = min($minIdThisBatch, (int) $movieId);
 
                         // Check by slug (munowatch_id) first — avoids URL-based duplicates
                         $exists = MovieCrawlerPage::where('slug', (string) $movieId)
@@ -192,10 +204,12 @@ class MunoCrawl extends Command
                         $newPages++;
                     }
 
+                    // Cursor-based pagination: use minimum ID from this batch as next cursor
+                    $lastId = $minIdThisBatch < PHP_INT_MAX ? $minIdThisBatch : 0;
                     $page++;
 
                     // Stop paginating if we got fewer than 20 movies (last page)
-                } while (count($movies) >= 20 && $page <= $maxPages);
+                } while (count($movies) >= 20 && $page <= $maxPages && $lastId > 0);
 
                 $this->line("    ✓ {$newPages} new pages queued (scanned {$totalMoviesSeen} movies across " . ($page - 1) . ' pages)');
                 $this->session->increment('movies_discovered', $newPages);
