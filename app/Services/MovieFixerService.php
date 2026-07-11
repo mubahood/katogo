@@ -190,6 +190,21 @@ class MovieFixerService
         $oldUrl   = $movie->getRawOriginal('url') ?? $movie->url;
         $isSeries = $this->isSeries($movie);
 
+        // ── Hetzner guard — never overwrite a video already hosted on Hetzner Storage ──
+        // Movies transferred to Hetzner are the authoritative copy; the external source
+        // may have a different (lower quality) version or no longer host the file at all.
+        if (self::isHetznerUrl((string) $oldUrl)) {
+            Log::info("[MovieFixer] #{$movieId}: SKIPPED — video is on Hetzner Storage (protected from overwrite)");
+            return [
+                'success' => true,
+                'message' => 'Skipped — this movie is hosted on Hetzner Storage and is protected from fix overwrite.',
+                'movie'   => $this->movieToArray($movie),
+                'old_url' => $oldUrl,
+                'new_url' => $oldUrl,
+                'changes' => [],
+            ];
+        }
+
         Log::info("[MovieFixer] Starting fix for " . ($isSeries ? 'series episode' : 'movie') . " #{$movieId}: {$movie->title}");
 
         // Increment fix attempts on all related failures FIRST
@@ -735,12 +750,19 @@ class MovieFixerService
         // ── Video URL (most critical) ──
         $oldUrlRaw = $movie->getRawOriginal('url') ?? '';
         if ($newUrl !== $oldUrlRaw) {
-            // Preserve old URL for reference
-            if (!empty($oldUrlRaw) && strlen($oldUrlRaw) > 5) {
-                $movie->old_video_url = $this->normalizeOldVideoUrlForStorage($oldUrlRaw);
+            // Never overwrite a Hetzner-hosted URL — this is a safety net in addition
+            // to the early-return guard in fixMovie(). applyFreshData() may be called
+            // independently, so the check is duplicated here defensively.
+            if (self::isHetznerUrl($oldUrlRaw)) {
+                Log::info("[MovieFixer] #{$movie->id}: applyFreshData — skipping URL update, current URL is Hetzner Storage");
+            } else {
+                // Preserve old URL for reference
+                if (!empty($oldUrlRaw) && strlen($oldUrlRaw) > 5) {
+                    $movie->old_video_url = $this->normalizeOldVideoUrlForStorage($oldUrlRaw);
+                }
+                $movie->url = $newUrl;
+                $changes['url'] = ['old' => $oldUrlRaw, 'new' => $newUrl];
             }
-            $movie->url = $newUrl;
-            $changes['url'] = ['old' => $oldUrlRaw, 'new' => $newUrl];
         }
 
         // ── Title ──
@@ -1359,5 +1381,17 @@ class MovieFixerService
 
         // TEXT supports up to 65535 bytes; keep safe headroom.
         return mb_substr($value, 0, 60000);
+    }
+
+    /**
+     * Returns true if the given URL points to Hetzner Storage Share.
+     * Used as a guard to prevent any fix logic from overwriting Hetzner-hosted videos.
+     */
+    public static function isHetznerUrl(?string $url): bool
+    {
+        return !empty($url) && (
+            str_contains($url, 'storageshare.de') ||
+            str_contains($url, 'nx100800')
+        );
     }
 }

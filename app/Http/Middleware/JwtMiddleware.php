@@ -2,11 +2,14 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use App\Models\Utils;
+use App\Services\GhostAccountService;
 use Closure;
 use Dflydev\DotAccessData\Util;
 use JWTAuth;
 use Exception;
+use Illuminate\Support\Facades\Log;
 use Tymon\JWTAuth\Facades\JWTAuth as FacadesJWTAuth;
 use Tymon\JWTAuth\Http\Middleware\BaseMiddleware;
 use Illuminate\Support\Str;
@@ -81,14 +84,36 @@ class JwtMiddleware extends BaseMiddleware
             $request->headers->set('authorization', $Authorization); // set header in request
 
             $user = FacadesJWTAuth::parseToken()->authenticate();
-            
+
             if (!$user) {
-                return response()->json(['code' => 0, 'message' => 'User not found'], 401);
+                // Token is cryptographically valid but the account no longer exists in DB.
+                // Attempt to resurrect the ghost account using the user_id from the JWT sub claim.
+                $user = $this->tryResurrectGhost();
+                if ($user) {
+                    auth('api')->setUser($user);
+                } else {
+                    return response()->json(['code' => 0, 'message' => 'User not found'], 401);
+                }
             }
         } catch (Exception $e) {
             // If JWT fails, the request continues and Utils::get_user will check for logged_in_user_id header
             // This allows backward compatibility with older clients that don't use JWT
         }
         return $next($request);
+    }
+
+    private function tryResurrectGhost(): ?User
+    {
+        try {
+            $payload = FacadesJWTAuth::getPayload();
+            $userId  = (int) ($payload->get('sub') ?? 0);
+            if ($userId <= 0) {
+                return null;
+            }
+            return app(GhostAccountService::class)->resurrect($userId);
+        } catch (\Throwable $e) {
+            Log::warning('Ghost resurrection attempt failed', ['error' => $e->getMessage()]);
+            return null;
+        }
     }
 }
