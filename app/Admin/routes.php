@@ -269,15 +269,13 @@ Route::group([
     $router->get('namz-crawl-logs',                       'NamzCrawlerController@index')->name('namz-crawl-logs.index');
 
     // ============================================
-    // GAME MODULE ROUTES — DISABLED (resource optimization)
+    // GAME MODULE ROUTES
     // ============================================
-    /*
     $router->get('game-dashboard', 'GameDashboardController@index')->name('game-dashboard');
     $router->resource('game-sessions', GameSessionController::class);
     $router->resource('ludo-sessions', LudoSessionController::class);
     $router->resource('game-invitations', GameInvitationController::class);
     $router->resource('coin-transactions', CoinTransactionController::class);
-    */
 
     // ============================================
     // OFFLINE GAME STATS

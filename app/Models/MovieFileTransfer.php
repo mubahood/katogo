@@ -138,31 +138,74 @@ class MovieFileTransfer extends Model
     // ── Static factory ────────────────────────────────────────────────────────
 
     /**
-     * Create a queued transfer record from a MovieModel.
-     * Captures a snapshot of movie fields at queue time.
+     * Compute priority for a movie transfer.
+     *
+     * Priority tiers (×10 M each) guarantee global ordering:
+     *   Tier 3 — MunoWatch single movies   (30_000_000 base)
+     *   Tier 2 — Non-Muno single movies    (20_000_000 base)
+     *   Tier 1 — MunoWatch series          (10_000_000 base)
+     *   Tier 0 — Non-Muno series           (         0 base)
+     *
+     * Within each tier, recently-watched movies are boosted (up to 5 M),
+     * then engagement score (downloads×5 + views×3 + likes×2, capped 999 K).
      */
-    public static function queueForMovie(MovieModel $movie, string $initiatedBy = 'observer'): static
+    public static function calculatePriority(MovieModel $movie, ?string $lastViewedAt = null): int
     {
-        $sourceType = 'other';
-        $url = (string)($movie->attributes['url'] ?? $movie->url ?? '');
+        $isMuno   = ($movie->is_muno ?? 'No') === 'Yes' || !empty($movie->munowatch_id);
+        $isSeries = ($movie->type ?? 'Movie') === 'Series';
 
-        if (str_contains($url, 'munowatch')) {
-            $sourceType = 'munowatch';
-        } elseif (str_contains($url, 'drive.google.com') || str_contains($url, 'googleapis.com')) {
-            $sourceType = 'gdrive';
-        } elseif (str_contains($url, 'firebase') || str_contains($url, 'firebaseapp')) {
-            $sourceType = 'firebase';
-        } elseif (str_contains($url, self::HETZNER_HOST)) {
-            $sourceType = 'hetzner';
+        $tier = match (true) {
+            $isMuno && !$isSeries  => 3,
+            !$isMuno && !$isSeries => 2,
+            $isMuno && $isSeries   => 1,
+            default                => 0,
+        };
+
+        $recencyBonus = 0;
+        if ($lastViewedAt) {
+            $daysSince    = max(0, (int) ceil((time() - strtotime($lastViewedAt)) / 86400));
+            $recencyBonus = match (true) {
+                $daysSince <= 7   => 5_000_000,
+                $daysSince <= 30  => 2_000_000,
+                $daysSince <= 90  =>   500_000,
+                $daysSince <= 365 =>   100_000,
+                default           =>         0,
+            };
         }
 
-        // Priority score: downloaded movies get highest weight (user committed to it),
-        // then views (plays), then likes. Caps at 999999 to stay in INT range safely.
-        $priority = min(999999,
-            ((int)($movie->views_count     ?? 0)) * 3 +
-            ((int)($movie->downloads_count ?? 0)) * 5 +
-            ((int)($movie->likes_count     ?? 0)) * 2
-        );
+        $downloads = (int)($movie->downloads_count ?? 0) + (int)($movie->in_app_downloads_count ?? 0);
+        $views     = (int)($movie->views_count ?? 0);
+        $likes     = (int)($movie->likes_count ?? 0);
+        $engagement = min(999_999, $downloads * 5 + $views * 3 + $likes * 2);
+
+        return ($tier * 10_000_000) + $recencyBonus + $engagement;
+    }
+
+    /**
+     * Create a queued transfer record from a MovieModel.
+     * Captures a snapshot of movie fields at queue time.
+     *
+     * Pass $priority to override the calculated value (used by backfill
+     * which pre-computes priority with recency data).
+     */
+    public static function queueForMovie(
+        MovieModel $movie,
+        string $initiatedBy = 'observer',
+        int $priority = -1,
+    ): static {
+        $url = (string)($movie->attributes['url'] ?? $movie->url ?? '');
+
+        $sourceType = match (true) {
+            str_contains($url, 'munowatch') || str_contains($url, 'b-cdn.net') || str_contains($url, 'munotek') => 'munowatch',
+            str_contains($url, 'drive.google.com') || str_contains($url, 'googleapis.com')                       => 'gdrive',
+            str_contains($url, 'firebase') || str_contains($url, 'firebaseapp')                                   => 'firebase',
+            str_contains($url, self::HETZNER_HOST)                                                                => 'hetzner',
+            default                                                                                                => 'other',
+        };
+
+        if ($priority < 0) {
+            $priority = static::calculatePriority($movie);
+        }
 
         return static::create([
             'movie_id'           => $movie->id,
@@ -192,8 +235,9 @@ class MovieFileTransfer extends Model
     // ── Guard helpers ─────────────────────────────────────────────────────────
 
     /**
-     * True if the movie already has a pending, active, or completed transfer.
-     * Used by the observer to prevent duplicate queue entries.
+     * True if the movie already has any non-terminal transfer record
+     * (pending, active, done, or failed — including exhausted failures).
+     * Prevents duplicate queue entries; use transfers:diagnose to fix failed ones.
      */
     public static function hasPendingOrCompleted(int $movieId): bool
     {
@@ -204,8 +248,17 @@ class MovieFileTransfer extends Model
                 self::STATUS_TRANSFERRING,
                 self::STATUS_COMPLETING,
                 self::STATUS_DONE,
+                self::STATUS_FAILED,   // avoids duplicate records; diagnose command handles retries
             ])
             ->exists();
+    }
+
+    /**
+     * True if the movie has any transfer record at all (including cancelled/skipped).
+     */
+    public static function hasAnyTransfer(int $movieId): bool
+    {
+        return static::where('movie_id', $movieId)->exists();
     }
 
     /**

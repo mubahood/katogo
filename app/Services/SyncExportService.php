@@ -20,7 +20,7 @@ class SyncExportService
         'movie_downloads', 'movie_requests', 'movie_searches', 'movie_wishlists',
         'movie_pics', 'movie_crawler_websites', 'movie_crawler_pages',
         'munowatch_categories', 'munowatch_movie_categories',
-        'customer_tickets', 'customer_ticket_records',
+        'user_activity_logs', 'movie_ratings',
         'content_reports', 'content_moderation_logs', 'video_playback_failures',
         'chat_heads', 'chat_messages',
         'game_stats', 'trending_notifications', 'coin_transactions',

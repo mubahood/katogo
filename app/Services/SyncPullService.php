@@ -45,8 +45,8 @@ class SyncPullService
         'movie_requests'             => [2, 5,  true,  false],
         'movie_searches'             => [2, 5,  true,  false],
         'movie_wishlists'            => [2, 5,  true,  false],
-        'customer_tickets'           => [2, 5,  true,  false],
-        'customer_ticket_records'    => [2, 5,  true,  false],
+        'user_activity_logs'         => [2, 5,  true,  false],
+        'movie_ratings'              => [2, 5,  true,  false],
         'video_playback_failures'    => [3, 15, true,  false],
         'content_reports'            => [3, 15, true,  false],
         'content_moderation_logs'    => [3, 15, true,  false],
@@ -137,10 +137,21 @@ class SyncPullService
         bool $dryRun = false,
         ?callable $progress = null
     ): array {
-        $runId = (string) Str::uuid();
-        $results = [];
-
         $progress ??= fn() => null;
+
+        // File lock prevents two concurrent sync:pull processes from colliding on
+        // the SSH tunnel port (13306). If the lock is held, skip this run — the
+        // scheduler will retry in 5 minutes and the holding process will be done by then.
+        $lockPath = storage_path('logs/sync-pull.lock');
+        $lockFile = @fopen($lockPath, 'c+');
+        if (!$lockFile || !flock($lockFile, LOCK_EX | LOCK_NB)) {
+            if ($lockFile) fclose($lockFile);
+            $progress(null, 'skip', 'Another sync:pull is already running — skipping to avoid tunnel port conflict.');
+            return [];
+        }
+
+        $runId   = (string) Str::uuid();
+        $results = [];
 
         try {
             $progress(null, 'open', 'Opening SSH tunnel to Namecheap...');
@@ -179,6 +190,8 @@ class SyncPullService
             }
         } finally {
             $this->closeTunnel();
+            flock($lockFile, LOCK_UN);
+            fclose($lockFile);
         }
 
         return $results;

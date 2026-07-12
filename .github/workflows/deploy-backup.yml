@@ -1,0 +1,85 @@
+name: Deploy → Backup (munoapp.store)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backup
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to munoapp.store
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Safety check — no .env or credentials in git
+        run: |
+          if git ls-files | grep -E '^\.env$|^\.env\.|vps-credentials'; then
+            echo "❌ Credentials file found in git! Aborting deploy."
+            exit 1
+          fi
+          echo "✅ No credentials found in git"
+
+      - name: Deploy to munoapp.store
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 91.98.42.156
+          username: root
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 300s
+          command_timeout: 300s
+          script: |
+            set -e
+            cd /var/www/katogo
+
+            echo "── Pulling latest code ──"
+            git fetch origin main
+            CHANGED=$(git diff --name-only HEAD origin/main | wc -l)
+            echo "Files changed: $CHANGED"
+
+            if [ "$CHANGED" -eq 0 ]; then
+              echo "No changes to deploy. Exiting."
+              exit 0
+            fi
+
+            echo "── Applying code changes (no maintenance mode on backup) ──"
+            git reset --hard origin/main
+
+            echo "── Installing PHP dependencies ──"
+            composer install --no-dev --no-interaction --optimize-autoloader --quiet
+
+            echo "── Running database migrations ──"
+            php artisan migrate --force --no-interaction
+
+            echo "── Rebuilding caches ──"
+            php artisan config:clear
+            php artisan route:clear
+            php artisan view:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "── Restarting queue workers ──"
+            supervisorctl restart katogo-worker:* || true
+
+            echo "✅ Deploy to munoapp.store complete"
+            php artisan --version
+
+      - name: Verify backup server responds
+        run: |
+          sleep 10
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://munoapp.store/api/internal/sync/status || echo "000")
+          echo "Backup server sync status HTTP: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Backup server sync endpoint is healthy"
+          else
+            echo "⚠️ Backup server returned $STATUS — check /admin/sync-dashboard"
+          fi

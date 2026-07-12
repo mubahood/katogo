@@ -20,6 +20,14 @@ class SyncPull extends Command
 
     public function handle(SyncPullService $sync): int
     {
+        // Belt-and-suspenders: refuse to run on the source server.
+        // This prevents accidental data pulls on movies.mruodel.com even if SYNC_ENABLED
+        // is ever toggled true there by mistake.
+        if (config('services.sync.role') === 'source') {
+            $this->error('SAFETY: This server is SYNC_ROLE=source — sync:pull is disabled to prevent reverse sync.');
+            return self::FAILURE;
+        }
+
         if (!config('services.sync.enabled', false)) {
             $this->warn('Sync is disabled (SYNC_ENABLED is not set to true).');
             return self::SUCCESS;

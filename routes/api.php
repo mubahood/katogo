@@ -462,9 +462,38 @@ Route::middleware([JwtMiddleware::class])->group(function () {
 // ========================================
 // MOVIE URL SYNC — server-to-server (no JWT, shared-secret auth)
 // Hetzner POSTs here after successful file transfer to update movie URLs.
+// Uses 'url-sync' throttle (5000/min) instead of global 'api' (120/min).
 // ========================================
-Route::post('movie-url-sync',      [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'receive']);
-Route::get('movie-url-sync/ping',  [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'ping']);
+Route::middleware('throttle:url-sync')->group(function () {
+    Route::post('movie-url-sync',     [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'receive']);
+    Route::get('movie-url-sync/ping', [\App\Http\Controllers\Api\MovieUrlSyncController::class, 'ping']);
+});
+
+// ========================================
+// INTERNAL DB SYNC API — server-to-server, no JWT, shared-secret auth
+//
+// SOURCE SERVER (movies.mruodel.com):
+//   GET  internal/sync/export      → SyncExportController  (read-only data export)
+//   GET  internal/sync/handshake   → SyncExportController  (health + table counts)
+//
+// REPLICA SERVER (munoapp.store):
+//   POST internal/sync/receive-event → InternalSyncController (real-time Tier-1 push)
+//   GET  internal/sync/status        → InternalSyncController (health check, public)
+//
+// Both endpoints are active on both servers but guarded by SYNC_ROLE in the controllers.
+// Rate limited to 300/min to prevent abuse while allowing bulk batch calls.
+// ========================================
+Route::middleware('throttle:300,1')->prefix('internal/sync')->group(function () {
+    // Source server: expose data for replica to pull
+    Route::get('export',    [\App\Http\Controllers\Api\SyncExportController::class, 'export']);
+    Route::get('handshake', [\App\Http\Controllers\Api\SyncExportController::class, 'handshake']);
+
+    // Replica server: accept real-time event pushes from source
+    Route::post('receive-event', [\App\Http\Controllers\Api\InternalSyncController::class, 'receiveEvent']);
+
+    // Both: public health status (no auth — used by monitoring and source to verify replica is up)
+    Route::get('status', [\App\Http\Controllers\Api\InternalSyncController::class, 'status']);
+});
 
 // ========================================
 // DEVELOPER PORTFOLIO & PROJECT REQUESTS

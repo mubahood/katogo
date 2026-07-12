@@ -2,6 +2,7 @@
 
 namespace App\Observers;
 
+use App\Jobs\TransferMovieToHetzner;
 use App\Models\MovieFileTransfer;
 use App\Models\MovieModel;
 use Illuminate\Support\Facades\Log;
@@ -70,9 +71,17 @@ class MovieFileTransferObserver
                 return;
             }
 
-            MovieFileTransfer::queueForMovie($movie, $initiatedBy);
+            $transfer = MovieFileTransfer::queueForMovie($movie, $initiatedBy);
 
-            Log::info("[MovieFileTransferObserver] Queued transfer for movie #{$movie->id} — {$movie->title}", [
+            // Dispatch immediately to Redis so Supervisor workers pick it up without
+            // waiting for transfers:process (which only runs every 5 minutes).
+            // 10s delay is a safety net in case the caller is inside a DB transaction
+            // that hasn't committed yet — ensures the worker sees the transfer record.
+            TransferMovieToHetzner::dispatch($transfer->id)
+                ->onQueue('transfers')
+                ->delay(now()->addSeconds(10));
+
+            Log::info("[MovieFileTransferObserver] Queued + dispatched transfer #{$transfer->id} for movie #{$movie->id} — {$movie->title}", [
                 'source_url'   => substr($url, 0, 100),
                 'initiated_by' => $initiatedBy,
             ]);

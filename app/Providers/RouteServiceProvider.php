@@ -53,6 +53,11 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(30)->by($userKey . ':movie:' . $movieId);
         });
 
+        // Server-to-server URL sync — high burst, no user throttle (Hetzner → mruodel pushes)
+        RateLimiter::for('url-sync', function (Request $request) {
+            return Limit::perMinute(5000)->by($request->ip());
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')

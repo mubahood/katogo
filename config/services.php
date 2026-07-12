@@ -50,15 +50,23 @@ return [
     ],
 
     'sync' => [
-        'enabled'     => env('SYNC_ENABLED', false),
-        'source_host' => env('SYNC_SOURCE_HOST', '209.74.87.69'),
-        'ssh_user'    => env('SYNC_SSH_USER', 'root'),
-        'db_user'     => env('SYNC_DB_USER', 'katogo'),
-        'db_pass'     => env('SYNC_DB_PASS', ''),
-        'db_name'     => env('SYNC_DB_NAME', 'katogo_3'),
-        'tunnel_port' => env('SYNC_TUNNEL_PORT', 13306),
-        'batch_size'  => env('SYNC_BATCH_SIZE', 500),
-        'max_pages'   => env('SYNC_MAX_PAGES', 30),
+        'enabled'        => env('SYNC_ENABLED', false),
+        // 'source' = live server (never pulls, only serves)
+        // 'replica' = backup server (pulls from source)
+        'role'           => env('SYNC_ROLE', 'replica'),
+        'source_host'    => env('SYNC_SOURCE_HOST', '209.74.87.69'),
+        'ssh_user'       => env('SYNC_SSH_USER', 'muhindo'),
+        'db_user'        => env('SYNC_DB_USER', 'katogo'),
+        'db_pass'        => env('SYNC_DB_PASS', ''),
+        'db_name'        => env('SYNC_DB_NAME', 'katogo_3'),
+        'tunnel_port'    => env('SYNC_TUNNEL_PORT', 13306),
+        'batch_size'     => env('SYNC_BATCH_SIZE', 500),
+        'max_pages'      => env('SYNC_MAX_PAGES', 50),
+        // HTTP export API (fallback when SSH tunnel is unavailable)
+        'export_secret'  => env('SYNC_EXPORT_SECRET', ''),
+        // Real-time event push (source → replica)
+        'event_secret'   => env('SYNC_EVENT_SECRET', ''),
+        'replica_url'    => env('SYNC_REPLICA_URL', ''),
     ],
 
 ];

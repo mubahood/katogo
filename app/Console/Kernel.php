@@ -88,6 +88,35 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/transfers-process.log'));
 
+        // Backfill: queue any eligible movies not yet in the transfer table.
+        // Catches movies added before the observer, bulk imports, and edge cases.
+        // Offset 2 hours from diagnose so they don't spike DB together.
+        $schedule->command('transfers:backfill --limit=500')
+            ->everySixHours()
+            ->withoutOverlapping(30)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/transfers-backfill.log'))
+            ->name('transfers-auto-backfill');
+
+        // Diagnose and auto-fix failed transfers: runs every 6 hours.
+        // Fixes share-failed (file on Hetzner but no share link) and transient errors.
+        // NEVER marks a transfer done without verifying the file exists on Hetzner.
+        $schedule->command('transfers:diagnose --fix --limit=200')
+            ->everySixHours()
+            ->withoutOverlapping(30)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/transfers-diagnose.log'))
+            ->name('transfers-diagnose');
+
+        // Reprioritize queued/failed transfers weekly (Sunday 04:00) so newly
+        // crawled MunoWatch movies and recently-watched data influence queue order.
+        $schedule->command('transfers:reprioritize')
+            ->weeklyOn(0, '04:00')
+            ->withoutOverlapping(30)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/transfers-reprioritize.log'))
+            ->name('transfers-reprioritize');
+
         // Retry any stuck/failed URL sync pushes — runs every 10 minutes.
         // Catches pushes that failed due to temporary network issues.
         $schedule->call(function () {
@@ -111,6 +140,30 @@ class Kernel extends ConsoleKernel
                 ->withoutOverlapping(10)
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/sync-pull.log'));
+
+            // Sync health monitor — log a warning when any Tier-1 table hasn't
+            // synced in > 30 minutes. Tier-1 tables should sync every 5 minutes,
+            // so 30 minutes means at least 5 consecutive missed cycles.
+            $schedule->call(function () {
+                $stale = \DB::table('db_sync_cursors')
+                    ->where('priority', 1)
+                    ->where('enabled', true)
+                    ->where(function ($q) {
+                        $q->whereNull('last_run_at')
+                          ->orWhere('last_run_at', '<', now()->subMinutes(30));
+                    })
+                    ->pluck('table_name');
+
+                if ($stale->isNotEmpty()) {
+                    \Illuminate\Support\Facades\Log::warning(
+                        '[SyncHealth] ALERT — Tier-1 tables lagging > 30 min without sync: '
+                        . implode(', ', $stale->all())
+                    );
+                }
+            })
+            ->everyFifteenMinutes()
+            ->name('sync-health-check')
+            ->withoutOverlapping();
         }
 
         // ──────────────────────────────────────────────────────────────────

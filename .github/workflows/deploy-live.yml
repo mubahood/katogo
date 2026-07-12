@@ -1,0 +1,91 @@
+name: Deploy → Live (movies.mruodel.com)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Allow manual triggers from GitHub UI
+
+concurrency:
+  group: deploy-live
+  cancel-in-progress: false  # Never cancel a running deploy — let it finish
+
+jobs:
+  deploy:
+    name: Deploy to movies.mruodel.com
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Verify nothing dangerous is staged ────────────────────────────────
+      - name: Safety check — no .env or credentials in git
+        run: |
+          if git ls-files | grep -E '^\.env$|^\.env\.|vps-credentials'; then
+            echo "❌ Credentials file found in git! Aborting deploy."
+            exit 1
+          fi
+          echo "✅ No credentials found in git"
+
+      # ── Deploy to live server ─────────────────────────────────────────────
+      - name: Deploy to movies.mruodel.com
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 209.74.87.69
+          username: muhindo
+          password: ${{ secrets.MRUODEL_SSH_PASSWORD }}
+          port: 22
+          timeout: 300s
+          command_timeout: 300s
+          script: |
+            set -e
+            cd /home/muhindo/movies
+
+            echo "── Pulling latest code ──"
+            git fetch origin main
+            CHANGED=$(git diff --name-only HEAD origin/main | wc -l)
+            echo "Files changed: $CHANGED"
+
+            if [ "$CHANGED" -eq 0 ]; then
+              echo "No changes to deploy. Exiting."
+              exit 0
+            fi
+
+            echo "── Entering maintenance mode ──"
+            php artisan down --retry=30 --render="errors::503" 2>/dev/null || true
+
+            echo "── Applying code changes ──"
+            git reset --hard origin/main
+
+            echo "── Installing PHP dependencies ──"
+            composer install --no-dev --no-interaction --optimize-autoloader --quiet
+
+            echo "── Running database migrations ──"
+            php artisan migrate --force --no-interaction
+
+            echo "── Rebuilding caches ──"
+            php artisan config:clear
+            php artisan route:clear
+            php artisan view:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            echo "── Bringing site back online ──"
+            php artisan up
+
+            echo "✅ Deploy to movies.mruodel.com complete"
+            php artisan --version
+
+      # ── Post-deploy verification ──────────────────────────────────────────
+      - name: Verify live server responds
+        run: |
+          sleep 10
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://movies.mruodel.com/api/ping || echo "000")
+          echo "Live server HTTP status: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ] && [ "$STATUS" != "404" ]; then
+            echo "⚠️ Live server returned unexpected status $STATUS — check manually"
+          else
+            echo "✅ Live server is responding"
+          fi
