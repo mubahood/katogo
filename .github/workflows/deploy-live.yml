@@ -22,7 +22,14 @@ jobs:
       # ── Verify nothing dangerous is staged ────────────────────────────────
       - name: Safety check — no .env or credentials in git
         run: |
-          if git ls-files | grep -E '^\.env$|^\.env\.|vps-credentials'; then
+          # Keep committed configuration templates, but reject real environment
+          # files and credential files. The previous expression also rejected
+          # .env.example/.env.template, so every deployment stopped here.
+          SENSITIVE_FILES=$(git ls-files \
+            | grep -E '(^|/)(\.env|\.env\.[^/]+|[^/]*credentials[^/]*)$' \
+            | grep -vE '(^|/)\.env\.(example|template)$' || true)
+          if [ -n "$SENSITIVE_FILES" ]; then
+            echo "$SENSITIVE_FILES"
             echo "❌ Credentials file found in git! Aborting deploy."
             exit 1
           fi
