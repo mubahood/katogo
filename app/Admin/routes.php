@@ -1,5 +1,8 @@
 <?php
 
+// Keep this opening tag as the first output-capable content in this file.
+// Laravel loads admin routes during every request, so text before it corrupts
+// both HTML pages and JSON API responses.
 use Illuminate\Routing\Router;
 
 Admin::routes();
