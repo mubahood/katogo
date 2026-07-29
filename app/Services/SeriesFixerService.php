@@ -6,6 +6,7 @@ use App\Models\MovieCrawlerPage;
 use App\Models\MovieModel;
 use App\Models\SeriesMovie;
 use App\Models\Utils;
+use App\Services\MunowatchAuthService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -533,14 +534,26 @@ class SeriesFixerService
         $apiUrl = self::MUNOWATCH_API_BASE . "/episodes/range/{$showId}/{$seriesCode}/{$season}";
 
         try {
+            $session = MunowatchAuthService::getActiveSession();
             $headers = [
                 'Content-Type'  => 'application/x-www-form-urlencoded',
                 'User-Agent'    => 'okhttp/4.9.0',
-                'Authorization' => 'Bearer ' . self::MUNOWATCH_JWT,
-                'X-Api-Key'     => self::MUNOWATCH_JWT,
+                'Authorization' => 'Bearer ' . $session['app_jwt'],
+                'X-Api-Key'     => $session['app_jwt'],
+                'X-Session-Id'  => $session['session_id'],
             ];
 
             $raw = Utils::get_url_with_auth($apiUrl, $headers);
+
+            // Retry once on auth failure
+            if (!empty($raw) && MunowatchAuthService::isAuthFailure($raw)) {
+                MunowatchAuthService::invalidateSession();
+                $session = MunowatchAuthService::refreshSession();
+                $headers['Authorization'] = 'Bearer ' . $session['app_jwt'];
+                $headers['X-Api-Key']     = $session['app_jwt'];
+                $headers['X-Session-Id']  = $session['session_id'];
+                $raw = Utils::get_url_with_auth($apiUrl, $headers);
+            }
             if (empty($raw)) {
                 return ['success' => false, 'error' => 'Empty response from: ' . $apiUrl];
             }
@@ -580,18 +593,32 @@ class SeriesFixerService
      */
     protected function fetchMunowatchPreview(string $videoId): array
     {
-        $apiUrl = self::MUNOWATCH_API_BASE . '/preview/v2/' . $videoId . '/' . self::MUNOWATCH_USER_ID;
-
         try {
+            $session = MunowatchAuthService::getActiveSession();
+            $apiUrl  = self::MUNOWATCH_API_BASE . '/preview/v2/' . $videoId . '/' . $session['user_id'];
+
             $headers = [
                 'Content-Type'  => 'application/x-www-form-urlencoded',
                 'User-Agent'    => 'okhttp/4.9.0',
-                'Authorization' => 'Bearer ' . self::MUNOWATCH_JWT,
-                'X-Api-Key'     => self::MUNOWATCH_JWT,
+                'Authorization' => 'Bearer ' . $session['app_jwt'],
+                'X-Api-Key'     => $session['app_jwt'],
+                'X-Session-Id'  => $session['session_id'],
             ];
 
             $raw = Utils::get_url_with_auth($apiUrl, $headers);
             if (empty($raw)) return ['success' => false, 'error' => 'Empty response'];
+
+            // Retry once on auth failure
+            if (MunowatchAuthService::isAuthFailure($raw)) {
+                MunowatchAuthService::invalidateSession();
+                $session = MunowatchAuthService::refreshSession();
+                $apiUrl  = self::MUNOWATCH_API_BASE . '/preview/v2/' . $videoId . '/' . $session['user_id'];
+                $headers['Authorization'] = 'Bearer ' . $session['app_jwt'];
+                $headers['X-Api-Key']     = $session['app_jwt'];
+                $headers['X-Session-Id']  = $session['session_id'];
+                $raw = Utils::get_url_with_auth($apiUrl, $headers);
+                if (empty($raw)) return ['success' => false, 'error' => 'Empty response after re-auth'];
+            }
 
             $json = json_decode(trim($raw), true);
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -742,6 +769,12 @@ class SeriesFixerService
                 }
                 if (!empty($data['vj']) && empty($existing->vj)) {
                     $existing->vj = $data['vj'];
+                    $changed = true;
+                }
+
+                // Activate episode if it has a healthy URL but is still Inactive
+                if ($existing->status !== 'Active' && self::isHealthyEpisodeUrl($existing->url)) {
+                    $existing->status = 'Active';
                     $changed = true;
                 }
 
@@ -1046,5 +1079,17 @@ class SeriesFixerService
             'views_count'     => $ep->views_count,
             'is_muno'         => $ep->is_muno,
         ];
+    }
+
+    /**
+     * True if the URL is a real playable URL (not empty, not a dummy, not a broken GCS/Firebase link).
+     */
+    protected static function isHealthyEpisodeUrl(?string $url): bool
+    {
+        if (empty($url) || strlen(trim($url)) < 10) return false;
+        if (stripos($url, 'eli.mp4')         !== false) return false;
+        if (stripos($url, 'googleapis')      !== false) return false;
+        if (stripos($url, 'firebasestorage') !== false) return false;
+        return true;
     }
 }

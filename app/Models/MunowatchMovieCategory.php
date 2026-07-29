@@ -296,20 +296,35 @@ class MunowatchMovieCategory extends Model
                 // For TV shows and other special endpoints, make API call (cursor-based pagination)
                 $url = $this->getMoviesFetchURL($page, $userId, $lastId);
 
-                $response = Utils::get_url_with_auth($url, [
+                $authHeaders = [
                     'Authorization' => 'Bearer ' . $jwtToken,
                     'X-Api-Key'     => $jwtToken,
                     'X-Session-Id'  => $sessionId,
                     'User-Agent'    => 'okhttp/4.9.0',
-                ]);
+                ];
+                $response = Utils::get_url_with_auth($url, $authHeaders);
+
+                // Retry once on auth failure
+                if (!empty($response) && MunowatchAuthService::isAuthFailure($response)) {
+                    MunowatchAuthService::invalidateSession();
+                    $session    = MunowatchAuthService::refreshSession();
+                    $jwtToken   = $session['app_jwt'];
+                    $sessionId  = $session['session_id'];
+                    $userId     = $session['user_id'];
+                    $authHeaders['Authorization'] = 'Bearer ' . $jwtToken;
+                    $authHeaders['X-Api-Key']     = $jwtToken;
+                    $authHeaders['X-Session-Id']  = $sessionId;
+                    $url      = $this->getMoviesFetchURL($page, $userId, $lastId);
+                    $response = Utils::get_url_with_auth($url, $authHeaders);
+                }
 
                 $moviesData = json_decode($response, true);
-                
-                if (!$moviesData) {
+
+                // Only throw on null (decode failure) or non-array; empty [] means "no more movies" and is valid
+                if ($moviesData === null && json_last_error() !== JSON_ERROR_NONE) {
                     throw new \Exception('Invalid JSON response for category: ' . substr($response, 0, 200));
                 }
-                
-                // Validate response structure
+
                 if (!is_array($moviesData)) {
                     throw new \Exception('Response is not an array: ' . gettype($moviesData));
                 }

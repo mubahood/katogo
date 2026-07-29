@@ -572,14 +572,14 @@ class MovieCrawlerPage extends Model
                 $this->error_message = 'Failed to parse JSON response: ' . json_last_error_msg();
                 $this->status = 'error';
                 $this->save();
-                // throw new \Exception('Failed to parse JSON response: ' . json_last_error_msg());
+                return;
             }
 
             if (!isset($jsonData['preview']) || !is_array($jsonData['preview'])) {
                 $this->error_message = 'Invalid munowatch response structure - missing preview data';
                 $this->status = 'error';
                 $this->save();
-                // throw new \Exception('Invalid munowatch response structure - missing preview data');
+                return;
             }
             $preview = $jsonData['preview'];
 
@@ -588,14 +588,14 @@ class MovieCrawlerPage extends Model
                 $this->error_message = 'No valid video URL found in munowatch response';
                 $this->status = 'error';
                 $this->save();
-                // throw new \Exception('No valid video URL found in munowatch response');
+                return;
             }
 
             if (!(Utils::isPossiblyVideoUrl($playingUrl))) {
                 $this->error_message = 'Extracted video URL is not valid: ' . $playingUrl;
                 $this->status = 'error';
                 $this->save();
-                // throw new \Exception('Extracted video URL is not valid: ' . $playingUrl);
+                return;
             }
 
             // Check munowatch_id first — indexed and most specific, avoids 9 wasteful full-table queries
@@ -837,12 +837,15 @@ class MovieCrawlerPage extends Model
             $file_extension = pathinfo(parse_url($movie->url, PHP_URL_PATH), PATHINFO_EXTENSION);
             $file_extension = strtolower($file_extension);
             $file_name = pathinfo(parse_url($movie->url, PHP_URL_PATH), PATHINFO_FILENAME);
-            $isMovieFile = true;
-            //check if $file_extension is not in array
-            $validVideoExtensions = ['mp4', 'mkv', 'avi', 'flv', 'wmv', 'mov', 'webm', 'mpeg', 'mpg', 'm4v', '3gp', '3g2', 'f4v', 'f4p', 'f4a', 'f4b', 'ts', 'vob', 'ogv', 'ogg', 'rm', 'rmvb', 'asf', 'divx', 'xvid'];
-            if (!in_array($file_extension, $validVideoExtensions)) {
-                $isMovieFile = false;
-            }
+            $validVideoExtensions = ['mp4', 'mkv', 'avi', 'flv', 'wmv', 'mov', 'webm', 'mpeg', 'mpg', 'm4v', '3gp', '3g2', 'f4v', 'f4p', 'f4a', 'f4b', 'ts', 'm3u8', 'vob', 'ogv', 'ogg', 'rm', 'rmvb', 'asf', 'divx', 'xvid'];
+            // Trust URLs from known munowatch CDN domains even without a recognized file extension
+            $isTrustedCdn = !empty($movie->url) && (
+                str_contains($movie->url, 'b-cdn.net') ||
+                str_contains($movie->url, 'munotech') ||
+                str_contains($movie->url, 'munowatch.co/') ||
+                str_contains($movie->url, 'cdn.muno')
+            );
+            $isMovieFile = $isTrustedCdn || in_array($file_extension, $validVideoExtensions);
 
             /// if is not $isMovieFile, the mark it as error and save
             if (!$isMovieFile) {
@@ -1146,132 +1149,83 @@ class MovieCrawlerPage extends Model
     }
 
     /**
-     * Fetch episodes for a series using Flutter app pattern
-     * 
-     * @param int $showId
-     * @param string $seriesCode
-     * @return array
+     * Fetch episodes for a series — uses live MunowatchAuthService session (X-Session-Id required).
      */
     private function fetchEpisodesForSeries($showId, $seriesCode)
     {
         try {
-            $seasonNumber = 1; // Start with season 1 like Flutter app
-            $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/{$seasonNumber}";
-
-            // Use the same authentication pattern as the crawler
-            $jwtToken = config('munowatch.jwt_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0');
+            $session = MunowatchAuthService::getActiveSession();
+            $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/1";
 
             $headers = [
-                'Authorization: Bearer ' . $jwtToken,
-                'X-Api-Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
-                'User-Agent: okhttp/4.9.0',
-                'Content-Type: application/json',
-                'Accept: application/json'
+                'Authorization' => 'Bearer ' . $session['app_jwt'],
+                'X-Api-Key'     => $session['app_jwt'],
+                'X-Session-Id'  => $session['session_id'],
+                'User-Agent'    => 'okhttp/4.9.0',
             ];
 
-            $context = stream_context_create([
-                'http' => [
-                    'method' => 'GET',
-                    'header' => implode("\r\n", $headers),
-                    'timeout' => 10
-                ]
-            ]);
+            $response = Utils::get_url_with_auth($episodesUrl, $headers);
 
-            $response = @file_get_contents($episodesUrl, false, $context);
+            if (empty($response)) return [];
 
-            if ($response === false) {
-                return [];
+            // Auto-retry on auth failure
+            if (MunowatchAuthService::isAuthFailure($response)) {
+                MunowatchAuthService::invalidateSession();
+                $session = MunowatchAuthService::refreshSession();
+                $headers['Authorization'] = 'Bearer ' . $session['app_jwt'];
+                $headers['X-Api-Key']     = $session['app_jwt'];
+                $headers['X-Session-Id']  = $session['session_id'];
+                $response = Utils::get_url_with_auth($episodesUrl, $headers);
+                if (empty($response)) return [];
             }
 
-            $episodesData = json_decode($response, true);
+            $data = json_decode(trim($response), true);
+            if (json_last_error() !== JSON_ERROR_NONE) return [];
+            if (isset($data['error']) && $data['error']) return [];
 
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return [];
-            }
-
-            // Check if response contains error
-            if (isset($episodesData['error']) && $episodesData['error'] === true) {
-                return [];
-            }
-
-            // Return episodes array
-            if (is_array($episodesData)) {
-                return $episodesData;
-            }
-
-            return [];
-        } catch (\Throwable $th) {
+            return is_array($data) ? $data : [];
+        } catch (\Throwable) {
             return [];
         }
     }
 
     /**
-     * Check if episodes exist for a given show using Flutter app pattern
-     * 
-     * Following exact Flutter app logic:
-     * - Call episodes/range/{showId}/{seriesCode}/{seasonNumber} API
-     * - If episodes are returned, it's a series
-     * - If empty/error, it's a movie
-     * 
-     * @param int $showId
-     * @param string $seriesCode
-     * @return bool
+     * Check if episodes exist for a given show — uses live MunowatchAuthService session (X-Session-Id required).
+     * Returns true = series, false = movie (or API unreachable).
      */
     private function checkEpisodesExist($showId, $seriesCode)
     {
         try {
-            $seasonNumber = 1; // Start with season 1 like Flutter app
-            $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/{$seasonNumber}";
-
-            // Use the same authentication pattern as the crawler
-            $jwtToken = config('munowatch.jwt_token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0');
+            $session = MunowatchAuthService::getActiveSession();
+            $episodesUrl = "https://munowatch.org/api/episodes/range/{$showId}/{$seriesCode}/1";
 
             $headers = [
-                'Authorization: Bearer ' . $jwtToken,
-                'X-Api-Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6IkFuZHJvaWQgVFYiLCJhcHBuYW1lIjoiTXVub3dhdGNoIFRWIiwiaG9zdCI6Im11bm93YXRjaC5jbyIsImFwcHNlY3JldCI6IjAyMjc3OGU0MThhZDY4ZmZkYTlhYTRmYWIxODkyZmZmIiwiYWN0aXZhdGVkIjoiMSIsImV4cCI6MTcwNzM2ODQwMH0.unlPnEzptg6VFHs7WWm213bRHHNxYuAN2eZQvjtPKL0',
-                'User-Agent: okhttp/4.9.0',
-                'Content-Type: application/json',
-                'Accept: application/json'
+                'Authorization' => 'Bearer ' . $session['app_jwt'],
+                'X-Api-Key'     => $session['app_jwt'],
+                'X-Session-Id'  => $session['session_id'],
+                'User-Agent'    => 'okhttp/4.9.0',
             ];
 
-            $context = stream_context_create([
-                'http' => [
-                    'method' => 'GET',
-                    'header' => implode("\r\n", $headers),
-                    'timeout' => 10
-                ]
-            ]);
+            $response = Utils::get_url_with_auth($episodesUrl, $headers);
+            if (empty($response)) return false;
 
-            $response = @file_get_contents($episodesUrl, false, $context);
-
-            if ($response === false) {
-                // Unable to fetch - assume it's not a series
-                return false;
+            // Auto-retry on auth failure
+            if (MunowatchAuthService::isAuthFailure($response)) {
+                MunowatchAuthService::invalidateSession();
+                $session = MunowatchAuthService::refreshSession();
+                $headers['Authorization'] = 'Bearer ' . $session['app_jwt'];
+                $headers['X-Api-Key']     = $session['app_jwt'];
+                $headers['X-Session-Id']  = $session['session_id'];
+                $response = Utils::get_url_with_auth($episodesUrl, $headers);
+                if (empty($response)) return false;
             }
 
-            $episodesData = json_decode($response, true);
+            $data = json_decode(trim($response), true);
+            if (json_last_error() !== JSON_ERROR_NONE) return false;
+            if (isset($data['error']) && $data['error']) return false;
 
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                // Invalid JSON response - assume it's not a series
-                return false;
-            }
-
-            // Check if response contains error
-            if (isset($episodesData['error']) && $episodesData['error'] === true) {
-                // API returned error - not a series
-                return false;
-            }
-
-            // Check if we have episodes array
-            if (is_array($episodesData) && !empty($episodesData)) {
-                // Episodes exist - this is a series!
-                return true;
-            }
-
-            // No episodes found - this is a movie
-            return false;
-        } catch (\Throwable $th) {
-            // Error occurred - assume it's not a series to be safe
+            return is_array($data) && !empty($data);
+        } catch (\Throwable) {
             return false;
         }
     }

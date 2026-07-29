@@ -82,6 +82,7 @@ Route::group([
     $router->resource('movies-movies-pending', MovieModelController::class);
     $router->resource('movies-movies-fixed', MovieModelController::class);
     $router->resource('movies-movies-failed', MovieModelController::class);
+    $router->resource('movies-movies-dummy-url', MovieModelController::class);
 
     // API: Fix Series Type — single-series AJAX endpoint for live progress modal
     $router->post('api/fix-series-type-single', function (\Illuminate\Http\Request $request) {

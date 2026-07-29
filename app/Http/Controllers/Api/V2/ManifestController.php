@@ -6,11 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\ChatMessage;
 use App\Models\MovieDownload;
 use App\Models\MovieLike;
-use App\Models\MovieModel;
 use App\Models\MovieView;
 use App\Models\MovieWishlist;
 use App\Models\SubscriptionTransaction;
-use App\Models\TrendingNotification;
 use App\Models\User;
 use App\Models\Utils;
 use Carbon\Carbon;
@@ -30,6 +28,7 @@ class ManifestController extends Controller
         'id',
         'title',
         'url',
+        'old_video_url',
         'local_video_link',
         'thumbnail_url',
         'genre',
@@ -78,7 +77,7 @@ class ManifestController extends Controller
                 $u->platform = $platform;
             }
             $u->save();
-        } catch (\Throwable $e) {
+        } catch (\Throwable) {
             // Non-fatal: bookkeeping update failed; continue serving manifest
         }
 
@@ -111,19 +110,27 @@ class ManifestController extends Controller
             return $this->getFeaturedMovie();
         });
 
-        // Guard: verify cached featured movie still exists (id valid).
+        // Guard: verify cached featured movie is still active AND has a healthy URL.
         if ($featured && isset($featured['id'])) {
-            $stillActive = DB::table('movie_models')->where('id', $featured['id'])->exists();
+            $stillGood = DB::table('movie_models')
+                ->where('id', $featured['id'])
+                ->where('status', 'Active')
+                ->whereNotNull('url')
+                ->where('url', '!=', '')
+                ->where('url', 'not like', '%eli.mp4%')
+                ->where('url', 'not like', '%googleapis%')
+                ->where('url', 'not like', '%firebasestorage%')
+                ->exists();
 
-            if (!$stillActive) {
-                $inactiveId = $featured['id'];
-                $fresh = $this->pickNextFeaturedMovie($inactiveId);
+            if (!$stillGood) {
+                $badId = $featured['id'];
+                $fresh = $this->pickNextFeaturedMovie($badId);
                 if ($fresh) {
                     $featured = $fresh;
                     Cache::put($featuredKey, $featured, 900);
-                    Log::info('V2 Manifest: cached featured movie was inactive, replaced with next active', [
-                        'inactive_id' => $inactiveId,
-                        'new_id'      => $featured['id'],
+                    Log::info('V2 Manifest: cached featured movie was stale/broken, replaced', [
+                        'bad_id' => $badId,
+                        'new_id' => $featured['id'],
                     ]);
                 }
             }
@@ -215,96 +222,211 @@ class ManifestController extends Controller
     // ═══════════════════════════════════════════════════════
 
     /**
-     * Get featured / trending movie (single slim object or null).
+     * Get featured / top movie.
      *
-     * Priority:
-     *  1. Movies with real recent plays (last 30 days) — scored by unique viewers + total watch time
-     *  2. Rotates within top-40 recently-played candidates so the hero always reflects live activity
-     *  3. Falls back to all-time views_time_count if no recent plays data exists
+     * Guarantees:
+     *  1. URL is confirmed healthy (non-empty, not dummy, not Firebase/GCS)
+     *  2. No movie repeats as featured within a 14-day window
+     *  3. Priority: real recent plays (last 30 days) scored by engagement + URL quality
+     *  4. Graceful fallback chain if 14-day pool is exhausted: 7d → 3d → any
+     *  5. Final failsafe always returns something playable
      */
     private function getFeaturedMovie(?int $excludeId = null): ?array
     {
-        $rotationSlot = (int) floor(Carbon::now()->timestamp / 21600);
-        $recentWindow = Carbon::now()->subDays(30);
-        $topN         = 40; // rotate within top-40 recently trending movies
+        // IDs featured in the last 14 days — loaded from a persistent file so it
+        // survives cache flushes (artisan cache:clear won't wipe this history).
+        $excluded = $this->loadFeaturedHistory(14);
+        if ($excludeId) $excluded[] = $excludeId;
+
+        // URL quality bonus injected into the scoring SQL.
+        // Hetzner Nextcloud links and verified-working URLs rank highest.
+        // Known-broken sources get a -9999 penalty (effectively excluded).
+        $urlBonus = "
+            + CASE WHEN m.url LIKE '%storageshare.de%'       THEN  30 ELSE 0 END
+            + CASE WHEN m.url LIKE '%.b-cdn.net%'            THEN  20 ELSE 0 END
+            + CASE WHEN m.url LIKE '%munotech%'              THEN  15 ELSE 0 END
+            + CASE WHEN m.video_url_tested_by_human_works = 'Yes' THEN 100 ELSE 0 END
+            + CASE WHEN m.video_url_tested_by_curl_works  = 'Yes' THEN  50 ELSE 0 END
+            + CASE WHEN m.thumbnail_url IS NOT NULL AND m.thumbnail_url != '' THEN 10 ELSE 0 END
+        ";
+
+        // Shared URL health conditions applied to every query in this method.
+        $applyUrlHealth = fn ($q) => $q
+            ->whereNotNull('url')
+            ->where('url', '!=', '')
+            ->where('url', 'not like', '%eli.mp4%')
+            ->where('url', 'not like', '%googleapis%')
+            ->where('url', 'not like', '%firebasestorage%');
+
+        $baseMovies = fn () => DB::table('movie_models as m')
+            ->where('m.status', 'Active')
+            ->where('m.type', 'Movie')
+            ->where('m.is_muno', 'Yes');
 
         try {
-            // Step 1: find movies with actual recent plays, scored by engagement
-            $recentlyPlayed = DB::table('movie_views as mv')
+            // ── Path 1: movies with real recent plays (last 30 days) ────────
+            // Score = engagement (unique viewers, play count, watch time) + URL quality bonus.
+            // Picks the single highest-scoring movie not featured in the last 14 days.
+            $top = DB::table('movie_views as mv')
                 ->join('movie_models as m', 'm.id', '=', 'mv.movie_model_id')
-                ->where('mv.created_at', '>=', $recentWindow)
+                ->where('mv.created_at', '>=', Carbon::now()->subDays(30))
                 ->where('m.status', 'Active')
                 ->where('m.type', 'Movie')
                 ->where('m.is_muno', 'Yes')
-                ->when($excludeId, fn ($q) => $q->where('m.id', '!=', $excludeId))
-                ->selectRaw('mv.movie_model_id, COUNT(DISTINCT mv.user_id) as unique_viewers, COUNT(*) as play_count, SUM(mv.progress) as total_watch_secs')
+                ->whereNotNull('m.url')->where('m.url', '!=', '')
+                ->where('m.url', 'not like', '%eli.mp4%')
+                ->where('m.url', 'not like', '%googleapis%')
+                ->where('m.url', 'not like', '%firebasestorage%')
+                ->when(!empty($excluded), fn ($q) => $q->whereNotIn('m.id', $excluded))
+                ->selectRaw("
+                    mv.movie_model_id,
+                    COUNT(DISTINCT mv.user_id)  AS unique_viewers,
+                    COUNT(*)                    AS play_count,
+                    COALESCE(SUM(mv.progress), 0) AS total_watch_secs,
+                    (
+                        COUNT(DISTINCT mv.user_id) * 5
+                        + COUNT(*) * 2
+                        + COALESCE(SUM(mv.progress), 0) / 3600
+                        {$urlBonus}
+                    ) AS score
+                ")
                 ->groupBy('mv.movie_model_id')
                 ->having('play_count', '>=', 2)
-                ->orderByRaw('(COUNT(DISTINCT mv.user_id) * 5 + COUNT(*) * 2 + SUM(mv.progress) / 3600) DESC')
-                ->limit($topN)
-                ->pluck('mv.movie_model_id')
-                ->toArray();
+                ->orderBy('score', 'desc')
+                ->first();
 
-            if (!empty($recentlyPlayed)) {
-                $index   = $rotationSlot % count($recentlyPlayed);
-                $movieId = $recentlyPlayed[$index];
-                $movie   = DB::table('movie_models')
-                    ->where('id', $movieId)
-                    ->where('status', 'Active')
-                    ->select(self::SLIM_FIELDS)->first();
+            if ($top) {
+                $movie = $applyUrlHealth(
+                    $baseMovies()->where('m.id', $top->movie_model_id)->select('m.*')
+                )->first();
 
-                if ($movie) {
-                    Log::info('V2 Manifest: featured movie from recent plays', [
+                if ($movie && $this->isHealthyUrl($movie->url)) {
+                    $this->recordFeaturedMovie($movie->id);
+                    Log::info('V2 Manifest: featured from recent plays', [
                         'id'             => $movie->id,
                         'title'          => $movie->title,
-                        'pool_size'      => count($recentlyPlayed),
-                        'rotation_index' => $index,
+                        'play_count'     => $top->play_count,
+                        'unique_viewers' => $top->unique_viewers,
+                        'score'          => round($top->score, 1),
+                        'excluded_pool'  => count($excluded),
                     ]);
                     return $this->slimMovie($movie);
                 }
             }
 
-            // Step 2: no recent play data — fall back to all-time views, still rotating
-            Log::info('V2 Manifest: no recent plays found, falling back to all-time views_time_count');
-            $totalCandidates = DB::table('movie_models')
-                ->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
-                ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
-                ->where('views_time_count', '>', 0)
-                ->count();
+            // ── Path 2: 14-day pool exhausted — relax window progressively ──
+            // Try 7 days, then 3 days, then no exclusion at all.
+            foreach ([7, 3, 0] as $relaxDays) {
+                $retryExcluded = $relaxDays > 0 ? $this->loadFeaturedHistory($relaxDays) : [];
+                if ($excludeId) $retryExcluded[] = $excludeId;
 
-            if ($totalCandidates > 0) {
-                $index = $rotationSlot % min($totalCandidates, $topN);
-                $movie = DB::table('movie_models')
-                    ->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
-                    ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
-                    ->where('views_time_count', '>', 0)
-                    ->orderBy('views_time_count', 'desc')
-                    ->offset($index)->limit(1)
-                    ->select(self::SLIM_FIELDS)->first();
+                $fallback = $applyUrlHealth(
+                    $baseMovies()
+                        ->when(!empty($retryExcluded), fn ($q) => $q->whereNotIn('m.id', $retryExcluded))
+                        ->where('m.views_time_count', '>', 0)
+                        ->orderBy('m.views_time_count', 'desc')
+                        ->select('m.*')
+                )->first();
 
-                if ($movie) return $this->slimMovie($movie);
+                if ($fallback && $this->isHealthyUrl($fallback->url)) {
+                    $this->recordFeaturedMovie($fallback->id);
+                    Log::info('V2 Manifest: featured from fallback (relaxed window)', [
+                        'id'           => $fallback->id,
+                        'title'        => $fallback->title,
+                        'relax_days'   => $relaxDays,
+                    ]);
+                    return $this->slimMovie($fallback);
+                }
             }
         } catch (\Throwable $e) {
-            Log::warning('V2 Manifest: featured movie error', ['error' => $e->getMessage()]);
+            Log::warning('V2 Manifest: getFeaturedMovie error', ['error' => $e->getMessage()]);
         }
 
-        // Final fallback: most recent active movie
-        $movie = DB::table('movie_models')
-            ->where('status', 'Active')->where('type', 'Movie')->where('is_muno', 'Yes')
-            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
-            ->orderBy('created_at', 'desc')
-            ->select(self::SLIM_FIELDS)->first();
+        // ── Final failsafe: most recent movie with any valid URL ─────────────
+        // This always returns something; the URL health filter is still applied.
+        $last = $applyUrlHealth(
+            $baseMovies()
+                ->when($excludeId, fn ($q) => $q->where('m.id', '!=', $excludeId))
+                ->orderBy('m.created_at', 'desc')
+                ->select('m.*')
+        )->first();
 
-        return $movie ? $this->slimMovie($movie) : null;
+        if ($last) $this->recordFeaturedMovie($last->id);
+        return $last ? $this->slimMovie($last) : null;
     }
 
     /**
-     * Pick the next best active featured movie, excluding a specific ID.
-     * Called when the cached featured movie is found to be inactive.
+     * Pick the next best featured movie, skipping a specific ID.
+     * Called when the cached featured movie is found to be stale or broken.
      */
     private function pickNextFeaturedMovie(int $excludeId): ?array
     {
         return $this->getFeaturedMovie($excludeId);
+    }
+
+    /**
+     * Returns true only when a URL is confirmed usable for playback.
+     * Rejects empty strings, known-dummy URLs, and broken hosting services.
+     */
+    private function isHealthyUrl(?string $url): bool
+    {
+        if (empty($url)) return false;
+        if (stripos($url, 'eli.mp4')         !== false) return false;
+        if (stripos($url, 'googleapis')       !== false) return false;
+        if (stripos($url, 'firebasestorage')  !== false) return false;
+        return true;
+    }
+
+    /**
+     * Absolute path to the featured-movie history JSON file.
+     * Stored in storage/app so it survives cache flushes but not server wipes.
+     * Format: { "movie_id": unix_timestamp_when_featured, ... }
+     */
+    private function featuredHistoryPath(): string
+    {
+        return storage_path('app/featured_movie_history.json');
+    }
+
+    /**
+     * Load movie IDs that were featured within the last $days days.
+     *
+     * @return int[]
+     */
+    private function loadFeaturedHistory(int $days = 14): array
+    {
+        try {
+            $path = $this->featuredHistoryPath();
+            if (!file_exists($path)) return [];
+
+            $data   = json_decode(file_get_contents($path), true) ?: [];
+            $cutoff = Carbon::now()->subDays($days)->timestamp;
+
+            return array_keys(array_filter($data, fn ($ts) => $ts >= $cutoff));
+        } catch (\Throwable $e) {
+            Log::warning('V2 Manifest: could not load featured history', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    /**
+     * Record that a movie was just featured.
+     * Prunes entries older than 30 days to keep the file compact.
+     */
+    private function recordFeaturedMovie(int $movieId): void
+    {
+        try {
+            $path   = $this->featuredHistoryPath();
+            $data   = file_exists($path) ? (json_decode(file_get_contents($path), true) ?: []) : [];
+            $cutoff = Carbon::now()->subDays(30)->timestamp;
+
+            // Prune stale entries, then record this pick
+            $data = array_filter($data, fn ($ts) => $ts >= $cutoff);
+            $data[(string) $movieId] = Carbon::now()->timestamp;
+
+            file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT), LOCK_EX);
+        } catch (\Throwable $e) {
+            Log::warning('V2 Manifest: could not record featured history', ['error' => $e->getMessage()]);
+        }
     }
 
     /**
@@ -707,7 +829,6 @@ class ManifestController extends Controller
         //   Fixed random order (seed=42), different page each day.
         //   Full catalogue cycles before any movie repeats.
         // ═══════════════════════════════════════════════════
-        $forYouOffset = $cycledOffset($totalMovies, $limit);
         // Shift by 2/3 so it doesn't align with trending/popular pages
         $forYouPages = max(1, (int) ceil($totalMovies / $limit));
         $forYouPage  = ($rotationSlot + (int) floor($forYouPages * 2 / 3)) % $forYouPages;
@@ -754,7 +875,6 @@ class ManifestController extends Controller
         // ═══════════════════════════════════════════════════
         // 21. CLASSICS — oldest movies, page-cycled
         // ═══════════════════════════════════════════════════
-        $classicsOffset = $cycledOffset($totalMovies, $limit);
         $classicsPages  = max(1, (int) ceil($totalMovies / $limit));
         $classicsPage   = ($rotationSlot + (int) floor($classicsPages / 4)) % $classicsPages;
         $classics = $activeMovies()
@@ -787,6 +907,13 @@ class ManifestController extends Controller
 
         $url = $movie->url ?? '';
         if ($url !== '') {
+            // Storage maintenance bypass: raw DB rows skip the Eloquent accessor,
+            // so the fallback substitution must be applied here explicitly.
+            $url = \App\Models\MovieModel::resolveMaintenanceUrl(
+                $url,
+                $movie->id ?? null,
+                $movie->old_video_url ?? null
+            ) ?? $url;
             $url = str_replace(' ', '%20', $url);
             $url = preg_replace('/^http:/i', 'https:', $url);
         }

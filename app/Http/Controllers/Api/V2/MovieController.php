@@ -48,7 +48,7 @@ class MovieController extends Controller
 
     /** Fields returned in list/search results */
     protected const LIST_FIELDS = [
-        'id', 'title', 'url', 'local_video_link', 'image_url', 'thumbnail_url',
+        'id', 'title', 'url', 'old_video_url', 'local_video_link', 'image_url', 'thumbnail_url',
         'year', 'rating', 'duration', 'genre', 'language',
         'type', 'status', 'vj', 'is_premium', 'category_id',
         'views_count', 'likes_count', 'episode_number',
@@ -58,7 +58,7 @@ class MovieController extends Controller
 
     /** Fields returned in full detail response */
     protected const DETAIL_FIELDS = [
-        'id', 'title', 'url', 'local_video_link', 'image_url', 'thumbnail_url',
+        'id', 'title', 'url', 'old_video_url', 'local_video_link', 'image_url', 'thumbnail_url',
         'description', 'year', 'rating', 'duration', 'size',
         'genre', 'director', 'stars', 'country', 'language',
         'type', 'status', 'vj', 'actor', 'is_premium',
@@ -71,7 +71,7 @@ class MovieController extends Controller
 
     /** Fields returned for episode listings (minimal) */
     protected const EPISODE_FIELDS = [
-        'id', 'title', 'url', 'local_video_link', 'thumbnail_url', 'image_url',
+        'id', 'title', 'url', 'old_video_url', 'local_video_link', 'thumbnail_url', 'image_url',
         'description', 'year', 'rating', 'duration', 'size',
         'genre', 'type', 'status', 'category_id', 'vj',
         'episode_number', 'season_number', 'is_premium',
@@ -1067,6 +1067,18 @@ class MovieController extends Controller
     private function cleanUrlSingle(array $data): array
     {
         $storageBase = rtrim(config('app.url'), '/') . '/storage/';
+
+        // Storage maintenance bypass: raw DB rows skip the Eloquent accessor,
+        // so the fallback substitution must be applied here explicitly.
+        if (!empty($data['url'])) {
+            $data['url'] = \App\Models\MovieModel::resolveMaintenanceUrl(
+                (string) $data['url'],
+                $data['id'] ?? null,
+                isset($data['old_video_url']) ? (string) $data['old_video_url'] : null
+            ) ?? $data['url'];
+        }
+        // Internal column — never expose to clients
+        unset($data['old_video_url']);
 
         $urlFields = ['url', 'image_url', 'thumbnail_url', 'poster_url', 'external_url'];
         foreach ($urlFields as $field) {

@@ -82,6 +82,22 @@ class SystemConfigController extends AdminController
             ->rows(2)
             ->placeholder('We are performing scheduled maintenance. Back shortly.');
 
+        $form->divider('Hetzner Storage Maintenance (Video URL Fallback)');
+
+        $form->radio('storage_maintenance_enabled', 'Hetzner Under Maintenance?')
+            ->options(['0' => 'No', '1' => 'Yes'])
+            ->help('When Yes, Hetzner-hosted movies are automatically served from their original '
+                 . 'CDN URLs (transfer record source, then old_video_url) so playback keeps working. '
+                 . 'Turns itself off automatically after the end date below.');
+
+        $form->text('storage_maintenance_host', 'Affected Storage Host')
+            ->default('nx100800.your-storageshare.de')
+            ->help('Movie URLs containing this hostname are substituted with their fallback URL.');
+
+        $form->datetime('storage_maintenance_ends_at', 'Maintenance Ends At (UTC)')
+            ->help('When this time passes, the fallback deactivates automatically — no need to '
+                 . 'come back and switch it off. Leave empty to keep it on until manually disabled.');
+
         $form->divider('Version Requirements');
 
         $form->number('min_android_version', 'Min Android App Version')
@@ -94,13 +110,16 @@ class SystemConfigController extends AdminController
 
         // Normalise radio string values to booleans before save
         $form->saving(function (Form $form) {
-            $form->ios_review_mode  = (bool) $form->ios_review_mode;
-            $form->maintenance_mode = (bool) $form->maintenance_mode;
+            $form->ios_review_mode             = (bool) $form->ios_review_mode;
+            $form->maintenance_mode            = (bool) $form->maintenance_mode;
+            $form->storage_maintenance_enabled = (bool) $form->storage_maintenance_enabled;
         });
 
         $form->saved(function () {
             Cache::forget('system_config');
             Cache::forget('ios_review_movies_default');
+            Cache::forget('storage_maint_cfg');
+            Cache::forget('storage_fallback_map');
         });
 
         $form->tools(function (Form\Tools $tools) {

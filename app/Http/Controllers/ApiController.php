@@ -900,7 +900,9 @@ class ApiController extends BaseController
         $APP_VERSION = 20;
         $UPDATE_NOTES = "- Fixed download disappearance bug\n- Added subscription management with free trial\n- Google Sign-In now available\n- Dashboard statistics for watchlist and favorites\n- Improved movie recommendations\n- Fixed profile photo upload issues";
         $WHATSAPP_CONTAT_NUMBER = "+256706638494";
-        $take_only = ['id', 'title', 'url', 'thumbnail_url', 'description', 'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
+        // old_video_url is selected so the url accessor can apply the storage
+        // maintenance fallback; it is hidden from JSON via MovieModel::$hidden.
+        $take_only = ['id', 'title', 'url', 'old_video_url', 'thumbnail_url', 'description', 'genre', 'type', 'vj', 'is_premium', 'category_id', 'category'];
         $date = Carbon::parse('2020-01-01 00:00:00');
 
 

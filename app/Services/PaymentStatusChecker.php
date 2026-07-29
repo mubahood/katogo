@@ -300,7 +300,9 @@ class PaymentStatusChecker
     {
         $ageMinutes = $options['age_minutes'] ?? 15;
         $limit = $options['limit'] ?? 50;
-        $maxAgeHours = $options['max_age_hours'] ?? 48; // Only check payments < 48 hours old
+        // AwaitingPIN subs can sit for days if the webhook never fires; use 30 days
+        // so retroactive polling catches anyone who paid but never got activated.
+        $maxAgeHours = $options['max_age_hours'] ?? 720;
 
         Log::info('🔍 PaymentStatusChecker: Bulk check starting', [
             'age_minutes' => $ageMinutes,
@@ -311,9 +313,14 @@ class PaymentStatusChecker
         $threshold = now()->subMinutes($ageMinutes);
         $maxAgeThreshold = now()->subHours($maxAgeHours);
 
-        // Find pending subscriptions
+        // Find pending subscriptions.
+        // 'AwaitingPIN' and 'CaptchaFailed' are included because Flutterwave mobile-money
+        // direct-charge sets these statuses while waiting for PIN or when the charge
+        // encounters a transient error. If webhooks are missed the subscription stays
+        // stuck here even after the user paid. We must poll Flutterwave to detect those
+        // completions.
         $pendingSubscriptions = Subscription::whereIn('status', ['Pending', 'Failed', 'Cancelled'])
-            ->whereIn('payment_status', ['Pending', 'Processing', 'Failed'])
+            ->whereIn('payment_status', ['Pending', 'Processing', 'Failed', 'AwaitingPIN', 'CaptchaFailed'])
             ->where(function ($query) {
                 $query->whereNotNull('pesapal_tracking_id')
                     ->orWhereNotNull('flutterwave_reference');

@@ -493,6 +493,16 @@ class Kernel extends ConsoleKernel
             ->appendOutputTo(storage_path('logs/munowatch_crawl.log'))
             ->name('munowatch-process-pending');
 
+        // Tier 4: fix-broken — re-fetch URLs for deactivated/dummy-URL munowatch movies.
+        // Runs every 6 hours, offset from the deep crawl so they don't overlap.
+        // Processes 300 movies per run: ~2 min at 400ms/request.
+        $schedule->command('munowatch:fix-broken --limit=300 --delay=400')
+            ->cron('0 */6 * * *')
+            ->withoutOverlapping(30)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/munowatch_fix_broken.log'))
+            ->name('munowatch-fix-broken');
+
         // Namz post-crawl: activate any movies that now have a valid URL
         $schedule->call(function () {
             $count = \DB::table('movie_models')

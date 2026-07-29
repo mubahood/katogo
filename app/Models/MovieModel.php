@@ -18,6 +18,10 @@ class MovieModel extends Model
         'fix_counter' => 'integer',
     ];
 
+    // Internal backup of the pre-transfer URL — used by the storage maintenance
+    // fallback in getUrlAttribute(); never exposed in API JSON.
+    protected $hidden = ['old_video_url'];
+
     //process_munowatch
     public static function process_munowatch($movie)
     {
@@ -274,7 +278,7 @@ class MovieModel extends Model
     }
 
     // Returns the playable video URL.
-    // Priority: local_video_link (uploaded file) → url (external link)
+    // Priority: local_video_link (uploaded file) → maintenance fallback → url (external link)
     public function getUrlAttribute($value)
     {
         // If a file was uploaded locally, derive the URL from it — ignore the raw url column
@@ -288,9 +292,158 @@ class MovieModel extends Model
             return $value;
         }
 
+        // Transparently swap to fallback URL during storage provider maintenance
+        $value = $this->applyStorageFallback($value);
+
         $value = str_replace(' ', '%20', $value);
         $value = str_replace('http://', 'https://', $value);
         return $value;
+    }
+
+    /**
+     * During storage provider maintenance, substitute the original CDN URL so the
+     * mobile app keeps working without any client-side change.
+     *
+     * Fallback priority:
+     *   1. movie_file_transfers.source_url — the exact origin URL the file was
+     *      transferred FROM (always recorded by the Hetzner transfer pipeline)
+     *   2. old_video_url column — legacy backup of the pre-transfer URL
+     *   3. original URL unchanged (nothing better available)
+     *
+     * Controlled from Admin → System Configuration (system_configs table),
+     * with config/storage_fallback.php (.env) as fallback when columns are absent:
+     *   storage_maintenance_enabled   — master switch
+     *   storage_maintenance_host      — affected hostname fragment
+     *   storage_maintenance_ends_at   — auto-expires after this UTC datetime
+     */
+    protected function applyStorageFallback(string $url): string
+    {
+        return self::resolveMaintenanceUrl(
+            $url,
+            $this->attributes['id'] ?? null,
+            $this->attributes['old_video_url'] ?? null
+        ) ?? $url;
+    }
+
+    /**
+     * Static entry point for raw-row serializers (manifest slimMovie, movie
+     * controller cleanUrlSingle, search results) that bypass Eloquent accessors.
+     * Same priority: transfer source_url → old_video_url → unchanged.
+     */
+    public static function resolveMaintenanceUrl(?string $url, $movieId = null, ?string $oldVideoUrl = null): ?string
+    {
+        if (empty($url)) {
+            return $url;
+        }
+
+        $cfg = self::storageMaintenanceConfig();
+        if (empty($cfg['active'])) {
+            return $url;
+        }
+
+        $host = $cfg['host'];
+        if (strpos($url, $host) === false) {
+            return $url;
+        }
+
+        // 1st priority: source_url from the Hetzner transfer record
+        if ($movieId) {
+            $map = self::storageFallbackMap($host);
+            $src = $map[$movieId] ?? null;
+            if (!empty($src) && strpos($src, $host) === false) {
+                return $src;
+            }
+        }
+
+        // 2nd priority: old_video_url column
+        if (!empty($oldVideoUrl)
+            && strlen(trim($oldVideoUrl)) > 10
+            && strpos($oldVideoUrl, $host) === false
+        ) {
+            return $oldVideoUrl;
+        }
+
+        // No usable fallback — return the original (may fail for the user, but nothing better)
+        return $url;
+    }
+
+    /** @var array|null Per-request memo of the resolved maintenance config */
+    protected static ?array $storageMaintCfg = null;
+
+    /**
+     * Resolve maintenance settings: system_configs row (admin panel) is authoritative;
+     * config/storage_fallback.php (.env) is the fallback when columns don't exist.
+     * Result includes 'active' — enabled AND not past ends_at.
+     */
+    protected static function storageMaintenanceConfig(): array
+    {
+        if (self::$storageMaintCfg !== null) {
+            return self::$storageMaintCfg;
+        }
+
+        $cfg = config('storage_fallback.maintenance', []);
+        $enabled = !empty($cfg['enabled']);
+        $host    = $cfg['host'] ?? 'nx100800.your-storageshare.de';
+        $endsAt  = $cfg['ends_at'] ?? null;
+
+        try {
+            $sys = \Illuminate\Support\Facades\Cache::remember('storage_maint_cfg', 60, function () {
+                return (array) (DB::table('system_configs')
+                    ->select('storage_maintenance_enabled', 'storage_maintenance_host', 'storage_maintenance_ends_at')
+                    ->first() ?? []);
+            });
+            if (!empty($sys)) {
+                $enabled = (bool) ($sys['storage_maintenance_enabled'] ?? false);
+                if (!empty($sys['storage_maintenance_host'])) {
+                    $host = $sys['storage_maintenance_host'];
+                }
+                $endsAt = $sys['storage_maintenance_ends_at'] ?? null;
+            }
+        } catch (\Throwable) {
+            // Columns not migrated yet — env config stays authoritative
+        }
+
+        // Auto-expire: once ends_at passes, the bypass switches off by itself
+        $active = $enabled;
+        if ($active && !empty($endsAt)) {
+            try {
+                if (Carbon::parse($endsAt)->isPast()) {
+                    $active = false;
+                }
+            } catch (\Throwable) {
+                // Unparseable date — treat as "no expiry"
+            }
+        }
+
+        return self::$storageMaintCfg = [
+            'active'  => $active,
+            'host'    => $host,
+            'ends_at' => $endsAt,
+        ];
+    }
+
+    /**
+     * movie_id → source_url map from completed Hetzner transfers.
+     * One query, cached 1 hour — shared across the whole request (manifest,
+     * search, listings) instead of a lookup per movie.
+     */
+    protected static function storageFallbackMap(string $host): array
+    {
+        try {
+            return \Illuminate\Support\Facades\Cache::remember('storage_fallback_map', 3600, function () use ($host) {
+                return DB::table('movie_file_transfers')
+                    ->where('status', 'done')
+                    ->where('dest_url', 'like', "%{$host}%")
+                    ->whereNotNull('source_url')
+                    ->where('source_url', '!=', '')
+                    ->where('source_url', 'not like', "%{$host}%")
+                    ->orderBy('id') // later transfers overwrite earlier ones in the map
+                    ->pluck('source_url', 'movie_id')
+                    ->toArray();
+            });
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     private const VIDEO_MIME_TYPES = [

@@ -28,6 +28,7 @@ class MovieModelController extends AdminController
         foreach ($segments as $seg) {
             if (in_array($seg, [
                 'movies-movies-pending', 'movies-movies-fixed', 'movies-movies-failed',
+                'movies-movies-dummy-url',
                 'movies-active', 'movies-series', 'movies-movies',
                 'movies-inactive', 'movies-content-is-video',
                 'movies-processed', 'movies-not-processed', 'movies',
@@ -41,10 +42,11 @@ class MovieModelController extends AdminController
     private function slugLabel(): string
     {
         return match ($this->detectSlug()) {
-            'movies-movies-pending' => 'Movies — Pending Fix',
-            'movies-movies-fixed'   => 'Movies — Fixed',
-            'movies-movies-failed'  => 'Movies — Failed / Error',
-            'movies-active'         => 'Active Movies',
+            'movies-movies-pending'   => 'Movies — Pending Fix',
+            'movies-movies-fixed'     => 'Movies — Fixed',
+            'movies-movies-failed'    => 'Movies — Failed / Error',
+            'movies-movies-dummy-url' => 'Movies — Dummy URL (ELI.mp4)',
+            'movies-active'           => 'Active Movies',
             'movies-series'         => 'Series Episodes',
             'movies-movies'         => 'Movies (Type: Movie)',
             'movies-inactive'       => 'Inactive Movies',
@@ -80,23 +82,27 @@ class MovieModelController extends AdminController
         $fixPending = MovieModel::where('fix_status', 'pending')->count();
         $fixFixed   = MovieModel::where('fix_status', 'fixed')->count();
         $fixError   = MovieModel::where('fix_status', 'error')->count();
+        $dummyUrl   = MovieModel::where('url', 'like', '%eli.mp4%')->count();
 
         $html = '<style>
 .mmc-nav{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
 .mmc-nav a{display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;text-decoration:none;border:1px solid #ddd;color:#555;transition:all .15s}
 .mmc-nav a:hover{border-color:#3498db;color:#3498db}
 .mmc-nav a.active{background:#3498db;color:#fff;border-color:#3498db}
+.mmc-nav a.mmc-danger{border-color:#e74c3c;color:#e74c3c}
+.mmc-nav a.mmc-danger:hover,.mmc-nav a.mmc-danger.active{background:#e74c3c;color:#fff;border-color:#e74c3c}
 </style>';
 
         $slugs = [
-            'movies-movies'         => ['All ('.$total.')', 'fa-film'],
-            'movies-movies-pending' => ['Pending ('.$fixPending.')', 'fa-clock-o'],
-            'movies-movies-fixed'   => ['Fixed ('.$fixFixed.')', 'fa-check-circle'],
-            'movies-movies-failed'  => ['Failed ('.$fixError.')', 'fa-times-circle'],
+            'movies-movies'           => ['All ('.$total.')', 'fa-film', ''],
+            'movies-movies-pending'   => ['Pending ('.$fixPending.')', 'fa-clock-o', ''],
+            'movies-movies-fixed'     => ['Fixed ('.$fixFixed.')', 'fa-check-circle', ''],
+            'movies-movies-failed'    => ['Failed ('.$fixError.')', 'fa-times-circle', ''],
+            'movies-movies-dummy-url' => ['Dummy URL ('.$dummyUrl.')', 'fa-exclamation-triangle', 'mmc-danger'],
         ];
         $html .= '<div class="mmc-nav">';
-        foreach ($slugs as $s => [$label, $icon]) {
-            $cls = ($slug === $s) ? 'active' : '';
+        foreach ($slugs as $s => [$label, $icon, $extra]) {
+            $cls = trim(($slug === $s ? 'active' : '') . ' ' . $extra);
             $html .= "<a href='" . admin_url($s) . "' class='{$cls}'><i class='fa {$icon}'></i> {$label}</a>";
         }
         $html .= '</div>';
@@ -126,6 +132,9 @@ class MovieModelController extends AdminController
                 break;
             case 'movies-movies-failed':
                 $grid->model()->where('fix_status', 'error');
+                break;
+            case 'movies-movies-dummy-url':
+                $grid->model()->where('url', 'like', '%eli.mp4%');
                 break;
             case 'movies-active':
                 $grid->model()->where('status', 'Active');
@@ -278,8 +287,15 @@ class MovieModelController extends AdminController
         //url link
         $grid->column('url', __('Url'))
             ->display(function ($url) {
-                return '<a href="' . $this->url . '" target="_blank">' . $this->url . '</a>';
-            })->width(200)
+                $isDummy = !empty($this->url) && stripos($this->url, 'eli.mp4') !== false;
+                $badge   = $isDummy
+                    ? '<span style="background:#e74c3c;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;margin-right:4px;vertical-align:middle">DUMMY</span>'
+                    : '';
+                $link = empty($this->url)
+                    ? '<span class="text-muted">—</span>'
+                    : '<a href="' . $this->url . '" target="_blank">' . $this->url . '</a>';
+                return $badge . $link;
+            })->width(220)
             ->copyable();
 
         //views_count

@@ -83,7 +83,7 @@ class CheckPendingPayments extends Command
         $results = $this->statusChecker->checkPendingPayments([
             'age_minutes' => $ageMinutes,
             'limit' => $limit,
-            'max_age_hours' => 168, // 7 days
+            'max_age_hours' => 720, // 30 days — covers AwaitingPIN subs missed by webhook
         ]);
 
         // Display results

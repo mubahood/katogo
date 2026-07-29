@@ -37,7 +37,7 @@ class SearchController extends Controller
     use ApiResponser;
 
     protected const LIST_FIELDS = [
-        'id', 'title', 'url', 'local_video_link', 'image_url', 'thumbnail_url',
+        'id', 'title', 'url', 'old_video_url', 'local_video_link', 'image_url', 'thumbnail_url',
         'year', 'rating', 'duration', 'genre', 'language',
         'type', 'status', 'vj', 'is_premium', 'category_id',
         'views_count', 'likes_count', 'episode_number',
@@ -1127,6 +1127,18 @@ class SearchController extends Controller
         $storageBase = rtrim(config('app.url'), '/') . '/storage/';
         return array_map(function ($item) use ($storageBase) {
             $data = $item instanceof \Illuminate\Database\Eloquent\Model ? $item->toArray() : (array) $item;
+
+            // Storage maintenance bypass: rows that skipped the Eloquent accessor
+            // (raw queries, cached arrays) still need the fallback substitution.
+            if (!empty($data['url'])) {
+                $data['url'] = \App\Models\MovieModel::resolveMaintenanceUrl(
+                    (string) $data['url'],
+                    $data['id'] ?? null,
+                    isset($data['old_video_url']) ? (string) $data['old_video_url'] : null
+                ) ?? $data['url'];
+            }
+            unset($data['old_video_url']);
+
             $urlFields = ['url', 'image_url', 'thumbnail_url', 'poster_url', 'external_url'];
             foreach ($urlFields as $field) {
                 if (empty($data[$field])) {

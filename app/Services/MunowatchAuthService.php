@@ -55,9 +55,12 @@ class MunowatchAuthService
             return $cached;
         }
 
-        // 2. DB path: check if DB has a recent session
+        // 2. DB path: check if DB has a recent session (enforce TTL via session_refreshed_at)
         $site = self::getWebsite();
-        if ($site && self::isValidSession(self::siteToSession($site))) {
+        $siteSessionFresh = $site
+            && !empty($site->session_refreshed_at)
+            && Carbon::parse($site->session_refreshed_at)->addHours(self::SESSION_TTL_HOURS)->isFuture();
+        if ($siteSessionFresh && self::isValidSession(self::siteToSession($site))) {
             $session = self::siteToSession($site);
             Cache::put(self::CACHE_KEY, $session, now()->addHours(self::SESSION_TTL_HOURS));
             return $session;

@@ -16,14 +16,19 @@ class SystemConfig extends Model
         'maintenance_message',
         'min_android_version',
         'min_ios_version',
+        'storage_maintenance_enabled',
+        'storage_maintenance_host',
+        'storage_maintenance_ends_at',
     ];
 
     protected $casts = [
-        'ios_review_mode'      => 'boolean',
-        'maintenance_mode'     => 'boolean',
-        'min_android_version'  => 'integer',
-        'min_ios_version'      => 'integer',
-        'ios_review_movie_ids' => 'array',
+        'ios_review_mode'             => 'boolean',
+        'maintenance_mode'            => 'boolean',
+        'min_android_version'         => 'integer',
+        'min_ios_version'             => 'integer',
+        'ios_review_movie_ids'        => 'array',
+        'storage_maintenance_enabled' => 'boolean',
+        'storage_maintenance_ends_at' => 'datetime',
     ];
 
     /**
