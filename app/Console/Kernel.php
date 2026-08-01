@@ -43,6 +43,15 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/subscriptions-check-pending.log'));
 
+        // Reconcile stuck Flutterwave transactions — the webhook is not configured
+        // in the Flutterwave dashboard, so without this poller payments complete at
+        // the gateway but stay Pending here forever. Runs every 15 minutes.
+        $schedule->command('subscriptions:check-pending-flutterwave --age=10 --days=14 --limit=100')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping(10)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/subscriptions-check-pending-flutterwave.log'));
+
         // Optional: Send second reminder 1 day before expiry
         $schedule->command('subscriptions:send-expiry-notifications --days=1')
             ->dailyAt('10:00')
