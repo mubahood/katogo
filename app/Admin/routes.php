@@ -230,6 +230,20 @@ Route::group([
     $router->get('movie-file-transfers/live-data',           'MovieFileTransferController@liveStatus');
     $router->get('movie-file-transfers',                    'MovieFileTransferController@index');
     $router->get('movie-file-transfers/monitor',            'MovieFileTransferController@monitor')->name('movie-file-transfers.monitor');
+
+    // Bunny Storage transfer section
+    $router->get('bunny-transfers/library',                 'BunnyTransferAdminController@library');
+    $router->get('bunny-transfers/monitor',                 'BunnyTransferAdminController@monitor');
+    $router->get('bunny-transfers/live-data',               'BunnyTransferAdminController@liveData');
+    $router->get('bunny-transfers/backfill',                'BunnyTransferAdminController@backfill');
+    $router->get('bunny-transfers/backfill-run',            'BunnyTransferAdminController@backfillRun');
+    $router->get('bunny-transfers/queue-top',               'BunnyTransferAdminController@queueTop');
+    $router->get('bunny-transfers/queue/{id}',              'BunnyTransferAdminController@queue');
+    $router->get('bunny-transfers/retry-all-failed',        'BunnyTransferAdminController@retryAllFailed');
+    $router->get('bunny-transfers/retry/{id}',              'BunnyTransferAdminController@retry');
+    $router->get('bunny-transfers/verify-all',              'BunnyTransferAdminController@verifyAll');
+    $router->get('bunny-transfers/verify/{id}',             'BunnyTransferAdminController@verify');
+    $router->get('bunny-transfers',                         'BunnyTransferAdminController@index');
     $router->get('movie-file-transfers/backfill',           'MovieFileTransferController@backfill')->name('movie-file-transfers.backfill');
     $router->post('movie-file-transfers/backfill-run',      'MovieFileTransferController@backfillRun')->name('movie-file-transfers.backfill-run');
     $router->get('movie-file-transfers/process-now',        'MovieFileTransferController@processNow')->name('movie-file-transfers.process-now');

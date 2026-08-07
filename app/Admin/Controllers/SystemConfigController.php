@@ -98,6 +98,20 @@ class SystemConfigController extends AdminController
             ->help('When this time passes, the fallback deactivates automatically — no need to '
                  . 'come back and switch it off. Leave empty to keep it on until manually disabled.');
 
+        $form->divider('Video URL Serving Priority (Bunny CDN)');
+
+        $form->select('movie_url_priority', 'URL Priority Order')
+            ->options([
+                'bunny,main,hetzner' => 'Bunny first → Main → Hetzner   (serve Bunny CDN when a copy exists)',
+                'main,bunny,hetzner' => 'Main first → Bunny → Hetzner   (safe default — no behavior change)',
+                'hetzner,bunny,main' => 'Hetzner first → Bunny → Main',
+                'main,hetzner,bunny' => 'Main first → Hetzner → Bunny   (Bunny as last resort)',
+            ])
+            ->default('bunny,main,hetzner')
+            ->help('Which video URL variant the API serves to the mobile apps. Per movie, the first
+                    variant that exists wins. Takes effect within ~1 minute of saving — no deploy needed.
+                    Bunny copies are created from Admin → Movie Transfers → Bunny Transfers.');
+
         $form->divider('Version Requirements');
 
         $form->number('min_android_version', 'Min Android App Version')
@@ -120,6 +134,9 @@ class SystemConfigController extends AdminController
             Cache::forget('ios_review_movies_default');
             Cache::forget('storage_maint_cfg');
             Cache::forget('storage_fallback_map');
+            Cache::forget('movie_url_priority_cfg');
+            Cache::forget('bunny_url_map');
+            Cache::forget('hetzner_url_map');
         });
 
         $form->tools(function (Form\Tools $tools) {

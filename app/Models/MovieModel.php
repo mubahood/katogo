@@ -80,6 +80,19 @@ class MovieModel extends Model
     {
         parent::boot();
 
+        // ── CONTENT BLOCKLIST (DMCA compliance) ──────────────────────────
+        // Any save whose title matches content_blocklist is forced Inactive
+        // and flagged — regardless of which pipeline touched it (crawler,
+        // series fixer, munowatch fix-broken, admin edit, sync). A scheduled
+        // sweep (content:enforce-blocklist) backstops raw-SQL update paths.
+        static::saving(function ($model) {
+            $rawTitle = $model->getAttributes()['title'] ?? null;
+            if (self::titleIsBlocklisted($rawTitle)) {
+                $model->status         = 'Inactive';
+                $model->is_blocklisted = 1;
+            }
+        });
+
         static::created(function ($model) {
             // Episode count increment moved to MovieModelObserver::created() (P4-18 / P10-09)
             // — uses INCREMENT instead of COUNT(*) subquery.
@@ -277,6 +290,42 @@ class MovieModel extends Model
         return ucwords($value);
     }
 
+    /**
+     * True when a title matches any content_blocklist pattern (DMCA'd or
+     * preventively blocked titles). Patterns cached 5 minutes.
+     * match_type: exact (case-insensitive) | like (SQL % wildcards) | regexp.
+     */
+    public static function titleIsBlocklisted(?string $title): bool
+    {
+        if (empty($title)) {
+            return false;
+        }
+
+        $patterns = \Illuminate\Support\Facades\Cache::remember('content_blocklist_patterns', 300, function () {
+            try {
+                return DB::table('content_blocklist')->get(['pattern', 'match_type'])->all();
+            } catch (\Throwable) {
+                return []; // table absent (e.g. fresh local env) — no blocking
+            }
+        });
+
+        foreach ($patterns as $p) {
+            $hit = match ($p->match_type) {
+                'exact'  => strcasecmp($title, $p->pattern) === 0,
+                'like'   => (bool) preg_match(
+                    '/^' . str_replace('%', '.*', preg_quote($p->pattern, '/')) . '$/i',
+                    $title
+                ),
+                'regexp' => (bool) @preg_match('/' . $p->pattern . '/i', $title),
+                default  => false,
+            };
+            if ($hit) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Returns the playable video URL.
     // Priority: local_video_link (uploaded file) → maintenance fallback → url (external link)
     public function getUrlAttribute($value)
@@ -293,11 +342,121 @@ class MovieModel extends Model
         }
 
         // Transparently swap to fallback URL during storage provider maintenance
+        // applyStorageFallback → resolveMaintenanceUrl applies BOTH the
+        // priority walk (bunny/main/hetzner) and the maintenance fallback.
         $value = $this->applyStorageFallback($value);
 
         $value = str_replace(' ', '%20', $value);
         $value = str_replace('http://', 'https://', $value);
         return $value;
+    }
+
+    /**
+     * Walk config('bunny.url_priority') and return the first available URL
+     * variant for this movie. Variants:
+     *   main    → the movie's own url column (as passed in)
+     *   bunny   → Bunny CDN copy   (movie_file_transfers.bunny_url, status done)
+     *   hetzner → Hetzner copy     (the url itself if on Hetzner, else transfer dest_url)
+     */
+    public static function resolvePriorityUrl($movieId, ?string $mainUrl): ?string
+    {
+        foreach (self::urlPriorityOrder() as $variant) {
+            $candidate = self::urlVariant($variant, $movieId, $mainUrl);
+            if (!empty($candidate)) {
+                return $candidate;
+            }
+        }
+        return $mainUrl;
+    }
+
+    /**
+     * Priority order: Admin → System Configuration (system_configs.movie_url_priority)
+     * is authoritative; config('bunny.url_priority') (.env) is the fallback.
+     * Cached 60s so admin changes propagate within a minute.
+     */
+    public static function urlPriorityOrder(): array
+    {
+        return \Illuminate\Support\Facades\Cache::remember('movie_url_priority_cfg', 60, function () {
+            try {
+                $db = DB::table('system_configs')->value('movie_url_priority');
+                if (!empty($db)) {
+                    return array_values(array_filter(array_map('trim', explode(',', $db))));
+                }
+            } catch (\Throwable) {
+                // column missing — fall through to .env config
+            }
+            return config('bunny.url_priority', ['main']);
+        });
+    }
+
+    /**
+     * All existing URL variants for a movie, in priority order — used by the
+     * mobile app's Fix button so the player can try candidates sequentially.
+     * Returns [['source' => 'main'|'bunny'|'hetzner', 'url' => ...], ...]
+     */
+    public function urlCandidates(): array
+    {
+        $mainUrl = $this->attributes['url'] ?? null;
+        $out = [];
+        foreach (self::urlPriorityOrder() as $variant) {
+            $url = self::urlVariant($variant, $this->attributes['id'] ?? null, $mainUrl);
+            if (!empty($url) && !in_array($url, array_column($out, 'url'), true)) {
+                $out[] = ['source' => $variant, 'url' => str_replace(' ', '%20', $url)];
+            }
+        }
+        return $out;
+    }
+
+    protected static function urlVariant(string $variant, $movieId, ?string $mainUrl): ?string
+    {
+        switch ($variant) {
+            case 'main':
+                return $mainUrl;
+
+            case 'bunny':
+                if (!$movieId) return null;
+                return self::bunnyUrlMap()[$movieId] ?? null;
+
+            case 'hetzner':
+                if ($mainUrl && strpos($mainUrl, 'your-storageshare.de') !== false) {
+                    return $mainUrl;
+                }
+                if (!$movieId) return null;
+                return self::hetznerUrlMap()[$movieId] ?? null;
+        }
+        return null;
+    }
+
+    /** movie_id → bunny_url for all completed Bunny transfers (1h cache). */
+    protected static function bunnyUrlMap(): array
+    {
+        return \Illuminate\Support\Facades\Cache::remember('bunny_url_map', 3600, function () {
+            try {
+                return DB::table('movie_file_transfers')
+                    ->where('bunny_status', 'done')
+                    ->whereNotNull('bunny_url')
+                    ->pluck('bunny_url', 'movie_id')
+                    ->toArray();
+            } catch (\Throwable) {
+                return [];
+            }
+        });
+    }
+
+    /** movie_id → Hetzner dest_url for all completed Hetzner transfers (1h cache). */
+    protected static function hetznerUrlMap(): array
+    {
+        return \Illuminate\Support\Facades\Cache::remember('hetzner_url_map', 3600, function () {
+            try {
+                return DB::table('movie_file_transfers')
+                    ->where('status', 'done')
+                    ->whereNotNull('dest_url')
+                    ->pluck('dest_url', 'movie_id')
+                    ->toArray();
+            } catch (\Throwable) {
+                return [];
+            }
+        });
     }
 
     /**
@@ -335,6 +494,12 @@ class MovieModel extends Model
         if (empty($url)) {
             return $url;
         }
+
+        // Serve-time URL priority (config('bunny.url_priority'), e.g.
+        // bunny,main,hetzner) runs FIRST — this static entry is the single
+        // choke-point every serializer goes through (accessor, manifest,
+        // search, movie detail), so the priority applies app-wide.
+        $url = self::resolvePriorityUrl($movieId, $url) ?? $url;
 
         $cfg = self::storageMaintenanceConfig();
         if (empty($cfg['active'])) {
@@ -577,9 +742,17 @@ class MovieModel extends Model
 
     public function update_views()
     {
+        // Ranking reset: when config('ranking.reset_date') is set, the
+        // views_time_count leaderboard only counts watches on/after that date.
+        // views_count (the displayed total) intentionally stays all-time.
+        $resetDate = config('ranking.reset_date');
+
         $result = DB::table('movie_views')
             ->where('movie_model_id', $this->id)
-            ->selectRaw('COUNT(*) as views, SUM(progress) as progress_sum')
+            ->selectRaw(
+                'COUNT(*) as views, SUM(CASE WHEN created_at >= ? THEN progress ELSE 0 END) as progress_sum',
+                [$resetDate ?: '1970-01-01']
+            )
             ->first();
 
         $views            = is_numeric($result->views)        ? intval($result->views)        : 0;

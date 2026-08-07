@@ -53,6 +53,14 @@ class MovieFileTransfer extends Model
         'notes',
         'initiated_by',
         'worker_hostname',
+        // Bunny Storage leg (same record, third hop: source → hetzner → bunny)
+        'bunny_status',
+        'bunny_url',
+        'bunny_storage_path',
+        'bunny_size_bytes',
+        'bunny_error',
+        'bunny_attempts',
+        'bunny_transferred_at',
     ];
 
     protected $casts = [

@@ -1283,10 +1283,20 @@ class MovieController extends Controller
                     'changes' => $result['changes'] ?? [],
                     'old_url' => $result['old_url'] ?? null,
                     'new_url' => $result['new_url'] ?? null,
+                    // Every stored URL variant in priority order (main → bunny →
+                    // hetzner by default) — the player tries them sequentially.
+                    'url_candidates' => $movie->fresh()->urlCandidates(),
                     'message' => $result['message'] ?? 'Movie fixed successfully.',
                 ], $result['message'] ?? 'Movie fixed.');
             } else {
-                return $this->error($result['message'] ?? 'Fix failed.', 400);
+                // Even when the central fixer fails, hand the player any
+                // alternative copies we hold — one of them may still play.
+                return $this->success([
+                    'action'         => 'fix',
+                    'fix_failed'     => true,
+                    'url_candidates' => $movie->urlCandidates(),
+                    'message'        => $result['message'] ?? 'Fix failed.',
+                ], 'Fix could not repair the source, but alternate URLs are attached.');
             }
         } catch (\Throwable $e) {
             Log::error("V2 Fix centralized failed for movie {$movie->id}: " . $e->getMessage());

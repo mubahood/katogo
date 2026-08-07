@@ -1,5 +1,6 @@
 <?php
 
+use App\Admin\Controllers\HlsReversalController;
 use App\Http\Controllers\ApiController;
 use App\Http\Controllers\CoinController;
 use App\Http\Controllers\DynamicCrudController;
@@ -300,6 +301,27 @@ Route::middleware([JwtMiddleware::class])->group(function () {
         Route::get('admin/system-status',                            [V2AdminController::class, 'systemStatus']);
         Route::post('admin/system/toggle-ios-review',                [V2AdminController::class, 'toggleIosReview']);
         Route::post('admin/system/toggle-maintenance',               [V2AdminController::class, 'toggleMaintenance']);
+
+        // HLS Reversal System
+        Route::get('admin/hls-reversal/stats',                    [HlsReversalController::class, 'stats']);
+        Route::get('admin/hls-reversal/queue',                    [HlsReversalController::class, 'listQueue']);
+        Route::get('admin/hls-reversal/records',                  [HlsReversalController::class, 'listRecords']);
+
+        // Bunny Storage transfer pipeline
+        Route::get('admin/bunny/stats',             [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'stats']);
+        Route::get('admin/bunny/records',           [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'records']);
+        Route::get('admin/bunny/progress',          [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'progress']);
+        Route::post('admin/bunny/queue',            [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'queueBatch']);
+        Route::post('admin/bunny/retry-all-failed', [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'retryAllFailed']);
+        Route::post('admin/bunny/retry/{id}',       [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'retry']);
+        Route::post('admin/bunny/verify-all',       [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'verifyAll']);
+        Route::post('admin/bunny/verify/{id}',      [App\Http\Controllers\Api\V2\BunnyTransferController::class, 'verify']);
+        Route::get('admin/hls-reversal/analyze',                  [HlsReversalController::class, 'analyze']);
+        Route::post('admin/hls-reversal/queue',                   [HlsReversalController::class, 'queueCandidates']);
+        Route::post('admin/hls-reversal/execute-batch',           [HlsReversalController::class, 'executeBatch']);
+        Route::post('admin/hls-reversal/queue/{id}/approve',  [HlsReversalController::class, 'approve']);
+        Route::post('admin/hls-reversal/queue/{id}/skip',     [HlsReversalController::class, 'skip']);
+        Route::post('admin/hls-reversal/queue/{id}/execute',  [HlsReversalController::class, 'executeOne']);
 
         // Movie Trivia — public endpoints (no auth required for question bank)
         Route::get('trivia/version',    [V2TriviaController::class, 'version']);

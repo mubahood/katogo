@@ -656,7 +656,14 @@ class SearchController extends Controller
         // ── Apply filters ──
         if (!empty($scores)) {
             $filteredQuery = MovieModel::select('id', 'type', 'category_id')
-                ->whereIn('id', array_keys($scores));
+                ->whereIn('id', array_keys($scores))
+                // Single choke-point visibility gate (DMCA compliance — the Aug
+                // 2026 Apple takedown surfaced Inactive titles here):
+                //  - blocklisted rows NEVER reach the response
+                //  - Movies must be Active; Series keep their existing rule
+                //    (visibility governed by series_movies.is_active upstream)
+                ->where('is_blocklisted', 0)
+                ->where(fn ($q) => $q->where('type', 'Series')->orWhere('status', 'Active'));
 
             if ($typeFilter === 'movie') {
                 $filteredQuery->where('type', 'Movie');

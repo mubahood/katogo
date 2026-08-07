@@ -67,6 +67,10 @@ return [
         // Real-time event push (source → replica)
         'event_secret'   => env('SYNC_EVENT_SECRET', ''),
         'replica_url'    => env('SYNC_REPLICA_URL', ''),
+        // Master switch for real-time pushes. Set false when the replica is
+        // down/rebuilt so the queue isn't churning doomed jobs; the pull-based
+        // sync remains the safety net either way.
+        'push_enabled'   => env('SYNC_PUSH_ENABLED', true),
     ],
 
 ];

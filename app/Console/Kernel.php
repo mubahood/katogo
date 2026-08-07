@@ -441,6 +441,42 @@ class Kernel extends ConsoleKernel
             \DB::table('cache')->where('expiration', '<', time())->delete();
         })->dailyAt('03:00')->name('prune-expired-cache')->withoutOverlapping();
 
+        // Prune stale per-user API cache files (storage/api_cache) older than 7 days.
+        // Nothing else cleans this directory — it reached 7.6GB / 59k files and
+        // contributed to the Aug 2026 disk-full outage.
+        $schedule->exec("find " . storage_path('api_cache') . " -type f -mtime +7 -delete")
+            ->dailyAt('03:10')
+            ->name('prune-api-cache-files')
+            ->withoutOverlapping();
+
+        // Prune failed queue jobs older than 48 hours. Each row carries the
+        // full payload + stacktrace — the table hit 28.4GB / 1.5M rows during
+        // the Aug 2026 sync outage. 48h is plenty to inspect genuine failures.
+        $schedule->command('queue:prune-failed --hours=48')
+            ->dailyAt('03:20')
+            ->name('prune-failed-jobs')
+            ->withoutOverlapping();
+
+        // DMCA compliance: deactivate any movie whose title matches
+        // content_blocklist (Apple takedown 2026-08-05 + preventive patterns).
+        // Backstops raw-SQL paths that bypass the MovieModel saving hook.
+        $schedule->command('content:enforce-blocklist')
+            ->everyThirtyMinutes()
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/content-blocklist.log'))
+            ->name('enforce-content-blocklist');
+
+        // Bunny migration continuation protocol: unstick stale uploads,
+        // redispatch lost jobs, and auto top-up the queue with the next
+        // most-demanded Hetzner movies (BUNNY_AUTO_MIGRATE gates top-up).
+        $schedule->command('bunny:pump --target=10')
+            ->everyTenMinutes()
+            ->withoutOverlapping(9)
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/bunny-pump.log'))
+            ->name('bunny-pump');
+
         // ──────────────────────────────────────────────────────────────────
         // NAMZ CRAWLER — Nightly metadata scrape (avoids overwhelming server)
         // Runs nightly at 01:00 AM in 50-ID batches with 800ms delay.

@@ -91,7 +91,9 @@ class AppServiceProvider extends ServiceProvider
         // The SSH tunnel pull is the fallback safety net — no data is lost
         // if these pushes fail (they retry 3× before giving up).
         // ──────────────────────────────────────────────────────────────
-        if (config('services.sync.role') === 'source' && !empty(config('services.sync.replica_url'))) {
+        if (config('services.sync.role') === 'source'
+            && !empty(config('services.sync.replica_url'))
+            && config('services.sync.push_enabled')) {
             $pushRow = function (string $table, $model) use (&$pushRow): void {
                 try {
                     $row = DB::table($table)->where('id', $model->id)->first();
@@ -105,8 +107,26 @@ class AppServiceProvider extends ServiceProvider
                 }
             };
 
+            // admin_users is saved on EVERY manifest request (app_type/platform
+            // bookkeeping) — pushing each save generated ~100k events/day and
+            // repeatedly overwhelmed the replica (the Aug 2026 outage cascade).
+            // Only push when something the replica actually needs has changed;
+            // bookkeeping-only saves are covered by the 5-minute pull sync.
+            $userBookkeepingOnly = function ($m): bool {
+                $ignorable = [
+                    'updated_at', 'app_type', 'platform', 'last_online_at',
+                    'remember_token', 'token', 'last_seen',
+                ];
+                $meaningful = array_diff(array_keys($m->getChanges()), $ignorable);
+                return empty($meaningful);
+            };
+
             Subscription::saved(fn($m)            => $pushRow('subscriptions', $m));
-            User::saved(fn($m)                    => $pushRow('admin_users', $m));
+            User::saved(function ($m) use ($pushRow, $userBookkeepingOnly) {
+                if (!$userBookkeepingOnly($m)) {
+                    $pushRow('admin_users', $m);
+                }
+            });
             SubscriptionTransaction::saved(fn($m) => $pushRow('subscription_transactions', $m));
             SubscriptionPlan::saved(fn($m)        => $pushRow('subscription_plans', $m));
             CoinTransaction::saved(fn($m)         => $pushRow('coin_transactions', $m));
