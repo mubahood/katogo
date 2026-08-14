@@ -49,7 +49,7 @@ class PageVisitController extends Controller
     {
         $data = $request->validate([
             'session_id'            => 'required|string|max:64',
-            'button_clicked'        => 'nullable|string|in:android,ios,web',
+            'button_clicked'        => 'nullable|string|in:android,ios,web,video',
             'time_on_page_seconds'  => 'nullable|integer|min:0|max:86400',
         ]);
 

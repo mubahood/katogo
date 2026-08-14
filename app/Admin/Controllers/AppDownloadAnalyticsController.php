@@ -142,6 +142,79 @@ class AppDownloadAnalyticsController extends Controller
 
         $html .= '<div class="av-wrap">';
 
+        // ── SECTION: Real APK downloads (server-side, from apk_downloads) ──
+        try {
+            $dl = DB::table('apk_downloads')->selectRaw("
+                    COUNT(*) total,
+                    SUM(created_at >= CURDATE()) today,
+                    SUM(created_at >= NOW() - INTERVAL 7 DAY) week,
+                    SUM(created_at >= NOW() - INTERVAL 30 DAY) month
+                ")->first();
+
+            $dlVariants = DB::table('apk_downloads')
+                ->selectRaw('variant, COUNT(*) c')->groupBy('variant')->pluck('c', 'variant')->toArray();
+
+            $dlSources = DB::table('apk_downloads')
+                ->selectRaw("COALESCE(NULLIF(src,''),'(direct)') s, COUNT(*) c")
+                ->groupBy('s')->orderByDesc('c')->limit(8)->get();
+
+            $dlDaily = DB::table('apk_downloads')
+                ->selectRaw('DATE(created_at) d, COUNT(*) c')
+                ->where('created_at', '>=', now()->subDays(13)->startOfDay())
+                ->groupBy('d')->pluck('c', 'd')->toArray();
+
+            // Funnel: page visits → android intent → real downloads
+            $androidPageViews = PageVisit::where('page_url', 'like', '%/app/android%')->count();
+            $funnelDownloads  = (int) $dl->total;
+            $convPct = $androidPageViews > 0 ? round($funnelDownloads / $androidPageViews * 100, 1) : 0;
+
+            $html .= '<div class="av-section">APK Downloads — Real (server-counted)</div>';
+            $html .= '<div class="av-row">';
+            foreach ([
+                ['Total Downloads', number_format((int) $dl->total),  '#C0392B', 'fa-download'],
+                ['Today',           number_format((int) $dl->today),  '#28a745', 'fa-calendar-check-o'],
+                ['Last 7 Days',     number_format((int) $dl->week),   '#007bff', 'fa-calendar'],
+                ['Last 30 Days',    number_format((int) $dl->month),  '#6f42c1', 'fa-calendar-o'],
+                ['arm64 / arm32 / universal',
+                    number_format($dlVariants['arm64'] ?? 0) . ' / ' . number_format($dlVariants['arm32'] ?? 0) . ' / ' . number_format($dlVariants['universal'] ?? 0),
+                    '#e67e22', 'fa-cubes'],
+                ['Screen → Download', $convPct . '%', '#16a085', 'fa-filter'],
+            ] as $c) {
+                $html .= '<div class="av-card" style="border-left:3px solid ' . $c[2] . '">
+                            <div class="av-val">' . $c[1] . '</div>
+                            <div class="av-lbl">' . $c[0] . '</div>
+                            <i class="fa ' . $c[3] . ' av-ico"></i></div>';
+            }
+            $html .= '</div>';
+
+            // 14-day mini trend + top sources, side by side
+            $html .= '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">';
+
+            $html .= '<div class="av-box" style="flex:2;min-width:300px;"><div class="av-box-title">Downloads — last 14 days</div>
+                      <div style="display:flex;align-items:flex-end;gap:4px;height:70px;">';
+            $maxD = max(1, max(array_values($dlDaily) ?: [1]));
+            for ($i = 13; $i >= 0; $i--) {
+                $dk  = now()->subDays($i)->format('Y-m-d');
+                $cnt = (int) ($dlDaily[$dk] ?? 0);
+                $h   = max(3, (int) round($cnt / $maxD * 62));
+                $html .= '<div title="' . $dk . ': ' . $cnt . '" style="flex:1;background:#C0392B;opacity:' . ($cnt ? '1' : '.15') . ';height:' . $h . 'px;border-radius:2px 2px 0 0;"></div>';
+            }
+            $html .= '</div><div style="display:flex;justify-content:space-between;font-size:9px;color:#999;margin-top:3px;">
+                        <span>' . now()->subDays(13)->format('d M') . '</span><span>today</span></div></div>';
+
+            $html .= '<div class="av-box" style="flex:1;min-width:220px;"><div class="av-box-title">Top Sources (?src=)</div>
+                      <table class="av-tbl"><tr><th>Source</th><th>Downloads</th></tr>';
+            foreach ($dlSources as $s) {
+                $html .= '<tr><td>' . e($s->s) . '</td><td>' . number_format($s->c) . '</td></tr>';
+            }
+            if ($dlSources->isEmpty()) {
+                $html .= '<tr><td colspan="2" style="color:#999;">No downloads yet — share links like movies.mruodel.com/app?src=whatsapp</td></tr>';
+            }
+            $html .= '</table></div></div>';
+        } catch (\Throwable $e) {
+            $html .= '<div class="av-box" style="margin-bottom:12px;color:#c00;">APK download stats unavailable: ' . e($e->getMessage()) . '</div>';
+        }
+
         // ── SECTION: Overview Cards ──
         $html .= '<div class="av-section">Traffic Overview</div>';
         $html .= '<div class="av-row">';

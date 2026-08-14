@@ -191,9 +191,10 @@ class MovieFixerService
         $isSeries = $this->isSeries($movie);
 
         // ── Hetzner guard — never overwrite a video already hosted on Hetzner Storage ──
-        // Movies transferred to Hetzner are the authoritative copy; the external source
-        // may have a different (lower quality) version or no longer host the file at all.
-        if (self::isHetznerUrl((string) $oldUrl)) {
+        // Movies transferred to Hetzner are the authoritative copy WHILE Hetzner is up;
+        // when Hetzner is marked down (maintenance switch) this guard lifts so the fix
+        // pipeline re-fetches a fresh, playable source URL for the app.
+        if (self::isHetznerProtected((string) $oldUrl)) {
             Log::info("[MovieFixer] #{$movieId}: SKIPPED — video is on Hetzner Storage (protected from overwrite)");
             return [
                 'success' => true,
@@ -750,10 +751,10 @@ class MovieFixerService
         // ── Video URL (most critical) ──
         $oldUrlRaw = $movie->getRawOriginal('url') ?? '';
         if ($newUrl !== $oldUrlRaw) {
-            // Never overwrite a Hetzner-hosted URL — this is a safety net in addition
-            // to the early-return guard in fixMovie(). applyFreshData() may be called
-            // independently, so the check is duplicated here defensively.
-            if (self::isHetznerUrl($oldUrlRaw)) {
+            // Never overwrite a Hetzner-hosted URL WHILE Hetzner is up — safety net in
+            // addition to the early-return guard in fixMovie(). Lifts automatically when
+            // Hetzner is marked down so a fresh source URL can replace the dead one.
+            if (self::isHetznerProtected($oldUrlRaw)) {
                 Log::info("[MovieFixer] #{$movie->id}: applyFreshData — skipping URL update, current URL is Hetzner Storage");
             } else {
                 // Preserve old URL for reference
@@ -1393,5 +1394,34 @@ class MovieFixerService
             str_contains($url, 'storageshare.de') ||
             str_contains($url, 'nx100800')
         );
+    }
+
+    /**
+     * Whether the Hetzner-protection guard should currently block fixes.
+     *
+     * When Hetzner Storage is marked down (system_configs.storage_maintenance_enabled
+     * — the same switch that makes the API serve original source URLs), the Hetzner
+     * copy is unreachable, so it is NOT authoritative and the fix pipeline SHOULD
+     * re-fetch a fresh source URL. In that state this returns false, lifting the guard.
+     * When Hetzner is healthy it returns true, protecting the stored copy as before.
+     */
+    public static function shouldProtectHetzner(): bool
+    {
+        try {
+            $enabled = \Illuminate\Support\Facades\Cache::remember('hetzner_protect_guard', 60, function () {
+                $sys = \Illuminate\Support\Facades\DB::table('system_configs')
+                    ->value('storage_maintenance_enabled');
+                return !((bool) $sys); // maintenance ON → do NOT protect
+            });
+            return $enabled;
+        } catch (\Throwable) {
+            return true; // fail safe: protect if config can't be read
+        }
+    }
+
+    /** Guard used by the fix pipeline: Hetzner URL AND protection currently active. */
+    public static function isHetznerProtected(?string $url): bool
+    {
+        return self::isHetznerUrl($url) && self::shouldProtectHetzner();
     }
 }

@@ -160,12 +160,13 @@
     <p class="hero-note">Free Download Available Now</p>
 
     <div class="hero-actions">
-        <!-- Android (primary) -->
-        <a href="https://play.google.com/store/apps/details?id=lugaflix.movies" class="dl-btn primary" target="_blank" rel="noopener">
+        <!-- Android — dedicated download screen (auto-start + install video) -->
+        <a href="{{ url('/app/android') }}@if(request('src'))?src={{ urlencode(request('src')) }}@endif" class="dl-btn primary"
+           onclick="if(window.trackEvent)trackEvent('apk_download')">
             <svg viewBox="0 0 24 24"><path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302a1 1 0 0 1 0 1.38l-2.302 2.302L15.396 12l2.302-2.492zM5.864 2.658L16.8 8.99l-2.302 2.302L5.864 2.658z"/></svg>
             <div class="dl-info">
-                <div class="dl-label">Download on</div>
-                <div class="dl-name">Google Play</div>
+                <div class="dl-label">Download for</div>
+                <div class="dl-name">Android</div>
             </div>
         </a>
 
@@ -187,39 +188,8 @@
             </div>
         </a>
     </div>
+
 </section>
-
-<!-- FEATURES STRIP -->
-<div class="strip">
-    <div class="strip-item">
-        <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zm-8-1l5-3.5-5-3.5v7z"/></svg>
-        Latest Movies
-    </div>
-    <div class="strip-item">
-        <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM10 8.5l5 3.5-5 3.5v-7z"/></svg>
-        Full Series
-    </div>
-    <div class="strip-item">
-        <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-        All VJs
-    </div>
-    <div class="strip-item">
-        <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zm0-10h4v6h6v-6h4l-7-7-7 7z"/></svg>
-        Offline Download
-    </div>
-</div>
-
-<!-- SEARCH CTA -->
-<section class="search-cta">
-    <p>Or search on Google Play Store</p>
-    <div class="term">"Lugaflix App"</div>
-    <p class="small">Watch Luganda Translated Movies &amp; Series with All VJs</p>
-</section>
-
-<!-- FOOTER -->
-<footer class="footer">
-    <p>LugaFlix &mdash; Uganda's #1 Luganda Movie App</p>
-</footer>
 
 <script>
 (function(){

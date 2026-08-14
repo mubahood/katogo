@@ -43,4 +43,9 @@ return [
     // Comma-separated priority for the playable URL served to apps.
     'url_priority'     => array_map('trim', explode(',', env('MOVIE_URL_PRIORITY', 'main,bunny,hetzner'))),
 
+    // Direct APK distribution (Play Store suspension fallback) — served via
+    // the Bunny pull zone; uploaded by ops when a new build ships.
+    'apk_url'          => env('LUGAFLIX_APK_URL', 'https://lugaflix-cdn.b-cdn.net/app/lugaflix-latest.apk'),
+    'apk_version'      => env('LUGAFLIX_APK_VERSION', '6.0.58'),
+
 ];

@@ -2878,6 +2878,16 @@ Route::get('/app', function () {
     return view('landing.app-download');
 })->name('landing.app-download');
 
+// Android APK download screen — auto-starts the download + install video
+Route::get('/app/android', function () {
+    return view('landing.app-android');
+})->name('landing.app-android');
+
+// Tracked APK download (logs server-side, redirects to Bunny CDN)
+Route::get('/app/download/{variant}', [\App\Http\Controllers\ApkDownloadController::class, 'download'])
+    ->where('variant', 'arm64|arm32|universal')
+    ->name('app.download');
+
 // Page visit tracking (landing page analytics)
 Route::post('/api/track-visit', [\App\Http\Controllers\PageVisitController::class, 'store']);
 Route::post('/api/track-event', [\App\Http\Controllers\PageVisitController::class, 'event']);
